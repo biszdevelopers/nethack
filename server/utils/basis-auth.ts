@@ -178,7 +178,6 @@ export async function completeBasisAuthFlow(
             issuer: config.issuer,
             subject: claims.sub,
             email: userInfo.email,
-            emailVerified: userInfo.email_verified === true,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
         },
         tokens: normalizeTokenSet(tokens),

@@ -43,6 +43,8 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 
 User profile editing page. Protected by `auth` middleware.
 
+The page loads the authenticated user's full API record through `useApiUser()`. The composable waits for the client-only request before the form state reads the user record, and watches the session user ID so the request is issued once the cookie session becomes available during hydration.
+
 **Features:**
 
 - Displays greeting with user name or email

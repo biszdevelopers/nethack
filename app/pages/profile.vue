@@ -7,16 +7,12 @@ definePageMeta({
     middleware: "auth",
 });
 
-const { user: userRef, clear } = useBasisAuthSession();
-const userID = computed(() => userRef.value?.id ?? 0);
-
-const { data, error, refresh } = await useFetch(() => `/api/users/${userID.value}`, {
-    server: false,
-});
+const { data, error, refresh, sessionUser: userRef, clear } = await useApiUser();
 if (error.value) {
     throw error.value;
 }
 
+const userID = computed(() => userRef.value?.id ?? 0);
 const user = computed(() => data.value);
 
 async function doLogout() {
