@@ -5,18 +5,18 @@ description: How basishacks runs in local development versus production, includi
 
 # Runtime Architecture
 
-basishacks runs in two distinct environments: **local development** and **production** on a VPS. The codebase supports dual-runtime operation — under Bun it uses `bun:sqlite`, under Node.js it uses `better-sqlite3`. Drizzle ORM provides the unified query layer.
+basishacks runs on PostgreSQL in local development, CI, and production. The Bun and Node.js processes share the same PostgreSQL schema and use Drizzle ORM with the `postgres` driver; no runtime-specific database adapter is selected.
 
 ## Local Development
 
-| Setting | Value |
-| --- | --- |
-| Nitro preset | `node-server` |
-| Database | SQLite via Drizzle ORM (`bun:sqlite` under Bun, `better-sqlite3` under Node.js) |
-| WAL mode | Enabled |
-| Foreign keys | Enforced (`PRAGMA foreign_keys = ON`) |
-| Dev server port | 24598 |
-| HTTPS | Optional (`--https` flag) |
+| Setting         | Value                                     |
+| --------------- | ----------------------------------------- |
+| Nitro preset    | `node-server`                             |
+| Database        | PostgreSQL via Drizzle ORM and `postgres` |
+| Connection pool | Bounded; default maximum 10 connections   |
+| Migrations      | Applied under a PostgreSQL advisory lock  |
+| Dev server port | 24598                                     |
+| HTTPS           | Optional (`--https` flag)                 |
 
 The local dev server is started with:
 
@@ -28,11 +28,11 @@ The custom server error handler is configured with a forward-slash-normalized ab
 
 ## Production (VPS / Node.js server)
 
-| Setting      | Value                                                                           |
-| ------------ | ------------------------------------------------------------------------------- |
-| Build preset | `node-server`                                                                   |
-| Database     | SQLite via Drizzle ORM (`bun:sqlite` under Bun, `better-sqlite3` under Node.js) |
-| Deployment   | Manual or CI/CD to VPS                                                          |
+| Setting      | Value                                     |
+| ------------ | ----------------------------------------- |
+| Build preset | `node-server`                             |
+| Database     | PostgreSQL via Drizzle ORM and `postgres` |
+| Deployment   | Manual or CI/CD to VPS                    |
 
 The production build is generated with:
 
@@ -40,7 +40,7 @@ The production build is generated with:
 bun run build
 ```
 
-Nitro leaves runtime dependencies external so its generated bundles resolve them from the deployed `node_modules` directory. This avoids incomplete dependency copies in the development server. The GitHub release workflow runs this build when a `v*` tag is pushed; deploy the resulting `.output/` alongside production dependencies. Before starting a release, create a writable `database/` directory next to `.output/`; the SQLite database is not part of the artifact.
+Nitro leaves runtime dependencies external so its generated bundles resolve them from the deployed `node_modules` directory. Deploy the self-contained VPS release package with production dependencies and configure `DATABASE_URL`. Uploaded files use the persistent `ASSET_STORAGE_DIR` outside the release directory. The same build runs with `bun run start` or `node start-fix.mjs`.
 
 ::: warning The in-memory rate limiter is per-process. Under high concurrency or with multiple server instances, consider using a shared store (e.g., Redis) for consistent rate limiting. :::
 
@@ -54,23 +54,18 @@ Plugins run at server startup and set up the runtime environment. They are loade
 
 ### `init-database.ts`
 
-**Purpose**: Initializes the database schema and attaches the DB wrapper to every request.
+**Purpose**: Initializes and migrates the database before serving requests, then closes the pool during shutdown.
 
-1. Calls `createDrizzleDatabase()` to initialize the SQLite connection
-2. Registers a `request` hook that attaches the Drizzle instance to `event.context.drizzle`
+1. Calls `createDrizzleDatabase()` to create the bounded PostgreSQL connection pool
+2. Applies pending PostgreSQL migrations while holding an advisory lock
+3. Seeds the initial hackathon, season, and default rubric records when they are missing
+4. Closes the pool through Nitro's `close` hook
 
-```ts
-export default defineNitroPlugin(async (nitroApp) => {
-    const db = await createDrizzleDatabase();
+### `02.database.ts`
 
-    const tables = db.all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type='table'`);
-    console.log(`[Nitro] Database plugin loaded with ${tables.length} tables (Drizzle ORM)`);
+**File:** `server/middleware/02.database.ts`
 
-    nitroApp.hooks.hook("request", (event) => {
-        event.context.drizzle = db;
-    });
-});
-```
+Attaches the initialized process-wide Drizzle instance to `event.context.drizzle` before each request reaches a route handler.
 
 ### `validate-environment.ts`
 
@@ -91,15 +86,15 @@ export default defineNitroPlugin(async (nitroApp) => {
 
 The H3 event context is extended via TypeScript declarations in `server/types/`:
 
-### `cloudflare.d.ts`
+### `h3.d.ts`
 
-**File:** `server/types/cloudflare.d.ts`
+**File:** `server/types/h3.d.ts`
 
 ```ts
 declare module "h3" {
     interface H3EventContext {
-        /** Drizzle ORM instance (driver-agnostic; backed by bun:sqlite or better-sqlite3) */
-        drizzle: BaseSQLiteDatabase<"sync", any, typeof schema>;
+        /** Process-wide PostgreSQL Drizzle instance */
+        drizzle: DrizzleDatabase;
     }
 }
 ```
@@ -118,7 +113,7 @@ declare module "h3" {
 
 | Key | Type | Always present? | Set by |
 | --- | --- | --- | --- |
-| `event.context.drizzle` | `BaseSQLiteDatabase` | Yes | `init-database.ts` request hook |
+| `event.context.drizzle` | `DrizzleDatabase` | Yes | `02.database.ts` request middleware |
 | `event.context.oauth2` | `OAuth2JWTContext` | Only in OAuth2-protected endpoints | `withOAuth2JWT()` wrapper |
 
 ## Request Lifecycle
@@ -126,17 +121,15 @@ declare module "h3" {
 ```
 1. Incoming HTTP request
      │
-2. Nitro request hook (init-database.ts)
-     │  └── event.context.drizzle = db
+2. Ordered server middleware
+     ├── Enforces same-origin mutation and request-size limits
+     └── Attaches the shared Drizzle instance to the request context
      │
-3. Server middleware
-     │  └── Validates OAuth2 authorize requests if path matches
-     │
-4. API route handler
+3. API route handler
      │  ├── readValidatedBody() / getValidatedQuery() with Zod
      │  ├── requireUser() JWT permission enforcement
      │  └── event.context.drizzle.select()/insert()/update()/delete()
      │
-5. Response
+4. Response
      └── convertUserToPublic() / convertTeamToPublic() to strip internal fields
 ```
