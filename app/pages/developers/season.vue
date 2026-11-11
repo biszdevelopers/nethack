@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { NethackPermissions } from "~~/shared/permissions";
+import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
+import AdminRubricManager from "~/components/admin/RubricManager.vue";
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -44,14 +46,14 @@ function datetimeToTs(s: string): number {
     return new Date(s).getTime();
 }
 
-async function downloadDatabase(format: "sqlite" | "csv") {
+async function downloadDatabase(format: "json" | "csv") {
     const blob = await $fetch<Blob>(`/api/admin/database/export?format=${format}`, {
         responseType: "blob",
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `basishacks-export.${format === "sqlite" ? "db" : "csv"}`;
+    link.download = `basishacks-export.${format}`;
     link.click();
     URL.revokeObjectURL(url);
 }
@@ -98,6 +100,12 @@ const boolKeys = new Set([
 const hackathonForm = reactive<Record<string, any>>({});
 const formInitialized = ref(false);
 const saving = ref(false);
+const scoreCurvePreset = ref<ScoreCurvePreset>("original");
+const scoreCurveSaving = ref(false);
+const scoreCurveItems = Object.entries(SCORE_CURVE_PRESETS).map(([value, preset]) => ({
+    label: preset.label,
+    value,
+}));
 
 /** Populate form from a season row, skipping DB defaults so the global value shines through. */
 function restoreSeasonConfig(season: any) {
@@ -226,10 +234,40 @@ const seasonNameForm = ref("");
 watch(activeSeasonId, (id) => {
     // Update season name
     seasonNameForm.value = seasons.value?.find((s: any) => s.id === id)?.name ?? "";
+    scoreCurvePreset.value =
+        (seasons.value?.find((s: any) => s.id === id)?.score_curve_preset as
+            | ScoreCurvePreset
+            | undefined) ?? "original";
     // Re-apply the full config (global + season overrides). When id is null,
     // applyConfig skips the overlay, showing only the global hackathon values.
     applyConfig(id);
 });
+
+async function saveScoreCurvePreset(value: ScoreCurvePreset) {
+    const seasonId = activeSeasonId.value;
+    if (seasonId === null) return;
+    scoreCurveSaving.value = true;
+    try {
+        await $fetch(`/api/admin/seasons/${seasonId}/score-curve`, {
+            method: "PATCH",
+            body: { preset: value },
+        });
+        await refreshAdmin();
+        toast.add({ title: "Score display curve updated.", color: "success" });
+    } catch (error) {
+        scoreCurvePreset.value =
+            (seasons.value?.find((season: any) => season.id === seasonId)?.score_curve_preset as
+                | ScoreCurvePreset
+                | undefined) ?? "original";
+        toast.add({
+            title: "Could not update score curve",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        scoreCurveSaving.value = false;
+    }
+}
 
 const seasonNameSaving = ref(false);
 
@@ -316,6 +354,33 @@ async function addSeason() {
                     </UButton>
                 </div>
             </section>
+            <USeparator />
+
+            <section v-if="activeSeasonId !== null" class="bg-ui-bg p-6 space-y-3">
+                <h2 class="text-xl font-semibold">Score display curve</h2>
+                <p class="max-w-3xl text-sm text-ui-text-muted">
+                    This changes the displayed score only. The original judge average stays saved,
+                    and published ranking always uses that original score.
+                </p>
+                <div class="flex flex-wrap items-center gap-3">
+                    <USelect
+                        v-model="scoreCurvePreset"
+                        :items="scoreCurveItems"
+                        :disabled="scoreCurveSaving"
+                        class="w-full max-w-xs"
+                        @update:model-value="saveScoreCurvePreset"
+                    />
+                    <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
+                </div>
+            </section>
+            <USeparator />
+
+            <AdminRubricManager
+                v-if="activeSeasonId !== null"
+                :key="activeSeasonId"
+                :season-id="activeSeasonId"
+                :seasons="seasons"
+            />
             <USeparator />
 
             <!-- Hackathon Configuration (all fields per-season, auto-save on change) -->
@@ -505,8 +570,8 @@ async function addSeason() {
                 <h2 class="text-xl font-semibold">Database Export</h2>
                 <p class="text-sm text-ui-text-muted">Download a full snapshot of the database.</p>
                 <div class="flex flex-wrap items-center gap-3">
-                    <UButton color="primary" variant="solid" @click="downloadDatabase('sqlite')">
-                        Download SQLite
+                    <UButton color="primary" variant="solid" @click="downloadDatabase('json')">
+                        Download JSON
                     </UButton>
                     <UButton color="neutral" variant="outline" @click="downloadDatabase('csv')">
                         Download CSV
