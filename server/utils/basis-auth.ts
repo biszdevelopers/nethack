@@ -50,6 +50,24 @@ export function getBasisAuthConfig(): BasisAuthConfig {
     } catch {
         throw createError({ statusCode: 500, message: "BASIS_AUTH_ISSUER must be a valid URL" });
     }
+    if (!["http:", "https:"].includes(issuer.protocol)) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER must use HTTP or HTTPS",
+        });
+    }
+    if (issuer.username || issuer.password) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER cannot contain credentials",
+        });
+    }
+    if (process.env.NODE_ENV === "production" && issuer.protocol !== "https:") {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER must use HTTPS in production",
+        });
+    }
     if (issuer.search || issuer.hash) {
         throw createError({
             statusCode: 500,
@@ -173,12 +191,22 @@ export async function completeBasisAuthFlow(
         throw new Error("basis-auth did not return an email address");
     }
 
+    // Some basis-auth deployments return email_verified only in the validated
+    // ID token. Trust that claim only when it names the same address returned
+    // by UserInfo; otherwise verification applies only to the UserInfo email.
+    const tokenEmail = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+    const emailVerified =
+        userInfo.email_verified === true ||
+        (claims.email_verified === true &&
+            tokenEmail !== "" &&
+            tokenEmail === userInfo.email.trim().toLowerCase());
+
     return {
         identity: {
             issuer: config.issuer,
             subject: claims.sub,
             email: userInfo.email,
-            emailVerified: userInfo.email_verified === true,
+            emailVerified,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
         },
         tokens: normalizeTokenSet(tokens),
