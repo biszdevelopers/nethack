@@ -18,8 +18,11 @@ export default defineEventHandler(async (event) => {
     }
 
     if (!isSelf) {
-        // Public view: return only APIUser without team or past teams
-        return convertUserToPublic(user) satisfies APIUser;
+        // Public profile details omit contact information and team membership.
+        return convertUserToPublic(user, {
+            includeEmail: false,
+            includeTeam: false,
+        }) satisfies APIUser;
     }
 
     // Self view: return full GetUserResponse
