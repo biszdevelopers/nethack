@@ -34,20 +34,20 @@ Requires `Authorization: Bearer …`, validates the basis-auth access token, opt
 
 ## Database layer
 
-The database layer uses Drizzle ORM. The canonical schema lives in `server/database/schema.ts`, and initialization/migration logic lives in `server/database/migrate.ts`. The runtime-agnostic driver selector is in `server/database/index.ts`.
+The database layer uses Drizzle ORM. The canonical schema lives in `server/database/schema.ts`, initialization and migrations live in `server/database/migrate.ts`, and the validated bounded PostgreSQL pool is created in `server/database/index.ts`.
 
 ### `createDrizzleDatabase`
 
 ```ts
-export async function createDrizzleDatabase(dbPath?: string): Promise<DrizzleDatabase>;
+export async function createDrizzleDatabase(): Promise<DrizzleDatabase>;
 ```
 
-Creates a new Drizzle ORM instance backed by `bun:sqlite` under Bun or `better-sqlite3` under Node.js. Configures WAL journal mode, enables foreign keys, runs legacy schema repair, applies pending migrations, seeds the hackathon row, and seeds the onsite-login redirect URI.
+Creates the process-wide Drizzle ORM instance backed by a bounded `postgres` connection pool. It validates the PostgreSQL URL and pool size before connecting.
 
 ### `getDb`
 
 ```ts
-export async function getDb(dbPath?: string): Promise<DrizzleDatabase>;
+export async function getDb(): Promise<DrizzleDatabase>;
 ```
 
 Alias for `createDrizzleDatabase`.
@@ -126,16 +126,16 @@ In-memory rate limiting middleware with four pre-configured tiers.
 
 | Config Constant | Default Limit | Environment Variable | Prefix | Used By |
 | --- | --- | --- | --- | --- |
-| `DEFAULT_RATE_LIMIT_CONFIG` | 6,000 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
-| `AUTH_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | `/api/login`, `/api/auth/basis/callback` |
-| `VOTE_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
-| `UPLOAD_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | `/api/debug/upload` |
+| `DEFAULT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
+| `AUTH_RATE_LIMIT_CONFIG` | 20 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | Authentication routes |
+| `VOTE_RATE_LIMIT_CONFIG` | 30 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
+| `UPLOAD_RATE_LIMIT_CONFIG` | 10 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | Upload routes |
 
 ### Configuration interface
 
 ```ts
 interface RateLimitConfig {
-    maxRequests: number; // Default: 6000 (from RATE_LIMIT_GENERAL_MAX)
+    maxRequests: number; // Default: 120 (from RATE_LIMIT_GENERAL_MAX)
     windowMs: number; // Default: 60000 (1 minute, from RATE_LIMIT_WINDOW_MS)
     keyPrefix?: string; // Optional prefix for the client identifier
     keyGenerator?: (event: H3Event) => Promise<string | null> | string | null;
@@ -150,8 +150,8 @@ export async function getClientIdentifier(event: H3Event): Promise<string>;
 
 Returns a unique identifier for the client using a two-tier strategy:
 
-1. **Authenticated requests**: `user:{id}` — extracted from the session cookie via `getUserSession(event)`.
-2. **Unauthenticated requests**: `ip:{address}` — prefers the direct socket peer address (`event.node.req.socket.remoteAddress`), falling back to `x-real-ip` header, or `unknown`. When `TRUST_PROXY` is set, the rightmost untrusted hop from `x-forwarded-for` is used.
+1. **Authenticated requests**: `user:{id}` — extracted from the basis-auth session via `readBasisAuthUserSession(event)`.
+2. **Unauthenticated requests**: `ip:{address}` — uses the direct socket peer by default, or `unknown`. Set `TRUSTED_PROXY_HOPS` to the exact 0–10 proxy count to select the first untrusted address from a valid `x-forwarded-for` chain.
 
 This ensures authenticated users are not rate-limited by other users' activity behind a shared NAT, while unauthenticated users are still protected at the IP level.
 
@@ -186,7 +186,7 @@ Clears the in-memory rate limit history. Exposed primarily for tests.
 
 ## basis-auth.ts and oauth2.ts
 
-`basis-auth.ts` owns OIDC discovery, confidential-client configuration, the encrypted transaction session, S256 PKCE requests, callback validation, UserInfo loading, token refresh rotation, and revocation. `database/basis-auth-sessions.ts` encrypts token bundles with AES-256-GCM and persists them by Nuxt session ID, keeping large access JWTs out of browser cookies. `oauth2.ts` now contains only the public-origin helper.
+`basis-auth.ts` owns OIDC discovery, confidential-client configuration, S256 PKCE requests, callback validation, UserInfo loading, token refresh rotation, and revocation. `basis-auth-session.ts` seals token sets into a compressed AES-256-GCM HTTP-only cookie. `oauth2.ts` contains the public-origin helper.
 
 ### Public origin / issuer
 
@@ -259,47 +259,33 @@ Generates a deterministic identicon PNG from a name string and saves it as a use
 
 - Default size: 100px.
 - The name is sanitized to filesystem-safe characters.
-- Saved to `public/assets/users/{safeName}.png`.
+- Saved to `{ASSET_STORAGE_DIR}/assets/users/{safeName}.png` outside the release directory.
 
 ---
 
 ## assets.ts
 
-File system helpers for managing static and user assets with path traversal prevention.
+File system helpers for managing persistent static and user assets with path traversal and symlink protection.
 
-### Path traversal protection
+### Storage location and path protection
 
-All asset functions implement two layers of path traversal prevention:
+Set `ASSET_STORAGE_DIR` to an absolute directory on persistent storage outside the application release. The default is `${XDG_DATA_HOME}/basishacks/assets`, or `~/.local/share/basishacks/assets` when `XDG_DATA_HOME` is unset. Production rejects a storage root located inside `process.cwd()`.
 
-1. **Name sanitization** (`sanitizeAssetName`): Extracts `basename()` from the input and rejects names containing `/` or `\\`, `.`, or `..`.
-2. **Resolve validation** (`resolveAssetPath`): Resolves the full path and verifies it still starts with the expected `assets/` or `userassets/` directory prefix.
-
-```ts
-function sanitizeAssetName(name: string) {
-    const safeName = basename(name);
-    if (!safeName || safeName === "." || safeName === "..") throw ...;
-    if (safeName.includes("/") || safeName.includes("\\")) throw ...;
-}
-
-function resolveAssetPath(assetsDir: string, name: string) {
-    const filePath = join(assetsDir, name);
-    const prefix = assetsDir + sep;
-    if (!filePath.startsWith(prefix)) throw ...;
-    return filePath;
-}
-```
+Asset names may include safe nested path segments, but empty, `.` and `..` segments, backslashes, NUL bytes, and names over 512 characters are rejected. Resolved paths are checked to stay inside their collection. Parent directories and final files are checked against symlinks; reads use `O_NOFOLLOW` where available.
 
 ### Asset Functions
 
-| Function                      | Description                                                     |
-| ----------------------------- | --------------------------------------------------------------- |
-| `createAsset(name, data)`     | Writes a Buffer to `public/assets/{name}`; returns basename     |
-| `createUserAsset(name, data)` | Writes a Buffer to `public/userassets/{name}`; returns basename |
-| `removeAsset(name)`           | Deletes a file from `public/assets/`                            |
-| `removeUserAsset(name)`       | Deletes a file from `public/userassets/`                        |
-| `getUserAsset(name)`          | Reads a file from `public/userassets/` as a Buffer              |
+| Function | Description |
+| --- | --- |
+| `createAsset(name, data)` | Writes a Buffer to `{ASSET_STORAGE_DIR}/assets/{name}`; returns basename |
+| `createUserAsset(name, data)` | Writes a Buffer to `{ASSET_STORAGE_DIR}/userassets/{name}`; returns basename |
+| `createAssetFromStream(...)` | Streams a size-limited upload to a temporary file and atomically publishes it |
+| `removeAsset(name)` | Deletes a file from the persistent `assets/` collection |
+| `removeUserAsset(name)` | Deletes a file from the persistent `userassets/` collection |
+| `getUserAsset(name)` | Reads a file from persistent `userassets/` as a Buffer |
+| `openStoredAsset(collection, name)` | Opens a checked file as a stream and returns its size |
 
-All functions validate the asset name to prevent path traversal, create parent directories recursively, and remove functions silently catch missing-file errors. Invalid names throw a 400 error.
+Collection files are served from `/assets/uploads/*` and `/userast/*` by explicit Nitro routes that set a fixed content type, `nosniff`, a restrictive CSP, and attachment disposition for non-image/video formats. Missing assets return a not-found response. Upload parsing and limits are documented in [Debug & AI](./debug-and-ai).
 
 ---
 
@@ -400,7 +386,7 @@ Computes weighted judge scores and rankings for a season.
 export async function computeScores(event: H3Event, seasonID: number): Promise<void>;
 ```
 
-Fetches all judge scores for the season, calculates a weighted average per team using the rubric defined in `shared/rubric.ts`, scales the result by 1.6, and writes the rounded score and pathway-specific rank back to each team.
+`calculateSeasonScores` reads each saved evaluation with its pinned rubric version, normalizes the configured criterion ranges, applies the per-track weights, and calculates the arithmetic mean across judges. Tied teams share a rank. `computeScores` is reserved for the authorized admin recompute action and persists the scores and ranks in batches.
 
 ---
 
@@ -510,7 +496,7 @@ Per-table database helper modules in `server/utils/database/`.
 | `deleteTeamAwards(event, teamId)`         | Delete all awards for a team           |
 | `deleteAward(event, teamId, award)`       | Delete a specific award for a team     |
 
-Award definitions live in the `awards` SQLite table.
+Award definitions live in the PostgreSQL `awards` table.
 
 ### oauth2_applications.ts
 
