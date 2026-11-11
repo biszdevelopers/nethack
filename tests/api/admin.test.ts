@@ -155,6 +155,8 @@ describe("GET /api/admin/scores", () => {
             .values({
                 team_id: team.id,
                 judge_user_id: 1,
+                season_id: 1,
+                rubric_version_id: 1,
                 scores: JSON.stringify({
                     originality: 5,
                     presentation: 5,
@@ -172,7 +174,7 @@ describe("GET /api/admin/scores", () => {
         expect(result.length).toBeGreaterThanOrEqual(1);
         const scored = result.find((t: any) => t.id === team.id);
         expect(scored).toBeDefined();
-        expect(scored.score).toBe(10000);
+        expect(scored.score).toBe(100);
     });
 
     it("handles tied scores and sorts by rank within pathway", async () => {
@@ -216,18 +218,24 @@ describe("GET /api/admin/scores", () => {
                 {
                     team_id: teamA.id,
                     judge_user_id: 1,
+                    season_id: 1,
+                    rubric_version_id: 1,
                     scores: JSON.stringify(perfectScores),
                     reasoning: "",
                 },
                 {
                     team_id: teamB.id,
                     judge_user_id: 1,
+                    season_id: 1,
+                    rubric_version_id: 1,
                     scores: JSON.stringify(perfectScores),
                     reasoning: "",
                 },
                 {
                     team_id: teamC.id,
                     judge_user_id: 1,
+                    season_id: 1,
+                    rubric_version_id: 1,
                     scores: JSON.stringify(lowScores),
                     reasoning: "",
                 },
