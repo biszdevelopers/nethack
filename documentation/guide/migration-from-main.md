@@ -28,14 +28,16 @@ bun run build
 bun run test
 
 # Start the server
-bun start          # Bun runtime (uses start-fix.mjs)
+bun run start      # Bun runtime (uses start-fix.mjs)
 # or
-node .output/server/index.mjs   # Node.js runtime (uses better-sqlite3)
+node start-fix.mjs # Node.js runtime
 ```
 
 ## Existing-database upgrade path
 
-If you have an existing database from the original `main` branch:
+If you have an existing SQLite database from the original `main` branch, do not start the new app against it. The application now requires PostgreSQL. Follow the [PostgreSQL migration procedure](/deployment/postgresql-migration) to import a verified SQLite backup. The old automatic SQLite schema repair steps below are historical and do not apply to current releases.
+
+For historical reference, the previous SQLite upgrade path was:
 
 1. **Back up the database** (recommended):
 
