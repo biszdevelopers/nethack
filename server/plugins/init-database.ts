@@ -1,13 +1,12 @@
-import { createDrizzleDatabase } from "../database";
-import { sql } from "drizzle-orm";
+import { closeDatabase, createDrizzleDatabase } from "../database";
+import { createAndMigrateDatabase } from "../database/migrate";
 
 export default defineNitroPlugin(async (nitroApp) => {
     const db = await createDrizzleDatabase();
+    await createAndMigrateDatabase(db);
+    console.log("[Nitro] PostgreSQL database ready (Drizzle ORM)");
 
-    const tables = db.all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type='table'`);
-    console.log(`[Nitro] Database plugin loaded with ${tables.length} tables (Drizzle ORM)`);
-
-    nitroApp.hooks.hook("request", (event) => {
-        event.context.drizzle = db;
+    nitroApp.hooks.hook("close", async () => {
+        await closeDatabase();
     });
 });
