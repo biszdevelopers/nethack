@@ -7,7 +7,7 @@ import { eq, and, sql } from "drizzle-orm";
 export default defineEventHandler(async (event) => {
     const user = await requireUser(event, NethackPermissions.Judging.assignmentsRead);
 
-    const results = event.context.drizzle
+    const results = await event.context.drizzle
         .select({
             season_id: seasons.id,
             season_name: seasons.name,
@@ -22,8 +22,7 @@ export default defineEventHandler(async (event) => {
             and(eq(teamScores.team_id, teams.id), eq(teamScores.judge_user_id, user.id)),
         )
         .groupBy(seasons.id)
-        .orderBy(seasons.id)
-        .all();
+        .orderBy(seasons.id);
 
     const activeSeason = await getActiveSeason(event);
     const activeSeasonId = activeSeason?.id ?? null;
