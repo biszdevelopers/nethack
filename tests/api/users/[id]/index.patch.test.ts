@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { Readable } from "node:stream";
 import {
     createTestContext,
     resetTestContext,
@@ -27,6 +28,7 @@ vi.mock("~~/server/utils/assets", () => ({
 
 let ctx: TestContext;
 let handler: any;
+let requestBodyLimit: any;
 let createUserAsset: ReturnType<typeof vi.fn>;
 let removeUserAsset: ReturnType<typeof vi.fn>;
 
@@ -44,6 +46,7 @@ beforeAll(async () => {
     removeUserAsset = assets.removeUserAsset as ReturnType<typeof vi.fn>;
 
     handler = (await import("~~/server/api/users/[id]/index.patch")).default;
+    requestBodyLimit = (await import("~~/server/middleware/01.request-body-limit")).default;
 });
 
 beforeEach(async () => {
@@ -58,23 +61,82 @@ afterEach(() => {
 });
 
 function createEvent(overrides: Record<string, unknown> = {}) {
+    const body = Buffer.from(JSON.stringify(mockBody.value ?? {}));
+    const request = Object.assign(Readable.from([body]), {
+        headers: {
+            "content-length": String(body.byteLength),
+            "content-type": "application/json",
+        },
+    });
+
     return {
         context: { drizzle: ctx.drizzle },
+        path: `/api/users/${mockParams.values["id"] ?? "1"}`,
+        method: "PATCH",
+        node: {
+            req: request,
+            res: { headersSent: false, setHeader() {} },
+        },
         ...overrides,
     };
 }
 
-const VALID_PNG_BASE64 = "data:image/png;base64,AAAA";
-const VALID_JPEG_BASE64 = "data:image/jpeg;base64,AAAA";
-const VALID_GIF_BASE64 = "data:image/gif;base64,AAAA";
-const VALID_WEBP_BASE64 = "data:image/webp;base64,AAAA";
+function createProfileRequest(body: Buffer, contentLength = body.byteLength) {
+    const request = Object.assign(Readable.from([body]), {
+        headers: {
+            "content-length": String(contentLength),
+            "content-type": "application/json",
+        },
+    });
+
+    return createEvent({
+        path: "/api/users/1",
+        method: "PATCH",
+        node: { req: request },
+    });
+}
+
+const VALID_PNG_BASE64 =
+    "data:image/png;base64," + Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64");
+const VALID_JPEG_BASE64 =
+    "data:image/jpeg;base64," + Buffer.from([0xff, 0xd8, 0xff]).toString("base64");
+const VALID_GIF_BASE64 = "data:image/gif;base64," + Buffer.from("GIF89a").toString("base64");
+const VALID_WEBP_BASE64 =
+    "data:image/webp;base64," + Buffer.from("RIFF\0\0\0\0WEBP").toString("base64");
 
 function tooLargeBase64(): string {
-    const oversized = Buffer.alloc(10 * 1024 * 1024 + 1, 0);
+    const oversized = Buffer.alloc(7 * 1024 * 1024 + 1, 0);
     return "data:image/png;base64," + oversized.toString("base64");
 }
 
 describe("PATCH /api/users/:id", () => {
+    it("does not buffer an oversized profile body before authentication", async () => {
+        seedUser(ctx, { email: "viewer@basischina.com" });
+        mockParams.values["id"] = "1";
+        mockSession.value = null;
+        const event = createProfileRequest(Buffer.from(""), 10 * 1024 * 1024 + 1);
+        const request = (event as any).node.req;
+
+        await requestBodyLimit(event);
+        await expect(handler(event)).rejects.toMatchObject({ statusCode: 401 });
+
+        expect(request.readableEnded).toBe(false);
+    });
+
+    it("allows an authenticated profile request above the general API limit", async () => {
+        const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+        const body = Buffer.from(
+            `{\"name\":\"Alice Updated\",\"padding\":\"${"x".repeat(1024 * 1024)}\"}`,
+        );
+        const event = createProfileRequest(body);
+        mockParams.values["id"] = String(alice.id);
+        mockSession.value = { user: { id: alice.id } };
+        mockBody.value = { name: "Alice Updated" };
+
+        await requestBodyLimit(event);
+        await expect(handler(event)).resolves.toEqual({ message: "Your profile is updated" });
+    });
+
     it("returns 403 when updating another user", async () => {
         seedUser(ctx, { email: "viewer@basischina.com" });
         mockParams.values["id"] = "2";
@@ -210,7 +272,7 @@ describe("PATCH /api/users/:id", () => {
 
             await expect(handler(createEvent())).rejects.toMatchObject({
                 statusCode: 413,
-                message: "Profile theme image is too large. Maximum size is 10MB.",
+                message: "Profile theme image is too large. Maximum size is 7MB.",
             });
         });
 
@@ -305,7 +367,7 @@ describe("PATCH /api/users/:id", () => {
 
             await expect(handler(createEvent())).rejects.toMatchObject({
                 statusCode: 413,
-                message: "Avatar image is too large. Maximum size is 10MB.",
+                message: "Avatar image is too large. Maximum size is 7MB.",
             });
         });
 
