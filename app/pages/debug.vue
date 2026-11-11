@@ -38,17 +38,6 @@
                     />
                 </div>
                 <USelectMenu v-model="value" :items="items" />
-                <div class="flex items-center">
-                    <input
-                        id="keepName"
-                        v-model="keepOriginalName"
-                        type="checkbox"
-                        class="w-4 h-4"
-                    />
-                    <label for="keepName" class="ml-2 text-sm font-medium">
-                        Keep original file name
-                    </label>
-                </div>
                 <button
                     type="submit"
                     :disabled="!file || uploading"
@@ -265,7 +254,6 @@ const fileLists = ref({
 
 const items = ref(["static", "user"]);
 const value = ref("static");
-const keepOriginalName = ref(false);
 
 // DeepSeek state
 const newSessionName = ref("");
@@ -291,7 +279,10 @@ const loadFiles = async () => {
     loadingFiles.value = true;
     try {
         const response = await $fetch<{ assets: string[]; userast: string[] }>("/api/debug/files");
-        fileLists.value.assets = response.assets.map((name) => ({ name, url: `/assets/${name}` }));
+        fileLists.value.assets = response.assets.map((name) => ({
+            name,
+            url: `/assets/uploads/${name}`,
+        }));
         fileLists.value.userast = response.userast.map((name) => ({
             name,
             url: `/userast/${name}`,
@@ -319,10 +310,7 @@ const uploadFile = async () => {
         const formData = new FormData();
         formData.append("file", file.value);
 
-        const params = new URLSearchParams({
-            mode: value.value,
-            keepName: keepOriginalName.value ? "true" : "false",
-        });
+        const params = new URLSearchParams({ mode: value.value });
         const response = await $fetch<{ permalink: string }>(
             `/api/debug/upload?${params.toString()}`,
             {
