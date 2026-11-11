@@ -15,26 +15,23 @@ Nitro plugins run at server startup and can hook into the request lifecycle. Ser
 
 **File:** `server/plugins/init-database.ts`
 
-Initializes the SQLite database and attaches the Drizzle ORM instance to every request's event context.
+Initializes the PostgreSQL pool, applies migrations and seeds before the server accepts requests, and closes the pool during Nitro shutdown.
 
 At startup the plugin calls `createDrizzleDatabase()` from `server/database/index.ts`, which performs the following steps:
 
-1. Opens `database/basishacks.sqlite` using `bun:sqlite` under Bun or `better-sqlite3` under Node.js.
-2. Enables WAL mode and foreign-key enforcement.
-3. Runs `createAndMigrateDatabase()` from `server/database/migrate.ts`:
-    - Repairs legacy schemas created from `sql/archive/init.sql`.
-    - Applies pending Drizzle Kit migrations from the `drizzle/` directory, tracked in `_drizzle_migrations`.
-    - Seeds the `hackathon` singleton row if the table is empty.
+1. Validates `DATABASE_URL` and `DATABASE_POOL_MAX`.
+2. Creates the bounded `postgres` connection pool and Drizzle instance.
+3. Runs PostgreSQL migrations under an advisory lock and seeds the `hackathon` singleton row if it is missing.
 
 #### Request Hook
 
-```ts
-nitroApp.hooks.hook("request", (event) => {
-    event.context.drizzle = db;
-});
-```
+The shared instance uses a bounded PostgreSQL connection pool. Migrations and seeding finish before Nitro accepts requests.
 
-Every incoming request receives the same Drizzle instance attached to `event.context.drizzle`. The instance is created once at startup and shared across requests because SQLite handles concurrent readers safely and the migration and seeding work has already completed.
+### 02.database.ts
+
+**File:** `server/middleware/02.database.ts`
+
+Attaches the initialized Drizzle instance to `event.context.drizzle` before each request reaches a route handler. Database helpers and API handlers read the request's shared instance from that context.
 
 ---
 
@@ -44,7 +41,7 @@ Every incoming request receives the same Drizzle instance attached to `event.con
 
 Comprehensive environment variable validation plugin that runs at server startup. Performs mandatory checks on critical configuration values:
 
-#### `NUXT_SESSION_PASSWORD`
+#### `BASIS_AUTH_COOKIE_SECRET`
 
 | Condition             | Production                     | Development/Test |
 | --------------------- | ------------------------------ | ---------------- |
@@ -80,7 +77,7 @@ if (!sessionPassword || sessionPasswordLength < 32) {
 
 **File:** `server/plugins/microsoft.ts`
 
-Microsoft Graph API integration plugin. The default export attempts to initialize the application access token at startup when `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID` are configured; otherwise it logs a warning and Microsoft Graph features remain unavailable. All Microsoft Graph API calls are centralized in this file for auditability.
+Microsoft Graph API integration plugin. The default export attempts to initialize the application access token at startup when `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID` are configured; otherwise it logs a warning and Microsoft Graph features remain unavailable. When a persistent `MICROSOFT_WEBHOOK_STATE` is configured, startup creates a webhook subscription on first setup and refreshes the existing subscription when `MICROSOFT_WEBHOOK_ID` is set. All Microsoft Graph API calls are centralized in this file for auditability.
 
 ::: warning Security Policy All Microsoft Graph API calls MUST be made through the wrappers in this file. Never call the Graph API directly from other modules. :::
 
@@ -195,7 +192,7 @@ The CSP is strict but functional for the Nuxt 4 + `@nuxt/ui` stack:
 
 ```
 default-src 'self';
-script-src 'self' 'unsafe-inline';
+script-src 'self' 'nonce-<per-response-value>';
 style-src 'self' 'unsafe-inline';
 font-src 'self';
 img-src 'self' blob: data:;
@@ -206,7 +203,7 @@ form-action 'self';
 frame-ancestors 'none'
 ```
 
-- `'unsafe-inline'` for `script-src` is required for Nuxt SSR hydration (`window.__NUXT__`).
+- A fresh cryptographic nonce is generated for every response and attached to Nuxt hydration scripts. Inline scripts without that nonce are blocked.
 - `'unsafe-inline'` for `style-src` is required for inline style bindings used by Vue / Nuxt UI components.
 - `'unsafe-eval'` is intentionally omitted.
 
@@ -214,7 +211,7 @@ frame-ancestors 'none'
 
 **File:** `server/middleware/debug-lockdown.ts`
 
-Runs on every request and rejects any request under `/api/debug/` or `/debug*` when the `DISABLE_DEBUG_ROUTES` environment variable is set to a truthy value. This allows debug utilities to be completely disabled in production regardless of route-level permission checks.
+Runs on every request and returns `404 Not Found` for exact `/api/debug` and `/debug` route trees in production, regardless of `DISABLE_DEBUG_ROUTES` or route-level permission checks. In development and test environments, set `DISABLE_DEBUG_ROUTES` to `1`, `true`, `yes`, or `on` to disable those routes too. Matching uses the parsed URL pathname, so query strings cannot bypass the guard and similarly prefixed paths such as `/debugger` are not blocked.
 
 | Path pattern           | Disabled response |
 | ---------------------- | ----------------- |
