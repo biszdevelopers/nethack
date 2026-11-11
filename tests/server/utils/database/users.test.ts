@@ -100,6 +100,18 @@ describe("users database helpers", () => {
             ).resolves.toMatchObject({ id: linked.id });
         });
 
+        it("keeps an existing subject link when the provider no longer verifies its email", async () => {
+            const linked = await findOrLinkBasisAuthUser(event, identity);
+            const repeated = await findOrLinkBasisAuthUser(event, {
+                ...identity,
+                email: "unverified-change@example.com",
+                emailVerified: false,
+            });
+
+            expect(repeated.id).toBe(linked.id);
+            expect(repeated.email).toBe(linked.email);
+        });
+
         it("rejects unverified email linking", async () => {
             await expect(
                 findOrLinkBasisAuthUser(event, { ...identity, emailVerified: false }),
