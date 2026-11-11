@@ -67,7 +67,7 @@ describe("getClientIdentifier", () => {
         expect(id).toBe("ip:192.168.1.1");
     });
 
-    it("falls back to x-real-ip when no socket address is available", async () => {
+    it("ignores x-real-ip when no trusted socket address is available", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-real-ip") return "5.6.7.8";
@@ -79,7 +79,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:5.6.7.8");
+        expect(id).toBe("ip:unknown");
     });
 
     it('returns "ip:unknown" when no IP source is present', async () => {
@@ -94,13 +94,13 @@ describe("getClientIdentifier", () => {
         expect(id).toBe("ip:unknown");
     });
 
-    it("ignores x-forwarded-for when TRUST_PROXY is not set", async () => {
+    it("ignores x-forwarded-for when no trusted proxy hops are configured", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-forwarded-for") return "10.0.0.1, 10.0.0.2";
             return undefined;
         });
-        delete process.env.TRUST_PROXY;
+        delete process.env.TRUSTED_PROXY_HOPS;
 
         const event = makeMockEvent({
             node: { req: { socket: { remoteAddress: undefined } } },
@@ -110,53 +110,67 @@ describe("getClientIdentifier", () => {
         expect(id).toBe("ip:unknown");
     });
 
-    it("uses the rightmost x-forwarded-for value when TRUST_PROXY is set", async () => {
+    it("uses the rightmost forwarded address for one configured proxy hop", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-forwarded-for") return "10.0.0.1, 10.0.0.2, 10.0.0.3";
             return undefined;
         });
-        process.env.TRUST_PROXY = "true";
+        process.env.TRUSTED_PROXY_HOPS = "1";
 
         const event = makeMockEvent({
-            node: { req: { socket: { remoteAddress: undefined } } },
+            node: { req: { socket: { remoteAddress: "192.0.2.10" } } },
         });
         const id = await getClientIdentifier(event);
 
         expect(id).toBe("ip:10.0.0.3");
     });
 
-    it("falls back to x-real-ip when x-forwarded-for is missing and TRUST_PROXY is set", async () => {
+    it("uses the socket peer when x-forwarded-for is missing", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-real-ip") return "5.6.7.8";
             return undefined;
         });
-        process.env.TRUST_PROXY = "true";
+        process.env.TRUSTED_PROXY_HOPS = "1";
 
         const event = makeMockEvent({
-            node: { req: { socket: { remoteAddress: undefined } } },
+            node: { req: { socket: { remoteAddress: "192.0.2.10" } } },
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:5.6.7.8");
+        expect(id).toBe("ip:192.0.2.10");
     });
 
-    it("falls back to x-real-ip when x-forwarded-for contains only separators", async () => {
+    it("uses the socket peer when x-forwarded-for is malformed", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-forwarded-for") return ", , ,";
             if (name === "x-real-ip") return "5.6.7.8";
             return undefined;
         });
-        process.env.TRUST_PROXY = "true";
+        process.env.TRUSTED_PROXY_HOPS = "1";
 
         const event = makeMockEvent({
-            node: { req: { socket: { remoteAddress: undefined } } },
+            node: { req: { socket: { remoteAddress: "192.0.2.10" } } },
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:5.6.7.8");
+        expect(id).toBe("ip:192.0.2.10");
+    });
+
+    it("rejects a forwarded chain containing an invalid address", async () => {
+        (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
+        (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
+            if (name === "x-forwarded-for") return "spoofed, 10.0.0.2";
+            return undefined;
+        });
+        process.env.TRUSTED_PROXY_HOPS = "1";
+
+        const event = makeMockEvent({
+            node: { req: { socket: { remoteAddress: "192.0.2.10" } } },
+        });
+        expect(await getClientIdentifier(event)).toBe("ip:192.0.2.10");
     });
 
     it("rotation of x-forwarded-for does not bypass the limiter", async () => {
@@ -166,7 +180,7 @@ describe("getClientIdentifier", () => {
             if (name === "x-forwarded-for") return forwarded;
             return undefined;
         });
-        delete process.env.TRUST_PROXY;
+        delete process.env.TRUSTED_PROXY_HOPS;
 
         const event = makeMockEvent({
             node: { req: { socket: { remoteAddress: "192.168.1.1" } } },
@@ -193,11 +207,10 @@ describe("getClientIdentifier", () => {
         expect(id).toBe("ip:10.0.0.5");
     });
 
-    it("returns unknown when TRUST_PROXY set and all IP sources are missing", async () => {
+    it("returns unknown when the socket peer is missing", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn().mockReturnValue(undefined);
-        process.env.TRUST_PROXY = "true";
-        delete process.env.TRUST_PROXY;
+        process.env.TRUSTED_PROXY_HOPS = "1";
 
         const event = makeMockEvent({
             node: { req: { socket: { remoteAddress: undefined } } },
@@ -207,43 +220,43 @@ describe("getClientIdentifier", () => {
         expect(id).toBe("ip:unknown");
     });
 
-    it("uses socket address over x-forwarded-for when both available and TRUST_PROXY is set", async () => {
+    it("uses the configured forwarded hop while retaining the socket as fallback", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-forwarded-for") return "10.0.0.1, 10.0.0.2";
             return undefined;
         });
-        process.env.TRUST_PROXY = "true";
+        process.env.TRUSTED_PROXY_HOPS = "1";
 
         const event = makeMockEvent({
             node: { req: { socket: { remoteAddress: "192.168.1.100" } } },
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:192.168.1.100");
+        expect(id).toBe("ip:10.0.0.2");
     });
 
-    it("falls back to x-real-ip when x-forwarded-for is empty and TRUST_PROXY is set", async () => {
+    it("falls back to the socket peer when x-forwarded-for is empty", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "x-forwarded-for") return "";
             if (name === "x-real-ip") return "1.2.3.4";
             return undefined;
         });
-        process.env.TRUST_PROXY = "true";
+        process.env.TRUSTED_PROXY_HOPS = "1";
 
         const event = makeMockEvent({
-            node: { req: { socket: { remoteAddress: undefined } } },
+            node: { req: { socket: { remoteAddress: "192.0.2.10" } } },
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:1.2.3.4");
+        expect(id).toBe("ip:192.0.2.10");
     });
 
-    it("receives the socket address when TRUST_PROXY is not set and socket is present", async () => {
+    it("receives the socket address when no trusted hops are set", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn().mockReturnValue(undefined);
-        delete process.env.TRUST_PROXY;
+        delete process.env.TRUSTED_PROXY_HOPS;
 
         const event = makeMockEvent({
             node: { req: { socket: { remoteAddress: "172.16.0.1" } } },
@@ -264,7 +277,7 @@ describe("environment parsing", () => {
         process.env.RATE_LIMIT_GENERAL_MAX = "not-a-number";
         vi.resetModules();
         const { RATE_LIMIT_GENERAL_MAX } = await import("~~/server/utils/rateLimit");
-        expect(RATE_LIMIT_GENERAL_MAX).toBe(6000);
+        expect(RATE_LIMIT_GENERAL_MAX).toBe(120);
         if (originalValue === undefined) {
             delete process.env.RATE_LIMIT_GENERAL_MAX;
         } else {
@@ -332,19 +345,19 @@ describe("environment parsing", () => {
 
 describe("rate limit presets", () => {
     it("AUTH_RATE_LIMIT_CONFIG has correct defaults", () => {
-        expect(AUTH_RATE_LIMIT_CONFIG.maxRequests).toBe(600);
+        expect(AUTH_RATE_LIMIT_CONFIG.maxRequests).toBe(20);
         expect(AUTH_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(AUTH_RATE_LIMIT_CONFIG.keyPrefix).toBe("auth");
     });
 
     it("VOTE_RATE_LIMIT_CONFIG has correct defaults", () => {
-        expect(VOTE_RATE_LIMIT_CONFIG.maxRequests).toBe(600);
+        expect(VOTE_RATE_LIMIT_CONFIG.maxRequests).toBe(30);
         expect(VOTE_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(VOTE_RATE_LIMIT_CONFIG.keyPrefix).toBe("vote");
     });
 
     it("UPLOAD_RATE_LIMIT_CONFIG has correct defaults", () => {
-        expect(UPLOAD_RATE_LIMIT_CONFIG.maxRequests).toBe(600);
+        expect(UPLOAD_RATE_LIMIT_CONFIG.maxRequests).toBe(10);
         expect(UPLOAD_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(UPLOAD_RATE_LIMIT_CONFIG.keyPrefix).toBe("upload");
     });
@@ -460,8 +473,8 @@ describe("applyRateLimit", () => {
     });
 
     it("uses DEFAULT_RATE_LIMIT_CONFIG when no custom config is provided", async () => {
-        // The default is 6000 requests per minute
-        expect(DEFAULT_RATE_LIMIT_CONFIG.maxRequests).toBe(6000);
+        // The default is 120 requests per minute
+        expect(DEFAULT_RATE_LIMIT_CONFIG.maxRequests).toBe(120);
         expect(DEFAULT_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
 
         const handler = vi.fn().mockResolvedValue({ ok: true });
@@ -469,13 +482,13 @@ describe("applyRateLimit", () => {
 
         const event = makeMockEvent();
 
-        // Make 6000 calls (should all succeed)
-        for (let i = 0; i < 6000; i++) {
+        // Make 120 calls (should all succeed)
+        for (let i = 0; i < 120; i++) {
             await wrapped(event);
         }
-        expect(handler).toHaveBeenCalledTimes(6000);
+        expect(handler).toHaveBeenCalledTimes(120);
 
-        // 6001st should fail
+        // 121st should fail
         await expect(wrapped(event)).rejects.toMatchObject({
             statusCode: 429,
         });
