@@ -1,4 +1,5 @@
 import type { H3Event } from "h3";
+import { isIP } from "node:net";
 
 interface RateLimitConfig {
     maxRequests: number;
@@ -15,17 +16,17 @@ function parseEnvInt(name: string, fallback: number): number {
 }
 
 /** General API rate limit (requests per minute). */
-export const RATE_LIMIT_GENERAL_MAX = parseEnvInt("RATE_LIMIT_GENERAL_MAX", 6000);
+export const RATE_LIMIT_GENERAL_MAX = parseEnvInt("RATE_LIMIT_GENERAL_MAX", 120);
 export const RATE_LIMIT_WINDOW_MS = parseEnvInt("RATE_LIMIT_WINDOW_MS", 60 * 1000);
 
 /** Authentication/login rate limit (attempts per minute). */
-export const RATE_LIMIT_AUTH_MAX = parseEnvInt("RATE_LIMIT_AUTH_MAX", 600);
+export const RATE_LIMIT_AUTH_MAX = parseEnvInt("RATE_LIMIT_AUTH_MAX", 20);
 
 /** Voting/scoring rate limit (submissions per minute). */
-export const RATE_LIMIT_VOTE_MAX = parseEnvInt("RATE_LIMIT_VOTE_MAX", 600);
+export const RATE_LIMIT_VOTE_MAX = parseEnvInt("RATE_LIMIT_VOTE_MAX", 30);
 
 /** File upload rate limit (uploads per minute). */
-export const RATE_LIMIT_UPLOAD_MAX = parseEnvInt("RATE_LIMIT_UPLOAD_MAX", 600);
+export const RATE_LIMIT_UPLOAD_MAX = parseEnvInt("RATE_LIMIT_UPLOAD_MAX", 10);
 
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
     maxRequests: RATE_LIMIT_GENERAL_MAX,
@@ -91,22 +92,25 @@ export async function getClientIdentifier(event: H3Event): Promise<string> {
         // User not authenticated, fall through to IP
     }
 
-    // Fall back to IP address for unauthenticated requests.
-    // Prefer the direct socket peer address; only consult x-forwarded-for when
-    // explicitly trusting a proxy, and then use the rightmost untrusted hop.
+    // Fall back to the direct peer unless the operator configured the exact
+    // number of trusted reverse proxies. Walk the forwarded chain from the
+    // server outward; the selected address is the first untrusted hop.
     const socketAddress = event.node.req.socket?.remoteAddress;
-    let ip = socketAddress || getHeader(event, "x-real-ip") || "unknown";
+    let ip = socketAddress || "unknown";
+    const configuredHops = process.env.TRUSTED_PROXY_HOPS;
+    const trustedProxyHops =
+        configuredHops && /^\d+$/.test(configuredHops) ? Number(configuredHops) : 0;
 
-    if (!socketAddress && process.env.TRUST_PROXY) {
+    if (socketAddress && trustedProxyHops > 0 && trustedProxyHops <= 10) {
         const forwarded = getHeader(event, "x-forwarded-for");
-        if (forwarded) {
-            const parts = forwarded
-                .split(",")
-                .map((value) => value.trim())
-                .filter(Boolean);
-            if (parts.length > 0) {
-                ip = parts[parts.length - 1];
-            }
+        const parts = forwarded
+            ?.split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+        const clientIndex = (parts?.length ?? 0) - trustedProxyHops;
+        const forwardedClient = clientIndex >= 0 ? parts?.[clientIndex] : undefined;
+        if (forwardedClient && parts?.every((address) => isIP(address)) && isIP(forwardedClient)) {
+            ip = forwardedClient;
         }
     }
 
@@ -157,7 +161,7 @@ export function applyRateLimit(
 
         // Check if rate limit exceeded
         if (history.length >= finalConfig.maxRequests) {
-            const oldestRequest = history[0];
+            const oldestRequest = history[0]!;
             const resetTime = new Date(oldestRequest + finalConfig.windowMs);
             const retryAfter = Math.ceil((oldestRequest + finalConfig.windowMs - now) / 1000);
 
