@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const files = [
@@ -31,7 +31,6 @@ const allApiFiles = [
     "server/api/seasons/active.get.ts",
     "server/api/seasons/active.patch.ts",
     "server/api/seasons/index.get.ts",
-    "server/api/scores/compute.get.ts",
     "server/api/admin/scores.get.ts",
     "server/api/admin/teams.get.ts",
     "server/api/admin/teams.delete.ts",
@@ -127,14 +126,20 @@ describe("Failed request error responses", () => {
         expect(source).not.toMatch(/statusMessage:.+\+.*error/);
     });
 
-    it("scores/compute.get.ts uses createError with proper status", () => {
-        const source = readFileSync(
-            resolve(import.meta.dirname, "..", "..", "server", "api", "scores", "compute.get.ts"),
-            "utf-8",
-        );
-        if (source.includes("createError")) {
-            expect(source).not.toMatch(/return createError\(/);
-        }
+    it("does not expose the unauthenticated score-compute endpoint", () => {
+        expect(
+            existsSync(
+                resolve(
+                    import.meta.dirname,
+                    "..",
+                    "..",
+                    "server",
+                    "api",
+                    "scores",
+                    "compute.get.ts",
+                ),
+            ),
+        ).toBe(false);
     });
 
     it("teams/index.post.ts uses throw createError consistently", () => {
@@ -193,8 +198,13 @@ describe("Failed request error responses", () => {
             "utf-8",
         );
         expect(source).toContain("400");
-        expect(source).toContain("413");
         expect(source).not.toMatch(/return createError/);
+
+        const multipart = readFileSync(
+            resolve(import.meta.dirname, "..", "..", "server", "utils", "multipart-upload.ts"),
+            "utf-8",
+        );
+        expect(multipart).toContain("413");
     });
 });
 
