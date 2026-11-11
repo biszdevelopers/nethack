@@ -1,76 +1,154 @@
-import rubrics, { RubricBallot } from "~~/shared/rubric";
-import { getTeamScoresBySeasonId } from "./database/scores";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { H3Event } from "h3";
+import { calculateWeightedRubricScore, validateRubricScores } from "~~/shared/rubric";
+import { rubricVersions, teamScores, teams } from "~~/server/database/schema";
+import type { DrizzleDatabase } from "~~/server/database";
 
-export async function computeScores(event: H3Event, seasonID: number) {
-    const scores = await getTeamScoresBySeasonId(event, seasonID);
+export interface RankedTeam extends Team {
+    score: number;
+    rank: number;
+}
 
-    const score_avg: Record<number, number> = {};
-    const participated: Team[] = [];
+function parseScoreObject(raw: string): Record<string, number> {
+    let value: unknown;
+    try {
+        value = JSON.parse(raw);
+    } catch {
+        throw createError({
+            statusCode: 409,
+            message: "A saved judge score is not valid JSON.",
+        });
+    }
 
-    for (const score of scores) {
-        const team: Team | null = await getTeam(event, score.team_id);
-        const judge: User | null = await getUser(event, score.judge_user_id);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw createError({
+            statusCode: 409,
+            message: "A saved judge score has an invalid shape.",
+        });
+    }
 
-        if (!team) {
-            console.error(
-                "[Score] Failed score compute: Team " + score.team_id + " does not exist",
-            );
-            return;
+    return value as Record<string, number>;
+}
+
+/** Compute one arithmetic mean of normalized, weighted judge scores per team. */
+type ScoreDatabase = Pick<DrizzleDatabase, "select" | "update">;
+
+export async function calculateSeasonScoresWithDatabase(
+    db: ScoreDatabase,
+    seasonId: number,
+    persist = false,
+): Promise<RankedTeam[]> {
+    const [seasonTeams, judgeScores, versions] = await Promise.all([
+        db
+            .select()
+            .from(teams)
+            .where(and(eq(teams.season_id, seasonId), eq(teams.project_submitted, 1)))
+            .orderBy(asc(teams.id)),
+        db.select().from(teamScores).where(eq(teamScores.season_id, seasonId)),
+        db.select().from(rubricVersions).where(eq(rubricVersions.season_id, seasonId)),
+    ]);
+
+    const teamById = new Map(seasonTeams.map((team) => [team.id, team]));
+    const versionById = new Map(versions.map((version) => [version.id, version]));
+    const totals = new Map<number, { sum: number; count: number }>();
+
+    for (const judgeScore of judgeScores) {
+        const team = teamById.get(judgeScore.team_id);
+        const version = versionById.get(judgeScore.rubric_version_id);
+        if (!team || !version) {
+            throw createError({
+                statusCode: 409,
+                message: "A saved judge score is missing its team or rubric version.",
+            });
         }
 
-        const rubric: RubricBallot | undefined = rubrics[team.pathway!];
-        if (!rubric) return;
+        const track = team.pathway ? version.definition.tracks[team.pathway] : undefined;
+        if (!track) {
+            throw createError({
+                statusCode: 409,
+                message: "A saved judge score does not match its rubric track.",
+            });
+        }
 
-        const standing: {
-            originality: number;
-            presentation: number;
-            technicality: number;
-            theme: number;
-            impact: number;
-        } = JSON.parse(score.scores);
+        const scores = parseScoreObject(judgeScore.scores);
+        const issues = validateRubricScores(track, scores);
+        if (issues.length > 0) {
+            throw createError({
+                statusCode: 409,
+                message: "A saved judge score does not match its rubric version.",
+            });
+        }
 
-        const sum: number =
-            standing.originality * rubric.originality.weight +
-            standing.presentation * rubric.presentation.weight +
-            standing.technicality * rubric.technicality.weight +
-            standing.theme * rubric.theme.weight +
-            standing.impact * rubric.impact.weight;
-
-        if (!score_avg[team.id]) {
-            score_avg[team.id] = sum;
-            participated.push(team);
-        } else score_avg[team.id] = (score_avg[team.id]! + sum) / 2;
+        const total = totals.get(team.id) ?? { sum: 0, count: 0 };
+        total.sum += calculateWeightedRubricScore(track, scores);
+        total.count += 1;
+        totals.set(team.id, total);
     }
 
-    const teams_junior: Team[] = [];
-    const teams_senior: Team[] = [];
+    const ranked: RankedTeam[] = seasonTeams.map((team) => ({
+        ...(team as Team),
+        score: Math.round((totals.get(team.id)?.sum ?? 0) / (totals.get(team.id)?.count || 1)),
+        rank: 0,
+    }));
 
-    for (const team of participated) {
-        const rounded = Math.round(score_avg[team.id]! * 1.6); // scale by 800
-        team.score = rounded;
+    const byTrack = new Map<string, RankedTeam[]>();
+    for (const team of ranked) {
+        const trackKey = team.pathway ?? "unassigned";
+        const track = byTrack.get(trackKey) ?? [];
+        track.push(team);
+        byTrack.set(trackKey, track);
+    }
 
-        if (team.pathway == "junior") {
-            teams_junior.push(team);
-        } else {
-            teams_senior.push(team);
+    for (const trackTeams of byTrack.values()) {
+        trackTeams.sort((a, b) => b.score - a.score || a.id - b.id);
+        let previousScore: number | undefined;
+        let previousRank = 0;
+        trackTeams.forEach((team, index) => {
+            if (team.score !== previousScore) previousRank = index + 1;
+            team.rank = previousRank;
+            previousScore = team.score;
+        });
+    }
+
+    if (persist && ranked.length > 0) {
+        for (let offset = 0; offset < ranked.length; offset += 250) {
+            const rows = ranked.slice(offset, offset + 250);
+            const scoreCase = sql<number>`CASE ${teams.id} ${sql.join(
+                rows.map((team) => sql`WHEN ${team.id} THEN ${team.score}`),
+                sql` `,
+            )} ELSE ${teams.score} END`;
+            const rankCase = sql<number>`CASE ${teams.id} ${sql.join(
+                rows.map((team) => sql`WHEN ${team.id} THEN ${team.rank}`),
+                sql` `,
+            )} ELSE ${teams.rank} END`;
+
+            await db
+                .update(teams)
+                .set({ score: scoreCase, rank: rankCase })
+                .where(
+                    inArray(
+                        teams.id,
+                        rows.map((team) => team.id),
+                    ),
+                );
         }
     }
 
-    teams_junior.sort((a, b) => {
-        return b.score! - a.score!;
-    });
-    teams_senior.sort((a, b) => {
-        return b.score! - a.score!;
-    });
+    return ranked.sort(
+        (a, b) =>
+            (a.pathway ?? "").localeCompare(b.pathway ?? "") || a.rank - b.rank || a.id - b.id,
+    );
+}
 
-    for (let i = 1; i <= teams_junior.length; i++) {
-        teams_junior[i - 1]!.rank = i;
-        await updateTeam(event, teams_junior[i - 1]!);
-    }
+export async function calculateSeasonScores(
+    event: H3Event,
+    seasonId: number,
+    persist = false,
+): Promise<RankedTeam[]> {
+    return calculateSeasonScoresWithDatabase(event.context.drizzle, seasonId, persist);
+}
 
-    for (let i = 1; i <= teams_senior.length; i++) {
-        teams_senior[i - 1]!.rank = i;
-        await updateTeam(event, teams_senior[i - 1]!);
-    }
+/** Kept as a small compatibility wrapper for internal callers. */
+export async function computeScores(event: H3Event, seasonId: number): Promise<void> {
+    await calculateSeasonScores(event, seasonId, true);
 }
