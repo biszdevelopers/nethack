@@ -18,6 +18,20 @@ const emit = defineEmits<{
 }>();
 
 const formRef = useTemplateRef("formRef");
+const {
+    data: activeRubric,
+    pending: rubricPending,
+    error: rubricError,
+} = await useFetch<{
+    version_id: number;
+    tracks: Record<string, { name: string; criteria: unknown[] }>;
+}>("/api/seasons/active/rubric");
+const pathwayOptions = computed(() =>
+    Object.entries(activeRubric.value?.tracks ?? {}).map(([value, track]) => ({
+        label: track.name,
+        value,
+    })),
+);
 
 const toast = useToast();
 
@@ -76,7 +90,7 @@ onUnmounted(() => {
 
 const state = reactive({
     name: "",
-    pathway: "junior" as TeamPathway,
+    pathway: "" as TeamPathway,
     project: {
         name: "",
         description: "",
@@ -90,13 +104,21 @@ watch(
     (value) => {
         if (!value) return;
         state.name = value.name;
-        state.pathway = value.pathway || "junior";
+        state.pathway = value.pathway || pathwayOptions.value[0]?.value || "";
         state.project.name = value.project.name;
         state.project.description = value.project.description;
         state.project.repo_url = value.project.repo_url || "";
         state.project.demo_url = value.project.demo_url || "";
     },
     { deep: true, immediate: true },
+);
+
+watch(
+    pathwayOptions,
+    (options) => {
+        if (!state.pathway && options.length > 0) state.pathway = options[0]!.value;
+    },
+    { immediate: true },
 );
 
 async function onSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTeamRequest>) {
@@ -225,16 +247,16 @@ async function confirmSubmit() {
         <UFormField name="pathway" label="Pathway">
             <URadioGroup
                 v-model="state.pathway"
-                :items="[
-                    { label: 'Junior', value: 'junior' },
-                    { label: 'Senior', value: 'senior' },
-                ]"
+                :items="pathwayOptions"
+                :disabled="disabled || rubricPending || pathwayOptions.length === 0"
             />
 
             <template #help>
-                The junior pathway puts more emphasis on originality and creativity, while the
-                senior pathway more on problem-solving and impact. You may choose any pathway,
-                regardless of grade level.
+                <span v-if="rubricPending">Loading the season's available tracks…</span>
+                <span v-else-if="rubricError || pathwayOptions.length === 0">
+                    Tracks are unavailable right now. Your project is saved; try again shortly.
+                </span>
+                <span v-else>Choose the track that best matches your project's focus.</span>
             </template>
         </UFormField>
 
