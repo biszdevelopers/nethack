@@ -15,9 +15,9 @@ interface APIAward {
 
 interface APIUser {
     id: number;
-    email: string;
+    email?: string;
     name: string | null;
-    team_id: number | null;
+    team_id?: number | null;
     profile_theme: ProfileTheme | null;
     profile_picture: string | null;
 }
@@ -38,6 +38,25 @@ interface APITeam {
         sourcing: string;
     };
     awards: APIAward[];
+}
+
+interface JudgeQueueEvaluation {
+    scores: Record<string, number>;
+    reasoning: string;
+}
+
+interface JudgeQueueItem {
+    team: APITeam;
+    evaluated: boolean;
+    evaluation: JudgeQueueEvaluation | null;
+}
+
+interface GetJudgingQueueResponse {
+    items: JudgeQueueItem[];
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
 }
 
 interface GetUserResponse extends APIUser {
