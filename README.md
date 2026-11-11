@@ -9,15 +9,15 @@ The official website for the **BIBS-C Network Hackathon** (season 2, 2025–26).
 | Framework       | Nuxt 4                                                 |
 | UI              | @nuxt/ui (Tailwind CSS v4)                             |
 | Language        | TypeScript                                             |
-| Runtime         | Node.js >= v24 or Bun                                  |
-| Package Manager | Bun (preferred); npm works                             |
-| Database        | SQLite via Drizzle ORM (bun:sqlite / better-sqlite3)   |
-| Auth            | nuxt-auth-utils (session-based)                        |
+| Runtime         | Node.js >= v24 (VPS); Bun 1.3.14 is also supported     |
+| Package Manager | Bun 1.3.14 or npm                                      |
+| Database        | PostgreSQL via Drizzle ORM (`postgres` driver)         |
+| Auth            | basis-auth OIDC with encrypted HTTP-only token cookies |
 | OIDC            | openid-client + jose                                   |
 | Validation      | Zod 4.x                                                |
 | Fonts           | @nuxt/fonts (local provider)                           |
 | Icons           | @iconify-json (lucide, material-symbols, simple-icons) |
-| Linting         | @nuxt/eslint + Prettier                                |
+| Linting         | @nuxt/eslint + Oxfmt                                   |
 | Animation       | GSAP with ScrollTrigger (showcase pages)               |
 
 ## Season Showcases
@@ -26,21 +26,20 @@ The public `/showcase` page collects the season showcases in one place. The curr
 
 ## Prerequisites
 
-- **Node.js** >= v24, **or** **Bun** (any recent 1.x release)
-- Bun is the preferred runtime and package manager; npm works as a fallback
-- A SQLite-compatible filesystem (the local DB file lives at `./database/basishacks.sqlite`)
+- **Node.js** >= v24 for the primary VPS runtime; **Bun** v1.3.14 is also supported
+- Install dependencies with Bun 1.3.14 or npm
+- A PostgreSQL database reachable through `DATABASE_URL`
 
 ## Installation
 
-Clone [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) beside this repository, register its Bun link, and then install the application dependencies:
+Clone [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) beside this repository. Nuxt and Vitest resolve its source through local aliases; no Bun link is required.
 
 ```bash
 git clone https://github.com/biszdevelopers/basis-schema.git ../basis-schema
-(cd ../basis-schema && bun link)
 bun install
 ```
 
-If both repositories already exist in the same parent directory, only the `bun link` and `bun install` commands are needed. The `postinstall` script (`nuxt prepare`) runs automatically and generates Nuxt's typed references.
+If both repositories already exist in the same parent directory, run `bun install`. The `postinstall` script (`nuxt prepare`) runs automatically and generates Nuxt's typed references.
 
 ## Environment Setup
 
@@ -54,58 +53,65 @@ The canonical list of variables lives in `.env.example`. The table below summari
 
 | Variable | Required? | Purpose |
 | --- | --- | --- |
-| `NUXT_SESSION_PASSWORD` | Required | Session encryption key. Must be at least 32 bytes. Generate with `openssl rand -base64 32` |
+| `BASIS_AUTH_COOKIE_SECRET` | Required | Session and token-record encryption key. Must be at least 32 bytes. Generate with `openssl rand -base64 32` |
 | `BASIS_AUTH_ISSUER` | Required | Exact basis-auth issuer URL used for discovery and token validation |
 | `BASIS_AUTH_CLIENT_ID` | Required | Confidential client ID registered for basishacks |
 | `BASIS_AUTH_CLIENT_SECRET` | Required | Confidential client secret; keep it server-side |
 | `BASIS_AUTH_RESOURCE` | Required | Resource audience for basishacks access tokens (`devconnect://nethack.bisz.dev`) |
+| `DATABASE_URL` | Required | PostgreSQL connection URL used in development, CI, and production |
+| `DATABASE_POOL_MAX` | Optional | Connection pool maximum (default `10`, accepted range `2`–`64`) |
+| `DATABASE_METRICS` | Optional | Set to `1` to log bounded PostgreSQL query and pool-acquisition timing summaries once per minute |
 | `MICROSOFT_TENANT_ID` | Optional | Tenant used only by Graph features |
 | `MICROSOFT_CLIENT_ID` | Optional | Application ID used only by Graph features |
 | `MICROSOFT_CLIENT_SECRET` | Optional | Application secret used only by Graph features |
-| `CURRENT_URL_ORIGIN` | Optional | Public origin used to derive `/api/auth/basis/callback`. Defaults to `http://localhost:3000`; set it to the externally reachable origin in production |
+| `MICROSOFT_WEBHOOK_STATE` | Optional | Persistent secret (at least 32 bytes) used to validate Graph webhook notifications |
+| `MICROSOFT_WEBHOOK_ID` | Optional | Existing Graph webhook subscription ID; set after the first subscription is created so restarts refresh it |
+| `CURRENT_URL_ORIGIN` | Required in production | Public HTTPS origin used to derive `/api/auth/basis/callback` and validate cookie-authenticated mutations. Use `http://localhost:3000` for local development |
 | `DEEPSEEK_API_KEY` | Optional | DeepSeek API key for AI chat features (debug routes only) |
 | `PORT` / `HOST` | Optional | Server port/host override (defaults: `3000` / `0.0.0.0`) |
-| `RATE_LIMIT_GENERAL_MAX` | Optional | General API rate limit, requests per minute (default: `6000`) |
-| `RATE_LIMIT_AUTH_MAX` | Optional | Authentication endpoint rate limit, attempts per minute (default: `600`) |
-| `RATE_LIMIT_VOTE_MAX` | Optional | Voting/scoring endpoint rate limit, submissions per minute (default: `600`) |
-| `RATE_LIMIT_UPLOAD_MAX` | Optional | File upload endpoint rate limit, uploads per minute (default: `600`) |
+| `ASSET_STORAGE_DIR` | Optional | Persistent upload directory outside release artifacts (default `/var/lib/basishacks/assets`) |
+| `SQLITE_IMPORT_PATH` | Optional | SQLite backup path used only for the one-time SQLite-to-PostgreSQL import |
+| `RATE_LIMIT_GENERAL_MAX` | Optional | General API rate limit, requests per minute (default: `120`) |
+| `RATE_LIMIT_AUTH_MAX` | Optional | Authentication endpoint rate limit, attempts per minute (default: `20`) |
+| `RATE_LIMIT_VOTE_MAX` | Optional | Voting/scoring endpoint rate limit, submissions per minute (default: `30`) |
+| `RATE_LIMIT_UPLOAD_MAX` | Optional | File upload endpoint rate limit, uploads per minute (default: `10`) |
 | `RATE_LIMIT_WINDOW_MS` | Optional | Rate limit window in milliseconds (default: `60000`) |
-| `TRUST_PROXY` | Optional | Set to any truthy value when behind a trusted reverse proxy so `x-forwarded-for` is used for rate-limit client IP resolution |
-| `DISABLE_DEBUG_ROUTES` | Optional | Set to any truthy value in production to disable `/api/debug/*` and `/debug` routes entirely |
+| `TRUSTED_PROXY_HOPS` | Optional | Exact trusted proxy count (0–10); configure only when each proxy appends the actual peer address to `X-Forwarded-For` |
+| `DISABLE_DEBUG_ROUTES` | Optional | Set to a truthy value to disable `/api/debug/*` and `/debug` outside production; production disables them automatically |
 
 ## Authentication
 
 The only login method is the separately deployed **basis-auth** service. `/api/login` discovers the issuer and starts an authorization-code flow with S256 PKCE, state, and nonce. The callback URL is always `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`; it must be registered exactly for each environment. Resource-token claims and delegated permissions use the shared `@basis/schema` package; hackathon participant, judge, and administrator roles remain local.
 
-The authorization request targets `devconnect://nethack.bisz.dev` and requests `openid profile email offline_access nethack.access`. Feature authorization is not represented by OAuth scopes: basis-auth supplies a JWT `permissions` array, and basishacks checks the least-privilege `nethack.*` permission required by each protected route. `nethack.all` is the explicit administrative grant. During the role-to-permission migration, legacy `participant`, `judge`, and `admin` grants are expanded into their equivalent granular permissions at the authorization boundary. After validating the ID token and UserInfo, basishacks links the identity and creates the encrypted server-side token record before publishing the browser session. The sealed HTTP-only cookie contains the local user ID and a server-only opaque token-session handle—not the access or refresh tokens—so permission-bearing JWTs cannot overflow the browser cookie limit. `POST /api/auth/token` resolves that stable handle and exposes only the short-lived access token and effective permissions to client memory for display-only UI gating; refresh tokens never reach browser JavaScript. Refresh rotation is single-flight per token session. `POST /api/auth/logout` attempts refresh-family revocation and always clears the local token record and browser credential.
+The authorization request targets `devconnect://nethack.bisz.dev` and requests `openid profile email offline_access nethack.access`. Feature authorization is not represented by OAuth scopes: basis-auth supplies a JWT `permissions` array, and basishacks checks the least-privilege `nethack.*` permission required by each protected route. `nethack.all` is the explicit administrative grant. During the role-to-permission migration, legacy `participant`, `judge`, and `admin` grants are expanded into their equivalent granular permissions at the authorization boundary. After validating the ID token and UserInfo, basishacks links the identity and seals the access and refresh tokens into a compressed AES-256-GCM HTTP-only cookie. Browser JavaScript cannot read the token cookie. `GET /api/auth/session` validates the access token and returns only the user ID, expiry, and permissions for display-only UI gating; protected APIs independently validate either the cookie-held token or an explicit bearer token. When the access token nears expiry, the server rotates tokens and reseals the cookie. `POST /api/auth/logout` attempts refresh-token revocation and always clears the browser credential.
 
-Protected application APIs require `Authorization: Bearer …`; possession of the Nuxt session cookie alone is insufficient. Tokens must be RS256 access tokens issued by basis-auth for the exact resource audience, and their JWT permissions are the sole authorization source. Failed requests use `Accept` negotiation: clients accepting `text/html` receive the shared Barry error page showing only the canonical error code, while other clients receive the `@basis/schema` JSON envelope `{ status, code, error, error_description }` with matching HTTP and envelope status values.
+Protected application APIs validate basis-auth RS256 access tokens from the encrypted HTTP-only token cookie or an explicit `Authorization: Bearer …` header. The separate browser session cookie alone is insufficient. Tokens must match the configured issuer and resource audience; JWT permissions are the authorization source. Failed requests use `Accept` negotiation: clients accepting `text/html` receive the shared Barry error page showing only the canonical error code, while other clients receive the `@basis/schema` JSON envelope `{ status, code, error, error_description }` with matching HTTP and envelope status values.
 
 The former basishacks OAuth provider and application-management UI/API have been retired. The legacy `oauth2_applications` table and records remain for audit and rollback. Graph integration is independent and is never used to authenticate a basishacks session.
 
 ## Database Setup
 
-The database auto-migrates on startup — no manual SQL is required. The init plugin `server/plugins/init-database.ts` calls `createDrizzleDatabase()` (in `server/database/index.ts`), which:
+The PostgreSQL database auto-migrates on server startup. The init plugin `server/plugins/init-database.ts` creates the bounded `postgres` connection pool and applies Drizzle migrations under a PostgreSQL advisory lock before the server accepts requests. Configure a valid `DATABASE_URL` in every environment. The default pool maximum is 10 connections; `DATABASE_POOL_MAX` accepts validated values from 2 to 64.
 
-1. Selects the runtime's native SQLite driver (`bun:sqlite` under Bun, `better-sqlite3` under Node.js) via dynamic import
-2. Applies `PRAGMA journal_mode = WAL` and `PRAGMA foreign_keys = ON`
-3. Runs `createAndMigrateDatabase()` from `server/database/migrate.ts` to bring the schema up to date
-
-All application queries use Drizzle ORM's parameterized query builders. User input is never interpolated into raw SQL strings, eliminating SQL injection risk. See `tests/api/sql-injection.test.ts` for regression coverage.
+Application queries use Drizzle ORM's parameterized query builders. `bun run db:migrate` applies pending PostgreSQL migrations for release workflows; server startup also applies pending migrations before serving.
 
 For manual schema management (e.g., generating migration files after editing `server/database/schema.ts`), Drizzle Kit is available:
 
 ```bash
-bun run db:migrate    # apply pending Drizzle Kit migrations
+bun run db:migrate    # apply pending PostgreSQL migrations
 bun run db:generate   # generate new migration from schema changes
 bun run db:studio     # open Drizzle Studio
 ```
 
-### Legacy databases
+### Importing an existing SQLite database
 
-A database created on the `main` branch will be auto-repaired on first startup by `migrateLegacySchema()` in `server/database/migrate.ts`. No manual SQL needs to be run.
+SQLite files are not used by the application at runtime. To migrate an existing deployment, take and verify a SQLite backup, provision a new PostgreSQL database, stop the app, apply migrations, then run the one-time importer. The importer accepts an empty target or the complete exact seed from fresh migrations; it rejects partial or modified seed rows and other target data. It preserves IDs and relationships, imports legacy `sc_votes`, adds an immutable imported rubric version per season, archives removed legacy fields, checks foreign-key relationships and row counts, and rolls back the entire import on failure. Unknown non-metadata tables and broken source references fail closed; the importer reads the SQLite source without modifying it. See [SQLite-to-PostgreSQL migration](documentation/deployment/postgresql-migration.md) for the maintenance-window procedure.
 
-The legacy SQL schema and migration files that used to live in `sql/` have been **archived** under `sql/archive/`. They are kept for historical reference only and are not applied at runtime.
+## Judging and Published Feedback
+
+Judges score one project at a time against the season's versioned rubric. Drafts save automatically, and the judge reviews the evaluation before final submission. Finalized scores use the arithmetic mean of each judge's normalized weighted rubric score. After results are published, current and past team members can read anonymous written feedback; judge identifiers are omitted and feedback order is randomized. Score and rank details follow that season's `show_scores` and `show_ranking` settings.
+
+Organizers can choose a season-specific score display curve (`original`, `gentle`, `moderate`, or `strong`). A curve changes only the displayed score: persisted scores and rankings remain unchanged. The admin team view can inspect score feedback before results are published.
 
 ## Development
 
@@ -130,29 +136,41 @@ The canonical test count is stored in `tests/.test-meta.json` and displayed dyna
 
 Do **not** use `bun test` — it cannot resolve Nuxt path aliases. `bunfig.toml` redirects it to a guidance shim.
 
+## Performance Measurement
+
+The Linux benchmark harness at `scripts/benchmark-vps.mjs` reports process RSS, request throughput, per-target p50/p95/p99 latency, errors, and CPU use. Set `DATABASE_METRICS=1` to capture bounded database query and pool-wait summaries. Follow the [VPS measurement workflow](documentation/deployment/performance.md) for the five-minute warm-up and idle runs, repeated cold starts, 250-user soak, and `main` baseline comparison; those measurements remain a release gate.
+
 ## Building & Production
 
 ```bash
-bun run build                        # Nitro node-server preset
-bun run refractor-artifact           # Rewrite GitHub build paths for production
-bun start                            # Bun runtime
-node .output/server/index.mjs        # Node.js runtime
+bun run build
+bun install --production --frozen-lockfile
+# Bash. In PowerShell, set $env:VPS_RELEASE_INCLUDE_NODE_MODULES = "1" first.
+VPS_RELEASE_INCLUDE_NODE_MODULES=1 bun run release:package
+cd release-package
+bun run db:migrate
+bun run start                        # Bun runtime
+node start-fix.mjs                   # Node.js runtime
 ```
 
-The same `.output/` artifact runs under both runtimes — the SQLite driver is selected at startup. Nitro leaves runtime dependencies external, so deploy the artifact together with the production `node_modules` directory.
+The release package includes the Nuxt output, PostgreSQL migrations, migration and SQLite import tools, locked dependency metadata, and the production `node_modules` tree. Run the production install after the build, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while packaging. GitHub tag releases perform both steps automatically. The Node and Bun launchers use the same portable artifact.
 
-Place a reverse proxy (Nginx, Caddy) in front for TLS termination. The SQLite database lives at `./database/basishacks.sqlite` (WAL mode).
+Place a reverse proxy (Nginx, Caddy) in front for TLS termination. Keep PostgreSQL and uploaded assets persistent and outside the versioned release directory. Hardened systemd examples for either runtime are available under [`deploy/systemd/`](deploy/systemd/).
+
+For Nginx, include [`deploy/nginx/basishacks-request-limits.conf`](deploy/nginx/basishacks-request-limits.conf) inside the application site's `server {}` block. The app caps ordinary API request bodies at 1 MiB, lets the authorized profile handler read up to 10 MiB for profile-image updates, streams Graph webhook JSON through a 64 KiB limit, and rejects webhook batches when the configured state is unset. Multipart uploads have their own streamed file-size and overhead limits.
+
+Uploads use `ASSET_STORAGE_DIR` (default `/var/lib/basishacks/assets`) and are served from the persistent `assets` and `userassets` collections. During a SQLite cutover, copy the old release's `public/userassets` contents to `$ASSET_STORAGE_DIR/userassets` before switching releases. Multipart uploads are streamed with size and content checks; cookie-authenticated uploads require a same-origin request.
 
 ## Deployment
 
 1. Build on the server: `bun run build`
 2. Set all required environment variables in the server environment
-3. Start with `bun start` (Bun) or `node .output/server/index.mjs` (Node.js)
+3. Start with `bun run start` (Bun) or `node start-fix.mjs` (Node.js)
 4. Reverse proxy with TLS in front (port defaults to `3000`)
 
 ### GitHub tag releases
 
-Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It builds a self-contained Bun production artifact and attaches `production-<version>-<commit>-linux-amd64-bun.tar.gz` to the corresponding GitHub release. Extract the archive on the target host, provide the required environment variables, and start the server from the directory containing `.output/`. Create a writable `database/` directory beside `.output/` first; it holds the SQLite database and is intentionally not included in the release artifact.
+Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It builds a VPS artifact with the Nuxt server, portable runtime dependency paths, PostgreSQL migrations, migration/import commands, and production dependencies installed from the lockfile. The workflow verifies the extracted archive under Node.js and Bun against PostgreSQL. Extract the archive on the target host, provide the required environment variables, and run commands from the extracted release directory. PostgreSQL stores application data; uploads live under the configured persistent asset directory and are not part of release artifacts.
 
 ## Project Structure
 
@@ -160,31 +178,18 @@ Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It builds
 app/                    # Vue frontend
 server/                 # Nitro backend
   api/                  # API route handlers
-  middleware/           # Security headers, OAuth2 authorize, debug lockdown
+  middleware/           # Database context, request limits, CSRF and security headers
   plugins/              # DB initialization, Graph integration, env validation
-  database/             # Drizzle ORM schema + dual-runtime init
+  database/             # PostgreSQL Drizzle ORM schema + migration runner
   utils/                # Auth, rate limiting, OAuth2 JWT, URL validation, etc.
 shared/                 # Zod schemas, types, permissions, OAuth2 scopes, rubric
 tests/                  # Vitest suite
 documentation/          # VitePress site
 ```
 
-## Migration from main
+## Existing SQLite deployment
 
-### Fresh clone
-
-```bash
-git checkout codex/basis-auth-login
-bun install
-cp .env.example .env       # then edit .env
-bun run build
-bun run test
-bun start
-```
-
-### Existing database (upgrade)
-
-No manual SQL is required — `migrateLegacySchema()` auto-repairs legacy databases on first startup.
+For an existing deployment with a SQLite database, follow the [SQLite-to-PostgreSQL migration procedure](documentation/deployment/postgresql-migration.md). The app no longer reads SQLite at runtime; the SQLite file must be imported into PostgreSQL before starting the new release.
 
 ### Required authentication env vars
 
