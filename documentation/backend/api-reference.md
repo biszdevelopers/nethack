@@ -18,7 +18,7 @@ Every API endpoint in the system enforces the following security measures:
 | **Rate limiting** | All endpoints are wrapped with `applyRateLimit()` using one of four tier configs (`DEFAULT`, `AUTH`, `VOTE`, `UPLOAD`). Returns 429 with `Retry-After` header when exceeded. |
 | **Input validation** | `readValidatedBody(event, Schema.parse)` or `getValidatedQuery(event, Schema.parse)` with shared Zod schemas from `shared/schemas.ts`. |
 | **Length-bounded inputs** | All string fields in Zod schemas have explicit `min()`/`max()` bounds to prevent resource exhaustion. Example: `name: z.string().min(1).max(50)`. |
-| **Authentication** | Protected APIs require a basis-auth bearer token. `requireUser()` applies the required JWT permission; a session cookie alone is not authorization. |
+| **Authentication** | Protected APIs validate a basis-auth token from the encrypted HTTP-only cookie or an explicit bearer header. The separate browser session cookie alone is not authorization. |
 | **OAuth2 JWT** | RS256 tokens require the exact issuer and `devconnect://nethack.bisz.dev` audience. Scope hierarchy comes from `@basis/schema`. |
 | **HTTP headers** | Security headers (CSP, HSTS, X-Frame-Options, etc.) applied by `security-headers.ts` middleware on every response. |
 
@@ -41,7 +41,7 @@ Starts basis-auth discovery and authorization code with S256 PKCE, state, nonce,
 
 ### GET `/api/auth/basis/callback`
 
-Validates the stored transaction and provider response, exchanges the code using `client_secret_basic`, validates the ID token, loads UserInfo, links the verified identity, writes the small browser session, and stores the encrypted token bundle in `basis_auth_sessions`.
+Validates the stored transaction and provider response, exchanges the code using `client_secret_basic`, validates the ID token, loads UserInfo, links the verified identity, and seals the access and refresh tokens into an encrypted HTTP-only cookie.
 
 | Field | Details |
 | --- | --- |
@@ -50,9 +50,9 @@ Validates the stored transaction and provider response, exchanges the code using
 | **Response** | 302 to the stored safe redirect or `/dashboard` |
 | **Errors** | 401 for missing/expired transaction, state/nonce/PKCE failure, token/UserInfo failure, or identity conflict |
 
-### POST `/api/auth/token`
+### GET `/api/auth/session`
 
-Cookie-authenticated access-token bootstrap and refresh. Returns `data: { accessToken, expiresAt, permissions }`; the refresh token remains in encrypted server-side SQLite custody. Refresh rotation is serialized per session.
+Validates the cookie-held access token and returns `{ user: { id }, expiresAt, permissions }`. Access and refresh tokens are never returned to browser JavaScript. Near expiry, the server rotates tokens and reseals the cookie.
 
 ### POST `/api/auth/logout`
 
@@ -91,18 +91,18 @@ Get a single user's profile.
 | Field | Details |
 | --- | --- |
 | **Auth** | Anonymous for the public profile; a valid bearer token reveals the caller's own extended profile |
-| **Response** | Self: `GetUserResponse` — full user with team and past teams; Others: `APIUser` — public profile only. For participants, each team's `score`/`rank` (current and past teams alike) are only included when the `show_scores`/`show_ranking` toggles of that team's own season are enabled; users with `portal.teams.view` or admin always see them |
+| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. For participants, each team's `score`/`rank` (current and past teams alike) are only included when the `show_scores`/`show_ranking` toggles of that team's own season are enabled; users with `portal.teams.view` or admin always see them |
 
 ### PATCH `/api/users/:id`
 
 Update user profile (name, avatar, profile theme image).
 
-| Field             | Details                                                             |
-| ----------------- | ------------------------------------------------------------------- |
-| **Auth**          | The user themselves                                                 |
-| **Validation**    | `UpdateUserRequest` — `{ name?, avatar?, profile_theme_image? }`    |
-| **Response**      | `{ message: string }`                                               |
-| **File handling** | Avatar and theme images are converted from base64, stored as assets |
+| Field | Details |
+| --- | --- |
+| **Auth** | The user themselves |
+| **Validation** | `UpdateUserRequest` — `{ name?, avatar?, profile_theme_image? }` |
+| **Response** | `{ message: string }` |
+| **File handling** | Avatar and theme images are validated as base64 data URLs, limited to 7 MiB decoded, and stored as persistent assets |
 
 ### GET `/api/users/:id/profile_picture`
 
@@ -124,7 +124,7 @@ List all teams for the active season, or filter by season.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Any authenticated user |
+| **Auth** | Current/past team member or all-permissions grant |
 | **Query** | `judging` (if `1`, returns only submitted unjudged teams for the current judge); `season_id` (optional season filter) |
 | **Response** | `APITeam[]`; in the public listing, each team's `rank` is only included when the `show_ranking` toggle of that team's own season is enabled |
 
@@ -134,7 +134,7 @@ Create a new team.
 
 | Field          | Details                                                       |
 | -------------- | ------------------------------------------------------------- |
-| **Auth**       | Any authenticated user without a team                         |
+| **Auth**       | Current/past team member or all-permissions grant             |
 | **Validation** | `CreateTeamRequest` — `{ name: string }`                      |
 | **Query**      | `add` (if `true`, automatically adds the creator to the team) |
 | **Constraint** | Hackathon status must be `not_started` or `in_progress`       |
@@ -146,7 +146,7 @@ Get a single team's details.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Any authenticated user |
+| **Auth** | Current/past team member or all-permissions grant |
 | **Response** | `APITeam`; score is included only for team members (when the `show_scores` toggle of the team's own season is enabled) or users with the `portal.teams.view` permission/admin. `rank` is only included when the team's season `show_ranking` toggle is enabled, or for privileged users |
 
 ### PATCH `/api/teams/:id`
@@ -174,22 +174,30 @@ Final project submission (irreversible).
 
 ### POST `/api/teams/:id/scores`
 
-Submit judge scores for a team.
+Finalize a judge's evaluation for an assigned project. New evaluations must match the active season rubric version and the project's track. A saved draft may remain pinned to an older immutable version after an organizer publishes a replacement rubric; finalizing that draft retains the version it was scored against.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Judge or admin |
-| **Validation** | `CreateTeamScoresRequest` — `{ scores: Record<string, 0-5>, reasoning: string }` |
-| **Constraint** | Hackathon status must be `voting`; one score per judge per team (UNIQUE constraint) |
+| **Auth** | Judge with an assignment permission |
+| **Validation** | `SubmitTeamScoresRequest` — `{ scores: Record<string, integer>, reasoning: string, rubric_version_id: number }` |
+| **Constraint** | Judging must be open; one score per judge per team; every criterion must be an integer in its configured range |
 | **Response** | `{ message: string }` |
+
+### GET `/api/teams/:id/scores`
+
+Read published judge feedback for a team you belong to now or belonged to previously. The route returns 403 until the team's season publishes results. Judge IDs are omitted and evaluation order is randomized. Score details and ranks are returned only when the team's season enables their corresponding visibility settings.
+
+### GET `/api/admin/teams/:id/scores`
+
+Read the team's full judge feedback with the all-permissions grant. This admin view is available before and after results publication; judge names and account IDs are omitted.
 
 ### GET `/api/teams/:id/users`
 
-List members of a team.
+List current and past members of a team. The complete roster, including email addresses, is available only to a current or past team member or an administrator with the all-permissions grant.
 
 | Field        | Details                                                     |
 | ------------ | ----------------------------------------------------------- |
-| **Auth**     | Any authenticated user                                      |
+| **Auth**     | Current/past team member or all-permissions grant           |
 | **Response** | `GetTeamMembersResponse` — `{ id, email, name, team_id }[]` |
 
 ### POST `/api/teams/:id/users`
@@ -224,7 +232,7 @@ Get the current user's ballot for peer voting.
 
 | Field           | Details                                                                    |
 | --------------- | -------------------------------------------------------------------------- |
-| **Auth**        | Any authenticated user with a team and a submitted project                 |
+| **Auth**        | Current/past team member or all-permissions grant                          |
 | **Constraint**  | Hackathon status must be `voting`                                          |
 | **Response**    | `GetBallotResponse` — `{ submitted, projects, scores, reasoning }`         |
 | **Eligibility** | Projects are filtered to the same pathway and exclude the voter's own team |
@@ -235,7 +243,7 @@ Submit peer voting ballot.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Any authenticated user with a team and a submitted project |
+| **Auth** | Current/past team member or all-permissions grant |
 | **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }` |
 | **Constraint** | Hackathon status must be `voting`; number of scores must match eligible projects |
 | **Response** | `{ message: string }` |
@@ -247,7 +255,7 @@ Developer endpoint returning per-season judging progress (project, submitted, an
 
 | Field        | Details                                                             |
 | ------------ | ------------------------------------------------------------------- |
-| **Auth**     | Any authenticated user                                              |
+| **Auth**     | Current/past team member or all-permissions grant                   |
 | **Response** | `{ current: BallotSummaryItem \| null, past: BallotSummaryItem[] }` |
 
 ---
@@ -330,22 +338,35 @@ Delete teams by ID.
 
 ### GET `/api/admin/scores`
 
-List computed judge scores for all submitted teams. Use `?update=1` to persist scores and ranks to the database.
+List computed judge scores and ranks for submitted teams in the selected season. Pass `?season_id={id}` to select a season; otherwise the active season is used. This reads calculated results without persisting them.
 
-| Field        | Details                                                                 |
-| ------------ | ----------------------------------------------------------------------- |
-| **Auth**     | Admin                                                                   |
-| **Query**    | `update` (if truthy, writes scores and ranks back to the `teams` table) |
-| **Response** | `APITeam[]` with scores and ranks included                              |
+| Field        | Details                                    |
+| ------------ | ------------------------------------------ |
+| **Auth**     | All-permissions grant                      |
+| **Query**    | Optional `season_id`                       |
+| **Response** | `APITeam[]` with scores and ranks included |
 
-### GET `/api/scores/compute`
+### POST `/api/admin/scores/compute`
 
-Recalculate all judge scores and ranks for active season 1.
+Recompute and persist judge averages and ranks for a season. Pass `?season_id={id}` to select a season; otherwise the active season is used. This operation requires the judging results-compute permission.
 
-| Field        | Details                          |
-| ------------ | -------------------------------- |
-| **Auth**     | None (internal utility endpoint) |
-| **Response** | `{ message: string }`            |
+| Field        | Details                                  |
+| ------------ | ---------------------------------------- |
+| **Auth**     | Judging results-compute permission       |
+| **Query**    | Optional `season_id`                     |
+| **Response** | `{ message: string, season_id: number }` |
+
+### Rubric administration
+
+Season update permission is required for these endpoints. Rubric definitions support named tracks, integer score ranges, and criteria weights totaling 100 per track.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/admin/seasons/:id/rubric` | Get the active rubric version, season history, and reusable templates |
+| POST | `/api/admin/seasons/:id/rubric` | Create and activate a version from a definition, prior season, or template |
+| PATCH | `/api/admin/seasons/:id/score-curve` | Set the season's presentation-only score curve preset |
+| GET/POST | `/api/admin/rubric-templates` | List reusable templates or create one |
+| PUT/DELETE | `/api/admin/rubric-templates/:id` | Update or delete a reusable template |
 
 ### GET `/api/admin/hackathon`
 
@@ -398,13 +419,13 @@ Delete a season by ID.
 
 ### GET `/api/admin/database/export`
 
-Download a full snapshot of the database in SQLite or CSV format.
+Download an anonymized JSON snapshot or CSV export of the database.
 
 | Field | Details |
 | --- | --- |
 | **Auth** | Admin |
-| **Query** | `format` — `sqlite` (default) or `csv` |
-| **Response** | SQLite: `application/x-sqlite3` binary file. CSV: `text/csv` with per-table sections |
+| **Query** | `format` — `json` (default) or `csv` |
+| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded |
 
 ---
 
