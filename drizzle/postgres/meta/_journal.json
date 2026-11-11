@@ -1,0 +1,27 @@
+{
+    "version": "7",
+    "dialect": "postgresql",
+    "entries": [
+        {
+            "idx": 0,
+            "version": "7",
+            "when": 1794305874021,
+            "tag": "0000_pg_initial",
+            "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1794305956989,
+            "tag": "0001_query_indexes",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1794310577216,
+            "tag": "0002_schema_constraints_and_score_curves",
+            "breakpoints": true
+        }
+    ]
+}
