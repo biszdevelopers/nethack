@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { Readable } from "node:stream";
 import {
     createTestContext,
     resetTestContext,
@@ -74,9 +75,18 @@ afterEach(() => {
 });
 
 function createEvent(overrides: Record<string, unknown> = {}) {
+    const body = Buffer.from(JSON.stringify(mockBody.value ?? {}));
+    const request = Object.assign(Readable.from([body]), {
+        headers: {
+            "content-length": String(body.byteLength),
+            "content-type": "application/json",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+    });
+
     return {
         context: { drizzle: ctx.drizzle },
-        node: { req: { socket: { remoteAddress: "127.0.0.1" } } },
+        node: { req: request, res: { headersSent: false, setHeader() {} } },
         ...overrides,
     };
 }
@@ -129,7 +139,7 @@ describe("GET /api/users/:id", () => {
         const result = await getHandler(createEvent());
 
         expect(result).toHaveProperty("id", alice.id);
-        expect(result).toHaveProperty("email", "alice@basischina.com");
+        expect(result).not.toHaveProperty("email");
         // Public view should not include team/past_teams
         expect(result).not.toHaveProperty("team");
         expect(result).not.toHaveProperty("past_teams");
