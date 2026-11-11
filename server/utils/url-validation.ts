@@ -13,7 +13,8 @@ function parseIpv4(ip: string): number[] | null {
 function isPrivateIpv4(ip: string): boolean {
     const parts = parseIpv4(ip);
     if (!parts) return false;
-    const [a, b] = parts;
+    const a = parts[0]!;
+    const b = parts[1]!;
     if (a === 10) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
