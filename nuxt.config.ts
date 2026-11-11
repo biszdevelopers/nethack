@@ -32,6 +32,19 @@ export default defineNuxtConfig({
         port: 24598,
     },
     icon: {
+        serverBundle: {
+            collections: [],
+        },
+        customCollections: [
+            "fluent",
+            "heroicons",
+            "lucide",
+            "material-symbols",
+            "simple-icons",
+        ].map((prefix) => ({
+            prefix,
+            dir: resolve(projectRoot, "node_modules/.cache/basishacks-icon-collections", prefix),
+        })),
         clientBundle: {
             scan: true,
         },
@@ -101,12 +114,9 @@ export default defineNuxtConfig({
     },
     nitro: {
         errorHandler: nitroErrorHandler,
-        // Bun dev uses the bun preset implicitly; production defaults to node-server
-        // so the same build runs under Node.js (better-sqlite3) or Bun (bun:sqlite).
+        // Use the portable Node server output for both Node.js and Bun production starts.
         preset: process.env.NITRO_PRESET ?? "node-server",
         compressPublicAssets: true,
-        // Reject request bodies larger than 10 MiB before buffering into memory.
-        maxRequestSize: 10 * 1024 * 1024,
         externals: {
             // Node's production export condition needs Vue's production CJS
             // files, which Nitro's tracer currently omits in dev bundles.
