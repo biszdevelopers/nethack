@@ -1,0 +1,210 @@
+import { reactive, shallowRef } from "vue";
+
+export interface JudgingDraft {
+    scores: Record<string, number>;
+    reasoning: string;
+    rubric_version_id: number;
+    updated_at: string;
+}
+
+export interface JudgingRubric {
+    version_id: number;
+    name: string;
+    tracks: Record<string, import("~~/shared/rubric").RubricTrack>;
+}
+
+export type JudgingDraftStatus = "loading" | "saved" | "unsaved" | "saving" | "error";
+
+/** Owns the current judge's recoverable draft and serializes writes per project. */
+export function useJudgingDraft() {
+    const state = reactive({ scores: {} as Record<string, number>, reasoning: "" });
+    const status = shallowRef<JudgingDraftStatus>("saved");
+    const errorMessage = shallowRef<string | null>(null);
+    const lastSavedAt = shallowRef<number | null>(null);
+    const dirty = shallowRef(false);
+    const loaded = shallowRef(false);
+    const rubric = shallowRef<JudgingRubric | null>(null);
+    const rubricVersionId = shallowRef<number | null>(null);
+
+    let currentTeamId: number | null = null;
+    let currentTrackKey = "";
+    let saveTimer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight: Promise<void> | null = null;
+
+    function assignState(scores: Record<string, number>, reasoning: string) {
+        state.scores = { ...scores };
+        state.reasoning = reasoning;
+    }
+
+    async function load(teamId: number, trackKey: string) {
+        if (currentTeamId === teamId && status.value !== "error") return;
+
+        clearTimeout(saveTimer);
+        if (dirty.value && currentTeamId !== null) await flush();
+
+        currentTeamId = teamId;
+        currentTrackKey = trackKey;
+        rubric.value = null;
+        rubricVersionId.value = null;
+        assignState({}, "");
+        dirty.value = false;
+        loaded.value = false;
+        errorMessage.value = null;
+        status.value = "loading";
+
+        try {
+            const response = await $fetch<{
+                rubric: JudgingRubric;
+                draft: JudgingDraft | null;
+            }>(`/api/judging/drafts/${teamId}`);
+            if (currentTeamId !== teamId) return;
+
+            rubric.value = response.rubric;
+            rubricVersionId.value = response.rubric.version_id;
+            const track = response.rubric.tracks[trackKey];
+            if (!track) throw new Error("This project does not match a track in its saved rubric.");
+            const defaults = Object.fromEntries(
+                track.criteria.map((criterion) => [criterion.id, criterion.minScore]),
+            );
+            if (response.draft) {
+                assignState({ ...defaults, ...response.draft.scores }, response.draft.reasoning);
+                lastSavedAt.value = Date.parse(response.draft.updated_at) || null;
+            } else {
+                // A fresh project still needs every criterion present in state so
+                // autosave and review use the rubric's score range, including any
+                // non-zero minimum configured by the organizer.
+                assignState(defaults, "");
+                lastSavedAt.value = null;
+            }
+            loaded.value = true;
+            status.value = "saved";
+        } catch (error) {
+            loaded.value = false;
+            status.value = "error";
+            errorMessage.value = getErrorMessage(error);
+        }
+    }
+
+    function markChanged() {
+        if (currentTeamId === null || !loaded.value || status.value === "loading") return;
+
+        dirty.value = true;
+        status.value = "unsaved";
+        errorMessage.value = null;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            void flush().catch(() => undefined);
+        }, 650);
+    }
+
+    async function flush() {
+        clearTimeout(saveTimer);
+        if (currentTeamId === null || !dirty.value) {
+            if (inFlight) await inFlight;
+            return;
+        }
+
+        if (rubricVersionId.value === null) {
+            const error = new Error("Load the judging rubric before saving a draft.");
+            status.value = "error";
+            errorMessage.value = error.message;
+            throw error;
+        }
+
+        if (inFlight) {
+            await inFlight;
+            return flush();
+        }
+
+        const teamId = currentTeamId;
+        const payload = {
+            scores: { ...state.scores },
+            reasoning: state.reasoning,
+            rubric_version_id: rubricVersionId.value,
+        };
+        dirty.value = false;
+        status.value = "saving";
+
+        inFlight = $fetch(`/api/judging/drafts/${teamId}`, {
+            method: "PUT",
+            body: payload,
+        })
+            .then(() => {
+                if (currentTeamId !== teamId) return;
+                lastSavedAt.value = Date.now();
+                status.value = "saved";
+                errorMessage.value = null;
+            })
+            .catch((error: unknown) => {
+                if (currentTeamId === teamId) {
+                    dirty.value = true;
+                    status.value = "error";
+                    errorMessage.value = getErrorMessage(error);
+                }
+                throw error;
+            })
+            .finally(() => {
+                inFlight = null;
+            });
+
+        await inFlight;
+        if (dirty.value) await flush();
+    }
+
+    async function retryLoad() {
+        if (currentTeamId === null) return;
+        // A reload may return a newer active rubric when an organizer changes
+        // the rubric while this judge is working. Keep the current scores pinned
+        // to the rubric they were entered against; retry their save first and
+        // leave them in place rather than silently rebasing or discarding them.
+        if (dirty.value || inFlight) {
+            await flush();
+            return;
+        }
+        await load(currentTeamId, currentTrackKey);
+    }
+
+    async function clear(teamId: number) {
+        await $fetch(`/api/judging/drafts/${teamId}`, { method: "DELETE" });
+        if (currentTeamId === teamId) {
+            clearTimeout(saveTimer);
+            currentTeamId = null;
+            rubric.value = null;
+            rubricVersionId.value = null;
+            dirty.value = false;
+            loaded.value = false;
+            status.value = "saved";
+            errorMessage.value = null;
+            lastSavedAt.value = null;
+            assignState({}, "");
+        }
+    }
+
+    function resetForCompletedProject() {
+        clearTimeout(saveTimer);
+        currentTeamId = null;
+        rubric.value = null;
+        rubricVersionId.value = null;
+        dirty.value = false;
+        loaded.value = false;
+        status.value = "saved";
+        errorMessage.value = null;
+    }
+
+    return {
+        state,
+        status,
+        errorMessage,
+        lastSavedAt,
+        dirty,
+        loaded,
+        rubric,
+        rubricVersionId,
+        load,
+        markChanged,
+        flush,
+        retryLoad,
+        clear,
+        resetForCompletedProject,
+    };
+}
