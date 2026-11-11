@@ -51,12 +51,27 @@ export async function createMockEvent() {
     // Expose the raw SQLite wrapper methods (prepare/exec/batch) on the same
     // object as the Drizzle ORM so tests can use event.context.drizzle for both
     // ORM queries and raw SQL setup/assertions.
-    const combined = new Proxy(drizzleDb, {
+    let combined: any;
+    combined = new Proxy(drizzleDb, {
         get(target, prop, receiver) {
+            if (prop === "transaction") {
+                return async (callback: (tx: unknown) => unknown) => {
+                    db.exec("BEGIN");
+                    try {
+                        const result = await callback(combined);
+                        db.exec("COMMIT");
+                        return result;
+                    } catch (error) {
+                        db.exec("ROLLBACK");
+                        throw error;
+                    }
+                };
+            }
             if (prop in db && typeof (db as any)[prop] === "function") {
                 return (db as any)[prop].bind(db);
             }
-            return Reflect.get(target, prop, receiver);
+            const value = Reflect.get(target, prop, target);
+            return typeof value === "function" ? value.bind(target) : value;
         },
     }) as any;
 
