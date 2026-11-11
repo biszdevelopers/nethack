@@ -1,22 +1,23 @@
-/**
- * Debug route lockdown middleware.
- *
- * When the environment variable DISABLE_DEBUG_ROUTES is set to a truthy value,
- * every request under /api/debug/* and /debug* is rejected before reaching the
- * route handler. This prevents development utilities from being reachable in
- * production even if a page or route guard is accidentally weakened.
- */
+/** Reject debug utilities in production even when the explicit flag is absent. */
 export default defineEventHandler(async (event) => {
-    const url = event.node.req.url || "";
+    const requestUrl = event.node.req.url || "/";
+    let pathname: string;
+    try {
+        pathname = new URL(requestUrl, "http://localhost").pathname;
+    } catch {
+        return;
+    }
+
+    const normalizedPath = pathname.replace(/\/$/, "") || "/";
     const isDebugRoute =
-        url.startsWith("/api/debug/") || url === "/debug" || url.startsWith("/debug/");
+        normalizedPath === "/api/debug" ||
+        normalizedPath.startsWith("/api/debug/") ||
+        normalizedPath === "/debug" ||
+        normalizedPath.startsWith("/debug/");
     if (!isDebugRoute) return;
 
-    if (process.env.DISABLE_DEBUG_ROUTES) {
-        throw createError({
-            status: 404,
-            statusMessage: "Not Found",
-            message: "Debug routes are disabled",
-        });
-    }
+    const explicitlyDisabled = /^(1|true|yes|on)$/i.test(process.env.DISABLE_DEBUG_ROUTES ?? "");
+    if (process.env.NODE_ENV !== "production" && !explicitlyDisabled) return;
+
+    throw createError({ statusCode: 404, statusMessage: "Not Found" });
 });
