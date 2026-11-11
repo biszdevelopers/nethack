@@ -17,30 +17,31 @@ Debug file endpoints let authorized users upload and list static assets without 
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/upload` | `dev_debug` or admin | Upload a file to `public/assets/` or `public/userassets/` |
+| POST | `/api/debug/upload` | `dev_debug` or admin | Stream one bounded file into persistent asset storage |
 | GET | `/api/debug/files` | `portal.debug.view` or admin | List uploaded assets |
 
 ### Upload Request
 
 `POST /api/debug/upload` accepts `multipart/form-data`:
 
-| Field              | Description                                                                |
-| ------------------ | -------------------------------------------------------------------------- |
-| `file`             | The file to upload                                                         |
-| `mode` (query)     | `static` → `public/assets/`, `user` → `public/userassets/`                 |
-| `keepName` (query) | `true` to keep the original filename, otherwise a random name is generated |
+| Field          | Description                                         |
+| -------------- | --------------------------------------------------- |
+| `file`         | The file to upload                                  |
+| `mode` (query) | `static` → `/assets/uploads/`, `user` → `/userast/` |
 
-Allowed extensions: `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `pdf`, `txt`, `md`, `json`, `zip`, `mp4`.
+Uploads accept exactly one file part named `file`, with a maximum file size of 10 MiB. The request parser rejects extra fields/parts and caps multipart overhead at 64 KiB. Filenames are always replaced with random UUIDs. Allowed extensions are `png`, `jpg`, `jpeg`, `gif`, `webp`, `pdf`, `txt`, `md`, `json`, `zip`, and `mp4`; SVG is rejected. Raster images, PDF, ZIP, and MP4 signatures are checked against their extensions. The request is streamed to a temporary file, then published after the limits and content checks pass.
 
 Response:
 
 ```json
 {
-    "permalink": "/assets/<filename>"
+    "permalink": "/assets/uploads/<uuid>.<extension>"
 }
 ```
 
-For `mode=user` the response path is `/userast/<filename>` even though the file is written to `public/userassets/`. The helpers in `server/utils/assets.ts` validate filenames to prevent path traversal and create parent directories as needed.
+For `mode=user` the response path is `/userast/<uuid>.<extension>`. Files are stored under `ASSET_STORAGE_DIR/userassets`; static uploads are stored under `ASSET_STORAGE_DIR/assets/uploads`. Set `ASSET_STORAGE_DIR` to an absolute persistent directory outside the release tree. If omitted, the runtime uses the OS data directory under `basishacks/assets` (Linux default: `~/.local/share/basishacks/assets`). The file routes set `X-Content-Type-Options: nosniff`, a restrictive CSP, and attachment disposition for non-image/video content.
+
+All cookie-authenticated mutations, including uploads, pass the global same-origin `Origin`/`Referer` check. Requests authenticated with an explicit bearer token do not use cookie-based CSRF protection. Debug routes always return 404 in production; `DISABLE_DEBUG_ROUTES=true` also disables them in non-production environments.
 
 ---
 
