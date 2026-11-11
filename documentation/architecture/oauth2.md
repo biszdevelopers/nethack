@@ -28,7 +28,7 @@ Register `devconnect://nethack.bisz.dev` as a resource and use the same value fo
 | `BASIS_AUTH_RESOURCE`      | Expected resource audience                     |
 | `CURRENT_URL_ORIGIN`       | Origin from which the callback URL is derived  |
 
-The client uses discovery, authorization code, S256 PKCE, state, nonce, `client_secret_basic`, ID-token validation, and UserInfo. Failed discovery is retryable instead of being cached for the process lifetime. Client and refresh-token secrets remain server-only, with token bundles encrypted in SQLite rather than placed in the browser session cookie. A random opaque handle in the sealed server-only portion of the Nuxt session links the browser login to that token row. The access token is exposed through `/api/auth/token` only and retained in client memory.
+In production, `CURRENT_URL_ORIGIN` must be a public HTTPS origin without a path, query, fragment, or credentials. The client uses discovery, authorization code, S256 PKCE, state, nonce, `client_secret_basic`, ID-token validation, and UserInfo. Failed discovery is retryable instead of being cached for the process lifetime. Access and refresh tokens are compressed and sealed with AES-256-GCM into an HTTP-only cookie; they are not stored in PostgreSQL or exposed to browser JavaScript. `GET /api/auth/session` returns only the local user ID, expiry, and permission list for display decisions.
 
 ## Protected API validation
 
