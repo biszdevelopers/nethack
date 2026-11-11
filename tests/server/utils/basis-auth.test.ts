@@ -23,6 +23,7 @@ vi.mock("~~/server/utils/oauth2", () => ({
 import {
     beginBasisAuthFlow,
     completeBasisAuthFlow,
+    getBasisAuthConfig,
     getBasisAuthCallbackUrl,
     sanitizePostLoginRedirect,
 } from "~~/server/utils/basis-auth";
@@ -38,6 +39,27 @@ beforeEach(() => {
 });
 
 describe("basis-auth authorization-code flow", () => {
+    it("rejects non-HTTP issuer schemes and issuer credentials", () => {
+        process.env.BASIS_AUTH_ISSUER = "javascript:alert(1)";
+        expect(() => getBasisAuthConfig()).toThrow("must use HTTP or HTTPS");
+
+        process.env.BASIS_AUTH_ISSUER = "https://client:secret@auth.example.test";
+        expect(() => getBasisAuthConfig()).toThrow("cannot contain credentials");
+    });
+
+    it("requires HTTPS for a production issuer", () => {
+        const originalNodeEnv = process.env.NODE_ENV;
+        try {
+            process.env.NODE_ENV = "production";
+            process.env.BASIS_AUTH_ISSUER = "http://auth.example.test";
+            expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
+        } finally {
+            if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+            else process.env.NODE_ENV = originalNodeEnv;
+            process.env.BASIS_AUTH_ISSUER = "https://auth.example.test/";
+        }
+    });
+
     it("uses S256 PKCE, state, nonce, the configured resource, and derived callback URL", async () => {
         const result = await beginBasisAuthFlow("/dashboard");
 
@@ -122,6 +144,80 @@ describe("basis-auth authorization-code flow", () => {
             "access-token",
             "subject-1",
         );
+    });
+
+    it("accepts the validated ID token email verification claim when UserInfo omits it", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValue({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            expires_in: 300,
+            claims: () => ({
+                sub: "subject-1",
+                email: "user@example.com",
+                email_verified: true,
+            }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: "User" });
+
+        const result = await completeBasisAuthFlow(
+            new URL("https://hacks.example.test/api/auth/basis/callback?code=code&state=state"),
+            {
+                state: "state",
+                nonce: "nonce",
+                codeVerifier: "verifier",
+                startedAt: Date.now(),
+            },
+        );
+
+        expect(result.identity.emailVerified).toBe(true);
+    });
+
+    it("does not apply an ID token email verification claim to a different UserInfo address", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValue({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            expires_in: 300,
+            claims: () => ({
+                sub: "subject-1",
+                email: "first@example.com",
+                email_verified: true,
+            }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({ email: "other@example.com", name: "User" });
+
+        const result = await completeBasisAuthFlow(
+            new URL("https://hacks.example.test/api/auth/basis/callback?code=code&state=state"),
+            {
+                state: "state",
+                nonce: "nonce",
+                codeVerifier: "verifier",
+                startedAt: Date.now(),
+            },
+        );
+
+        expect(result.identity.emailVerified).toBe(false);
+    });
+
+    it("keeps email verification false when neither trusted identity response confirms it", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValue({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            expires_in: 300,
+            claims: () => ({ sub: "subject-1" }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: "User" });
+
+        const result = await completeBasisAuthFlow(
+            new URL("https://hacks.example.test/api/auth/basis/callback?code=code&state=state"),
+            {
+                state: "state",
+                nonce: "nonce",
+                codeVerifier: "verifier",
+                startedAt: Date.now(),
+            },
+        );
+
+        expect(result.identity.emailVerified).toBe(false);
     });
 
     it("rejects expired transactions and unsafe post-login redirects", async () => {
