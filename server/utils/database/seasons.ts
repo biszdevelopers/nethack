@@ -1,13 +1,8 @@
 import type { H3Event } from "h3";
 import { eq, asc } from "drizzle-orm";
-import type { ExtractTablesWithRelations } from "drizzle-orm";
-import type { SQLiteTransaction } from "drizzle-orm/sqlite-core";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { getHackathon } from "./hackathon";
-
-type Schema = typeof import("~~/server/database/schema");
-
-type DbTransaction = SQLiteTransaction<"sync", unknown, Schema, ExtractTablesWithRelations<Schema>>;
+import { firstRow } from "./query";
 
 /**
  * Per-season tweakable settings. These columns exist on both the `seasons`
@@ -29,19 +24,26 @@ function pickTweaks(source: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function getSeasons(event: H3Event): Promise<Season[]> {
-    return event.context.drizzle.select().from(seasons).orderBy(asc(seasons.id)).all();
+    return (await event.context.drizzle
+        .select()
+        .from(seasons)
+        .orderBy(asc(seasons.id))) as Season[];
 }
 
 export async function getSeasonById(event: H3Event, seasonId: number): Promise<Season | null> {
-    const row = event.context.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+    const row = await firstRow(
+        event.context.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+    );
 
-    return row ?? null;
+    return (row as Season | undefined) ?? null;
 }
 
 export async function getActiveSeason(event: H3Event): Promise<Season | null> {
-    const row = event.context.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).get();
+    const row = await firstRow(
+        event.context.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1),
+    );
 
-    return row ?? null;
+    return (row as Season | undefined) ?? null;
 }
 
 export interface ScoreRankVisibility {
@@ -91,27 +93,35 @@ export async function updateSeasonTweaks(
 ): Promise<Season | null> {
     const tweaks = pickTweaks(data as Record<string, unknown>);
 
-    return event.context.drizzle.transaction((tx: DbTransaction) => {
-        const season = tx.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+    return event.context.drizzle.transaction(async (tx) => {
+        const season = await firstRow(
+            tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+        );
         if (!season) return null;
 
         if (Object.keys(tweaks).length > 0) {
-            tx.update(seasons).set(tweaks).where(eq(seasons.id, seasonId)).run();
+            await tx.update(seasons).set(tweaks).where(eq(seasons.id, seasonId));
 
             if (season.is_active === 1) {
-                tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1)).run();
+                await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
             }
         }
 
-        return tx.select().from(seasons).where(eq(seasons.id, seasonId)).get() ?? null;
+        return (
+            ((await firstRow(
+                tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+            )) as Season | undefined) ?? null
+        );
     });
 }
 
 export async function setActiveSeason(event: H3Event, seasonId: number | null) {
-    event.context.drizzle.transaction((tx: DbTransaction) => {
+    await event.context.drizzle.transaction(async (tx) => {
         let season: Season | undefined;
         if (seasonId !== null) {
-            season = tx.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+            season = (await firstRow(
+                tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+            )) as Season | undefined;
 
             if (!season) {
                 throw createError({
@@ -121,15 +131,15 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
             }
         }
 
-        tx.update(seasons).set({ is_active: 0 }).run();
+        await tx.update(seasons).set({ is_active: 0 });
 
         if (seasonId !== null && season) {
-            tx.update(seasons).set({ is_active: 1 }).where(eq(seasons.id, seasonId)).run();
+            await tx.update(seasons).set({ is_active: 1 }).where(eq(seasons.id, seasonId));
 
             // Copy the newly active season's tweaks into the live hackathon row
             const tweaks = pickTweaks(season as unknown as Record<string, unknown>);
             if (Object.keys(tweaks).length > 0) {
-                tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1)).run();
+                await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
             }
         }
     });
