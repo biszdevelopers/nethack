@@ -11,7 +11,7 @@ The shared type definitions ensure type safety across the frontend and backend. 
 
 - `shared/database.d.ts` — Database row types
 - `shared/responses.d.ts` — API response interfaces
-- `shared/auth.d.ts` — Session type augmentation :::
+- `shared/auth.d.ts` — basis-auth token session type augmentation :::
 
 ## Type Unions
 
@@ -198,15 +198,16 @@ Parsed from the database `"mode|value"` string format.
 
 ### `APIUser`
 
-| Field             | Type                   | Description          |
-| ----------------- | ---------------------- | -------------------- |
-| `id`              | `number`               | User ID              |
-| `email`           | `string`               | Email address        |
-| `role`            | `string`               | Permission string    |
-| `name`            | `string \| null`       | Display name         |
-| `team_id`         | `number \| null`       | Current team ID      |
-| `profile_theme`   | `ProfileTheme \| null` | Parsed profile theme |
-| `profile_picture` | `string \| null`       | Profile picture path |
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `number` | User ID |
+| `email` | `string` (optional) | Included only in authorized self/admin responses |
+| `name` | `string \| null` | Display name |
+| `team_id` | `number \| null` (optional) | Included only in authorized self/admin responses |
+| `profile_theme` | `ProfileTheme \| null` | Parsed profile theme |
+| `profile_picture` | `string \| null` | Profile picture path |
+
+Public lookups by another user's ID omit both `email` and `team_id` to prevent contact and roster enumeration. Roles are not part of this public response.
 
 ### `APITeam`
 
@@ -341,16 +342,6 @@ An array of lightweight member objects.
 
 ---
 
-## Session Type Augmentation
+## Browser-safe authentication state
 
-The `nuxt-auth-utils` session type is augmented in `shared/auth.d.ts`:
-
-```ts
-declare module "#auth-utils" {
-    interface User {
-        id: number;
-    }
-}
-```
-
-This means the session cookie stores only `{ user: { id: number } }`. The full user record is fetched from the database on each authenticated request using `requireUser(event)`.
+`useBasisAuthSession()` exposes the browser-safe user ID, token expiry, and permission list returned by `GET /api/auth/session`. It never exposes access or refresh token values. Protected API requests independently validate the token from the HTTP-only cookie or a bearer header, then load the complete user record from PostgreSQL.
