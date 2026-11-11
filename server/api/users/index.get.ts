@@ -4,7 +4,7 @@ import { users } from "~~/server/database/schema";
 export default defineEventHandler(async (event) => {
     await requireUser(event, NethackPermissions.Users.list);
 
-    const results = event.context.drizzle
+    const results = await event.context.drizzle
         .select({
             id: users.id,
             email: users.email,
@@ -14,8 +14,7 @@ export default defineEventHandler(async (event) => {
             profile_picture: users.profile_picture,
         })
         .from(users)
-        .orderBy(users.id)
-        .all();
+        .orderBy(users.id);
 
     return results.map((user) => convertUserToPublic(user as User)) satisfies APIUser[];
 });
