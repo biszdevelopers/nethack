@@ -1,0 +1,41 @@
+[Unit]
+Description=basishacks Nuxt server (Bun)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=basishacks
+Group=basishacks
+WorkingDirectory=/opt/basishacks/current
+EnvironmentFile=/etc/basishacks/basishacks.env
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=ASSET_STORAGE_DIR=/var/lib/basishacks/assets
+ExecStart=/usr/bin/bun run start
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0027
+LimitNOFILE=4096
+TasksMax=128
+MemoryHigh=450000000
+MemoryMax=500000000
+StateDirectory=basishacks
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
