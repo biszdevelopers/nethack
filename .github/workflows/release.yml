@@ -9,6 +9,17 @@ on:
 jobs:
     create-release:
         runs-on: ubuntu-latest
+        services:
+            postgres:
+                image: postgres:17-alpine
+                env:
+                    POSTGRES_DB: basishacks_release_test
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: postgres
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd "pg_isready -U postgres -d basishacks_release_test" --health-interval 5s --health-timeout 5s --health-retries 10
 
         # ─── ADD THIS PERMISSIONS BLOCK HERE ───
         permissions:
@@ -33,13 +44,11 @@ jobs:
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: latest # Or specify a version like 1.1.0
+                  bun-version: 1.3.14
 
-            - name: Link @basis/schema
+            - name: Checkout @basis/schema source
               run: |
                   git clone --depth 1 https://github.com/biszdevelopers/basis-schema.git ../basis-schema
-                  cd ../basis-schema
-                  bun link
 
             # 2. Install dependencies cleanly using Bun
             - name: Install dependencies
@@ -49,13 +58,39 @@ jobs:
             - name: Build Nuxt Application
               run: bun run build
 
-            - name: Verify self-contained server output
+            - name: Install locked production dependencies
+              run: bun install --production --frozen-lockfile
+
+            - name: Package the VPS release bundle with production dependencies
+              env:
+                  VPS_RELEASE_INCLUDE_NODE_MODULES: "1"
+              run: bun run release:package
+
+            - name: Setup Node.js 24 for runtime verification
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+
+            - name: Verify packaged PostgreSQL migration command
+              working-directory: release-package
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_release_test
+              run: bun run db:migrate
+
+            - name: Verify packaged PostgreSQL migration under Node.js
+              working-directory: release-package
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_release_test
+              run: node .output/tools/db-migrate.mjs
+
+            - name: Verify packaged SQLite importer command
+              env:
+                  SQLITE_IMPORT_PATH: ${{ runner.temp }}/basishacks-import-smoke.sqlite
               run: |
-                  test -f .output/server/node_modules/drizzle-orm/index.js
-                  if rg --fixed-strings "$GITHUB_WORKSPACE/node_modules" .output/server; then
-                    echo "Nitro output contains imports from the build workspace."
-                    exit 1
-                  fi
+                  bun scripts/create-import-smoke-db.mjs "$SQLITE_IMPORT_PATH"
+                  cd release-package
+                  bun run db:import-sqlite:check
+                  node .output/tools/import-sqlite-to-postgres.mjs --check-only
 
             # 6. Create the tarball using your exact custom naming format
             - name: Create Tarball
@@ -64,10 +99,77 @@ jobs:
                   COMMIT=${{ steps.vars.outputs.sha_short }}
                   FILENAME="production-${VERSION}-${COMMIT}-linux-amd64-bun.tar.gz"
 
-                  tar -czf $FILENAME .output
+                  tar -czf $FILENAME -C release-package .
 
                   # Save filename for the next step
                   echo "filename=$FILENAME" >> $GITHUB_ENV
+
+            - name: Verify extracted tarball database tools and Node.js app startup
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_release_test
+                  BASIS_AUTH_COOKIE_SECRET: release-ci-cookie-secret-at-least-32-bytes
+                  BASIS_AUTH_ISSUER: https://auth.example.invalid
+                  BASIS_AUTH_CLIENT_ID: release-ci
+                  BASIS_AUTH_CLIENT_SECRET: release-ci-secret
+                  BASIS_AUTH_RESOURCE: https://resource.example.invalid
+                  CURRENT_URL_ORIGIN: https://basishacks.example.invalid
+                  SQLITE_IMPORT_PATH: ${{ runner.temp }}/basishacks-import-smoke.sqlite
+                  PORT: "24619"
+                  HOST: 127.0.0.1
+              run: |
+                  mkdir extracted-release
+                  tar -xzf "$FILENAME" -C extracted-release
+                  cd extracted-release
+                  test -f node_modules/postgres/package.json
+                  test -f node_modules/drizzle-orm/package.json
+                  test -f node_modules/better-sqlite3/package.json
+                  bun run db:migrate
+                  node .output/tools/db-migrate.mjs
+                  node .output/tools/import-sqlite-to-postgres.mjs --check-only
+                  node start-fix.mjs > "$RUNNER_TEMP/release-node-start.log" 2>&1 &
+                  server_pid=$!
+                  trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+                  for attempt in $(seq 1 45); do
+                    if curl --fail --silent http://127.0.0.1:24619/ > /dev/null; then
+                      exit 0
+                    fi
+                    if ! kill -0 "$server_pid" 2>/dev/null; then
+                      cat "$RUNNER_TEMP/release-node-start.log"
+                      exit 1
+                    fi
+                    sleep 1
+                  done
+                  cat "$RUNNER_TEMP/release-node-start.log"
+                  exit 1
+
+            - name: Verify extracted tarball Bun app startup
+              working-directory: extracted-release
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_release_test
+                  BASIS_AUTH_COOKIE_SECRET: release-ci-cookie-secret-at-least-32-bytes
+                  BASIS_AUTH_ISSUER: https://auth.example.invalid
+                  BASIS_AUTH_CLIENT_ID: release-ci
+                  BASIS_AUTH_CLIENT_SECRET: release-ci-secret
+                  BASIS_AUTH_RESOURCE: https://resource.example.invalid
+                  CURRENT_URL_ORIGIN: https://basishacks.example.invalid
+                  PORT: "24620"
+                  HOST: 127.0.0.1
+              run: |
+                  bun run start > "$RUNNER_TEMP/release-bun-start.log" 2>&1 &
+                  server_pid=$!
+                  trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+                  for attempt in $(seq 1 45); do
+                    if curl --fail --silent http://127.0.0.1:24620/ > /dev/null; then
+                      exit 0
+                    fi
+                    if ! kill -0 "$server_pid" 2>/dev/null; then
+                      cat "$RUNNER_TEMP/release-bun-start.log"
+                      exit 1
+                    fi
+                    sleep 1
+                  done
+                  cat "$RUNNER_TEMP/release-bun-start.log"
+                  exit 1
 
             # 7. Create formal GitHub Release and attach the tarball
             - name: Create GitHub Release
