@@ -14,7 +14,7 @@ Ensure the following are installed before proceeding:
 | Tool        | Version    | Install                                                   |
 | ----------- | ---------- | --------------------------------------------------------- |
 | **Node.js** | >= v24     | [nodejs.org](https://nodejs.org) or use a version manager |
-| **Bun**     | Latest     | [bun.sh](https://bun.sh)                                  |
+| **Bun**     | 1.3.14     | [bun.sh](https://bun.sh)                                  |
 | **Git**     | Any recent | [git-scm.com](https://git-scm.com)                        |
 
 ### Node.js v24+ Installation
@@ -60,29 +60,20 @@ bun --version
 git clone <repository-url> basishacks-r2
 git clone https://github.com/biszdevelopers/basis-schema.git basis-schema
 cd basishacks-r2
-(cd ../basis-schema && bun link)
 bun i
 ```
 
-Keep [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) as a sibling checkout. Local builds and tests resolve its source through `../basis-schema`; the CI, lint, and release workflows clone and link the same repository before installing dependencies.
+Keep [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) as a sibling checkout. Local builds and tests resolve its source through `../basis-schema`; CI, lint, and release workflows clone that source before installing dependencies. Use Bun 1.3.14 to keep the lockfile and dependency overrides compatible with the supported runtime.
 
-::: tip Dependency pins `package.json` uses `overrides` to pin two transitive dependencies:
+::: tip Dependency overrides
 
-- `vite` is pinned to `8.0.16`. Vite `8.1.x` combined with Nuxt `4.4.8` creates two HMR WebSocket listeners on the same HTTP server, crashing the dev server with `server.handleUpgrade() was called more than once with the same socket` ([nuxt/nuxt#35450](https://github.com/nuxt/nuxt/issues/35450)).
-- `entities` is pinned to `7.0.1`. `entities@8` changes the `entities/decode` export and breaks `@vue/compiler-core`'s entity decoder, causing errors such as `decode.fromCodePoint is not a function` when Vue parses SFC templates (for example, `rules.vue`).
+`package.json` uses Bun 1.3.14 compatible overrides to keep transitive dependencies on security-fixed releases. Vite is constrained to `^8.3.5`, the range required by the current Nuxt release. The `deepmerge` override points to an in-repository prototype-safe compatibility package; the Rollup resolver patch no longer imports upstream `deepmerge`.
 
-Keep both overrides in place until the affected packages release compatible versions. :::
+Keep the overrides and `bun.lock` in sync when upgrading dependencies. :::
 
 ## Database Initialization
 
-The local development environment uses SQLite with a database file at `./database/basishacks.sqlite`. The underlying driver is selected automatically: `bun:sqlite` under Bun and `better-sqlite3` under Node.js. The database is initialized, migrated, and seeded automatically by the `init-database.ts` Nitro plugin when the dev server starts.
-
-To manually initialize the database:
-
-```bash
-# Apply the Drizzle migration
-bun run db:migrate
-```
+Local development, CI, and production use PostgreSQL. Set `DATABASE_URL` to a reachable PostgreSQL instance before starting Nuxt. The Nitro startup plugin creates a bounded pool, applies migrations under a PostgreSQL advisory lock, and seeds the default hackathon row.
 
 ### Applying Migrations
 
@@ -93,21 +84,14 @@ Migrations are generated with Drizzle Kit:
 bun run db:generate
 ```
 
-Applying migrations is normally handled automatically on server startup via the custom runner in `server/database/migrate.ts`. You can still invoke Drizzle Kit directly:
+The server applies migrations automatically before accepting requests. You can apply them explicitly before a release:
 
 ```bash
 # Apply migrations
 bun run db:migrate
 ```
 
-### Resetting the Database
-
-If you need to start fresh:
-
-```bash
-rm database/basishacks.sqlite
-bun run db:migrate
-```
+For an existing SQLite deployment, follow the [PostgreSQL migration and cutover procedure](/deployment/postgresql-migration). The application no longer uses SQLite at runtime.
 
 ## Environment Variables
 
@@ -121,7 +105,8 @@ cp .env.example .env
 
 | Variable | Description | Example |
 | --- | --- | --- |
-| `NUXT_SESSION_PASSWORD` | Session encryption key. **Must be at least 32 bytes.** | Output of `openssl rand -base64 32` |
+| `DATABASE_URL` | Required PostgreSQL connection URL | `postgresql://basishacks:secret@127.0.0.1:5432/basishacks` |
+| `BASIS_AUTH_COOKIE_SECRET` | Session and token-record encryption key. **Must be at least 32 bytes.** | Output of `openssl rand -base64 32` |
 | `BASIS_AUTH_ISSUER` | Exact basis-auth issuer URL | `http://localhost:3000` |
 | `BASIS_AUTH_CLIENT_ID` | Registered confidential basishacks client ID | Provider-generated value |
 | `BASIS_AUTH_CLIENT_SECRET` | Server-only basishacks client secret | Provider-generated value |
@@ -135,23 +120,25 @@ cp .env.example .env
 openssl rand -base64 32
 ```
 
-Copy the output and paste it as the value for `NUXT_SESSION_PASSWORD`.
+Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 ### Optional Variables
 
 #### Microsoft Entra ID
 
-| Variable                  | Description                                                | Default |
-| ------------------------- | ---------------------------------------------------------- | ------- |
-| `MICROSOFT_TENANT_ID`     | Microsoft Entra ID tenant used by optional Graph features. | —       |
-| `MICROSOFT_CLIENT_ID`     | Microsoft Entra ID client used by optional Graph features. | —       |
-| `MICROSOFT_CLIENT_SECRET` | Microsoft Entra ID client secret for Graph features.       | —       |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `MICROSOFT_TENANT_ID` | Microsoft Entra ID tenant used by optional Graph features. | — |
+| `MICROSOFT_CLIENT_ID` | Microsoft Entra ID client used by optional Graph features. | — |
+| `MICROSOFT_CLIENT_SECRET` | Microsoft Entra ID client secret for Graph features. | — |
+| `MICROSOFT_WEBHOOK_STATE` | Persistent Graph webhook validation secret (minimum 32 bytes). | — |
+| `MICROSOFT_WEBHOOK_ID` | Existing Graph subscription ID; set it after the first subscription is created. | — |
 
 #### Public origin
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CURRENT_URL_ORIGIN` | Public base origin used to derive `/api/auth/basis/callback`. | `http://localhost:3000` |
+| `CURRENT_URL_ORIGIN` | Public HTTPS origin used for the callback and same-origin request checks. Required in production; local development defaults to `http://localhost:3000`. | `http://localhost:3000` |
 
 #### Integrations & Server
 
@@ -160,6 +147,10 @@ Copy the output and paste it as the value for `NUXT_SESSION_PASSWORD`.
 | `DEEPSEEK_API_KEY` | DeepSeek API key for AI chat features (debug routes only). Uses the OpenAI SDK under the hood. | — |
 | `PORT` | Server port override | `3000` |
 | `HOST` | Server host override | `0.0.0.0` |
+| `DATABASE_POOL_MAX` | Maximum PostgreSQL connections; integer from 2 through 64 | `10` |
+| `DATABASE_METRICS` | Set to `1` to emit bounded PostgreSQL query-runtime and pool-acquisition wait summaries every minute | unset |
+| `ASSET_STORAGE_DIR` | Persistent upload directory outside the release directory | `/var/lib/basishacks/assets` |
+| `SQLITE_IMPORT_PATH` | Source SQLite backup path for the one-time migration command only | unset |
 | `MICROSOFT_DUMMY_USER_NAME` | ROPC test user email (rarely used, testing only) | — |
 | `MICROSOFT_DUMMY_USER_PASSWORD` | ROPC test user password (rarely used, testing only) | — |
 
@@ -167,24 +158,27 @@ Copy the output and paste it as the value for `NUXT_SESSION_PASSWORD`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `RATE_LIMIT_GENERAL_MAX` | General API rate limit, requests per minute | `6000` |
-| `RATE_LIMIT_AUTH_MAX` | Authentication endpoint rate limit, attempts per minute | `600` |
-| `RATE_LIMIT_VOTE_MAX` | Voting/scoring endpoint rate limit, submissions per minute | `600` |
-| `RATE_LIMIT_UPLOAD_MAX` | File upload endpoint rate limit, uploads per minute | `600` |
+| `RATE_LIMIT_GENERAL_MAX` | General API rate limit, requests per minute | `120` |
+| `RATE_LIMIT_AUTH_MAX` | Authentication endpoint rate limit, attempts per minute | `20` |
+| `RATE_LIMIT_VOTE_MAX` | Voting/scoring endpoint rate limit, submissions per minute | `30` |
+| `RATE_LIMIT_UPLOAD_MAX` | File upload endpoint rate limit, uploads per minute | `10` |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window in milliseconds | `60000` |
-| `TRUST_PROXY` | Set to any truthy value when behind a trusted reverse proxy so `x-forwarded-for` is used for rate-limit client IP resolution | unset |
+| `TRUSTED_PROXY_HOPS` | Exact number of trusted reverse proxies (0–10); forwarded addresses are used only when the chain contains enough valid IPs | `0` |
 
 #### Production
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `DISABLE_DEBUG_ROUTES` | Set to any truthy value in production to disable `/api/debug/*` and `/debug` routes entirely | unset |
+| `DISABLE_DEBUG_ROUTES` | Set to any truthy value to disable debug routes outside production; production disables them automatically | unset |
 
 ### Complete .env Example
 
 ```bash
-# REQUIRED - Session encryption key, must be at least 32 bytes
-NUXT_SESSION_PASSWORD=your_random_string_at_least_32_bytes_long
+# REQUIRED - PostgreSQL connection
+DATABASE_URL=postgresql://basishacks:replace_me@127.0.0.1:5432/basishacks
+
+# REQUIRED - Session and token encryption key, must be at least 32 bytes
+BASIS_AUTH_COOKIE_SECRET=your_random_string_at_least_32_bytes_long
 
 # REQUIRED - basis-auth confidential client configuration
 BASIS_AUTH_ISSUER=http://localhost:3000
@@ -201,7 +195,7 @@ MICROSOFT_CLIENT_ID=your_microsoft_client_id_here
 # OPTIONAL - Microsoft Entra ID client secret for MS Graph API integration
 MICROSOFT_CLIENT_SECRET=your_microsoft_client_secret_here
 
-# OPTIONAL - Public basishacks origin; callback is /api/auth/basis/callback
+# REQUIRED in production - public HTTPS origin; callback is /api/auth/basis/callback
 CURRENT_URL_ORIGIN=http://localhost:3000
 
 
@@ -218,18 +212,21 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 
 # OPTIONAL - Rate limiting overrides (defaults shown)
-# RATE_LIMIT_GENERAL_MAX=6000
-# RATE_LIMIT_AUTH_MAX=600
-# RATE_LIMIT_VOTE_MAX=600
-# RATE_LIMIT_UPLOAD_MAX=600
+# RATE_LIMIT_GENERAL_MAX=120
+# RATE_LIMIT_AUTH_MAX=20
+# RATE_LIMIT_VOTE_MAX=30
+# RATE_LIMIT_UPLOAD_MAX=10
 # RATE_LIMIT_WINDOW_MS=60000
 
 
-# OPTIONAL - Trust proxy for rate-limit client IP resolution
-# TRUST_PROXY=true
+# OPTIONAL - Trust exactly one reverse proxy for rate-limit client IP resolution
+# TRUSTED_PROXY_HOPS=1
 
-# OPTIONAL - Disable debug routes in production
+# OPTIONAL - Disable debug routes outside production (they are disabled automatically in production)
 # DISABLE_DEBUG_ROUTES=true
+
+# OPTIONAL - Log bounded PostgreSQL query and pool wait timing summaries
+# DATABASE_METRICS=1
 ```
 
 ## HTTPS Dev Server Setup
@@ -266,9 +263,7 @@ devServer: {
 
 ## Database
 
-The project uses Drizzle ORM with a runtime-agnostic SQLite driver. Under Bun the driver is `bun:sqlite`; under Node.js it falls back to `better-sqlite3`. The database file is stored at `./database/basishacks.sqlite` with WAL mode enabled.
-
-The Drizzle ORM instance is created once at startup and attached to `event.context.drizzle` on every request via the `init-database.ts` Nitro plugin.
+The project uses PostgreSQL through Drizzle ORM and the `postgres` driver. Bun and Node.js use the same driver and schema. The `init-database.ts` Nitro plugin creates the bounded pool, applies migrations, and seeds the initial records before serving requests. The `02.database.ts` middleware attaches its Drizzle instance to `event.context.drizzle` for each request.
 
 ## IDE Setup
 
@@ -280,7 +275,7 @@ Install the following extensions for the best development experience:
 | --- | --- |
 | [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) | Vue 3 IntelliSense, type checking, and template support (formerly Volar) |
 | [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) | Real-time linting |
-| [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode) | Code formatting |
+| [Oxc](https://marketplace.visualstudio.com/items?itemName=oxc.oxc-vscode) | Oxfmt code formatting |
 | [TypeScript](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-typescript-next) | TypeScript language service |
 
 ### Recommended VS Code Settings
@@ -290,7 +285,7 @@ Add to `.vscode/settings.json`:
 ```json
 {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
     "typescript.tsdk": "node_modules/typescript/lib",
     "vue.inlayHints.inlineHandlerLeading": true
 }
@@ -307,14 +302,17 @@ The project includes an `.editorconfig` file that enforces consistent formatting
 - Trim trailing whitespace: yes
 - Insert final newline: yes
 
-## Prettier Configuration
+## Oxfmt Configuration
 
-The project uses Prettier with the following settings (defined in `.prettierrc`):
+The project uses Oxfmt with the settings defined in `.oxfmtrc.json`:
 
 - **Semicolons enabled** — Statements end with semicolons
 - **Double quotes** — Strings use double quotes instead of single quotes
 - **Tab width 4** — Indentation uses 4 spaces
 - **Trailing commas** — Trailing commas are added where valid
+- **Print width 100** — Lines wrap at the project’s configured width
+
+Run `bun run format` to format the repository and `bun run format:check` to verify formatting.
 
 Example:
 
@@ -332,10 +330,10 @@ In production on the VPS, environment variables are configured through the serve
 
 ```bash
 # Example: setting environment variables before starting the server
-NUXT_SESSION_PASSWORD=<your-secret> bun run start
+DATABASE_URL=postgresql://basishacks:secret@127.0.0.1:5432/basishacks bun run start
 ```
 
-Or configure them in the server's environment file (for example, `/etc/environment`, systemd `EnvironmentFile`, or a `.env` file in the app directory).
+Configure credentials in a protected server environment file. For systemd, set `DATABASE_URL`, `DATABASE_POOL_MAX=10`, and `ASSET_STORAGE_DIR=/var/lib/basishacks/assets` in the service's `EnvironmentFile`. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for the unit files, import steps, and service hardening.
 
 :::: warning Never commit `.env` files to version control. The `.gitignore` file excludes `.env` by default. ::::
 
@@ -382,16 +380,7 @@ kill -9 <PID>
 
 ### Database Errors
 
-If you see database-related errors:
-
-1. Delete the existing database file:
-    ```bash
-    rm database/basishacks.sqlite
-    ```
-2. Re-initialize:
-    ```bash
-    bun run db:migrate
-    ```
+If you see database-related errors, confirm `DATABASE_URL` is valid and reachable, then check the startup logs for migration failures. Do not delete or recreate a populated production database as a troubleshooting step. For a local development database, create a separate empty PostgreSQL database and apply `bun run db:migrate`.
 
 ### HTTPS Certificate Warnings
 
@@ -411,7 +400,7 @@ Generate a new password:
 openssl rand -base64 32
 ```
 
-And update `NUXT_SESSION_PASSWORD` in your `.env` file.
+And update `BASIS_AUTH_COOKIE_SECRET` in your `.env` file.
 
 ### Microsoft Graph API Unavailable
 
