@@ -22,6 +22,7 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `results_published` | integer | Publish results to participants |
 | `show_scores` | integer | Show scores to participants |
 | `show_ranking` | integer | Show rankings to participants |
+| `score_curve_preset` | text | Presentation curve: `original`, `gentle`, `moderate`, or `strong` |
 | `max_votes_per_user` | integer | Cap on peer votes per user |
 | `schedule_start` / `schedule_end` | text | Display dates |
 | `start_timestamp` / `end_timestamp` | integer | Unix timestamps (ms) |
@@ -42,6 +43,10 @@ The `hackathon` table remains a singleton (`id = 1`) holding the **live** state.
 
 `getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ showScores, showRanking }`. Each season's own tweaks are authoritative for its teams; teams whose season no longer exists fall back to the live `hackathon` singleton row.
 
+Published judge feedback is available to current and past members of the evaluated team only after `results_published` is enabled. Score details follow `show_scores`, while rank follows `show_ranking`. Feedback omits judge identifiers and randomizes evaluation order. Administrators with the all-permissions grant can inspect the full feedback before publication. Judge names and account IDs are omitted in both participant and administrator views.
+
+`score_curve_preset` affects the displayed score returned to participants; it never changes persisted judge evaluations, the computed uncurved average, or rankings. The presets are `original` (unchanged), `gentle`, `moderate`, and `strong`; configure the season in the administration UI.
+
 ## API Endpoints
 
 | Method | Path | Auth | Description |
@@ -51,6 +56,9 @@ The `hackathon` table remains a singleton (`id = 1`) holding the **live** state.
 | PATCH | `/api/seasons/active` | `PORTAL_SEASONS_EDIT` or admin | Set the active season |
 | GET | `/api/seasons/:id/tweaks` | `PORTAL_SEASONS_VIEW` or admin | Get a season's tweakable settings |
 | PATCH | `/api/seasons/:id/tweaks` | `PORTAL_SEASONS_EDIT` or admin | Update a season's tweakable settings |
+| PATCH | `/api/admin/seasons/:id/score-curve` | Season update permission | Set that season's score display curve |
+| GET | `/api/teams/:id/scores` | Current or past team member | Read anonymous feedback after results are published |
+| GET | `/api/admin/teams/:id/scores` | Admin with the all-permissions grant | Read full team score feedback, including before publication; judge identities remain hidden |
 
 `GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, and `theme_description`. Theme fields are hidden when the hackathon status is `not_started` or `paused`.
 
