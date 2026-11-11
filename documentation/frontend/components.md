@@ -142,30 +142,16 @@ Team management component for renaming, adding, and removing members.
 
 Judge scoring card for evaluating a team's project against rubric criteria.
 
-**Props:**
-
-| Prop   | Type      | Description           |
-| ------ | --------- | --------------------- |
-| `team` | `APITeam` | The team being judged |
-
-**Events:**
-
-| Event    | Payload | Description                               |
-| -------- | ------- | ----------------------------------------- |
-| `scored` | —       | Emitted after successful score submission |
-
 **Scoring interface:**
 
-- Displays project name, team name, pathway badge, description rendered with `Comark`, AI sourcing statement in a `UAlert`, and repo/demo links
-- For each rubric criterion (from `~~/shared/rubric`), shows abbreviation, weight percentage, description tooltip, and a `URadioGroup` with values **0–5**
-- Reasoning textarea for score justification
-- Submit requires a browser `confirm()` dialog
+- Displays the project name, team name, track, safe-rendered description, AI sourcing statement, and validated repository/demo links.
+- Renders the active season rubric's configured integer ranges and criterion weights.
+- Saves a recoverable draft, gives comment guidance and editable prompt templates, and previews the complete evaluation before finalization.
+- Requires a specific anonymous comment; judges are told that comments become visible after results are published.
 
-**Validation:** Uses `CreateTeamScoresRequest`. Posts to `/api/teams/{id}/scores`.
+**Validation:** Validates against the immutable rubric version used for the season. Drafts use `/api/judging/drafts/:teamId`; final scores post to `/api/teams/:id/scores`.
 
-```vue
-<JudgingCard :team="team" @scored="onScored" />
-```
+The card reads the assigned project and its judge-specific draft from the judging page. The queue owns project navigation, paging, and final score submission.
 
 ### VotingProjectCard
 
