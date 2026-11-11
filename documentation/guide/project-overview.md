@@ -17,7 +17,8 @@ The platform manages the entire hackathon lifecycle:
 | **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. |
 | **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, and sourcing information. Submissions are accepted only during `not_started` or `in_progress` states. |
 | **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. |
-| **Judge Scoring** | Judges score projects using a weighted rubric system with criteria scored 0–5 per criterion. Separate rubrics are used for junior and senior pathways. |
+| **Judge Scoring** | Judges use season-specific, versioned weighted rubrics with track-specific criteria and integer score ranges. Guided comment prompts and templates help judges write useful anonymous feedback. |
+| **Published Feedback** | Competitors can review judge comments after results are published. Organizers can review feedback earlier. Judge identities stay hidden in both views; configurable score curves change display only and preserve original scores and rankings. |
 | **Mod Portal** | Administrative dashboard for managing users, teams, seasons, and debug tools. |
 | **Graph API** | Independent meeting scheduling and Teams chat integration. It is not an authentication provider. |
 | **DeepSeek AI Chatbot** | In-memory chat session store powered by the OpenAI SDK for DeepSeek AI interactions in debug routes. |
@@ -29,20 +30,20 @@ The platform manages the entire hackathon lifecycle:
 
 | Layer | Technology | Notes |
 | --- | --- | --- |
-| **Framework** | Nuxt 4 (^4.4.8) | Full-stack Vue framework with SSR and file-based routing. |
-| **UI** | `@nuxt/ui` ^4.9.0 | Tailwind CSS v4 based component library. |
-| **Language** | TypeScript (^5.9.3) | Strict typing throughout. |
-| **Runtime** | Node.js >= v24 or Bun | Dual-runtime support; Bun is preferred. |
-| **Package Manager** | Bun (preferred) | npm also works. |
-| **Database** | SQLite via Drizzle ORM | `bun:sqlite` under Bun, `better-sqlite3` under Node.js. |
-| **Auth** | `nuxt-auth-utils` 0.5.25 | Session-based authentication. |
+| **Framework** | Nuxt 4 (^4.6.4) | Full-stack Vue framework with SSR and file-based routing. |
+| **UI** | `@nuxt/ui` ^4.12.0 | Tailwind CSS v4 based component library. |
+| **Language** | TypeScript (^6.0.3) | Strict typing throughout. |
+| **Runtime** | Node.js >= v24; Bun 1.3.14 | Node.js is the primary VPS runtime; Bun is also supported. |
+| **Package Manager** | Bun 1.3.14 or npm | Both can install the locked dependencies. |
+| **Database** | PostgreSQL via Drizzle ORM | Bun and Node.js share the bounded `postgres` driver pool. |
+| **Auth** | basis-auth OIDC | Encrypted HTTP-only token cookies; bearer tokens are also supported for service clients. |
 | **JWT** | `jose` ^6.2.3 | JWT signing and verification for OAuth2 access tokens. |
 | **AI** | `openai` ^6.45.0 | OpenAI SDK used for DeepSeek API integration. |
-| **Validation** | Zod 4.x (^4.4.3) | Schema validation for all API inputs. |
+| **Validation** | Zod 4.x (^4.6.7) | Schema validation for all API inputs. |
 | **Fonts** | `@nuxt/fonts` ^0.14.0 | Local font provider. |
 | **Icons** | `@iconify-json/lucide`, `@iconify-json/material-symbols`, `@iconify-json/simple-icons` | Icon sets. |
 | **Animation** | `gsap` ^3.15.0 | ScrollTrigger timelines and responsive motion for the Beneath the Surface showcase. |
-| **Linting** | `@nuxt/eslint` 1.10.0 + Prettier ^3.9.4 | Semicolons enabled, double quotes. |
+| **Linting** | `@nuxt/eslint` ^1.17.0 + Oxfmt ^0.78.0 | Semicolons enabled, double quotes. |
 | **Deployment** | Node.js server (VPS) | Bun also supported; Nitro `node-server` preset. |
 
 ### Live Dependency Versions
@@ -63,13 +64,13 @@ The browser uses basis-auth discovery and authorization code with S256 PKCE, sta
 
 ### Core Roles
 
-Users are assigned one of three core roles in the database:
+The app grants access through fine-grained permissions from basis-auth. The labels below describe the common participant, judge, and organizer workflows:
 
-| Role          | Description                                                                      |
-| ------------- | -------------------------------------------------------------------------------- |
-| `participant` | Default role. Can join teams, submit projects, and vote.                         |
-| `judge`       | Can score projects using the rubric system. Has access to the judging interface. |
-| `admin`       | Full access to all features, including the mod portal.                           |
+| Role | Description |
+| --- | --- |
+| `participant` | Default role. Can join teams, submit projects, and vote. |
+| `judge` | Can score projects using the season rubric. Judge identity is hidden in participant and administrator feedback views. |
+| `admin` | Access depends on delegated basis-auth permissions, including the mod portal. |
 
 ### Fine-Grained Developer Permissions
 
@@ -149,7 +150,7 @@ basishacks-r2/
 │   ├── database/               # Drizzle ORM schema, migration runner, and DB wrapper
 │   │   ├── schema.ts           # Drizzle table definitions
 │   │   ├── migrate.ts          # Custom migration runner, legacy schema repair, seeding
-│   │   └── index.ts            # Runtime-agnostic SQLite driver selection
+│   │   └── index.ts            # Bounded PostgreSQL pool and Drizzle instance
 │   ├── plugins/                # Nitro plugins
 │   │   ├── init-database.ts    # Database initialization and attach Drizzle to event context
 │   │   ├── microsoft.ts        # MS Graph API token initialization and centralized API calls
@@ -181,7 +182,7 @@ basishacks-r2/
 │   ├── schemas.ts              # Zod schemas for API input validation
 │   ├── database.d.ts           # TypeScript types matching DB schema exactly
 │   ├── responses.d.ts          # API response interface definitions
-│   ├── auth.d.ts               # nuxt-auth-utils session type augmentation
+│   ├── permissions.ts          # basis-auth delegated permission helpers
 │   ├── oauth2-scopes.ts        # OAuth2 scope definitions, descriptions, and helpers
 │   ├── permissions.ts          # Nethack JWT permission constants and matcher
 │   ├── rubric.ts               # Judging rubric definitions (junior/senior criteria and weights)
@@ -206,7 +207,7 @@ basishacks-r2/
 ├── bun-shim/                   # Compatibility shim for `bun test`
 │   └── shim.test.ts            # Prints guidance to use `bun run test`
 │
-├── database/                   # SQLite database file (basishacks.sqlite, WAL mode)
+├── database/                   # Drizzle schema and PostgreSQL migrations
 ├── documentation/              # VitePress documentation site
 ├── public/                     # Static assets (fonts, images, uploads)
 └── scripts/                    # Build scripts
@@ -235,7 +236,7 @@ Teams are categorized into two pathways with different judging rubrics:
 
 ### Rubric System
 
-Each pathway has five criteria scored 0–5 by judges:
+The new-installation default has five criteria on a 0–5 integer scale. Organizers can create season-specific tracks, criteria, integer ranges, and weights; see the [rubric guide](/shared/rubric).
 
 | Criterion                | Junior Weight | Senior Weight |
 | ------------------------ | :-----------: | :-----------: |
@@ -275,7 +276,7 @@ bun run format
 
 The project follows these conventions:
 
-- **Prettier**: semicolons enabled, double quotes, `tabWidth: 4`, `trailingComma: all`, `printWidth: 100`.
+- **Oxfmt**: semicolons enabled, double quotes, `tabWidth: 4`, `trailingComma: all`, `printWidth: 100`.
 - **ESLint**: configured via `@nuxt/eslint`.
 - **Imports**: use `~~/` for project root imports in server code, `~/` for app imports.
 - **Components**: prefer `const` and arrow functions.
