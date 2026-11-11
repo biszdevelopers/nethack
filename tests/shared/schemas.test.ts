@@ -98,8 +98,9 @@ describe("UpdateTeamRequest", () => {
         expect(() => UpdateTeamRequest.parse({})).not.toThrow();
     });
 
-    it("rejects an invalid pathway", () => {
-        expect(() => UpdateTeamRequest.parse({ pathway: "intermediate" })).toThrow();
+    it("accepts a configurable track key and rejects malformed track keys", () => {
+        expect(() => UpdateTeamRequest.parse({ pathway: "intermediate" })).not.toThrow();
+        expect(() => UpdateTeamRequest.parse({ pathway: "Bad Track" })).toThrow();
     });
 
     it("accepts a valid project update", () => {
@@ -159,10 +160,12 @@ describe("UpdateTeamRequest", () => {
         ).toThrow();
     });
 
-    it("accepts long sourcing notes (MAX is now Integer.MAX_VALUE)", () => {
+    it("enforces the sourcing notes size limit", () => {
         expect(() =>
-            UpdateTeamRequest.parse({ project: { sourcing: "A".repeat(5000) } }),
-        ).not.toThrow();
+            UpdateTeamRequest.parse({
+                project: { sourcing: "A".repeat(MAX_PROJECT_SOURCE_LENGTH + 1) },
+            }),
+        ).toThrow();
     });
 });
 
@@ -292,7 +295,7 @@ describe("SubmitTeamRequest", () => {
         ).toThrow();
     });
 
-    it("accepts long sourcing notes in submission (MAX now Integer.MAX_VALUE)", () => {
+    it("enforces the sourcing notes size limit in submission", () => {
         expect(() =>
             SubmitTeamRequest.parse({
                 pathway: "junior",
@@ -301,10 +304,10 @@ describe("SubmitTeamRequest", () => {
                     description: "A".repeat(30),
                     demo_url: "https://example.com",
                     repo_url: "https://github.com/user/repo",
-                    sourcing: "A".repeat(5000),
+                    sourcing: "A".repeat(MAX_PROJECT_SOURCE_LENGTH + 1),
                 },
             }),
-        ).not.toThrow();
+        ).toThrow();
     });
 });
 
@@ -358,7 +361,7 @@ describe("UpdateUserRequest", () => {
             type: "image/png",
         });
         expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).toThrow(
-            "smaller than 10 MB",
+            "smaller than 7 MB",
         );
     });
 
@@ -388,7 +391,7 @@ describe("UpdateUserRequest", () => {
         const file = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "avatar.png", {
             type: "image/png",
         });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("smaller than 10 MB");
+        expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("smaller than 7 MB");
     });
 
     it("rejects an avatar File with an invalid type", () => {
@@ -946,6 +949,12 @@ describe("GetTeamsQuery", () => {
         expect(result.season_id).toBe(1);
     });
 
+    it("accepts a bounded judging page", () => {
+        const result = GetTeamsQuery.parse({ judging: "true", page: "2", page_size: "25" });
+        expect(result.page).toBe(2);
+        expect(result.page_size).toBe(25);
+    });
+
     it("accepts an empty query", () => {
         const result = GetTeamsQuery.parse({});
         expect(result.judging).toBeUndefined();
@@ -958,6 +967,12 @@ describe("GetTeamsQuery", () => {
 
     it("rejects a non-positive season_id", () => {
         expect(() => GetTeamsQuery.parse({ season_id: "0" })).toThrow();
+    });
+
+    it("rejects unbounded or invalid judging pagination", () => {
+        expect(() => GetTeamsQuery.parse({ page: "0" })).toThrow();
+        expect(() => GetTeamsQuery.parse({ page_size: "51" })).toThrow();
+        expect(() => GetTeamsQuery.parse({ page: "1.5" })).toThrow();
     });
 });
 
@@ -1296,6 +1311,14 @@ describe("ProjectUrl", () => {
 
     it("accepts an empty string", () => {
         expect(() => ProjectUrl.parse("")).not.toThrow();
+    });
+
+    it.each([
+        "javascript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "https://user:password@example.com/path",
+    ])("rejects unsafe external URL %s", (value) => {
+        expect(() => ProjectUrl.parse(value)).toThrow();
     });
 
     it("accepts a URL with subdomain", () => {
