@@ -37,27 +37,24 @@ export default defineEventHandler(
         if (season_id !== undefined) {
             // Per-season save: write to the specified season,
             // and also to the global row if this is the active season
-            event.context.drizzle
+            await event.context.drizzle
                 .update(seasons)
                 .set(configFields)
-                .where(eq(seasons.id, season_id))
-                .run();
+                .where(eq(seasons.id, season_id));
 
             const active = await getActiveSeason(event);
             if (active && active.id === season_id) {
-                event.context.drizzle
+                await event.context.drizzle
                     .update(hackathon)
                     .set(configFields)
-                    .where(eq(hackathon.id, 1))
-                    .run();
+                    .where(eq(hackathon.id, 1));
             }
         } else {
             // No season — write only to the global hackathon row
-            event.context.drizzle
+            await event.context.drizzle
                 .update(hackathon)
                 .set(configFields)
-                .where(eq(hackathon.id, 1))
-                .run();
+                .where(eq(hackathon.id, 1));
         }
 
         const updated = await getHackathon(event);
