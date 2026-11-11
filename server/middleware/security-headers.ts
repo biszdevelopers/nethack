@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { defineEventHandler, setHeader } from "h3";
 
 /**
@@ -8,6 +9,9 @@ import { defineEventHandler, setHeader } from "h3";
  * without duplication.
  */
 export default defineEventHandler(async (event) => {
+    const nonce = randomBytes(18).toString("base64");
+    event.context.cspNonce = nonce;
+
     // Enforce HTTPS for two years, include subdomains, and declare preload
     // eligibility for the HSTS preload list.
     setHeader(event, "Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
@@ -32,10 +36,9 @@ export default defineEventHandler(async (event) => {
     // Content Security Policy
     //
     // default-src 'self'            Fallback for any unspecified fetch directive.
-    // script-src 'self' 'unsafe-inline'
-    //                               Self-hosted JS plus inline scripts required by
-    //                               Nuxt SSR hydration (window.__NUXT__). 'unsafe-eval'
-    //                               is intentionally omitted.
+    // script-src 'self' 'nonce-…'   Self-hosted JS and per-response nonce-bound Nuxt
+    //                               hydration scripts. 'unsafe-inline' and
+    //                               'unsafe-eval' are omitted.
     // style-src 'self' 'unsafe-inline'
     //                               Self-hosted CSS plus inline styles used by Vue/
     //                               Nuxt UI components (e.g. :style bindings).
@@ -49,6 +52,6 @@ export default defineEventHandler(async (event) => {
     setHeader(
         event,
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+        `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`,
     );
 });
