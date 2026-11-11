@@ -7,16 +7,12 @@ definePageMeta({
     middleware: "auth",
 });
 
-const { user: userRef, clear } = useBasisAuthSession();
-const userID = computed(() => userRef.value?.id ?? 0);
-
-const { data, error, refresh } = await useFetch(() => `/api/users/${userID.value}`, {
-    server: false,
-});
+const { data, error, refresh, sessionUser: userRef, clear } = await useApiUser();
 if (error.value) {
     throw error.value;
 }
 
+const userID = computed(() => userRef.value?.id ?? 0);
 const user = computed(() => data.value);
 
 async function doLogout() {
@@ -270,8 +266,8 @@ onMounted(() => {
                     <UFileUpload
                         v-model="state.profile_theme_image"
                         label="Click to drop image to upload"
-                        description="PNG, JPG or GIF (max. 2MB)"
-                        accept="image/jpeg, image/jpg, image/png, image/webp"
+                        description="JPEG, PNG, GIF or WebP (max. 7 MB)"
+                        accept="image/jpeg, image/jpg, image/png, image/gif, image/webp"
                         class="z-1"
                         :ui="{
                             base: `min-h-48 bg-white/0`,
