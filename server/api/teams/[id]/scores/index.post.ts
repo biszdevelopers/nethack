@@ -1,6 +1,11 @@
 import { NethackPermissions } from "~~/shared/permissions";
-import { CreateTeamScoresRequest, TeamIdParams } from "~~/shared/schemas";
+import { SubmitTeamScoresRequest, TeamIdParams } from "~~/shared/schemas";
+import { validateRubricScores } from "~~/shared/rubric";
 import { getTeam } from "~~/server/utils/database/teams";
+import { getActiveSeason } from "~~/server/utils/database/seasons";
+import { rubricVersions } from "~~/server/database/schema";
+import { and, eq } from "drizzle-orm";
+import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 export default defineEventHandler(
@@ -12,8 +17,11 @@ export default defineEventHandler(
             NethackPermissions.Judging.scoresWriteAssigned,
         );
 
-        const hackathon = await getHackathon(event);
-        if (hackathon?.status !== "voting") {
+        const [hackathon, season] = await Promise.all([
+            getHackathon(event),
+            getActiveSeason(event),
+        ]);
+        if (hackathon?.status !== "voting" || !season) {
             throw createError({
                 status: 409,
                 message: "Scoring is not open",
@@ -27,6 +35,9 @@ export default defineEventHandler(
                 message: "Team not found",
             });
         }
+        if (team.season_id !== season.id) {
+            throw createError({ status: 404, message: "Team not found" });
+        }
         if (!team.project_submitted) {
             throw createError({
                 status: 400,
@@ -34,16 +45,51 @@ export default defineEventHandler(
             });
         }
 
-        const payload = await readValidatedBody(event, CreateTeamScoresRequest.parse);
+        const payload = await readValidatedBody(event, SubmitTeamScoresRequest.parse);
+        const version = payload.rubric_version_id
+            ? await firstRow(
+                  event.context.drizzle
+                      .select()
+                      .from(rubricVersions)
+                      .where(
+                          and(
+                              eq(rubricVersions.id, payload.rubric_version_id),
+                              eq(rubricVersions.season_id, season.id),
+                          ),
+                      )
+                      .limit(1),
+              )
+            : undefined;
+        if (!version) {
+            throw createError({ status: 409, message: "The active season has no judging rubric." });
+        }
+        if (payload.rubric_version_id && payload.rubric_version_id !== version.id) {
+            throw createError({ status: 409, message: "The rubric changed. Reload this project." });
+        }
+
+        const track = version.definition.tracks[team.pathway ?? ""];
+        if (!track) {
+            throw createError({ status: 409, message: "No rubric track matches this project." });
+        }
+        const issues = validateRubricScores(track, payload.scores);
+        if (issues.length > 0) {
+            throw createError({ status: 400, message: issues[0] });
+        }
 
         try {
             await createTeamScores(event, {
                 team_id: teamID,
+                season_id: season.id,
                 judge_user_id: userID,
                 scores: JSON.stringify(payload.scores),
                 reasoning: payload.reasoning,
+                rubric_version_id: payload.rubric_version_id,
             });
-        } catch {
+        } catch (error) {
+            const code = (error as { code?: string }).code;
+            if (code !== "23505" && code !== "SQLITE_CONSTRAINT_PRIMARYKEY" && code !== "1555") {
+                throw error;
+            }
             throw createError({
                 status: 409,
                 message: "You already scored this project",
