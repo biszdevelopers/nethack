@@ -70,6 +70,7 @@ describe("POST /api/teams/:id/scores", () => {
 
         mockParams.values["id"] = String(team.id);
         mockBody.value = {
+            rubric_version_id: 1,
             scores: {
                 originality: 4,
                 presentation: 3,
@@ -115,6 +116,7 @@ describe("POST /api/teams/:id/scores", () => {
 
         mockParams.values["id"] = String(team.id);
         mockBody.value = {
+            rubric_version_id: 1,
             scores: {
                 originality: 3,
                 presentation: 3,
@@ -142,6 +144,7 @@ describe("POST /api/teams/:id/scores", () => {
         });
         mockParams.values["id"] = String(team.id);
         mockBody.value = {
+            rubric_version_id: 1,
             scores: {
                 originality: 3,
                 presentation: 3,
@@ -168,6 +171,7 @@ describe("POST /api/teams/:id/scores", () => {
 
         mockParams.values["id"] = String(team.id);
         mockBody.value = {
+            rubric_version_id: 1,
             scores: {
                 originality: 3,
                 presentation: 3,
@@ -192,6 +196,7 @@ describe("POST /api/teams/:id/scores", () => {
 
         mockParams.values["id"] = String(team.id);
         mockBody.value = {
+            rubric_version_id: 1,
             scores: {
                 originality: 3,
                 presentation: 3,
