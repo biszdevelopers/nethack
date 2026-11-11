@@ -15,7 +15,14 @@ import {
     type TestContext,
 } from "./helpers";
 import { eq } from "drizzle-orm";
-import { teams, users, hackathon, userPastTeams, seasons } from "~~/server/database/schema";
+import {
+    teams,
+    users,
+    hackathon,
+    userPastTeams,
+    seasons,
+    teamScores,
+} from "~~/server/database/schema";
 
 vi.mock("~~/server/utils/auth", () => ({
     requireUser: vi.fn((...args: any[]) => (globalThis as any).requireUser(...args)),
@@ -149,6 +156,54 @@ describe("GET /api/teams", () => {
 
         expect(Array.isArray(result)).toBe(true);
         expect(result).toHaveLength(1);
+    });
+
+    it("returns stable, paginated judging teams with only the current judge's evaluation", async () => {
+        const judge = seedUser(ctx, { email: "judge@basischina.com", role: "judge" });
+        const otherJudge = seedUser(ctx, { email: "other-judge@basischina.com", role: "judge" });
+        const firstTeam = seedTeam(ctx, { name: "First", project_submitted: 1 });
+        const secondTeam = seedTeam(ctx, { name: "Second", project_submitted: 1 });
+        const thirdTeam = seedTeam(ctx, { name: "Third", project_submitted: 1 });
+        ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: firstTeam.id,
+                judge_user_id: judge.id,
+                scores: JSON.stringify({ idea: 4 }),
+                reasoning: "My private evaluation",
+            } as any)
+            .run();
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: secondTeam.id,
+                judge_user_id: otherJudge.id,
+                scores: JSON.stringify({ idea: 5 }),
+                reasoning: "Another judge's evaluation",
+            } as any)
+            .run();
+
+        mockSession.value = { user: { id: judge.id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 2 };
+
+        const firstPage = await listHandler(createEvent());
+
+        expect(firstPage).toMatchObject({ page: 1, page_size: 2, total: 3, total_pages: 2 });
+        expect(firstPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual([
+            "First",
+            "Second",
+        ]);
+        expect(firstPage.items[0]).toMatchObject({
+            evaluated: true,
+            evaluation: { scores: { idea: 4 }, reasoning: "My private evaluation" },
+        });
+        expect(firstPage.items[1]).toMatchObject({ evaluated: false, evaluation: null });
+        expect(JSON.stringify(firstPage)).not.toMatch(/judge_user_id|judge@basischina\.com/);
+
+        mockQueryState.value = { judging: "true", page: 2, page_size: 2 };
+        const secondPage = await listHandler(createEvent());
+        expect(secondPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual(["Third"]);
     });
 });
 
@@ -556,7 +611,7 @@ describe("POST /api/teams/:id/submit", () => {
 });
 
 describe("GET /api/teams/:id/users", () => {
-    it("allows anonymous public member reads", async () => {
+    it("requires authentication to read a team roster", async () => {
         (globalThis as any).requireUser.mockRejectedValue({
             statusCode: 401,
             message: "Unauthorized",
@@ -565,7 +620,7 @@ describe("GET /api/teams/:id/users", () => {
         const team = seedTeam(ctx, { name: "Team" });
         mockParams.values["id"] = String(team.id);
 
-        await expect(membersHandler(createEvent())).resolves.toEqual([]);
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it("returns team members", async () => {
@@ -573,6 +628,7 @@ describe("GET /api/teams/:id/users", () => {
         seedUser(ctx, { email: "alice@basischina.com", name: "Alice", team_id: team.id });
         seedUser(ctx, { email: "bob@basischina.com", name: "Bob", team_id: team.id });
 
+        mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
 
         const result = await membersHandler(createEvent());
@@ -594,6 +650,7 @@ describe("GET /api/teams/:id/users", () => {
             profile_picture: "https://example.com/avatar.png",
         });
 
+        mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
 
         const result = await membersHandler(createEvent());
@@ -605,6 +662,23 @@ describe("GET /api/teams/:id/users", () => {
             name: "Alice",
             team_id: team.id,
         });
+    });
+
+    it("does not let an unrelated participant read another team's roster", async () => {
+        const team = seedTeam(ctx, { name: "Private Team" });
+        seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+        const outsiderTeam = seedTeam(ctx, { name: "Outsider Team" });
+        seedUser(ctx, { email: "outsider@basischina.com", team_id: outsiderTeam.id });
+        mockSession.value = { user: { id: 2 } };
+        mockParams.values["id"] = String(team.id);
+        (globalThis as any).requireUser.mockImplementation(
+            async (_event: unknown, permission?: string) => {
+                if (permission) throw { statusCode: 403, message: "Forbidden" };
+                return ctx.drizzle.select().from(users).where(eq(users.id, 2)).get();
+            },
+        );
+
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 
     it("returns all current and past members for an old team", async () => {
@@ -628,6 +702,7 @@ describe("GET /api/teams/:id/users", () => {
         // Record Bob as a past member of the legacy team
         ctx.drizzle.insert(userPastTeams).values({ user_id: bob.id, team_id: team.id }).run();
 
+        mockSession.value = { user: { id: alice.id } };
         mockParams.values["id"] = String(team.id);
 
         const result = await membersHandler(createEvent());
