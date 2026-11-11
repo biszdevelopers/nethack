@@ -43,6 +43,8 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 
 User profile editing page. Protected by `auth` middleware.
 
+The page loads the signed-in user's API record through `useApiUser()`. This waits for the client-side session request and watches the session user ID so profile data loads after the cookie session becomes available during hydration.
+
 **Features:**
 
 - Displays greeting with user name or email
@@ -172,10 +174,11 @@ Judge landing page. Protected by `auth` middleware. Accessible only by judges or
 
 **Content:**
 
-- Static summary of participation statistics
-- **Current Evaluations** section — shows `JudgeProgressCard` for the active season
-- **Past Evaluations** section — shows `JudgeProgressCard` entries for past seasons with at least one scored team
-- **Continue** button — navigates to `/judging/continue`
+- **Current evaluations** — shows judge-specific progress for submitted projects in the active season, with an accessible progress bar
+- **Continue judging** — opens the active queue when projects remain
+- **Past evaluations** — shows the judge's completed progress for prior seasons
+
+The page omits unrelated event participation figures so judges can focus on their own workload.
 
 **Layout:** `default`
 
@@ -187,9 +190,13 @@ Active judging interface. Protected by `auth` middleware. Accessible only by jud
 
 **Flow:**
 
-1. Fetches teams for judging from `/api/teams?judging=1`
-2. Renders a `JudgingCard` for each team (project descriptions rendered via `SafeComark`)
-3. After scoring, refreshes the list
+1. Loads the judge's pending projects from `/api/teams?judging=true`, their personal progress from `/api/ballot/summary`, and the active rubric from `/api/judging/rubric`.
+2. Shows one project at a time with repository/demo links, project details, AI-use statement, and the criteria for that project's track.
+3. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see comments only after results are published.
+4. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores, and the page blocks leaving when unsaved changes cannot be saved.
+5. Requires a review step before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
+
+Previous/next controls let a judge move through the current queue while retaining recoverable drafts. The interface is mobile-first, uses keyboard-operable score controls, and provides explicit progress, saving, validation, and submission states.
 
 **Layout:** `default`
 
@@ -320,8 +327,10 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). Contains:
 
 - **Season** — pick the season to manage and activate it (`PATCH /api/seasons/active`); "New Season" creates one via `POST /api/admin/seasons`.
 - **Season Name** — rename the selected season via `PATCH /api/admin/seasons`.
+- **Judging rubric** — edit track keys and labels, criteria, integer score ranges, and weights. Weights are checked to total 100% for each track. Saving creates a new immutable version; the version history shows which rubric is active. Organizers can copy a prior season directly or load its rubric to customize, apply or copy reusable named templates, and save, update, or delete templates. A track used by a submitted project must be reassigned before it can be removed.
+- **Score display curve** — choose a season-level presentation curve while preserving original judge averages and rankings.
 - **Hackathon Configuration** — all settings are per-season (including score and rank visibility) and auto-save through `/api/admin/hackathon` with `season_id`. Editing the active season also syncs to the global `hackathon` row. No "Save" button; every field change is persisted via a serialized PATCH chain carrying all form fields, so no field is ever dropped and no two PATCHes race.
-- **Database Export** — download the SQLite database or a CSV snapshot via `GET /api/admin/database/export`.
+- **Database Export** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
 
 **Layout:** `developers-dashboard`
 
