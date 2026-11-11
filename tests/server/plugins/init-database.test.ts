@@ -8,8 +8,8 @@ const source = readFileSync(
 );
 
 describe("init-database plugin", () => {
-    it("uses defineNitroPlugin so nitroApp is typed", () => {
+    it("uses defineNitroPlugin and closes the process-wide pool", () => {
         expect(source).toContain("export default defineNitroPlugin(");
-        expect(source).toContain('nitroApp.hooks.hook("request"');
+        expect(source).toContain('nitroApp.hooks.hook("close"');
     });
 });
