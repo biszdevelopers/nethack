@@ -1,9 +1,9 @@
 <template>
-    <h3 class="text-3xl sm:text-4xl bold text-primary glow">Results</h3>
+    <h1 class="text-3xl sm:text-4xl bold text-primary glow">Results</h1>
 
     <USeparator class="my-6" />
 
-    <h3 class="text-2xl bold">Current Results</h3>
+    <h2 class="text-2xl bold">Current Results</h2>
 
     <div v-if="user?.team" class="mt-4">
         <ScoreCard v-if="user?.team" :team="user.team"></ScoreCard>
@@ -12,7 +12,7 @@
 
     <USeparator class="my-6" />
 
-    <h3 class="text-2xl bold">Past Seasons</h3>
+    <h2 class="text-2xl bold">Past Seasons</h2>
 
     <div
         v-if="user?.past_teams?.length && user?.past_teams?.length > 0"
