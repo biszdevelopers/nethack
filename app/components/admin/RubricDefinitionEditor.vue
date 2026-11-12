@@ -202,7 +202,8 @@ const weightTotal = (track: RubricTrack) =>
         <div
             v-if="selectedTrack"
             class="rounded-xl border border-ui-border bg-ui-bg p-4 sm:p-5"
-            role="tabpanel"
+            role="region"
+            aria-label="Selected track settings"
         >
             <div
                 class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.6fr)_auto] sm:items-end"
