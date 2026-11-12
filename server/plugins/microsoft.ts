@@ -25,21 +25,31 @@ export default async function initializeMSAccessToken() {
         return metadata.access_token;
     }
 
-    const req = await fetch(
-        `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
-        {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
+    let req: Response;
+    try {
+        req = await fetch(
+            `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: new URLSearchParams({
+                    client_id: process.env.MICROSOFT_CLIENT_ID || "",
+                    scope: "https://graph.microsoft.com/.default",
+                    client_secret: env.MICROSOFT_CLIENT_SECRET ?? "",
+                    grant_type: "client_credentials",
+                }).toString(),
             },
-            body: new URLSearchParams({
-                client_id: process.env.MICROSOFT_CLIENT_ID || "",
-                scope: "https://graph.microsoft.com/.default",
-                client_secret: env.MICROSOFT_CLIENT_SECRET ?? "",
-                grant_type: "client_credentials",
-            }).toString(),
-        },
-    );
+        );
+    } catch {
+        // Graph is an optional integration. A token endpoint outage must not
+        // reject Nitro's startup and prevent core hackathon flows from serving.
+        console.warn(
+            "[MS Graph] Token endpoint is unavailable - Microsoft Graph features will be unavailable",
+        );
+        return null;
+    }
 
     const code = req.status;
     if (code !== 200) {
