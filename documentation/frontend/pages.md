@@ -165,11 +165,11 @@ Contributing guidelines and security disclosure policy. Contains commit guidelin
 
 **File:** `app/pages/judging/index.vue`
 
-Judge landing page. Protected by `auth` middleware. Accessible only by judges or admins during the `voting` status.
+Judge landing page. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled.
 
 **Guards:**
 
-- Redirects to `/` if hackathon status is not `voting`
+- Redirects to `/` if hackathon status is not `voting` or `judging_open` is disabled
 - Redirects to `/` if user lacks judge or admin permissions
 
 **Content:**
@@ -186,7 +186,7 @@ The page omits unrelated event participation figures so judges can focus on thei
 
 **File:** `app/pages/judging/continue.vue`
 
-Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins during the `voting` status.
+Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled. Draft saves and final score submissions enforce the same gate on the server.
 
 **Flow:**
 
