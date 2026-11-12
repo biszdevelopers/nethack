@@ -20,12 +20,19 @@ try {
         FROM hackathon
         WHERE id = 1
     `;
-    assert.deepEqual(hackathon, {
-        id: 1,
-        status: "finished",
-        start_timestamp: expectedEventTimestamp,
-        end_timestamp: Date.parse("2026-05-22T11:00:00.000Z"),
-    });
+    assert.deepEqual(
+        {
+            ...hackathon,
+            start_timestamp: toSafeInteger(hackathon.start_timestamp),
+            end_timestamp: toSafeInteger(hackathon.end_timestamp),
+        },
+        {
+            id: 1,
+            status: "finished",
+            start_timestamp: expectedEventTimestamp,
+            end_timestamp: Date.parse("2026-05-22T11:00:00.000Z"),
+        },
+    );
 
     const seasons = await sql`
         SELECT id, name, is_active, status, voting_enabled, results_published, judging_open,
@@ -45,8 +52,8 @@ try {
     assert.equal(seasons[0].show_scores, 0);
     assert.equal(seasons[0].show_ranking, 0);
     assert.equal(seasons[0].max_votes_per_user, 10);
-    assert.equal(seasons[0].start_timestamp, expectedEventTimestamp);
-    assert.equal(seasons[0].end_timestamp, Date.parse("2026-05-22T11:00:00.000Z"));
+    assert.equal(toSafeInteger(seasons[0].start_timestamp), expectedEventTimestamp);
+    assert.equal(toSafeInteger(seasons[0].end_timestamp), Date.parse("2026-05-22T11:00:00.000Z"));
     assert.equal(seasons[0].score_curve_preset, "original");
 
     const teams = await sql`
@@ -175,4 +182,12 @@ try {
 
 function parseJsonValue(value) {
     return typeof value === "string" ? JSON.parse(value) : value;
+}
+
+function toSafeInteger(value) {
+    const number = typeof value === "number" ? value : Number(value);
+    if (!Number.isSafeInteger(number)) {
+        throw new Error(`Expected a safe PostgreSQL integer value, received ${String(value)}.`);
+    }
+    return number;
 }
