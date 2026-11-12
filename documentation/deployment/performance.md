@@ -102,9 +102,9 @@ Node.js >= v24 and Bun both support `es2020` without issue. The target can be re
 
 ## Bounded server icon collection
 
-`@nuxt/icon` normally bundles every installed icon collection for server-side icon requests. This app scans the source for used icons and generates a local custom collection containing only those icons before `bun run dev`, `bun run build`, and `bun run generate`. The generated SVGs live under the ignored `node_modules/.cache/basishacks-icon-collections` directory and are embedded into the production output. Run `bun run postinstall` after installing dependencies if the Nuxt icon scan file is missing.
+The app limits icon scanning to application source files and resolves icons directly from the installed `@iconify-json/*` packages. Before install preparation, development, production builds, and static generation, `scripts/generate-icon-server-bundle.mjs` uses Nuxt Icon's scanner and package resolver to create a subset for server-side rendering. Nuxt's server bundle receives that subset, while the client bundle scans the source directly. The workflow does not parse Nuxt's generated bundle. Keep the icon collection packages installed so clean builds can resolve all scanned icons; `shared/icon-bundle-manifest.json` lists Nuxt UI's default control icons and the explicit `lucide:gem` award icon stored in the database seed.
 
-In a local production build, the Nitro output decreased from 29.8 MB with discovered collections to 3.24 MB with the 92 scanned icons, an 89% reduction. This measures build output size only; it does not prove the idle RSS target. Measure RSS separately with the Linux workflow below.
+The client bundle scan avoids including each full icon collection in the separate server bundle. Measure the resulting production output and process RSS with the Linux workflow below; bundle size alone does not prove the idle RSS target.
 
 ## Verification
 
