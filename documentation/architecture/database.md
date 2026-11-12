@@ -26,13 +26,15 @@ The hackathon table always has exactly one row (`id = 1`) that controls the glob
 | `judging_open` | `INTEGER` | Whether judge scoring is open |
 | `schedule_start` | `TEXT` | ISO timestamp for event start |
 | `schedule_end` | `TEXT` | ISO timestamp for event end |
-| `start_timestamp` | `INTEGER` | Event start timestamp |
-| `end_timestamp` | `INTEGER` | Event end timestamp |
-| `voting_start_timestamp` | `INTEGER` | Voting period start |
-| `voting_end_timestamp` | `INTEGER` | Voting period end |
-| `results_open_timestamp` | `INTEGER` | Results visibility timestamp |
+| `start_timestamp` | `BIGINT` | Event start timestamp in epoch milliseconds |
+| `end_timestamp` | `BIGINT` | Event end timestamp in epoch milliseconds |
+| `voting_start_timestamp` | `BIGINT` | Voting period start in epoch milliseconds |
+| `voting_end_timestamp` | `BIGINT` | Voting period end in epoch milliseconds |
+| `results_open_timestamp` | `BIGINT` | Results visibility timestamp in epoch milliseconds |
 | `theme_name` | `TEXT` | Hackathon theme name |
 | `theme_description` | `TEXT` | Hackathon theme description |
+
+Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 
 ### `teams`
 
@@ -127,7 +129,9 @@ Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they a
 | `name`      | `TEXT NOT NULL UNIQUE`              | Season name                                  |
 | `is_active` | `INTEGER NOT NULL DEFAULT 0`        | Only one season can be active (CHECK 0 or 1) |
 
-Each season also stores its own copy of the tweakable settings (`status`, `show_scores`, `show_ranking`), which also exist on the `hackathon` singleton. Editing the tweaks of the currently active season also updates the `hackathon` row so changes take effect immediately, and activating a season copies its tweaks into the `hackathon` row. The remaining hackathon-state columns (`voting_enabled`, `results_published`, `judging_open`, timestamps, theme, etc.) still exist on both tables but are not part of the season tweaks system.
+Each season also stores its own copy of the tweakable settings (`status`, `show_scores`, `show_ranking`), which also exist on the `hackathon` singleton. Editing the tweaks of the currently active season also updates the `hackathon` row so changes take effect immediately, and activating a season copies its tweaks into the `hackathon` row. The nullable `rubric_version_id` points to `rubric_versions.id`; it is null while a season and its first rubric version are being created, then set after that version exists. The PostgreSQL foreign key protects the reference, while write paths also verify that the selected version belongs to that season. The remaining hackathon-state columns (`voting_enabled`, `results_published`, `judging_open`, timestamps, theme, etc.) still exist on both tables but are not part of the season tweaks system.
+
+The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 
 When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from the team's **own** season (via `getScoreRankVisibilityResolver` in `server/utils/database/seasons.ts`), falling back to the `hackathon` singleton only when the season no longer exists. This keeps past-season results governed by their own season's settings rather than the live season's.
 
