@@ -36,19 +36,22 @@ export function useJudgingDraft() {
         state.reasoning = reasoning;
     }
 
-    async function load(teamId: number, trackKey: string) {
-        if (currentTeamId === teamId && status.value !== "error") return;
+    async function load(teamId: number, trackKey: string, refresh = false) {
+        if (currentTeamId === teamId && status.value !== "error" && !refresh) return;
 
         clearTimeout(saveTimer);
         if (dirty.value && currentTeamId !== null) await flush();
 
+        const preserveCurrentDraft = refresh && currentTeamId === teamId && loaded.value;
         currentTeamId = teamId;
         currentTrackKey = trackKey;
-        rubric.value = null;
-        rubricVersionId.value = null;
-        assignState({}, "");
-        dirty.value = false;
-        loaded.value = false;
+        if (!preserveCurrentDraft) {
+            rubric.value = null;
+            rubricVersionId.value = null;
+            assignState({}, "");
+            dirty.value = false;
+            loaded.value = false;
+        }
         errorMessage.value = null;
         status.value = "loading";
 
@@ -79,7 +82,7 @@ export function useJudgingDraft() {
             loaded.value = true;
             status.value = "saved";
         } catch (error) {
-            loaded.value = false;
+            loaded.value = preserveCurrentDraft;
             status.value = "error";
             errorMessage.value = getErrorMessage(error);
         }
@@ -161,7 +164,8 @@ export function useJudgingDraft() {
             await flush();
             return;
         }
-        await load(currentTeamId, currentTrackKey);
+        if (status.value === "loading") return;
+        await load(currentTeamId, currentTrackKey, true);
     }
 
     async function clear(teamId: number) {
@@ -200,7 +204,7 @@ export function useJudgingDraft() {
         loaded,
         rubric,
         rubricVersionId,
-        load,
+        load: (teamId: number, trackKey: string) => load(teamId, trackKey),
         markChanged,
         flush,
         retryLoad,
