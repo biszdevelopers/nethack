@@ -91,7 +91,7 @@ The former basishacks OAuth provider and application-management UI/API have been
 
 ## Database Setup
 
-The PostgreSQL database auto-migrates on server startup. The init plugin `server/plugins/init-database.ts` creates the bounded `postgres` connection pool and applies Drizzle migrations under a PostgreSQL advisory lock before the server accepts requests. Configure a valid `DATABASE_URL` in every environment. The default pool maximum is 10 connections; `DATABASE_POOL_MAX` accepts validated values from 2 to 64.
+The PostgreSQL database auto-migrates on server startup. The init plugin `server/plugins/init-database.ts` creates the bounded `postgres` connection pool and applies Drizzle migrations under a PostgreSQL advisory lock before the server accepts requests. It then seeds the default event, season, and rubric; generated season IDs use the PostgreSQL serial sequence, and `seasons.rubric_version_id` is protected by a foreign key. Configure a valid `DATABASE_URL` in every environment. The default pool maximum is 10 connections; `DATABASE_POOL_MAX` accepts validated values from 2 to 64.
 
 Application queries use Drizzle ORM's parameterized query builders. `bun run db:migrate` applies pending PostgreSQL migrations for release workflows; server startup also applies pending migrations before serving.
 
@@ -105,7 +105,7 @@ bun run db:studio     # open Drizzle Studio
 
 ### Importing an existing SQLite database
 
-SQLite files are not used by the application at runtime. To migrate an existing deployment, take and verify a SQLite backup, provision a new PostgreSQL database, stop the app, apply migrations, then run the one-time importer. The importer accepts an empty target or the complete exact seed from fresh migrations; it rejects partial or modified seed rows and other target data. It preserves IDs and relationships, imports legacy `sc_votes`, adds an immutable imported rubric version per season, archives removed legacy fields, checks foreign-key relationships and row counts, and rolls back the entire import on failure. Unknown non-metadata tables and broken source references fail closed; the importer reads the SQLite source without modifying it. See [SQLite-to-PostgreSQL migration](documentation/deployment/postgresql-migration.md) for the maintenance-window procedure.
+SQLite files are not used by the application at runtime. To migrate an existing deployment, take and verify a SQLite backup, provision a new PostgreSQL database, stop the app, apply migrations, then run the one-time importer. The importer accepts an empty target or the complete exact seed from fresh migrations; it rejects partial or modified seed rows and other target data. It preserves IDs and relationships, imports legacy `sc_votes`, adds an immutable imported rubric version per season, archives removed legacy fields, checks foreign-key relationships and row counts, and rolls back the entire import on failure. The earlier single-hackathon schema is mapped to one explicit season; retired one-time login credentials are discarded. Unknown non-metadata tables and broken source references fail closed; the importer reads the SQLite source without modifying it. See [SQLite-to-PostgreSQL migration](documentation/deployment/postgresql-migration.md) for the maintenance-window procedure.
 
 ## Judging and Published Feedback
 
