@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { performance } from "node:perf_hooks";
+import { maximum } from "./benchmark-utils.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const command = args.command;
@@ -257,10 +258,6 @@ function positiveInteger(value) {
     if (!Number.isSafeInteger(parsed) || parsed <= 0)
         throw new Error(`Expected a positive integer: ${value}`);
     return parsed;
-}
-
-function maximum(values) {
-    return values.length ? Math.max(...values) : null;
 }
 
 function percentile(values, fraction) {
