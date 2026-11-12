@@ -3,9 +3,32 @@ import { resolve } from "node:path";
 
 const outputPath = process.argv[2];
 if (!outputPath) {
-    throw new Error("Usage: bun scripts/create-import-smoke-db.mjs <output.sqlite> [--populate]");
+    throw new Error(
+        "Usage: bun scripts/create-import-smoke-db.mjs <output.sqlite> [--populate] [--legacy]",
+    );
 }
 const populate = process.argv.includes("--populate");
+const legacy = process.argv.includes("--legacy");
+const seasonTable = legacy
+    ? ""
+    : `
+        CREATE TABLE seasons (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'not_started',
+            show_scores INTEGER NOT NULL DEFAULT 0,
+            show_ranking INTEGER NOT NULL DEFAULT 0
+        );`;
+const teamSeasonColumn = legacy ? "" : "season_id INTEGER,";
+const scoreIdentityColumn = legacy ? "id INTEGER PRIMARY KEY AUTOINCREMENT," : "";
+const scoreSeasonColumn = legacy ? "" : "season_id INTEGER,";
+const visibilityColumns = legacy
+    ? ""
+    : `show_scores INTEGER NOT NULL DEFAULT 0,
+            show_ranking INTEGER NOT NULL DEFAULT 0,`;
+const initialHackathonInsert =
+    legacy && populate ? "" : "INSERT INTO hackathon (id, status) VALUES (1, 'finished');";
 
 const { Database } = await import("bun:sqlite");
 const database = new Database(resolve(outputPath));
@@ -16,8 +39,7 @@ try {
             status TEXT NOT NULL,
             voting_enabled INTEGER NOT NULL DEFAULT 0,
             results_published INTEGER NOT NULL DEFAULT 0,
-            show_scores INTEGER NOT NULL DEFAULT 0,
-            show_ranking INTEGER NOT NULL DEFAULT 0,
+            ${visibilityColumns}
             submitted_count INTEGER NOT NULL DEFAULT 0,
             max_votes_per_user INTEGER NOT NULL DEFAULT 0,
             judging_open INTEGER NOT NULL DEFAULT 0,
@@ -31,19 +53,12 @@ try {
             theme_name TEXT,
             theme_description TEXT
         );
-        CREATE TABLE seasons (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'not_started',
-            show_scores INTEGER NOT NULL DEFAULT 0,
-            show_ranking INTEGER NOT NULL DEFAULT 0
-        );
+        ${seasonTable}
         CREATE TABLE teams (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             pathway TEXT,
-            season_id INTEGER,
+            ${teamSeasonColumn}
             score INTEGER,
             rank INTEGER,
             project_name TEXT NOT NULL DEFAULT '',
@@ -59,7 +74,9 @@ try {
             name TEXT,
             team_id INTEGER,
             role TEXT,
-            age INTEGER
+            age INTEGER,
+            login_code TEXT,
+            login_expiry INTEGER
         );
         CREATE TABLE ballots (
             id INTEGER PRIMARY KEY,
@@ -120,20 +137,60 @@ try {
             field5 TEXT
         );
         CREATE TABLE team_scores (
+            ${scoreIdentityColumn}
             team_id INTEGER NOT NULL,
             judge_user_id INTEGER NOT NULL,
-            season_id INTEGER,
+            ${scoreSeasonColumn}
             scores TEXT NOT NULL,
             reasoning TEXT
         );
-        INSERT INTO hackathon (id, status) VALUES (1, 'finished');
-        INSERT INTO seasons (id, name, is_active, status, show_scores, show_ranking)
-        VALUES
-            (1, 'Import smoke', 1, 'finished', 1, 1),
-            (2, 'Import smoke history', 0, 'finished', 1, 1);
+        ${initialHackathonInsert}
+        ${
+            legacy
+                ? ""
+                : `
+            INSERT INTO seasons (id, name, is_active, status, show_scores, show_ranking)
+            VALUES
+                (1, 'Import smoke', 1, 'finished', 1, 1),
+                (2, 'Import smoke history', 0, 'finished', 1, 1);`
+        }
     `);
     if (populate) {
-        database.exec(`
+        if (legacy) {
+            database.exec(`
+                INSERT INTO hackathon (
+                    id, status, voting_enabled, results_published, max_votes_per_user,
+                    judging_open, start_timestamp, end_timestamp, voting_start_timestamp,
+                    voting_end_timestamp, results_open_timestamp
+                ) VALUES (
+                    1, 'finished', 1, 1, 10, 1,
+                    '2026-05-15T11:00:00.000Z', '2026-05-22T11:00:00.000Z',
+                    '2026-05-15T11:00:00.000Z', '2026-05-22T11:00:00.000Z',
+                    '2026-05-22T11:00:00.000Z'
+                );
+                INSERT INTO teams (
+                    id, name, pathway, score, rank, project_name, project_description,
+                    project_demo_url, project_repo_url, project_submitted
+                ) VALUES (
+                    42, 'Legacy import team', 'junior', 21, 1, 'Legacy project',
+                    'Preserved legacy submission', 'https://demo.example.invalid',
+                    'https://repo.example.invalid', 1
+                );
+                INSERT INTO users (id, email, name, team_id, role, age, login_code, login_expiry)
+                VALUES
+                    (100, 'legacy-judge@example.invalid', 'Legacy Judge', NULL, 'judge', 15,
+                        'fixture-one-time-login-code-must-not-import', 1779000000),
+                    (101, 'legacy-participant@example.invalid', 'Legacy Participant', 42,
+                        'participant', 14, NULL, NULL);
+                INSERT INTO team_scores (id, team_id, judge_user_id, scores, reasoning)
+                VALUES (
+                    801, 42, 100,
+                    '{"originality":5,"presentation":4,"technicality":3,"theme":4,"impact":5}',
+                    'Preserved legacy judge feedback.'
+                );
+            `);
+        } else
+            database.exec(`
             INSERT INTO teams (
                 id, name, pathway, season_id, score, rank, project_name, project_description,
                 project_demo_url, project_repo_url, project_submitted, sourcing
