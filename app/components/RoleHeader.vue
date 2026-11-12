@@ -15,6 +15,7 @@
                 variant="ghost"
                 :class="[profileIconColor, 'min-h-11 min-w-11']"
                 href="/profile"
+                :aria-label="userRef ? 'Open your profile' : 'Sign in'"
             >
                 <template v-if="userRef">
                     <UserAvatar :user="user" size="sm" />
