@@ -41,7 +41,7 @@ The platform manages the entire hackathon lifecycle:
 | **AI** | `openai` ^6.45.0 | OpenAI SDK used for DeepSeek API integration. |
 | **Validation** | Zod 4.x (^4.6.7) | Schema validation for all API inputs. |
 | **Fonts** | `@nuxt/fonts` ^0.14.0 | Local font provider. |
-| **Icons** | `@iconify-json/lucide`, `@iconify-json/material-symbols`, `@iconify-json/simple-icons` | Icon sets. |
+| **Icons** | `@nuxt/icon` with fluent, heroicons, lucide, material-symbols, and simple-icons | Scanned client icons and a bounded server-rendered icon bundle. |
 | **Animation** | `gsap` ^3.15.0 | ScrollTrigger timelines and responsive motion for the Beneath the Surface showcase. |
 | **Linting** | `@nuxt/eslint` ^1.17.0 + Oxfmt ^0.78.0 | Semicolons enabled, double quotes. |
 | **Deployment** | Node.js server (VPS) | Bun also supported; Nitro `node-server` preset. |
