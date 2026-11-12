@@ -61,18 +61,31 @@ const RELATIONSHIPS = [
     ["judging_drafts", "rubric_version_id", "rubric_versions", "id", false],
 ];
 
-// seasons.rubric_version_id is validated against the same-season constraint
-// in write paths to avoid a circular FK with rubric_versions.season_id.
-const DATABASE_FOREIGN_KEYS = RELATIONSHIPS.filter(
-    ([table, column]) => !(table === "seasons" && column === "rubric_version_id"),
-);
+// The season's active rubric pointer is nullable during import; the rubric
+// version is inserted before the pointer is restored, so the cyclic table
+// relationship remains compatible with ordinary foreign-key enforcement.
+const DATABASE_FOREIGN_KEYS = RELATIONSHIPS;
 
 const GENERATED_COLUMNS = new Set();
 const ARCHIVED_COLUMNS = {
     users: ["role", "age"],
     seasons: ["submitted_count"],
+    team_scores: ["id"],
     oauth2_applications: ["proxy_microsoft"],
 };
+// These are one-time credentials from the retired login flow. Do not preserve
+// them in PostgreSQL: importing them could make stale credentials usable.
+const DISCARDED_SOURCE_COLUMNS = {
+    users: new Set(["login_code", "login_expiry"]),
+};
+const LEGACY_TIMESTAMP_FIELDS = [
+    "start_timestamp",
+    "end_timestamp",
+    "voting_start_timestamp",
+    "voting_end_timestamp",
+    "results_open_timestamp",
+];
+const LEGACY_SEASON_ID = 1;
 const quote = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
 const asCount = (value) => Number(value ?? 0);
 const sourcePathValue = process.env.SQLITE_IMPORT_PATH?.trim();
@@ -213,28 +226,123 @@ function prepareLegacyColumnRows(source, availableTables) {
     return legacyRows;
 }
 
+function normalizeLegacyTimestamp(value, field) {
+    if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+    if (typeof value !== "string" || !value.trim()) {
+        throw new Error(
+            `Legacy hackathon ${field} is missing or invalid; refusing to alter event timing.`,
+        );
+    }
+    const raw = value.trim();
+    if (/^-?\d+$/.test(raw)) {
+        const integer = Number(raw);
+        if (Number.isSafeInteger(integer)) return integer;
+    }
+    const timestamp = Date.parse(raw);
+    if (Number.isSafeInteger(timestamp)) return timestamp;
+    throw new Error(
+        `Legacy hackathon ${field} is not a valid epoch millisecond value or ISO date; refusing to alter event timing.`,
+    );
+}
+
+function normalizeLegacyHackathonRow(row) {
+    const normalized = { ...row };
+    for (const field of LEGACY_TIMESTAMP_FIELDS) {
+        if (!(field in normalized)) {
+            throw new Error(
+                `Legacy hackathon is missing ${field}; refusing to alter event timing.`,
+            );
+        }
+        normalized[field] = normalizeLegacyTimestamp(normalized[field], field);
+    }
+    return normalized;
+}
+
+function detectSeasonSchema(source, availableTables) {
+    const teamColumns = new Set(sourceColumns(source, "teams"));
+    const scoreColumns = new Set(sourceColumns(source, "team_scores"));
+    const hasSeasonTable = availableTables.has("seasons");
+    const teamsHaveSeasonId = teamColumns.has("season_id");
+    const scoresHaveSeasonId = scoreColumns.has("season_id");
+
+    if (hasSeasonTable) {
+        if (!teamsHaveSeasonId || !scoresHaveSeasonId) {
+            throw new Error(
+                "SQLite source has a partial season schema; a seasons table requires season_id on both teams and team_scores.",
+            );
+        }
+        const seasons = rowsFromSource(source, "seasons");
+        if (!seasons.length) {
+            throw new Error(
+                "SQLite source contains a seasons table but no seasons; refusing to infer history.",
+            );
+        }
+        return { kind: "seasonal", seasons };
+    }
+
+    if (teamsHaveSeasonId || scoresHaveSeasonId || scoreColumns.has("rubric_version_id")) {
+        throw new Error(
+            "SQLite source has a partial season schema; without a seasons table, teams and team_scores must both omit season_id and team_scores must omit rubric_version_id.",
+        );
+    }
+
+    return { kind: "single-hackathon", seasons: null };
+}
+
+function makeLegacySeason(hackathon) {
+    return {
+        id: LEGACY_SEASON_ID,
+        name: "Imported legacy season",
+        is_active: 1,
+        status: hackathon.status,
+        voting_enabled: hackathon.voting_enabled ?? 0,
+        results_published: hackathon.results_published ?? 0,
+        judging_open: hackathon.judging_open ?? 0,
+        show_scores: hackathon.show_scores ?? 0,
+        show_ranking: hackathon.show_ranking ?? 0,
+        max_votes_per_user: hackathon.max_votes_per_user ?? 0,
+        schedule_start: hackathon.schedule_start ?? null,
+        schedule_end: hackathon.schedule_end ?? null,
+        start_timestamp: hackathon.start_timestamp ?? 0,
+        end_timestamp: hackathon.end_timestamp ?? 0,
+        voting_start_timestamp: hackathon.voting_start_timestamp ?? 0,
+        voting_end_timestamp: hackathon.voting_end_timestamp ?? 0,
+        results_open_timestamp: hackathon.results_open_timestamp ?? 0,
+        theme_name: hackathon.theme_name ?? null,
+        theme_description: hackathon.theme_description ?? null,
+        score_curve_preset: "original",
+        rubric_version_id: null,
+    };
+}
+
 function validateSource(source, availableTables) {
     const metadataTables = validateSourceTables(availableTables);
-    for (const requiredTable of ["hackathon", "seasons", "teams", "users", "team_scores"]) {
+    for (const requiredTable of ["hackathon", "teams", "users", "team_scores"]) {
         if (!availableTables.has(requiredTable)) {
             throw new Error(`SQLite source is missing required table: ${requiredTable}`);
         }
     }
+    const seasonSchema = detectSeasonSchema(source, availableTables);
     const relationshipFailures = checkSourceRelationships(source, availableTables);
     if (relationshipFailures.length) {
         throw new Error(
             `SQLite source has broken relationships; repair or restore a verified backup before import:\n- ${relationshipFailures.join("\n- ")}`,
         );
     }
-    const seasons = rowsFromSource(source, "seasons");
-    if (!seasons.length)
-        throw new Error("SQLite source has no seasons; refusing to invent season history.");
-    const hackathonRows = rowsFromSource(source, "hackathon");
+    const sourceHackathonRows = rowsFromSource(source, "hackathon");
+    const hackathonRows =
+        seasonSchema.kind === "single-hackathon"
+            ? sourceHackathonRows.map(normalizeLegacyHackathonRow)
+            : sourceHackathonRows;
     if (hackathonRows.length !== 1 || Number(hackathonRows[0].id) !== 1) {
         throw new Error(
             "SQLite source must contain exactly the canonical hackathon row with id = 1.",
         );
     }
+    const seasons =
+        seasonSchema.kind === "single-hackathon"
+            ? [makeLegacySeason(hackathonRows[0])]
+            : seasonSchema.seasons;
     const activeSeasons = seasons.filter((season) => Number(season.is_active) === 1);
     if (activeSeasons.length > 1) throw new Error("SQLite source has more than one active season.");
 
@@ -246,7 +354,18 @@ function validateSource(source, availableTables) {
             countSourceRows(source, table),
         ]),
     );
-    return { counts, seasons, legacyJudgeRows, legacyColumnRows, metadataTables };
+    const targetCountExpectations = { ...counts };
+    if (seasonSchema.kind === "single-hackathon") targetCountExpectations.seasons = 1;
+    return {
+        counts,
+        targetCountExpectations,
+        seasons,
+        hackathonRows,
+        seasonSchema: seasonSchema.kind,
+        legacyJudgeRows,
+        legacyColumnRows,
+        metadataTables,
+    };
 }
 
 function requireDatabaseUrl() {
@@ -310,7 +429,11 @@ async function ensureEmptyTarget(sql, columnsByTable) {
         const columns = columnsByTable.get(tableName);
         const inputColumns = new Set(sourceColumnsForTargetCheck.get(tableName) ?? []);
         for (const sourceColumn of inputColumns) {
-            if (columns.has(sourceColumn) || GENERATED_COLUMNS.has(`${tableName}.${sourceColumn}`))
+            if (
+                columns.has(sourceColumn) ||
+                GENERATED_COLUMNS.has(`${tableName}.${sourceColumn}`) ||
+                DISCARDED_SOURCE_COLUMNS[tableName]?.has(sourceColumn)
+            )
                 continue;
             if (ARCHIVED_COLUMNS[tableName]?.includes(sourceColumn)) continue;
             throw new Error(
@@ -500,7 +623,15 @@ async function importToPostgres(source, availableTables, sourceInfo) {
             await insertRows(tx, "seasons", sourceSeasons, columnsByTable, () => ({
                 rubric_version_id: null,
             }));
-            await insertRows(tx, "teams", rowsFromSource(source, "teams"), columnsByTable);
+            await insertRows(
+                tx,
+                "teams",
+                rowsFromSource(source, "teams"),
+                columnsByTable,
+                sourceInfo.seasonSchema === "single-hackathon"
+                    ? () => ({ season_id: LEGACY_SEASON_ID })
+                    : undefined,
+            );
             await insertRows(tx, "users", rowsFromSource(source, "users"), columnsByTable);
 
             const seasonRubricIds = await insertRubricVersions(tx, sourceInfo.seasons);
@@ -532,7 +663,7 @@ async function importToPostgres(source, availableTables, sourceInfo) {
                 season_id: row.__seasonId,
                 rubric_version_id: row.__rubricVersionId,
             }));
-            await insertRows(tx, "hackathon", rowsFromSource(source, "hackathon"), columnsByTable);
+            await insertRows(tx, "hackathon", sourceInfo.hackathonRows, columnsByTable);
 
             for (const tableName of [
                 "ballots",
@@ -569,7 +700,9 @@ async function importToPostgres(source, availableTables, sourceInfo) {
             await validateTargetForeignKeys(tx);
 
             const targetCounts = {};
-            for (const [tableName, expectedCount] of Object.entries(sourceInfo.counts)) {
+            for (const [tableName, expectedCount] of Object.entries(
+                sourceInfo.targetCountExpectations,
+            )) {
                 if (!columnsByTable.has(tableName)) continue;
                 const actualCount = await targetRows(tx, tableName);
                 targetCounts[tableName] = actualCount;
@@ -598,6 +731,10 @@ async function importToPostgres(source, availableTables, sourceInfo) {
                     {
                         sourcePath: sourceInfo.sourcePath,
                         sourceCounts: sourceInfo.counts,
+                        seasonSchema: sourceInfo.seasonSchema,
+                        ...(sourceInfo.seasonSchema === "single-hackathon"
+                            ? { legacySeasonMapping: { seasonId: LEGACY_SEASON_ID } }
+                            : {}),
                         targetCounts,
                         ignoredMetadataTables: sourceInfo.metadataTables,
                         legacyArchiveRows: legacyActual,
@@ -639,6 +776,10 @@ async function main() {
                     {
                         sourcePath,
                         sourceRows: sourceInfo.counts,
+                        seasonSchema: sourceInfo.seasonSchema,
+                        ...(sourceInfo.seasonSchema === "single-hackathon"
+                            ? { legacySeasonMapping: { seasonId: LEGACY_SEASON_ID } }
+                            : {}),
                         ignoredMetadataTables: sourceInfo.metadataTables,
                         legacyArchiveRows:
                             sourceInfo.legacyColumnRows.length +
