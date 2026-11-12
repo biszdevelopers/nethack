@@ -11,16 +11,17 @@ All API endpoints are protected by an in-memory rate limiter that prevents abuse
 
 ## Default Configuration
 
-The rate limiter defines **4 independent tiers**, each with its own request counter per client:
+The rate limiter defines **5 independent tiers**, each with its own request counter per client:
 
 | Tier | Env Variable | Default Limit | Routes Protected |
 | --- | --- | :-: | --- |
 | **General** | `RATE_LIMIT_GENERAL_MAX` | 120/min | All non-sensitive API routes |
 | **Authentication** | `RATE_LIMIT_AUTH_MAX` | 20/min | `/api/login`, `/api/auth/basis/callback` |
 | **Vote / Score** | `RATE_LIMIT_VOTE_MAX` | 30/min | `/api/ballot`, `/api/teams/:id/scores` |
+| **Judging drafts** | `RATE_LIMIT_GENERAL_MAX` | 120/min | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId` |
 | **File Upload** | `RATE_LIMIT_UPLOAD_MAX` | 10/min | Upload routes |
 
-All tiers share the same window duration, configurable via `RATE_LIMIT_WINDOW_MS` (default: `60000` ms / 1 minute).
+All tiers share the same window duration, configurable via `RATE_LIMIT_WINDOW_MS` (default: `60000` ms / 1 minute). Judging draft routes use the general limit with a dedicated per-user bucket, leaving room for the judge editor's 650 ms autosave debounce without sharing capacity with other general API requests.
 
 ```ts
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
