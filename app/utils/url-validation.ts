@@ -5,12 +5,28 @@
 export function isSafeUrl(url: string): boolean {
     if (!url) return false;
 
-    // Allow same-origin relative paths; reject protocol-relative URLs.
-    if (url.startsWith("/") && !url.startsWith("//")) return true;
+    // Parse root-relative paths with the WHATWG URL parser too. Browsers treat
+    // backslashes as slashes for special schemes, so a value such as `/\\\\evil.example`
+    // can otherwise escape the current origin despite looking like a path.
+    if (url.startsWith("/")) {
+        if (url.startsWith("//")) return false;
+        try {
+            return (
+                new URL(url, "https://basishacks.invalid").origin === "https://basishacks.invalid"
+            );
+        } catch {
+            return false;
+        }
+    }
 
     try {
         const parsed = new URL(url);
-        return parsed.protocol === "http:" || parsed.protocol === "https:";
+        return (
+            (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+            Boolean(parsed.hostname) &&
+            !parsed.username &&
+            !parsed.password
+        );
     } catch {
         return false;
     }
