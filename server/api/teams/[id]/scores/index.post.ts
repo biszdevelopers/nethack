@@ -7,6 +7,7 @@ import { rubricVersions } from "~~/server/database/schema";
 import { and, eq } from "drizzle-orm";
 import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
+import { isJudgingOpen } from "~~/server/utils/judging";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -21,7 +22,7 @@ export default defineEventHandler(
             getHackathon(event),
             getActiveSeason(event),
         ]);
-        if (hackathon?.status !== "voting" || !season) {
+        if (!isJudgingOpen(hackathon) || !season) {
             throw createError({
                 status: 409,
                 message: "Scoring is not open",
@@ -63,10 +64,6 @@ export default defineEventHandler(
         if (!version) {
             throw createError({ status: 409, message: "The active season has no judging rubric." });
         }
-        if (payload.rubric_version_id && payload.rubric_version_id !== version.id) {
-            throw createError({ status: 409, message: "The rubric changed. Reload this project." });
-        }
-
         const track = version.definition.tracks[team.pathway ?? ""];
         if (!track) {
             throw createError({ status: 409, message: "No rubric track matches this project." });
