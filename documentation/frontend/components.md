@@ -31,7 +31,7 @@ The main navigation header rendered at the top of every page. Uses `UHeader` fro
 | Showcase | Always visible |
 | Beneath the Surface | Always visible |
 | Voting | Hackathon status is `voting` and user is not a judge or admin |
-| Judging | User is a judge or admin, and hackathon status is `voting` |
+| Judging | User is a judge or admin, hackathon status is `voting`, and `judging_open` is enabled |
 
 Display-only permission checks use `useNethackPermissions()`; server APIs enforce verified JWT permissions.
 
