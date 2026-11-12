@@ -208,6 +208,47 @@ describe("GET /api/teams", () => {
         expect(secondPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual(["Third"]);
     });
 
+    it("keeps malformed, array, and nonnumeric historical evaluations visible without leaking payloads", async () => {
+        const judge = seedUser(ctx, { email: "history-judge@basischina.com", role: "judge" });
+        const invalidJsonTeam = seedTeam(ctx, { name: "Invalid JSON", project_submitted: 1 });
+        const arrayTeam = seedTeam(ctx, { name: "Array JSON", project_submitted: 1 });
+        const invalidValueTeam = seedTeam(ctx, {
+            name: "Nonnumeric JSON",
+            project_submitted: 1,
+        });
+        ctx.drizzle
+            .update(hackathon)
+            .set({ status: "voting", judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+        for (const [team, scores] of [
+            [invalidJsonTeam, "not-json"],
+            [arrayTeam, "[]"],
+            [invalidValueTeam, '{"idea":"not-a-score"}'],
+        ] as const) {
+            ctx.drizzle
+                .insert(teamScores)
+                .values({
+                    team_id: team.id,
+                    judge_user_id: judge.id,
+                    scores,
+                    reasoning: "saved",
+                } as any)
+                .run();
+        }
+        mockSession.value = { user: { id: judge.id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 3 };
+
+        const result = await listHandler(createEvent());
+        expect(result.items).toHaveLength(3);
+        expect(result.items.map((item: JudgeQueueItem) => item.evaluation.scores)).toEqual([
+            {},
+            {},
+            {},
+        ]);
+        expect(result.items.every((item: JudgeQueueItem) => item.evaluated)).toBe(true);
+    });
+
     it("does not expose the judging queue outside the voting phase", async () => {
         seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
         ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
@@ -650,6 +691,32 @@ describe("GET /api/teams/:id/users", () => {
         expect(result[1]).toHaveProperty("name", "Bob");
     });
 
+    it("returns 404 when the requested team does not exist", async () => {
+        seedUser(ctx, { email: "roster-requester@basischina.com" });
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values.id = "99999";
+
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("allows an authorized administrator to read another team's roster", async () => {
+        const team = seedTeam(ctx, { name: "Private Team" });
+        seedUser(ctx, { email: "roster-owner@basischina.com", team_id: team.id });
+        const outsider = seedUser(ctx, { email: "roster-outsider@basischina.com" });
+        mockSession.value = { user: { id: outsider.id } };
+        mockParams.values.id = String(team.id);
+        (globalThis as any).requireUser.mockImplementation(
+            async (_event: unknown, permission?: string) => {
+                if (permission) return { id: outsider.id, role: "admin" };
+                return ctx.drizzle.select().from(users).where(eq(users.id, outsider.id)).get();
+            },
+        );
+
+        await expect(membersHandler(createEvent())).resolves.toMatchObject([
+            { id: 1, name: "Test User", team_id: team.id },
+        ]);
+    });
+
     it("only exposes id, email, name, and team_id", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, {
@@ -721,6 +788,47 @@ describe("GET /api/teams/:id/users", () => {
         expect(result).toHaveLength(2);
         const ids = result.map((u: any) => u.id).sort((a: number, b: number) => a - b);
         expect(ids).toEqual([alice.id, bob.id].sort((a, b) => a - b));
+    });
+
+    it("recognizes a past member through their history and includes the legacy roster", async () => {
+        ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
+        seedSeason(ctx, { name: "Current Season", is_active: 1 });
+        const legacyTeam = seedTeam(ctx, { name: "Legacy Team", season_id: 1 });
+        const currentMember = seedUser(ctx, {
+            email: "legacy-current@basischina.com",
+            name: "Current Member",
+            team_id: legacyTeam.id,
+        });
+        const pastMember = seedUser(ctx, {
+            email: "legacy-past@basischina.com",
+            name: "Past Member",
+        });
+        ctx.drizzle
+            .insert(userPastTeams)
+            .values({ user_id: pastMember.id, team_id: legacyTeam.id })
+            .run();
+        mockSession.value = { user: { id: pastMember.id } };
+        mockParams.values.id = String(legacyTeam.id);
+
+        const result = await membersHandler(createEvent());
+        expect(result.map((member: any) => member.id).sort()).toEqual(
+            [currentMember.id, pastMember.id].sort(),
+        );
+    });
+
+    it("uses current members when there is no active season", async () => {
+        ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
+        const team = seedTeam(ctx, { name: "No active season team" });
+        const member = seedUser(ctx, {
+            email: "no-active-season@basischina.com",
+            team_id: team.id,
+        });
+        mockSession.value = { user: { id: member.id } };
+        mockParams.values.id = String(team.id);
+
+        await expect(membersHandler(createEvent())).resolves.toMatchObject([
+            { id: member.id, team_id: team.id },
+        ]);
     });
 });
 
