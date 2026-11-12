@@ -19,9 +19,14 @@ import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import { clearRateLimitHistory, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 const basisAuthSessionMock = vi.hoisted(() => vi.fn());
+const getTeamMock = vi.hoisted(() => vi.fn());
 
 vi.mock("~~/server/utils/basis-auth-session", () => ({
     readBasisAuthUserSession: basisAuthSessionMock,
+}));
+vi.mock("~~/server/utils/database/teams", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("~~/server/utils/database/teams")>()),
+    getTeam: getTeamMock,
 }));
 
 let ctx: TestContext;
@@ -31,11 +36,17 @@ let originalRubricId: number;
 let saveDraftHandler: any;
 let getDraftHandler: any;
 let deleteDraftHandler: any;
+let realGetTeam: any;
 
 beforeAll(async () => {
     setupNitroGlobals();
     const hackathonDb = await import("~~/server/utils/database/hackathon");
     const seasonsDb = await import("~~/server/utils/database/seasons");
+    realGetTeam = (
+        await vi.importActual<typeof import("~~/server/utils/database/teams")>(
+            "~~/server/utils/database/teams",
+        )
+    ).getTeam;
     vi.stubGlobal("getHackathon", hackathonDb.getHackathon);
     vi.stubGlobal("getActiveSeason", seasonsDb.getActiveSeason);
     saveDraftHandler = (await import("~~/server/api/judging/drafts/[teamId].put")).default;
@@ -46,6 +57,7 @@ beforeAll(async () => {
 beforeEach(async () => {
     resetMockState();
     clearRateLimitHistory();
+    getTeamMock.mockImplementation(realGetTeam);
     basisAuthSessionMock.mockImplementation(() => {
         const userId = mockSession.value?.user?.id;
         return userId ? { userId } : undefined;
@@ -241,5 +253,224 @@ describe("judging draft rubric recovery", () => {
 
         await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
         expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("returns not found when no season is active or the project is not submitted", async () => {
+        ctx.sqlite.prepare("UPDATE seasons SET is_active = 0 WHERE id = 1").run();
+        await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+
+        ctx.sqlite.prepare("UPDATE seasons SET is_active = 1 WHERE id = 1").run();
+        ctx.sqlite.prepare("UPDATE teams SET project_submitted = 0 WHERE id = ?").run(teamId);
+        await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("returns not found when a submitted project belongs to another season", async () => {
+        const otherSeason = seedSeason(ctx, { name: "Season 2", is_active: 0 });
+        ctx.sqlite
+            .prepare("UPDATE teams SET season_id = ? WHERE id = ?")
+            .run(otherSeason.id, teamId);
+
+        await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("rejects a stale team lookup result from a season other than the active one", async () => {
+        const team = await realGetTeam(createEvent(), teamId);
+        getTeamMock.mockResolvedValueOnce({ ...team, season_id: 999 });
+
+        await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("returns a conflict when the active season has no usable rubric version", async () => {
+        ctx.sqlite.prepare("UPDATE seasons SET rubric_version_id = NULL WHERE id = 1").run();
+        await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+
+        ctx.sqlite
+            .prepare("UPDATE seasons SET rubric_version_id = ? WHERE id = 1")
+            .run(originalRubricId);
+        ctx.drizzle
+            .insert(judgingDrafts)
+            .values({
+                team_id: teamId,
+                judge_user_id: judgeId,
+                rubric_version_id: 99999,
+                scores: { originality: 2 },
+                reasoning: "A stale draft references a removed rubric.",
+                updated_at: new Date(),
+            })
+            .run();
+
+        await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it("updates an existing draft when the judge saves again on the same rubric", async () => {
+        mockBody.value = {
+            scores: { originality: 2 },
+            reasoning: "First autosave.",
+            rubric_version_id: originalRubricId,
+        };
+        await saveDraftHandler(createEvent());
+
+        mockBody.value = {
+            scores: { originality: 5 },
+            reasoning: "Recovered work, then revised and saved again.",
+            rubric_version_id: originalRubricId,
+        };
+        await expect(saveDraftHandler(createEvent())).resolves.toMatchObject({
+            saved: true,
+            rubric_version_id: originalRubricId,
+            updated_at: expect.any(String),
+        });
+
+        const saved = ctx.drizzle.select().from(judgingDrafts).get();
+        expect(saved).toMatchObject({
+            team_id: teamId,
+            judge_user_id: judgeId,
+            rubric_version_id: originalRubricId,
+            scores: { originality: 5 },
+            reasoning: "Recovered work, then revised and saved again.",
+        });
+    });
+
+    it("rejects a draft when the rubric has no track for the project", async () => {
+        ctx.sqlite
+            .prepare("UPDATE rubric_versions SET definition = ? WHERE id = ?")
+            .run(JSON.stringify({ tracks: {} }), originalRubricId);
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "No matching track should fail without saving.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("rejects a draft with a null project pathway", async () => {
+        ctx.sqlite.prepare("UPDATE teams SET pathway = NULL WHERE id = ?").run(teamId);
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "Projects without a pathway cannot match a rubric track.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("rejects a draft for a team lookup result from another season", async () => {
+        const team = await realGetTeam(createEvent(), teamId);
+        getTeamMock.mockResolvedValueOnce({ ...team, season_id: 999 });
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "The project is outside the active season.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("rejects a draft when its rubric version no longer exists", async () => {
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "This version is not part of the active season.",
+            rubric_version_id: 99999,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("fails closed if the validated request unexpectedly has no rubric version id", async () => {
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "A missing rubric version cannot be saved.",
+            rubric_version_id: 0,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("rejects drafts when the project has not been submitted", async () => {
+        ctx.sqlite.prepare("UPDATE teams SET project_submitted = 0 WHERE id = ?").run(teamId);
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "Only submitted projects can be scored.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("rejects a draft score outside the criterion's configured range", async () => {
+        mockBody.value = {
+            scores: { originality: 99 },
+            reasoning: "The API range is wider than this rubric criterion.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            statusMessage: expect.stringContaining("integer from 0 to 5"),
+        });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
+    it("deletes only the current judge's draft and treats a missing draft as success", async () => {
+        const otherJudgeId = seedUser(ctx, {
+            email: "another-judge@basischina.com",
+            role: "judge",
+        }).id;
+        ctx.drizzle
+            .insert(judgingDrafts)
+            .values([
+                {
+                    team_id: teamId,
+                    judge_user_id: judgeId,
+                    rubric_version_id: originalRubricId,
+                    scores: { originality: 1 },
+                    reasoning: "Current judge's draft.",
+                    updated_at: new Date(),
+                },
+                {
+                    team_id: teamId,
+                    judge_user_id: otherJudgeId,
+                    rubric_version_id: originalRubricId,
+                    scores: { originality: 4 },
+                    reasoning: "Other judge's draft.",
+                    updated_at: new Date(),
+                },
+            ])
+            .run();
+
+        await expect(deleteDraftHandler(createEvent())).resolves.toEqual({ deleted: true });
+        expect(
+            ctx.drizzle
+                .select()
+                .from(judgingDrafts)
+                .where(
+                    and(
+                        eq(judgingDrafts.team_id, teamId),
+                        eq(judgingDrafts.judge_user_id, judgeId),
+                    ),
+                )
+                .get(),
+        ).toBeUndefined();
+        expect(
+            ctx.drizzle
+                .select()
+                .from(judgingDrafts)
+                .where(
+                    and(
+                        eq(judgingDrafts.team_id, teamId),
+                        eq(judgingDrafts.judge_user_id, otherJudgeId),
+                    ),
+                )
+                .get(),
+        ).toMatchObject({ judge_user_id: otherJudgeId });
+
+        await expect(deleteDraftHandler(createEvent())).resolves.toEqual({ deleted: true });
     });
 });
