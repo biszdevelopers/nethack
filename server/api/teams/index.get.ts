@@ -2,6 +2,7 @@ import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
 import { GetTeamsQuery } from "~~/shared/schemas";
 import { teamScores, teams as teamsTable } from "~~/server/database/schema";
+import { isJudgingOpen } from "~~/server/utils/judging";
 
 export default defineEventHandler(async (event) => {
     const query = await getValidatedQuery(event, GetTeamsQuery.parse);
@@ -10,7 +11,7 @@ export default defineEventHandler(async (event) => {
         const { id: userID } = await requireUser(event, NethackPermissions.Judging.assignmentsRead);
 
         const hackathon = await getHackathon(event);
-        if (!hackathon || !hackathon.judging_open) {
+        if (!isJudgingOpen(hackathon)) {
             throw createError({
                 statusCode: 403,
                 message: "Judging is not open",
