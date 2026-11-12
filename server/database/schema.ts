@@ -2,6 +2,7 @@ import {
     pgTable,
     serial,
     integer,
+    bigint,
     text,
     jsonb,
     timestamp,
@@ -32,11 +33,11 @@ export const hackathon = pgTable(
         judging_open: integer("judging_open").notNull().default(0),
         schedule_start: text("schedule_start"),
         schedule_end: text("schedule_end"),
-        start_timestamp: integer("start_timestamp").notNull(),
-        end_timestamp: integer("end_timestamp").notNull(),
-        voting_start_timestamp: integer("voting_start_timestamp").notNull(),
-        voting_end_timestamp: integer("voting_end_timestamp").notNull(),
-        results_open_timestamp: integer("results_open_timestamp").notNull(),
+        start_timestamp: bigint("start_timestamp", { mode: "number" }).notNull(),
+        end_timestamp: bigint("end_timestamp", { mode: "number" }).notNull(),
+        voting_start_timestamp: bigint("voting_start_timestamp", { mode: "number" }).notNull(),
+        voting_end_timestamp: bigint("voting_end_timestamp", { mode: "number" }).notNull(),
+        results_open_timestamp: bigint("results_open_timestamp", { mode: "number" }).notNull(),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
     },
@@ -205,20 +206,28 @@ export const seasons = pgTable(
         max_votes_per_user: integer("max_votes_per_user").notNull().default(0),
         schedule_start: text("schedule_start"),
         schedule_end: text("schedule_end"),
-        start_timestamp: integer("start_timestamp").notNull().default(0),
-        end_timestamp: integer("end_timestamp").notNull().default(0),
-        voting_start_timestamp: integer("voting_start_timestamp").notNull().default(0),
-        voting_end_timestamp: integer("voting_end_timestamp").notNull().default(0),
-        results_open_timestamp: integer("results_open_timestamp").notNull().default(0),
+        start_timestamp: bigint("start_timestamp", { mode: "number" }).notNull().default(0),
+        end_timestamp: bigint("end_timestamp", { mode: "number" }).notNull().default(0),
+        voting_start_timestamp: bigint("voting_start_timestamp", { mode: "number" })
+            .notNull()
+            .default(0),
+        voting_end_timestamp: bigint("voting_end_timestamp", { mode: "number" })
+            .notNull()
+            .default(0),
+        results_open_timestamp: bigint("results_open_timestamp", { mode: "number" })
+            .notNull()
+            .default(0),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
         score_curve_preset: text("score_curve_preset")
             .$type<ScoreCurvePreset>()
             .notNull()
             .default("original"),
-        // The version FK would create a cycle with rubric_versions.season_id;
-        // write paths validate this pointer against the same season.
-        rubric_version_id: integer("rubric_version_id"),
+        // The relationship is cyclic with rubric_versions.season_id, but both
+        // rows are created in separate statements before the pointer is set.
+        rubric_version_id: integer("rubric_version_id").references(() => rubricVersions.id, {
+            onDelete: "restrict",
+        }),
     },
     (table) => [
         uniqueIndex("idx_seasons_one_active")
