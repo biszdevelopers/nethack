@@ -7,7 +7,7 @@ import {
     teamScores,
     teams,
 } from "~~/server/database/schema";
-import { calculateSeasonScoresWithDatabase } from "~~/server/utils/scoring";
+import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
 import { validateRubricScores } from "~~/shared/rubric";
 
 type NewTeamScore = Pick<
@@ -130,7 +130,7 @@ export async function createTeamScores(event: H3Event, scores: NewTeamScore): Pr
                     eq(judgingDrafts.judge_user_id, scores.judge_user_id),
                 ),
             );
-        await calculateSeasonScoresWithDatabase(tx, season.id, true);
+        await recalculateTeamScoreAfterSubmission(tx, season.id, team, version);
         return saved;
     });
 }
