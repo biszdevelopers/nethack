@@ -91,6 +91,29 @@ describe("SQLite import PostgreSQL target seed checks", () => {
         });
     });
 
+    it("recognizes PostgreSQL bigint seed values returned as decimal strings", () => {
+        const target = freshSeed();
+        for (const table of ["hackathon", "seasons"] as const) {
+            for (const field of [
+                "start_timestamp",
+                "end_timestamp",
+                "voting_start_timestamp",
+                "voting_end_timestamp",
+                "results_open_timestamp",
+            ]) {
+                target.rows[table][field] = "0";
+            }
+        }
+
+        expect(inspectFreshImportTarget(target)).toEqual({
+            hackathonId: 1,
+            rubricSeed: { seasonId: 1, templateId: 1, rubricVersionId: 1 },
+        });
+
+        target.rows.seasons.start_timestamp = "9007199254740993";
+        expect(inspectFreshImportTarget(target)).toBeNull();
+    });
+
     it("accepts a completely empty PostgreSQL target", () => {
         const counts = Object.fromEntries(IMPORT_TARGET_TABLES.map((table) => [table, 0]));
         expect(inspectFreshImportTarget({ counts, rows: {} })).toEqual({
@@ -112,6 +135,7 @@ describe("SQLite import PostgreSQL target seed checks", () => {
         });
 
         expect(statements.map(({ sql: statement, values }) => [statement, values])).toEqual([
+            ["UPDATE seasons SET rubric_version_id = NULL WHERE id = $value", [1]],
             ["DELETE FROM rubric_versions WHERE id = $value", [1]],
             ["DELETE FROM seasons WHERE id = $value", [1]],
             ["DELETE FROM rubric_templates WHERE id = $value", [1]],
