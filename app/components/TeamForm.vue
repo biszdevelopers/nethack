@@ -134,6 +134,8 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                     :disabled="disabled"
                     variant="soft"
                     icon="i-material-symbols-drive-file-rename-outline"
+                    aria-label="Rename team"
+                    class="min-h-11 min-w-11"
                 />
 
                 <template #body="{ close }">
@@ -155,7 +157,13 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
             </UModal>
 
             <UModal title="Add team member">
-                <UButton :disabled="disabled" variant="soft" icon="i-material-symbols-person-add" />
+                <UButton
+                    :disabled="disabled"
+                    variant="soft"
+                    icon="i-material-symbols-person-add"
+                    aria-label="Add team member"
+                    class="min-h-11 min-w-11"
+                />
 
                 <template #body="{ close }">
                     <UForm
@@ -196,6 +204,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                                 icon="i-material-symbols-delete"
                                 color="warning"
                                 variant="soft"
+                                :aria-label="
+                                    user.id === currentUser?.id
+                                        ? 'Leave team'
+                                        : `Remove ${user.name || user.email} from team`
+                                "
+                                class="min-h-11 min-w-11"
                             />
 
                             <template #content>
