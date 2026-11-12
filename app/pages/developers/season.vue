@@ -427,51 +427,56 @@ async function addSeason() {
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.voting_enabled"
+                            label="Voting Enabled"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Voting Enabled</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.judging_open"
+                            label="Judging Open"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Judging Open</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.results_published"
+                            label="Results Published"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Results Published</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.show_scores"
+                            label="Show Scores"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Show Scores</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.show_ranking"
+                            label="Show Ranking"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Show Ranking</span>
                     </div>
 
                     <div>
