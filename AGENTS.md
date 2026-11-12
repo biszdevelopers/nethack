@@ -22,14 +22,14 @@ The stack is Vue 3 (frontend) + Nitro (backend) + PostgreSQL via Drizzle ORM and
 
 | Layer           | Technology                                                       |
 | --------------- | ---------------------------------------------------------------- |
-| Framework       | Nuxt 4 (^4.4.8)                                                  |
-| UI              | `@nuxt/ui` ^4.9.0 (Tailwind CSS v4 based)                        |
-| Language        | TypeScript (^5.9.3)                                              |
+| Framework       | Nuxt 4 (^4.6.4)                                                  |
+| UI              | `@nuxt/ui` ^4.12.0 (Tailwind CSS v4 based)                       |
+| Language        | TypeScript (^6.0.3)                                              |
 | Runtime         | Node.js >= v24 or Bun 1.3.14 (dual-runtime support)              |
 | Package Manager | Bun 1.3.14 or npm                                                |
 | Database        | PostgreSQL via Drizzle ORM and `postgres`                        |
 | Auth            | basis-auth OpenID Connect with encrypted HTTP-only token cookies |
-| Validation      | Zod 4.x (^4.4.3)                                                 |
+| Validation      | Zod 4.x (^4.6.7)                                                 |
 | Fonts           | `@nuxt/fonts` ^0.14.0 (local provider)                           |
 | Icons           | `@iconify-json/lucide`, `@iconify-json/material-symbols`         |
 | Linting         | `@nuxt/eslint` + Oxfmt ^0.78.0                                   |
@@ -175,7 +175,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 - Shared Zod schemas are in `shared/schemas.ts`.
 - API responses should match the interfaces in `shared/responses.d.ts`.
 - Use `convertUserToPublic` and `convertTeamToPublic` to strip internal fields before returning data.
-- Rate limiting is applied with `applyRateLimit(handler)` from `server/utils/rateLimit.ts` (default: 60 requests/minute). See `RATE_LIMITING.md` for usage.
+- Rate limiting is applied with `applyRateLimit(handler)` from `server/utils/rateLimit.ts` (default: 120 requests/minute). See `RATE_LIMITING.md` for usage.
 
 ---
 
@@ -210,7 +210,7 @@ bun run test:watch      # watch mode
 bun run test:coverage   # with coverage
 ```
 
-The suite currently contains **1,491 passing tests across 381 files** covering API endpoints, server utilities, database helpers, shared schemas, frontend components, pages, composables, and middleware. Most isolated API and database-helper tests still use in-memory SQLite fixtures; the PostgreSQL integration test separately validates migrations, JSON storage, and database constraints against a configured PostgreSQL service.
+The suite currently contains **1,535 passing tests across 391 files** covering API endpoints, server utilities, database helpers, shared schemas, frontend components, pages, composables, and middleware. Most isolated API and database-helper tests still use in-memory SQLite fixtures; the PostgreSQL integration test separately validates migrations, JSON storage, and database constraints against a configured PostgreSQL service.
 
 Do **not** use `bun test`. Bun's native test runner cannot resolve Nuxt's `~~/` and `~/` path aliases. `bunfig.toml` redirects `bun test` to `bun-shim/shim.test.ts`, which prints guidance pointing to `bun run test`.
 
