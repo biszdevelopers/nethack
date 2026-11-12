@@ -227,15 +227,15 @@ try {
     const archivedUser = archiveRows.find(
         (row) => row.table_name === "users" && row.row_key === "100",
     );
-    assert.deepEqual(archivedUser?.payload, { role: "judge", age: 15 });
+    assert.deepEqual(parseJsonValue(archivedUser?.payload), { role: "judge", age: 15 });
     const archivedOauthApplication = archiveRows.find(
         (row) => row.table_name === "oauth2_applications" && row.row_key === "smoke-client",
     );
-    assert.deepEqual(archivedOauthApplication?.payload, { proxy_microsoft: 1 });
+    assert.deepEqual(parseJsonValue(archivedOauthApplication?.payload), { proxy_microsoft: 1 });
     const archivedJudgeScore = archiveRows.find(
         (row) => row.table_name === "judge_scores_migrate" && row.row_key === "801",
     );
-    assert.deepEqual(archivedJudgeScore?.payload, {
+    assert.deepEqual(parseJsonValue(archivedJudgeScore?.payload), {
         field1: "801",
         field2: "42",
         field3: "100",
@@ -266,4 +266,8 @@ try {
     );
 } finally {
     await sql.end({ timeout: 5 });
+}
+
+function parseJsonValue(value) {
+    return typeof value === "string" ? JSON.parse(value) : value;
 }
