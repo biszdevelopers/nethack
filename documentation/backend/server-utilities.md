@@ -387,7 +387,7 @@ Computes weighted judge scores and rankings for a season.
 export async function computeScores(event: H3Event, seasonID: number): Promise<void>;
 ```
 
-`calculateSeasonScores` reads each saved evaluation with its pinned rubric version, normalizes the configured criterion ranges, applies the per-track weights, and calculates the arithmetic mean across judges. Tied teams share a rank. `computeScores` is reserved for the authorized admin recompute action and persists the scores and ranks in batches.
+`calculateSeasonScores` reads each saved evaluation with its pinned rubric version, normalizes the configured criterion ranges, applies the per-track weights, and calculates the arithmetic mean across judges. Tied teams share a rank. A judge finalization reads only that project's saved evaluations plus the current track's cached score/rank values, then writes the project score and ranks that changed. This avoids reloading and recomputing every evaluation in the season for each submitted ballot. The authorized admin recompute action still uses `computeScores` to rebuild the full season and persists results in batches.
 
 ---
 
