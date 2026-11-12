@@ -47,7 +47,10 @@ export async function seedDefaultSeasonAndRubrics(database: DrizzleDatabase): Pr
         if (seasonRows.length === 0) {
             await tx
                 .insert(seasons)
-                .values({ id: 1, name: "Season 1", is_active: 1 })
+                // Let PostgreSQL's serial sequence assign the first ID. Supplying
+                // id: 1 here leaves seasons_id_seq unadvanced and makes the next
+                // generated season collide with this row.
+                .values({ name: "Season 1", is_active: 1 })
                 .onConflictDoNothing();
         }
 
