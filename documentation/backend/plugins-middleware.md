@@ -77,7 +77,7 @@ if (!sessionPassword || sessionPasswordLength < 32) {
 
 **File:** `server/plugins/microsoft.ts`
 
-Microsoft Graph API integration plugin. The default export attempts to initialize the application access token at startup when `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID` are configured; otherwise it logs a warning and Microsoft Graph features remain unavailable. When a persistent `MICROSOFT_WEBHOOK_STATE` is configured, startup creates a webhook subscription on first setup and refreshes the existing subscription when `MICROSOFT_WEBHOOK_ID` is set. All Microsoft Graph API calls are centralized in this file for auditability.
+Microsoft Graph API integration plugin. The default export attempts to initialize the application access token at startup when `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID` are configured; otherwise it logs a warning and Microsoft Graph features remain unavailable. If the token endpoint is unreachable or returns a non-success status, Graph features stay unavailable while the core app continues starting. When a persistent `MICROSOFT_WEBHOOK_STATE` is configured, startup creates a webhook subscription on first setup and refreshes the existing subscription when `MICROSOFT_WEBHOOK_ID` is set. All Microsoft Graph API calls are centralized in this file for auditability.
 
 ::: warning Security Policy All Microsoft Graph API calls MUST be made through the wrappers in this file. Never call the Graph API directly from other modules. :::
 
