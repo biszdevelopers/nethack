@@ -17,7 +17,7 @@
         "generate": "nuxt generate",
         "pregenerate": "node scripts/generate-icon-server-bundle.mjs",
         "preview": "cross-env NODE_OPTIONS=--no-deprecation nuxt preview -p 24598",
-        "postinstall": "node scripts/generate-icon-server-bundle.mjs && nuxt prepare",
+        "postinstall": "node scripts/postinstall.mjs",
         "format": "oxfmt",
         "format:check": "oxfmt --check",
         "format:js": "oxfmt \"**/*.{js,jsx,ts,tsx}\"",
