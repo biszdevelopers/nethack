@@ -237,4 +237,17 @@ onMounted(() => {
         background-position: 100% center;
     }
 }
+
+@media (prefers-reduced-motion: reduce) {
+    .metallic-gold,
+    .metallic-silver,
+    .metallic-bronze,
+    .rainbow-once {
+        animation: none;
+    }
+
+    .rainbow-once {
+        background-position: 100% center;
+    }
+}
 </style>
