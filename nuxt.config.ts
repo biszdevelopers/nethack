@@ -1,8 +1,25 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const basisSchemaRoot = resolve(projectRoot, "../basis-schema/src");
+const iconManifest = JSON.parse(
+    readFileSync(resolve(projectRoot, "shared/icon-bundle-manifest.json"), "utf8"),
+);
+const iconServerBundlePath = resolve(
+    projectRoot,
+    "node_modules/.cache/basishacks-icon-server-bundle.json",
+);
+let iconServerCollections: unknown[];
+try {
+    iconServerCollections = JSON.parse(readFileSync(iconServerBundlePath, "utf8"));
+} catch (error) {
+    throw new Error(
+        "The generated server icon bundle is missing. Run `bun run postinstall` or `bun run build` to regenerate it.",
+        { cause: error },
+    );
+}
 // Nitro interpolates custom handler paths into a virtual ES module. Windows
 // backslashes must be normalized so username segments such as `\34648` are not
 // parsed as legacy octal escapes by Rollup.
@@ -33,20 +50,11 @@ export default defineNuxtConfig({
     },
     icon: {
         serverBundle: {
-            collections: [],
+            collections: iconServerCollections,
         },
-        customCollections: [
-            "fluent",
-            "heroicons",
-            "lucide",
-            "material-symbols",
-            "simple-icons",
-        ].map((prefix) => ({
-            prefix,
-            dir: resolve(projectRoot, "node_modules/.cache/basishacks-icon-collections", prefix),
-        })),
         clientBundle: {
-            scan: true,
+            icons: iconManifest.icons,
+            scan: iconManifest.scan,
         },
     },
     fonts: {
