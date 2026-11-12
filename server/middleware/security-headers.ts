@@ -5,12 +5,19 @@ import { defineEventHandler, setHeader } from "h3";
  * Applies a baseline set of HTTP security headers to every Nitro response.
  *
  * A single server middleware is used instead of Nuxt routeRules so that API
- * routes, rendered HTML pages, and static assets all receive the same headers
- * without duplication.
+ * routes, rendered HTML pages, and static assets all receive the same baseline
+ * headers without duplication. API responses also receive private cache rules
+ * because their contents can depend on the caller's session.
  */
 export default defineEventHandler(async (event) => {
     const nonce = randomBytes(18).toString("base64");
     event.context.cspNonce = nonce;
+
+    // API responses may contain caller-specific data. Prevent browsers and
+    // shared intermediaries from retaining any API response, including errors.
+    if (event.path === "/api" || event.path.startsWith("/api/")) {
+        setHeader(event, "Cache-Control", "private, no-store");
+    }
 
     // Enforce HTTPS for two years, include subdomains, and declare preload
     // eligibility for the HSTS preload list.
