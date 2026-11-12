@@ -2,6 +2,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseNuxtIconCollections } from "./nuxt-icon-collection-parser.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -29,10 +30,12 @@ if (!bundleSource || !bundlePath) {
     );
 }
 
-const match = bundleSource.match(/const collections = JSON\.parse\(("(?:\\.|[^"\\])*")\)/);
-if (!match) throw new Error(`Could not parse the Nuxt Icon bundle at ${bundlePath}.`);
-
-const collections = JSON.parse(JSON.parse(match[1]));
+let collections;
+try {
+    collections = parseNuxtIconCollections(bundleSource);
+} catch (error) {
+    throw new Error(`Could not parse the Nuxt Icon bundle at ${bundlePath}.`, { cause: error });
+}
 if (!Array.isArray(collections) || collections.length === 0) {
     throw new Error("Nuxt Icon produced no scanned icon collections.");
 }
