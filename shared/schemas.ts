@@ -445,27 +445,32 @@ export const AdminUpdateHackathonRequest = z.object({
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     end_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     voting_start_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     voting_end_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     results_open_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     theme_name: z.string().max(200).nullable().optional(),
     theme_description: z.string().max(2000).nullable().optional(),
 });
