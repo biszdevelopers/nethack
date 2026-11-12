@@ -85,6 +85,18 @@ jobs:
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_import_test
                   SQLITE_IMPORT_PATH: ${{ runner.temp }}/basishacks-import-smoke.sqlite
 
+            - name: Rehearse legacy single-hackathon SQLite import
+              run: |
+                  psql postgresql://postgres:postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE basishacks_legacy_import_test'
+                  bun scripts/create-import-smoke-db.mjs "$SQLITE_IMPORT_PATH" --populate --legacy
+                  bun run db:migrate
+                  bun run db:import-sqlite:check
+                  bun run db:import-sqlite -- --confirm
+                  bun scripts/verify-sqlite-legacy-import-smoke.mjs
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_legacy_import_test
+                  SQLITE_IMPORT_PATH: ${{ runner.temp }}/basishacks-legacy-import-smoke.sqlite
+
             - name: Run tests
               run: bun run test
               env:
