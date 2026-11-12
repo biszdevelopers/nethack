@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { closeDatabase, createDrizzleDatabase, type DrizzleDatabase } from "~~/server/database";
 import { createAndMigrateDatabase } from "~~/server/database/migrate";
 import {
+    hackathon,
     judgingDrafts,
     rubricVersions,
     seasons,
@@ -56,6 +57,13 @@ describe.skipIf(!enabled || !hasDatabaseUrl)("PostgreSQL integration", () => {
                 .limit(1)
         )[0];
         expect(activeRubric?.definition.tracks.junior?.criteria.length).toBeGreaterThan(0);
+
+        await expect(
+            db.insert(seasons).values({
+                name: `Invalid rubric reference ${Date.now()}`,
+                rubric_version_id: -1,
+            }),
+        ).rejects.toMatchObject({ cause: { code: "23503" } });
 
         const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const [user] = await db
@@ -127,5 +135,75 @@ describe.skipIf(!enabled || !hasDatabaseUrl)("PostgreSQL integration", () => {
                 reasoning: "Must fail its user foreign key",
             }),
         ).rejects.toMatchObject({ cause: { code: "23503" } });
+    });
+
+    it("generates a season ID above the seeded row after startup", async () => {
+        const db = database!;
+        const existingSeasons = await db.select({ id: seasons.id }).from(seasons);
+        const largestExistingId = Math.max(...existingSeasons.map(({ id }) => id));
+        const [createdSeason] = await db
+            .insert(seasons)
+            .values({ name: `Generated sequence ${Date.now()}`, is_active: 0 })
+            .returning({ id: seasons.id });
+        try {
+            expect(createdSeason!.id).toBeGreaterThan(largestExistingId);
+        } finally {
+            await db.delete(seasons).where(eq(seasons.id, createdSeason!.id));
+        }
+    });
+
+    it("keeps seeded event and rubric state unchanged on repeat startup", async () => {
+        const db = database!;
+        await db.update(hackathon).set({ status: "paused" });
+        const originalSeasons = await db.select().from(seasons);
+        const originalRubrics = await db.select().from(rubricVersions);
+
+        await createAndMigrateDatabase(db);
+
+        const [event] = await db.select().from(hackathon);
+        expect(event?.status).toBe("paused");
+        expect(await db.select().from(seasons)).toHaveLength(originalSeasons.length);
+        expect(await db.select().from(rubricVersions)).toHaveLength(originalRubrics.length);
+    });
+
+    it("round-trips current-era millisecond timestamps as JavaScript numbers", async () => {
+        const db = database!;
+        const [originalEvent] = await db.select().from(hackathon).limit(1);
+        const activeSeason = (
+            await db.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1)
+        )[0];
+        expect(originalEvent).toBeDefined();
+        expect(activeSeason).toBeDefined();
+
+        const currentEraMilliseconds = Date.parse("2026-05-15T11:00:00.000Z");
+        try {
+            await db
+                .update(hackathon)
+                .set({ start_timestamp: currentEraMilliseconds })
+                .where(eq(hackathon.id, 1));
+            await db
+                .update(seasons)
+                .set({ end_timestamp: currentEraMilliseconds })
+                .where(eq(seasons.id, activeSeason!.id));
+
+            const [event] = await db.select().from(hackathon).where(eq(hackathon.id, 1));
+            const [season] = await db
+                .select()
+                .from(seasons)
+                .where(eq(seasons.id, activeSeason!.id));
+            expect(event?.start_timestamp).toBe(currentEraMilliseconds);
+            expect(typeof event?.start_timestamp).toBe("number");
+            expect(season?.end_timestamp).toBe(currentEraMilliseconds);
+            expect(typeof season?.end_timestamp).toBe("number");
+        } finally {
+            await db
+                .update(hackathon)
+                .set({ start_timestamp: originalEvent!.start_timestamp })
+                .where(eq(hackathon.id, 1));
+            await db
+                .update(seasons)
+                .set({ end_timestamp: activeSeason!.end_timestamp })
+                .where(eq(seasons.id, activeSeason!.id));
+        }
     });
 });
