@@ -43,6 +43,11 @@ jobs:
               with:
                   bun-version: 1.3.14
 
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+
             - name: Checkout @basis/schema source
               run: |
                   git clone --depth 1 https://github.com/biszdevelopers/basis-schema.git ../basis-schema
@@ -69,6 +74,17 @@ jobs:
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
                   BASISHACKS_POSTGRES_TEST: "1"
 
+            - name: Rehearse SQLite import against a fresh PostgreSQL database
+              run: |
+                  psql postgresql://postgres:postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE basishacks_import_test'
+                  bun scripts/create-import-smoke-db.mjs "$SQLITE_IMPORT_PATH" --populate
+                  bun run db:migrate
+                  bun scripts/import-sqlite-to-postgres.mjs --confirm
+                  bun scripts/verify-sqlite-import-smoke.mjs
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_import_test
+                  SQLITE_IMPORT_PATH: ${{ runner.temp }}/basishacks-import-smoke.sqlite
+
             - name: Run tests
               run: bun run test
               env:
@@ -77,6 +93,22 @@ jobs:
 
             - name: Build Nuxt app
               run: bun run build
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
+
+            - name: Smoke test Bun and Node production startup
+              run: |
+                  node scripts/smoke-production-start.mjs bun
+                  node scripts/smoke-production-start.mjs node
+              env:
+                  BASIS_AUTH_COOKIE_SECRET: ci-production-cookie-secret-at-least-32-bytes-long
+                  BASIS_AUTH_ISSUER: https://auth.example.invalid
+                  BASIS_AUTH_CLIENT_ID: basishacks-ci
+                  BASIS_AUTH_CLIENT_SECRET: ci-client-secret
+                  BASIS_AUTH_RESOURCE: devconnect://nethack.bisz.dev
+                  CURRENT_URL_ORIGIN: https://basishacks.example.invalid
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
+                  TRUSTED_PROXY_HOPS: "0"
 
             - name: Cache docs dependencies
               uses: actions/cache@v4
