@@ -39,7 +39,7 @@ git clone https://github.com/biszdevelopers/basis-schema.git ../basis-schema
 bun install
 ```
 
-If both repositories already exist in the same parent directory, run `bun install`. The `postinstall` script (`nuxt prepare`) runs automatically and generates Nuxt's typed references.
+If both repositories already exist in the same parent directory, run `bun install`. The `postinstall` script generates the server icon bundle and Nuxt's typed references when development icon collections are installed. Production-only installs skip source preparation and use the already-built Nuxt output.
 
 ## Environment Setup
 
