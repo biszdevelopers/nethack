@@ -120,13 +120,14 @@ The `project` object also includes `submitted` (boolean) and `sourcing`.
 
 ## rateLimit.ts
 
-In-memory rate limiting middleware with four pre-configured tiers.
+In-memory rate limiting middleware with five pre-configured tiers.
 
 ### Built-in tier configurations
 
 | Config Constant | Default Limit | Environment Variable | Prefix | Used By |
 | --- | --- | --- | --- | --- |
 | `DEFAULT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
+| `JUDGING_DRAFT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | `judging-draft` | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId`; isolated per-user bucket for autosave |
 | `AUTH_RATE_LIMIT_CONFIG` | 20 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | Authentication routes |
 | `VOTE_RATE_LIMIT_CONFIG` | 30 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
 | `UPLOAD_RATE_LIMIT_CONFIG` | 10 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | Upload routes |
