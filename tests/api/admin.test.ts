@@ -11,7 +11,7 @@ import {
     seedUser,
     type TestContext,
 } from "./helpers";
-import { teamScores } from "~~/server/database/schema";
+import { awards, teamAwards, teamScores } from "~~/server/database/schema";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
@@ -101,28 +101,20 @@ describe("GET /api/admin/scores", () => {
         expect(result.length).toBeGreaterThanOrEqual(2);
     });
 
-    it("updates scores when update query is set", async () => {
+    it("calculates scores for a requested season", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
 
-        seedTeam(ctx, {
-            name: "Team",
+        const currentSeasonTeam = seedTeam(ctx, {
+            name: "Current Season Team",
             pathway: "junior",
             project_submitted: 1,
         });
-
-        mockQueryState.value = { update: "true" };
-
-        const result = await scoresHandler(createEvent());
-
-        expect(Array.isArray(result)).toBe(true);
-    });
-
-    it("validates update query parameter through schema", async () => {
-        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
-        seedTeam(ctx, {
-            name: "Team",
+        const previousSeason = seedSeason(ctx, { name: "Previous Season", is_active: 0 });
+        const previousSeasonTeam = seedTeam(ctx, {
+            name: "Previous Season Team",
             pathway: "junior",
             project_submitted: 1,
+            season_id: previousSeason.id,
         });
 
         const originalGetValidatedQuery = globalThis.getValidatedQuery;
@@ -132,12 +124,82 @@ describe("GET /api/admin/scores", () => {
         });
 
         try {
-            mockQueryState.value = { update: "true" };
+            mockQueryState.value = { season_id: String(previousSeason.id) };
             const result = await scoresHandler(createEvent());
-            expect(Array.isArray(result)).toBe(true);
+
+            expect(result.map((team: any) => team.id)).toContain(previousSeasonTeam.id);
+            expect(result.map((team: any) => team.id)).not.toContain(currentSeasonTeam.id);
         } finally {
             vi.stubGlobal("getValidatedQuery", originalGetValidatedQuery);
         }
+    });
+
+    it("rejects an invalid season_id query parameter", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+
+        const originalGetValidatedQuery = globalThis.getValidatedQuery;
+        vi.stubGlobal("getValidatedQuery", async (_event: any, schema: any) => {
+            const validate = typeof schema === "function" ? schema : schema.parse;
+            return validate(mockQueryState.value);
+        });
+
+        try {
+            mockQueryState.value = { season_id: "-1" };
+            await expect(scoresHandler(createEvent())).rejects.toThrow();
+        } finally {
+            vi.stubGlobal("getValidatedQuery", originalGetValidatedQuery);
+        }
+    });
+
+    it("returns 404 when the requested season does not exist", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+
+        const originalGetValidatedQuery = globalThis.getValidatedQuery;
+        vi.stubGlobal("getValidatedQuery", async (_event: any, schema: any) => {
+            const validate = typeof schema === "function" ? schema : schema.parse;
+            return validate(mockQueryState.value);
+        });
+
+        try {
+            mockQueryState.value = { season_id: "999" };
+            await expect(scoresHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+        } finally {
+            vi.stubGlobal("getValidatedQuery", originalGetValidatedQuery);
+        }
+    });
+
+    it("includes the assigned awards for each ranked team", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const team = seedTeam(ctx, {
+            name: "Awarded Team",
+            pathway: "junior",
+            project_submitted: 1,
+        });
+        ctx.drizzle
+            .insert(awards)
+            .values({
+                namespace: "clean-code",
+                name: "Clean Code",
+                description: "Clear and maintainable implementation.",
+                icon: "check",
+                color: "green",
+            })
+            .run();
+        ctx.drizzle
+            .insert(teamAwards)
+            .values({ team_id: team.id, award: "clean-code", meta: "{}" })
+            .run();
+
+        const result = await scoresHandler(createEvent());
+        const rankedTeam = result.find((item: any) => item.id === team.id);
+
+        expect(rankedTeam.awards).toEqual([
+            expect.objectContaining({
+                namespace: "clean-code",
+                name: "Clean Code",
+                text: "Clear and maintainable implementation.",
+            }),
+        ]);
     });
 
     it("computes weighted scores from judge scores", async () => {
