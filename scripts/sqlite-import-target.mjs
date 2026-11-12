@@ -68,7 +68,22 @@ const PRISTINE_TEMPLATE_NAME = "BIBS-C Default";
 const PRISTINE_TEMPLATE_DESCRIPTION = "The original BIBS-C judging rubric.";
 
 function matchesFields(row, expected) {
-    return Boolean(row) && Object.entries(expected).every(([key, value]) => row[key] === value);
+    return (
+        Boolean(row) &&
+        Object.entries(expected).every(([key, expectedValue]) => {
+            const actualValue = row[key];
+            if (typeof expectedValue === "number" && Number.isSafeInteger(expectedValue)) {
+                if (typeof actualValue === "bigint") {
+                    return actualValue === BigInt(expectedValue);
+                }
+                if (typeof actualValue === "string" && /^-?(?:0|[1-9]\d*)$/.test(actualValue)) {
+                    const parsedValue = Number(actualValue);
+                    return Number.isSafeInteger(parsedValue) && parsedValue === expectedValue;
+                }
+            }
+            return actualValue === expectedValue;
+        })
+    );
 }
 
 function stableJson(value) {
@@ -163,6 +178,7 @@ export async function clearFreshImportTargetSeeds(sql, seedPlan) {
     }
 
     if (seedPlan.rubricSeed) {
+        await sql`UPDATE seasons SET rubric_version_id = NULL WHERE id = ${seedPlan.rubricSeed.seasonId}`;
         await sql`DELETE FROM rubric_versions WHERE id = ${seedPlan.rubricSeed.rubricVersionId}`;
         await sql`DELETE FROM seasons WHERE id = ${seedPlan.rubricSeed.seasonId}`;
         await sql`DELETE FROM rubric_templates WHERE id = ${seedPlan.rubricSeed.templateId}`;
