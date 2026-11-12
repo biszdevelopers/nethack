@@ -180,6 +180,8 @@ docs
 .trae
 .agents
 basishacks.sqlite
+*.sqlite-shm
+*.sqlite-wal
 # Agent/skill working artifacts
 skills-*.json
 test-agent-file.txt
