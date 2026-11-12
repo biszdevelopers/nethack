@@ -18,7 +18,7 @@ process.stdin.on("end", () => {
         const result = JSON.parse(lastLine);
         const meta = {
             total: result.numTotalTests ?? 0,
-            files: result.numTotalTestSuites ?? 0,
+            files: Array.isArray(result.testResults) ? result.testResults.length : 0,
             failed: result.numFailedTests ?? 0,
             generatedAt: new Date().toISOString(),
         };
