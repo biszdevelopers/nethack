@@ -47,20 +47,18 @@ export default defineEventHandler(
         }
 
         const payload = await readValidatedBody(event, SubmitTeamScoresRequest.parse);
-        const version = payload.rubric_version_id
-            ? await firstRow(
-                  event.context.drizzle
-                      .select()
-                      .from(rubricVersions)
-                      .where(
-                          and(
-                              eq(rubricVersions.id, payload.rubric_version_id),
-                              eq(rubricVersions.season_id, season.id),
-                          ),
-                      )
-                      .limit(1),
-              )
-            : undefined;
+        const version = await firstRow(
+            event.context.drizzle
+                .select()
+                .from(rubricVersions)
+                .where(
+                    and(
+                        eq(rubricVersions.id, payload.rubric_version_id),
+                        eq(rubricVersions.season_id, season.id),
+                    ),
+                )
+                .limit(1),
+        );
         if (!version) {
             throw createError({ status: 409, message: "The active season has no judging rubric." });
         }
