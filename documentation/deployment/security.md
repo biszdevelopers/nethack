@@ -24,6 +24,8 @@ The `Content-Security-Policy` header includes **10 directives** that restrict re
 
 The middleware runs for API routes, rendered HTML pages, and static assets. It generates a fresh cryptographic nonce for each response and the Nuxt server hooks apply it to renderer-owned hydration scripts. `script-src` does not allow `'unsafe-inline'`; inline styles remain allowed for Vue and Nuxt UI bindings. The `'unsafe-eval'` source expression is intentionally omitted.
 
+Every `/api` response also sets `Cache-Control: private, no-store`, including responses that may vary by authenticated user. This policy applies only to API paths; page and asset cache behavior is configured separately.
+
 ## HTML Error Diagnostics
 
 The global Nitro error handler negotiates its response using the request's `Accept` header. Clients accepting `text/html` receive the shared Barry error page showing only the canonical error code in parentheses; error names, descriptions, and stack traces are omitted. Other clients receive the canonical JSON error envelope. HTML error responses set `Cache-Control: no-store` and `Vary: Accept`.
