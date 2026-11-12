@@ -127,3 +127,6 @@ jobs:
             - name: Build documentation
               working-directory: documentation
               run: bun run build
+
+            - name: Verify production-only install
+              run: bun install --production --frozen-lockfile
