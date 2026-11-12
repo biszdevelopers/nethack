@@ -33,6 +33,12 @@ export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
     windowMs: RATE_LIMIT_WINDOW_MS,
 };
 
+/** Per-user judging draft limit; leaves room for the 650 ms client autosave debounce. */
+export const JUDGING_DRAFT_RATE_LIMIT_CONFIG: RateLimitConfig = {
+    ...DEFAULT_RATE_LIMIT_CONFIG,
+    keyPrefix: "judging-draft",
+};
+
 export const AUTH_RATE_LIMIT_CONFIG: RateLimitConfig = {
     maxRequests: RATE_LIMIT_AUTH_MAX,
     windowMs: RATE_LIMIT_WINDOW_MS,
