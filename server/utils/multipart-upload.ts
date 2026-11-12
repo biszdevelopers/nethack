@@ -4,7 +4,13 @@ import { extname } from "node:path/posix";
 import type { IncomingMessage } from "node:http";
 import type { Readable } from "node:stream";
 import { createError } from "h3";
-import { createAssetFromStream, type AssetCollection } from "./assets";
+import {
+    createAssetFromStream,
+    getStoredAssetNames,
+    removeAsset,
+    removeUserAsset,
+    type AssetCollection,
+} from "./assets";
 
 export const MAX_DEBUG_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_MULTIPART_OVERHEAD = 64 * 1024;
@@ -42,6 +48,16 @@ function getPrefixValidator(extension: string): ((prefix: Buffer) => boolean) | 
         ".zip": (prefix) => prefix[0] === 0x50 && prefix[1] === 0x4b,
     };
     return signatures[extension];
+}
+
+async function createUnusedFilename(collection: AssetCollection, extension: string) {
+    const directory = collection === "assets" ? "uploads" : undefined;
+    const existingNames = new Set(await getStoredAssetNames(collection, directory));
+    for (let attempt = 0; attempt < 10; attempt++) {
+        const filename = `${randomUUID()}${extension}`;
+        if (!existingNames.has(filename)) return filename;
+    }
+    throw uploadError(500, "Unable to allocate a unique upload name");
 }
 
 /** Accept exactly one file part and stream it to disk with bounded memory. */
@@ -90,6 +106,13 @@ export async function storeMultipartAsset(
     const fail = (statusCode: number, message: string) => {
         failure ??= uploadError(statusCode, message);
     };
+    const removeSavedUpload = async () => {
+        if (!savedFilename) return;
+        const relativePath = collection === "assets" ? `uploads/${savedFilename}` : savedFilename;
+        if (collection === "assets") await removeAsset(relativePath);
+        else await removeUserAsset(relativePath);
+        savedFilename = undefined;
+    };
     let requestBytes = 0;
     request.on("data", (chunk: Buffer) => {
         requestBytes += chunk.length;
@@ -118,25 +141,32 @@ export async function storeMultipartAsset(
             return;
         }
 
-        const filename = `${randomUUID()}${extension}`;
-        const relativePath = collection === "assets" ? `uploads/${filename}` : filename;
         stream.on("limit", () => fail(413, "File too large"));
-        fileTask = createAssetFromStream(
-            relativePath,
-            stream,
-            MAX_DEBUG_UPLOAD_BYTES,
-            getPrefixValidator(extension),
-            collection,
-        )
-            .then(() => {
-                savedFilename = filename;
-            })
-            .catch((error: { statusCode?: number; statusMessage?: string }) => {
-                failure ??= uploadError(
-                    error.statusCode === 413 ? 413 : error.statusCode === 400 ? 400 : 500,
-                    error.statusMessage ?? "Unable to store uploaded file",
+        fileTask = (async () => {
+            try {
+                const filename = await createUnusedFilename(collection, extension);
+                const relativePath = collection === "assets" ? `uploads/${filename}` : filename;
+                await createAssetFromStream(
+                    relativePath,
+                    stream,
+                    MAX_DEBUG_UPLOAD_BYTES,
+                    getPrefixValidator(extension),
+                    collection,
+                    false,
                 );
-            });
+                savedFilename = filename;
+            } catch (error) {
+                const uploadFailure = error as { statusCode?: number; statusMessage?: string };
+                failure ??= uploadError(
+                    uploadFailure.statusCode === 413
+                        ? 413
+                        : uploadFailure.statusCode === 400
+                          ? 400
+                          : 500,
+                    uploadFailure.statusMessage ?? "Unable to store uploaded file",
+                );
+            }
+        })();
     });
 
     parser.on("field", () => fail(400, "Upload exactly one file and no extra fields"));
@@ -158,12 +188,16 @@ export async function storeMultipartAsset(
         request.resume();
         activeFileStream?.destroy();
         await fileTask;
+        await removeSavedUpload();
         if (failure) throw failure;
         throw uploadError(400, "Malformed multipart upload");
     }
     await fileTask;
 
-    if (failure) throw failure;
+    if (failure) {
+        await removeSavedUpload();
+        throw failure;
+    }
     if (!fileSeen || !savedFilename) throw uploadError(400, "No file uploaded");
     return {
         filename: savedFilename,
