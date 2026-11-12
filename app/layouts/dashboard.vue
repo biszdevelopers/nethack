@@ -61,8 +61,14 @@ const items = ref<NavigationMenuItem[][]>([
     <div class="bg-white-100 p-64"></div>
   </div> -->
 
+    <a
+        href="#main-content"
+        class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:min-h-11 focus:rounded-md focus:bg-primary focus:px-4 focus:py-3 focus:text-inverted focus:shadow-lg"
+    >
+        Skip to main content
+    </a>
     <RoleHeader />
-    <UMain>
+    <UMain id="main-content" tabindex="-1">
         <UContainer class="flex flex-col lg:flex-row max-w-none gap-8 mt-12">
             <aside class="hidden lg:block lg:w-64 shrink-0">
                 <UCard>
@@ -102,7 +108,7 @@ const items = ref<NavigationMenuItem[][]>([
                         >
                             <NuxtLink
                                 :to="item.to"
-                                class="flex items-center gap-1 px-2 py-1 no-underline"
+                                class="flex min-h-11 items-center gap-2 px-3 py-2 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                             >
                                 <UIcon v-if="item.icon" :name="item.icon" class="w-4 h-4" />
                                 {{ item.label }}
