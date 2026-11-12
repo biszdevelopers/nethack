@@ -27,7 +27,7 @@ bun run db:migrate
 node .output/tools/db-migrate.mjs
 ```
 
-The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. GitHub tag archives perform these steps automatically.
+The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. Production-only installs skip source preparation because the Nuxt output has already been built. GitHub tag archives perform these steps automatically.
 
 ## One-time SQLite import
 
