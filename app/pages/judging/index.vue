@@ -7,7 +7,7 @@ definePageMeta({
 });
 
 const { data: hackathon } = await useFetch("/api/seasons/active");
-if (hackathon.value?.status !== "voting") {
+if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
     throw await navigateTo("/");
 }
 
