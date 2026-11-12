@@ -4,21 +4,21 @@ The official website for the **BIBS-C Network Hackathon** (season 2, 2025–26).
 
 ## Technology Stack
 
-| Layer           | Technology                                             |
-| --------------- | ------------------------------------------------------ |
-| Framework       | Nuxt 4                                                 |
-| UI              | @nuxt/ui (Tailwind CSS v4)                             |
-| Language        | TypeScript                                             |
-| Runtime         | Node.js >= v24 (VPS); Bun 1.3.14 is also supported     |
-| Package Manager | Bun 1.3.14 or npm                                      |
-| Database        | PostgreSQL via Drizzle ORM (`postgres` driver)         |
-| Auth            | basis-auth OIDC with encrypted HTTP-only token cookies |
-| OIDC            | openid-client + jose                                   |
-| Validation      | Zod 4.x                                                |
-| Fonts           | @nuxt/fonts (local provider)                           |
-| Icons           | @iconify-json (lucide, material-symbols, simple-icons) |
-| Linting         | @nuxt/eslint + Oxfmt                                   |
-| Animation       | GSAP with ScrollTrigger (showcase pages)               |
+| Layer | Technology |
+| --- | --- |
+| Framework | Nuxt 4 |
+| UI | @nuxt/ui (Tailwind CSS v4) |
+| Language | TypeScript |
+| Runtime | Node.js >= v24 (VPS); Bun 1.3.14 is also supported |
+| Package Manager | Bun 1.3.14 or npm |
+| Database | PostgreSQL via Drizzle ORM (`postgres` driver) |
+| Auth | basis-auth OIDC with encrypted HTTP-only token cookies |
+| OIDC | openid-client + jose |
+| Validation | Zod 4.x |
+| Fonts | @nuxt/fonts (local provider) |
+| Icons | `@nuxt/icon` + `@iconify-json` (fluent, heroicons, lucide, material-symbols, simple-icons) |
+| Linting | @nuxt/eslint + Oxfmt |
+| Animation | GSAP with ScrollTrigger (showcase pages) |
 
 ## Season Showcases
 
