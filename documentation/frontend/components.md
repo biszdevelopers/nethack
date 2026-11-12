@@ -129,6 +129,9 @@ Team management component for renaming, adding, and removing members.
 - **Rename team** — Opens a `UModal` with a form validated by `UpdateTeamRequest`
 - **Add member** — Opens a `UModal` with an email field validated by `AddTeamMemberRequest`
 - **Remove member** — Each member card has a `ModalConfirm` button; self-removal triggers a "leave" message, and removing the last member warns about team deletion
+- Rename, add, and remove actions have descriptive accessible names and 44px minimum touch targets.
+
+`RoleHeader` gives the profile action a clear name for signed-in and signed-out visitors. The season editor associates each checkbox with its visible label, and score-card shimmer animations stop when reduced motion is requested.
 
 ```vue
 <TeamForm :team="team" :disabled="submitted" @refresh="refreshData" />
