@@ -425,7 +425,7 @@ Download an anonymized JSON snapshot or CSV export of the database.
 | --- | --- |
 | **Auth** | Admin |
 | **Query** | `format` — `json` (default) or `csv` |
-| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded |
+| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded, and formula-like CSV values are neutralized |
 
 ---
 
