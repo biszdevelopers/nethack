@@ -9,7 +9,33 @@ const { fetchMock, dnsLookupMock } = vi.hoisted(() => ({
 vi.mock("node-fetch", () => ({ default: fetchMock }));
 vi.mock("node:dns/promises", () => ({ lookup: dnsLookupMock }));
 
-import { validateExternalUrl, fetchExternalHtml } from "~~/server/utils/url-validation";
+import {
+    fetchExternalHtml,
+    isPrivateIpv4,
+    parseIpv4,
+    validateExternalUrl,
+} from "~~/server/utils/url-validation";
+
+describe("parseIpv4", () => {
+    it("parses four decimal octets", () => {
+        expect(parseIpv4("8.8.4.4")).toEqual([8, 8, 4, 4]);
+    });
+
+    it("rejects addresses with the wrong number of octets", () => {
+        expect(parseIpv4("8.8.4")).toBeNull();
+    });
+
+    it.each(["8.8.x.4", "8.-1.4.4", "8.8.256.4"])(
+        "rejects invalid octet values in %s",
+        (address) => {
+            expect(parseIpv4(address)).toBeNull();
+        },
+    );
+
+    it("does not classify malformed IPv4 strings as private addresses", () => {
+        expect(isPrivateIpv4("8.8.x.4")).toBe(false);
+    });
+});
 
 describe("validateExternalUrl", () => {
     it("accepts public HTTPS URLs", () => {
@@ -297,6 +323,44 @@ describe("validateExternalUrl", () => {
         expect(validateExternalUrl("http://173.16.0.1").toString()).toBe("http://173.16.0.1/");
         expect(validateExternalUrl("http://193.168.0.1").toString()).toBe("http://193.168.0.1/");
     });
+
+    it.each([
+        "192.0.0.1",
+        "192.0.2.1",
+        "192.88.99.1",
+        "100.64.0.1",
+        "100.127.255.254",
+        "198.18.0.1",
+        "198.19.255.254",
+        "198.51.100.1",
+        "203.0.113.1",
+        "240.0.0.1",
+        "255.255.255.255",
+    ])("rejects special-use IPv4 address %s", (address) => {
+        expect(() => validateExternalUrl(`http://${address}`)).toThrow(
+            "Private or loopback URLs are not allowed",
+        );
+    });
+
+    it.each(["192.0.1.1", "192.88.98.1", "100.63.255.254", "100.128.0.1", "198.20.0.1"])(
+        "allows nearby public IPv4 address %s",
+        (address) => {
+            expect(validateExternalUrl(`http://${address}`).hostname).toBe(address);
+        },
+    );
+
+    it.each(["[::]", "[1::1]", "[4000::1]", "[2001::1]", "[2002::1]", "[3fff:1::1]"])(
+        "rejects non-global IPv6 range %s",
+        (address) => {
+            expect(() => validateExternalUrl(`http://${address}`)).toThrow(
+                "Private or loopback URLs are not allowed",
+            );
+        },
+    );
+
+    it("allows public IPv4-mapped IPv6 addresses", () => {
+        expect(validateExternalUrl("http://[::ffff:808:808]").hostname).toBe("[::ffff:808:808]");
+    });
 });
 
 describe("fetchExternalHtml", () => {
@@ -381,6 +445,65 @@ describe("fetchExternalHtml", () => {
         expect(dnsLookupMock).toHaveBeenCalledTimes(1);
     });
 
+    it("serves pinned lookup callbacks for all and matching family requests", async () => {
+        fetchMock.mockResolvedValue(createResponse());
+        dnsLookupMock.mockResolvedValue([
+            { address: "93.184.216.34", family: 4 },
+            { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+        ]);
+
+        await fetchExternalHtml("https://example.com");
+
+        const options = fetchMock.mock.calls[0]![1] as {
+            agent: {
+                options: {
+                    lookup: (hostname: string, options: object, callback: Function) => void;
+                };
+            };
+        };
+        const lookup = options.agent.options.lookup;
+        const allAddresses = await new Promise((resolve, reject) => {
+            lookup("example.com", { all: true }, (error: Error | null, addresses: unknown) => {
+                if (error) reject(error);
+                else resolve(addresses);
+            });
+        });
+        expect(allAddresses).toEqual([
+            { address: "93.184.216.34", family: 4 },
+            { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+        ]);
+
+        const ipv6Address = await new Promise((resolve, reject) => {
+            lookup(
+                "example.com",
+                { family: 6 },
+                (error: Error | null, address: string, family: number) => {
+                    if (error) reject(error);
+                    else resolve({ address, family });
+                },
+            );
+        });
+        expect(ipv6Address).toEqual({
+            address: "2606:2800:220:1:248:1893:25c8:1946",
+            family: 6,
+        });
+
+        const lookupError = await new Promise<Error>((resolve) => {
+            lookup("example.com", { family: 5 }, (error: Error | null) => resolve(error!));
+        });
+        expect(lookupError.message).toBe("No validated address for host");
+        expect((lookupError as NodeJS.ErrnoException).code).toBe("ENOTFOUND");
+    });
+
+    it("supports pinned HTTP connections", async () => {
+        fetchMock.mockResolvedValue(createResponse());
+
+        await fetchExternalHtml("http://example.com");
+
+        const options = fetchMock.mock.calls[0]![1] as { agent: { protocol: string } };
+        expect(options.agent.protocol).toBe("http:");
+    });
+
     it("resolves and validates every redirect destination", async () => {
         dnsLookupMock
             .mockResolvedValueOnce([{ address: "93.184.216.34", family: 4 }])
@@ -434,6 +557,18 @@ describe("fetchExternalHtml", () => {
         expect(Buffer.byteLength(result)).toBe(15_000);
         expect(result).toBe("a".repeat(15_000));
         expect(body.destroyed).toBe(true);
+    });
+
+    it("bounds direct string and non-Buffer typed-array chunks", async () => {
+        const body = Readable.from([
+            "<p>string</p>",
+            new Uint8Array(Buffer.from("<p>typed array</p>")),
+        ]);
+        fetchMock.mockResolvedValue(createResponse({ body }));
+
+        await expect(fetchExternalHtml("https://example.com")).resolves.toBe(
+            "<p>string</p><p>typed array</p>",
+        );
     });
 
     it("stops consuming a chunked response after reaching the byte limit", async () => {
@@ -696,6 +831,36 @@ describe("fetchExternalHtml", () => {
         const result = await fetchExternalHtml("https://example.com");
 
         expect(result).toBe("");
+    });
+
+    it("returns an empty string when a successful response has no body", async () => {
+        fetchMock.mockResolvedValue(createResponse({ body: null }));
+
+        await expect(fetchExternalHtml("https://example.com")).resolves.toBe("");
+    });
+
+    it("propagates response stream errors before the byte limit", async () => {
+        const body = Readable.from(
+            (async function* () {
+                yield Buffer.from("partial");
+                throw new Error("stream failed");
+            })(),
+        );
+        fetchMock.mockResolvedValue(createResponse({ body }));
+
+        await expect(fetchExternalHtml("https://example.com")).rejects.toThrow("stream failed");
+    });
+
+    it("cancels the stream after reaching the byte limit", async () => {
+        const body = Readable.from(
+            (async function* () {
+                yield Buffer.alloc(15_000, 0x61);
+                throw new Error("late stream failure");
+            })(),
+        );
+        fetchMock.mockResolvedValue(createResponse({ body }));
+
+        await expect(fetchExternalHtml("https://example.com")).resolves.toBe("a".repeat(15_000));
     });
 
     it("handles response with only whitespace", async () => {
