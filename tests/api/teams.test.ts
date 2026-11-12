@@ -148,6 +148,7 @@ describe("GET /api/teams", () => {
         seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
 
         // Enable judging for this test
+        ctx.drizzle.update(hackathon).set({ status: "voting" }).where(eq(hackathon.id, 1)).run();
         ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
 
         mockQueryState.value = { judging: "true" };
@@ -164,6 +165,7 @@ describe("GET /api/teams", () => {
         const firstTeam = seedTeam(ctx, { name: "First", project_submitted: 1 });
         const secondTeam = seedTeam(ctx, { name: "Second", project_submitted: 1 });
         const thirdTeam = seedTeam(ctx, { name: "Third", project_submitted: 1 });
+        ctx.drizzle.update(hackathon).set({ status: "voting" }).where(eq(hackathon.id, 1)).run();
         ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
         ctx.drizzle
             .insert(teamScores)
@@ -204,6 +206,15 @@ describe("GET /api/teams", () => {
         mockQueryState.value = { judging: "true", page: 2, page_size: 2 };
         const secondPage = await listHandler(createEvent());
         expect(secondPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual(["Third"]);
+    });
+
+    it("does not expose the judging queue outside the voting phase", async () => {
+        seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
+        ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
+        mockSession.value = { user: { id: seedUser(ctx, { role: "judge" }).id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 20 };
+
+        await expect(listHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 });
 
