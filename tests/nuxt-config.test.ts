@@ -31,6 +31,12 @@ describe("nuxt production performance defaults", () => {
         expect(config.routeRules?.["/fonts/**"].headers?.["Cache-Control"]).toBe(oneYear);
     });
 
+    it("keeps auth API route rules private and non-cacheable", () => {
+        const privateNoStore = "private, no-store";
+        expect(config.routeRules?.["/api/login"].headers?.["Cache-Control"]).toBe(privateNoStore);
+        expect(config.routeRules?.["/api/auth/**"].headers?.["Cache-Control"]).toBe(privateNoStore);
+    });
+
     it("uses a stable build target for the supported runtimes", () => {
         // es2020 is kept because the project builds reliably with it; both
         // Node.js >= v24 and Bun fully support it.
