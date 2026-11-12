@@ -8,7 +8,7 @@ import { URL } from "node:url";
 const MAX_REDIRECTS = 5;
 const MAX_EXTERNAL_HTML_BYTES = 15_000;
 
-function parseIpv4(ip: string): number[] | null {
+export function parseIpv4(ip: string): number[] | null {
     const parts = ip.split(".");
     if (parts.length !== 4) return null;
     const nums = parts.map((p) => Number.parseInt(p, 10));
@@ -16,7 +16,7 @@ function parseIpv4(ip: string): number[] | null {
     return nums;
 }
 
-function isPrivateIpv4(ip: string): boolean {
+export function isPrivateIpv4(ip: string): boolean {
     const parts = parseIpv4(ip);
     if (!parts) return false;
     const a = parts[0]!;
@@ -52,23 +52,15 @@ function isPrivateIpv6(ip: string): boolean {
     }
 
     const groups = lower.split(":");
-    const firstGroup = Number.parseInt(groups[0] ?? "", 16);
+    const firstGroup = Number.parseInt(groups[0]!, 16);
+    // Only global-unicast 2000::/3 can reach later checks; this rejects ULA, link-local, and multicast.
     if (!Number.isFinite(firstGroup) || firstGroup < 0x2000 || firstGroup > 0x3fff) return true;
-    const secondGroup = Number.parseInt(groups[1] ?? "", 16) || 0;
+    const secondGroup = Number.parseInt(groups[1]!, 16) || 0;
     if (firstGroup === 0x2001 && secondGroup <= 0x01ff) return true;
     if (firstGroup === 0x2001 && secondGroup === 0x0db8) return true;
     if (firstGroup === 0x2002) return true;
     if (firstGroup === 0x3fff && secondGroup <= 0x0fff) return true;
 
-    if (
-        lower.startsWith("fe8") ||
-        lower.startsWith("fe9") ||
-        lower.startsWith("fea") ||
-        lower.startsWith("feb")
-    )
-        return true;
-    if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
-    if (lower.startsWith("ff")) return true; // multicast
     return false;
 }
 
@@ -205,32 +197,28 @@ export async function fetchExternalHtml(urlString: string, init?: RequestInit): 
             const chunks: Buffer[] = [];
             let totalBytes = 0;
 
-            try {
-                for await (const value of body as AsyncIterable<Buffer | Uint8Array | string>) {
-                    // node-fetch emits Buffer chunks. Bound string chunks before encoding too,
-                    // since tests or custom stream adapters may emit strings directly.
-                    const chunk =
-                        typeof value === "string"
-                            ? Buffer.from(value.slice(0, MAX_EXTERNAL_HTML_BYTES))
-                            : Buffer.isBuffer(value)
-                              ? value
-                              : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
-                    const remainingBytes = MAX_EXTERNAL_HTML_BYTES - totalBytes;
+            for await (const value of body as AsyncIterable<Buffer | Uint8Array | string>) {
+                // node-fetch emits Buffer chunks. Bound string chunks before encoding too,
+                // since tests or custom stream adapters may emit strings directly.
+                const chunk =
+                    typeof value === "string"
+                        ? Buffer.from(value.slice(0, MAX_EXTERNAL_HTML_BYTES))
+                        : Buffer.isBuffer(value)
+                          ? value
+                          : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+                const remainingBytes = MAX_EXTERNAL_HTML_BYTES - totalBytes;
 
-                    if (chunk.byteLength >= remainingBytes) {
-                        // Copy the bounded prefix. A subarray alone would retain the entire
-                        // backing allocation when the source yields one very large chunk.
-                        chunks.push(Buffer.from(chunk.subarray(0, remainingBytes)));
-                        totalBytes = MAX_EXTERNAL_HTML_BYTES;
-                        body.destroy();
-                        break;
-                    }
-
-                    chunks.push(chunk);
-                    totalBytes += chunk.byteLength;
+                if (chunk.byteLength >= remainingBytes) {
+                    // Copy the bounded prefix. A subarray alone would retain the entire
+                    // backing allocation when the source yields one very large chunk.
+                    chunks.push(Buffer.from(chunk.subarray(0, remainingBytes)));
+                    totalBytes = MAX_EXTERNAL_HTML_BYTES;
+                    body.destroy();
+                    break;
                 }
-            } catch (error) {
-                if (totalBytes < MAX_EXTERNAL_HTML_BYTES) throw error;
+
+                chunks.push(chunk);
+                totalBytes += chunk.byteLength;
             }
 
             return new TextDecoder().decode(Buffer.concat(chunks, totalBytes));
