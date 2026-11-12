@@ -1,5 +1,5 @@
 import { constants, realpathSync } from "node:fs";
-import { lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { homedir } from "node:os";
 import {
@@ -157,6 +157,37 @@ async function ensureSafeParentDirectory(collection: AssetCollection, filePath: 
     }
 }
 
+/** Reject symlinked directories before reading, listing, or deleting stored assets. */
+async function ensureNoSymlinkDirectories(collection: AssetCollection, directory: string) {
+    const root = collectionDirectory(collection);
+    if (!isSameOrWithin(root, directory)) {
+        throw createError({ statusCode: 404, statusMessage: "Asset not found" });
+    }
+    const pathFromRoot = relative(root, directory);
+    const directories = [root];
+    if (pathFromRoot && pathFromRoot !== ".") {
+        let current = root;
+        for (const segment of pathFromRoot.split(sep)) {
+            current = join(current, segment);
+            directories.push(current);
+        }
+    }
+
+    for (const path of directories) {
+        let info;
+        try {
+            info = await lstat(path);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+            throw error;
+        }
+        if (info.isSymbolicLink()) {
+            throw createError({ statusCode: 404, statusMessage: "Asset not found" });
+        }
+        if (!info.isDirectory()) return;
+    }
+}
+
 function noFollowFlag() {
     return constants.O_NOFOLLOW ?? 0;
 }
@@ -209,6 +240,8 @@ export async function createAssetFromStream(
     maxBytes: number,
     validatePrefix?: (prefix: Buffer) => boolean,
     collection: AssetCollection = "assets",
+    /** Use exclusive hard-link publication when false, so an existing path is never replaced. */
+    overwriteExisting = true,
 ): Promise<string> {
     const filePath = resolveAssetPath(collection, name);
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
@@ -290,15 +323,27 @@ export async function createAssetFromStream(
         if (!prefixChecked) {
             throw createError({ statusCode: 400, statusMessage: "Invalid file content" });
         }
-        try {
-            const existing = await lstat(filePath);
-            if (!existing.isFile() || existing.isSymbolicLink()) {
-                throw createError({ statusCode: 400, statusMessage: "Invalid asset path" });
+        if (overwriteExisting) {
+            try {
+                const existing = await lstat(filePath);
+                if (!existing.isFile() || existing.isSymbolicLink()) {
+                    throw createError({ statusCode: 400, statusMessage: "Invalid asset path" });
+                }
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
             }
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            await rename(temporaryPath, filePath);
+        } else {
+            // Hard-link publication is atomic and fails with EEXIST if any
+            // destination appears after the caller's collision check.
+            await link(temporaryPath, filePath);
+            try {
+                await rm(temporaryPath);
+            } catch (error) {
+                await rm(filePath, { force: true }).catch(() => undefined);
+                throw error;
+            }
         }
-        await rename(temporaryPath, filePath);
         return basename(name);
     } catch (error) {
         await rm(temporaryPath, { force: true }).catch(() => undefined);
@@ -313,6 +358,7 @@ async function removeAssetFromCollection(
 ) {
     if (!name) return;
     const filePath = resolveAssetPath(collection, name);
+    await ensureNoSymlinkDirectories(collection, dirname(filePath));
     try {
         await rm(filePath);
     } catch (error) {
@@ -335,6 +381,7 @@ export async function getStoredAssetNames(
     const directory = subdirectory
         ? resolveAssetPath(collection, subdirectory)
         : collectionDirectory(collection);
+    await ensureNoSymlinkDirectories(collection, directory);
     try {
         const entries = await readdir(directory, { withFileTypes: true });
         return entries
@@ -349,6 +396,7 @@ export async function getStoredAssetNames(
 
 export async function openStoredAsset(collection: AssetCollection, name: string) {
     const filePath = resolveAssetPath(collection, name);
+    await ensureNoSymlinkDirectories(collection, dirname(filePath));
     const entry = await lstat(filePath);
     if (!entry.isFile() || entry.isSymbolicLink()) {
         throw createError({ statusCode: 404, statusMessage: "Asset not found" });
