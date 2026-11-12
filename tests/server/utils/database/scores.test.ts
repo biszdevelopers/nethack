@@ -141,6 +141,182 @@ describe("scores database helpers", () => {
             ).toEqual({ score: 90, rank: 1 });
         });
 
+        it("updates only affected rankings in the scored track", async () => {
+            const raw = event.context.drizzle.getRawDb();
+            const juniorId = Number(
+                raw
+                    .prepare(
+                        "INSERT INTO teams(name, season_id, project_submitted, pathway, score, rank) VALUES('Junior B', 42, 1, 'junior', 80, 1)",
+                    )
+                    .run().lastInsertRowid,
+            );
+            const seniorId = Number(
+                raw
+                    .prepare(
+                        "INSERT INTO teams(name, season_id, project_submitted, pathway, score, rank) VALUES('Senior A', 42, 1, 'senior', 50, 1)",
+                    )
+                    .run().lastInsertRowid,
+            );
+            raw.prepare(
+                "INSERT INTO team_scores(team_id, judge_user_id, scores, reasoning, season_id, rubric_version_id) VALUES(?, 1, ?, '', 42, 1)",
+            ).run(juniorId, defaultScores(4));
+
+            await createTeamScores(event, {
+                team_id: 1,
+                season_id: 42,
+                judge_user_id: 1,
+                scores: defaultScores(5),
+                reasoning: "A higher score",
+                rubric_version_id: 1,
+            });
+
+            expect(raw.prepare("SELECT score, rank FROM teams WHERE id = ?").get(1)).toEqual({
+                score: 100,
+                rank: 1,
+            });
+            expect(raw.prepare("SELECT score, rank FROM teams WHERE id = ?").get(juniorId)).toEqual(
+                {
+                    score: 80,
+                    rank: 2,
+                },
+            );
+            expect(raw.prepare("SELECT score, rank FROM teams WHERE id = ?").get(seniorId)).toEqual(
+                {
+                    score: 50,
+                    rank: 1,
+                },
+            );
+        });
+
+        it("matches full ranking recalculation for a submitted project with no judge scores", async () => {
+            const raw = event.context.drizzle.getRawDb();
+            const unscoredId = Number(
+                raw
+                    .prepare(
+                        "INSERT INTO teams(name, season_id, project_submitted, pathway) VALUES('Not yet judged', 42, 1, 'junior')",
+                    )
+                    .run().lastInsertRowid,
+            );
+
+            await createTeamScores(event, {
+                team_id: 1,
+                season_id: 42,
+                judge_user_id: 1,
+                scores: defaultScores(5),
+                reasoning: "Scored project",
+                rubric_version_id: 1,
+            });
+
+            expect(
+                raw.prepare("SELECT score, rank FROM teams WHERE id = ?").get(unscoredId),
+            ).toEqual({
+                score: 0,
+                rank: 2,
+            });
+        });
+
+        it("averages earlier evaluations against their pinned rubric version", async () => {
+            const raw = event.context.drizzle.getRawDb();
+            const secondVersionId = Number(
+                raw
+                    .prepare(
+                        "INSERT INTO rubric_versions(season_id, version, name, definition) VALUES(42, 2, 'Updated rubric', ?)",
+                    )
+                    .run(JSON.stringify(DEFAULT_RUBRIC_DEFINITION)).lastInsertRowid,
+            );
+            raw.prepare("UPDATE seasons SET rubric_version_id = ? WHERE id = 42").run(
+                secondVersionId,
+            );
+            raw.prepare(
+                "INSERT INTO team_scores(team_id, judge_user_id, scores, reasoning, season_id, rubric_version_id) VALUES(1, 1, ?, 'Previous version', 42, 1)",
+            ).run(defaultScores(4));
+            raw.prepare(
+                "INSERT INTO users(email, role) VALUES('judge2@example.com', 'judge')",
+            ).run();
+
+            await createTeamScores(event, {
+                team_id: 1,
+                season_id: 42,
+                judge_user_id: 2,
+                scores: defaultScores(5),
+                reasoning: "Current version",
+                rubric_version_id: secondVersionId,
+            });
+
+            expect(raw.prepare("SELECT score, rank FROM teams WHERE id = 1").get()).toEqual({
+                score: 90,
+                rank: 1,
+            });
+        });
+
+        it("does not finalize a submission when an earlier saved rubric version is missing", async () => {
+            const raw = event.context.drizzle.getRawDb();
+            raw.prepare(
+                "INSERT INTO users(email, role) VALUES('judge2@example.com', 'judge')",
+            ).run();
+            raw.prepare(
+                "INSERT INTO team_scores(team_id, judge_user_id, scores, reasoning, season_id, rubric_version_id) VALUES(1, 1, ?, 'Broken history', 42, 999)",
+            ).run(defaultScores(4));
+
+            await expect(
+                createTeamScores(event, {
+                    team_id: 1,
+                    season_id: 42,
+                    judge_user_id: 2,
+                    scores: defaultScores(5),
+                    reasoning: "Should roll back",
+                    rubric_version_id: 1,
+                }),
+            ).rejects.toMatchObject({
+                statusCode: 409,
+                message: "A saved judge score is missing its team or rubric version.",
+            });
+            expect(
+                raw
+                    .prepare("SELECT count(*) AS count FROM team_scores WHERE judge_user_id = 2")
+                    .get(),
+            ).toEqual({ count: 0 });
+        });
+
+        it("rejects a saved rubric version that belongs to a different season", async () => {
+            const raw = event.context.drizzle.getRawDb();
+            raw.prepare(
+                "INSERT INTO seasons(id, name, is_active) VALUES(43, 'Other Season', 0)",
+            ).run();
+            const foreignVersionId = Number(
+                raw
+                    .prepare(
+                        "INSERT INTO rubric_versions(season_id, version, name, definition) VALUES(43, 1, 'Other season rubric', ?)",
+                    )
+                    .run(JSON.stringify(DEFAULT_RUBRIC_DEFINITION)).lastInsertRowid,
+            );
+            raw.prepare(
+                "INSERT INTO users(email, role) VALUES('judge2@example.com', 'judge')",
+            ).run();
+            raw.prepare(
+                "INSERT INTO team_scores(team_id, judge_user_id, scores, reasoning, season_id, rubric_version_id) VALUES(1, 1, ?, 'Foreign rubric', 42, ?)",
+            ).run(defaultScores(4), foreignVersionId);
+
+            await expect(
+                createTeamScores(event, {
+                    team_id: 1,
+                    season_id: 42,
+                    judge_user_id: 2,
+                    scores: defaultScores(5),
+                    reasoning: "Should roll back",
+                    rubric_version_id: 1,
+                }),
+            ).rejects.toMatchObject({
+                statusCode: 409,
+                message: "A saved judge score is missing its team or rubric version.",
+            });
+            expect(
+                raw
+                    .prepare("SELECT count(*) AS count FROM team_scores WHERE judge_user_id = 2")
+                    .get(),
+            ).toEqual({ count: 0 });
+        });
+
         it("rejects incomplete scores before saving them", async () => {
             await expect(
                 createTeamScores(event, {
