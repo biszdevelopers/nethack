@@ -25,7 +25,9 @@ const exportTables = [
 function csvCell(value: unknown): string {
     if (value === null || value === undefined) return "";
     const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
-    const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+    const hasFormulaPrefix = /^[\s\p{Cc}]*[=+\-@]/u.test(raw);
+    const startsWithSpreadsheetControl = /^[\t\r]/.test(raw);
+    const safe = hasFormulaPrefix || startsWithSpreadsheetControl ? `'${raw}` : raw;
     return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
