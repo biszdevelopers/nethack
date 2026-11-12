@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isValidProductionOrigin } from "~~/server/utils/environment-validation";
+import {
+    isValidProductionOrigin,
+    isValidTrustedProxyHops,
+} from "~~/server/utils/environment-validation";
 
 describe("production public origin validation", () => {
     it.each(["https://basishacks.example", "https://basishacks.example:8443"])(
@@ -20,4 +23,17 @@ describe("production public origin validation", () => {
     ])("rejects an unsafe or malformed production origin: %s", (origin) => {
         expect(isValidProductionOrigin(origin)).toBe(false);
     });
+});
+
+describe("trusted proxy hop validation", () => {
+    it.each([undefined, "", "0", "1", "10"])("accepts a supported hop count: %s", (value) => {
+        expect(isValidTrustedProxyHops(value)).toBe(true);
+    });
+
+    it.each(["-1", "1.5", "11", "9007199254740992", "many"])(
+        "rejects an unsupported hop count: %s",
+        (value) => {
+            expect(isValidTrustedProxyHops(value)).toBe(false);
+        },
+    );
 });
