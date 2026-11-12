@@ -11,21 +11,21 @@ basishacks is a **full-stack Nuxt 4 application** that combines a Vue 3 frontend
 
 ## Technology Stack
 
-| Layer           | Technology                                               |
-| --------------- | -------------------------------------------------------- |
-| Framework       | Nuxt 4 (^4.6.4)                                          |
-| UI              | `@nuxt/ui` ^4.12.0 (Tailwind CSS v4 based)               |
-| Language        | TypeScript (^6.0.3)                                      |
-| Runtime         | Node.js >= v24 or Bun (dual-runtime support)             |
-| Package Manager | Bun (preferred); npm works                               |
-| Database        | PostgreSQL via Drizzle ORM and the `postgres` driver     |
-| Auth            | basis-auth OIDC with encrypted HTTP-only token cookies   |
-| Validation      | Zod 4.x (^4.6.7)                                         |
-| Fonts           | `@nuxt/fonts` ^0.14.0 (local provider)                   |
-| Icons           | `@iconify-json/lucide`, `@iconify-json/material-symbols` |
-| Linting         | `@nuxt/eslint` ^1.17.0 + Oxfmt ^0.78.0                   |
-| Deployment      | Node.js server (VPS; Bun also supported)                 |
-| Test Suite      | Vitest with **<TestCount /> tests across 87 files**      |
+| Layer | Technology |
+| --- | --- |
+| Framework | Nuxt 4 (^4.6.4) |
+| UI | `@nuxt/ui` ^4.12.0 (Tailwind CSS v4 based) |
+| Language | TypeScript (^6.0.3) |
+| Runtime | Node.js >= v24 or Bun (dual-runtime support) |
+| Package Manager | Bun (preferred); npm works |
+| Database | PostgreSQL via Drizzle ORM and the `postgres` driver |
+| Auth | basis-auth OIDC with encrypted HTTP-only token cookies |
+| Validation | Zod 4.x (^4.6.7) |
+| Fonts | `@nuxt/fonts` ^0.14.0 (local provider) |
+| Icons | `@nuxt/icon` with fluent, heroicons, lucide, material-symbols, and simple-icons |
+| Linting | `@nuxt/eslint` ^1.17.0 + Oxfmt ^0.78.0 |
+| Deployment | Node.js server (VPS; Bun also supported) |
+| Test Suite | Vitest with **<TestCount /> tests across 100 files** |
 
 ## Directory Structure
 
@@ -200,7 +200,7 @@ The `basis-auth.ts` utility implements discovery and the browser login flow. `oa
 
 ### Comprehensive test suite
 
-The project includes **<TestCount /> tests across 87 files** covering API endpoints, server utilities, database helpers, shared schemas, Vue components, pages, and composables.
+The project includes **<TestCount /> tests across 100 files** covering API endpoints, server utilities, database helpers, shared schemas, Vue components, pages, and composables.
 
 ### Shared code boundary
 
