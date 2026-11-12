@@ -72,10 +72,28 @@ export async function readLimitedRequestBody(event: H3Event, maxBytes: number): 
             reject(error);
         };
 
+        const onAborted = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(createError({ statusCode: 400, statusMessage: "Incomplete Request Body" }));
+        };
+
+        const onClose = () => {
+            if (settled) {
+                cleanup();
+                return;
+            }
+            settled = true;
+            cleanup();
+            reject(createError({ statusCode: 400, statusMessage: "Incomplete Request Body" }));
+        };
+
         request.on("data", onData);
         request.once("end", onEnd);
         request.once("error", onError);
-        request.once("close", cleanup);
+        request.once("aborted", onAborted);
+        request.once("close", onClose);
     });
 }
 
