@@ -5,6 +5,7 @@ import {
     DEFAULT_RATE_LIMIT_CONFIG,
     clearRateLimitHistory,
     AUTH_RATE_LIMIT_CONFIG,
+    JUDGING_DRAFT_RATE_LIMIT_CONFIG,
     VOTE_RATE_LIMIT_CONFIG,
     UPLOAD_RATE_LIMIT_CONFIG,
 } from "~~/server/utils/rateLimit";
@@ -354,6 +355,12 @@ describe("rate limit presets", () => {
         expect(VOTE_RATE_LIMIT_CONFIG.maxRequests).toBe(30);
         expect(VOTE_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(VOTE_RATE_LIMIT_CONFIG.keyPrefix).toBe("vote");
+    });
+
+    it("JUDGING_DRAFT_RATE_LIMIT_CONFIG allows autosaves and scopes its own bucket", () => {
+        expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.maxRequests).toBe(120);
+        expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
+        expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.keyPrefix).toBe("judging-draft");
     });
 
     it("UPLOAD_RATE_LIMIT_CONFIG has correct defaults", () => {
