@@ -8,6 +8,14 @@ const leakedRole = "legacy-judge-role-must-not-appear";
 const leakedClientSecret = "oauth-client-secret-must-not-appear";
 
 const rowsByTable: Record<string, Record<string, unknown>[]> = {
+    teams: [
+        {
+            id: 4,
+            name: "Formula test",
+            description: '\n=HYPERLINK("https://example.invalid","open")',
+        },
+        { id: 5, name: "Control test", description: "\tplain text" },
+    ],
     team_scores: [
         {
             team_id: 3,
@@ -99,5 +107,12 @@ describe("admin database export judge privacy", () => {
         expect(output).not.toContain(leakedRole);
         expect(output).not.toContain("client_secret");
         expect(output).not.toContain(leakedClientSecret);
+    });
+
+    it("neutralizes formulas preceded by line breaks before CSV quoting", async () => {
+        const { output } = await collectExport("csv");
+
+        expect(output).toContain("\"'\n=HYPERLINK(");
+        expect(output).toContain("'\tplain text");
     });
 });
