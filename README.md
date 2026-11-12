@@ -109,7 +109,9 @@ SQLite files are not used by the application at runtime. To migrate an existing 
 
 ## Judging and Published Feedback
 
-Judges score one project at a time against the season's versioned rubric. Drafts save automatically, and the judge reviews the evaluation before final submission. Finalized scores use the arithmetic mean of each judge's normalized weighted rubric score. After results are published, current and past team members can read anonymous written feedback; judge identifiers are omitted and feedback order is randomized. Score and rank details follow that season's `show_scores` and `show_ranking` settings.
+Judges score one project at a time against the season's versioned rubric while the event is in the `voting` phase and the organizer has enabled `judging_open`. Drafts save automatically, and the judge reviews the evaluation before final submission. Finalized scores use the arithmetic mean of each judge's normalized weighted rubric score. After results are published, current and past team members can read anonymous written feedback; judge identifiers are omitted and feedback order is randomized. Score and rank details follow that season's `show_scores` and `show_ranking` settings.
+
+Draft reads, autosaves, and deletes share a separate per-judge limit of 120 requests per minute by default. This uses `RATE_LIMIT_GENERAL_MAX` and `RATE_LIMIT_WINDOW_MS`, leaving headroom for the 650 ms autosave debounce.
 
 Organizers can choose a season-specific score display curve (`original`, `gentle`, `moderate`, or `strong`). A curve changes only the displayed score: persisted scores and rankings remain unchanged. The admin team view can inspect score feedback before results are published.
 
@@ -138,7 +140,7 @@ Do **not** use `bun test` — it cannot resolve Nuxt path aliases. `bunfig.toml`
 
 ## Performance Measurement
 
-The Linux benchmark harness at `scripts/benchmark-vps.mjs` reports process RSS, request throughput, per-target p50/p95/p99 latency, errors, and CPU use. Set `DATABASE_METRICS=1` to capture bounded database query and pool-wait summaries. Follow the [VPS measurement workflow](documentation/deployment/performance.md) for the five-minute warm-up and idle runs, repeated cold starts, 250-user soak, and `main` baseline comparison; those measurements remain a release gate.
+The Linux benchmark harness at `scripts/benchmark-vps.mjs` reports process RSS, service cgroup memory, request throughput, per-target p50/p95/p99 latency, errors, CPU use, and PostgreSQL query/pool timings. Load runs require cgroup and database-metrics inputs so the release gate cannot silently skip those measurements. Set `DATABASE_METRICS=1` on the app service to emit bounded timing summaries. Follow the [VPS measurement workflow](documentation/deployment/performance.md) for the five-minute warm-up and idle runs, repeated cold starts, 250-user soak, and `main` baseline comparison; Linux measurements remain a release gate.
 
 ## Building & Production
 
