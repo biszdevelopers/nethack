@@ -51,7 +51,7 @@ class FixedHistogram {
 }
 
 const queryRuntime = new FixedHistogram();
-const poolWait = new FixedHistogram();
+const poolAcquireWait = new FixedHistogram();
 let queryCount = 0;
 let queryErrors = 0;
 let poolWaits = 0;
@@ -71,11 +71,9 @@ export function installDatabaseMetrics() {
 
     tracingChannel("postgres:query").subscribe({
         asyncEnd(context: QueryContext) {
-            if (typeof context.queued !== "number" || typeof context.sent !== "number") return;
             queryCount += 1;
             if (context.error) queryErrors += 1;
-            poolWait.record(context.sent - context.queued);
-            if (typeof context.complete === "number") {
+            if (typeof context.sent === "number" && typeof context.complete === "number") {
                 queryRuntime.record(context.complete - context.sent);
             }
         },
@@ -84,7 +82,15 @@ export function installDatabaseMetrics() {
     const poolChannel = channel("postgres:pool");
     poolChannel.subscribe((message: unknown) => {
         if (!message || typeof message !== "object") return;
-        if ("event" in message && message.event === "wait") poolWaits += 1;
+        if (!("event" in message)) return;
+        if (message.event === "wait") poolWaits += 1;
+        if (
+            message.event === "lease" &&
+            "waited" in message &&
+            typeof message.waited === "number"
+        ) {
+            poolAcquireWait.record(message.waited);
+        }
     });
 
     const timer = setInterval(() => {
@@ -94,7 +100,7 @@ export function installDatabaseMetrics() {
             queries: queryCount,
             query_errors: queryErrors,
             query_runtime: queryRuntime.snapshot(),
-            pool_acquire_wait: poolWait.snapshot(),
+            pool_acquire_wait: poolAcquireWait.snapshot(),
             pool_wait_events: poolWaits,
         };
         console.info(JSON.stringify(report));
@@ -102,7 +108,7 @@ export function installDatabaseMetrics() {
         queryErrors = 0;
         poolWaits = 0;
         queryRuntime.reset();
-        poolWait.reset();
+        poolAcquireWait.reset();
     }, REPORT_INTERVAL_MS);
     timer.unref();
 }
