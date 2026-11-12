@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import process from "node:process";
 import { performance } from "node:perf_hooks";
+import { sampleAtInterval } from "./benchmark-utils.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const mode = args.mode;
@@ -193,30 +194,41 @@ async function requestTarget(target, targetIndex) {
 
 async function runIdle() {
     console.info(`Warm-up: ${warmupSeconds}s; sampled idle: ${durationSeconds}s.`);
-    await runRepresentativeTraffic(warmupSeconds, false);
+    await runRepresentativeTraffic(warmupSeconds);
     observations.latencyMs.reset();
     observations.requests = 0;
     observations.unexpectedErrors = 0;
     observations.statusCounts.clear();
     resetTargetMeasurements();
     beginMeasurement();
-    await runRepresentativeTraffic(durationSeconds, true);
+    await Promise.all([
+        runRepresentativeTraffic(durationSeconds),
+        sampleAtInterval({
+            durationMs: durationSeconds * 1_000,
+            sample: sampleProcess,
+            shouldStop: () => stop,
+            onSample(sample) {
+                observations.samples.push(sample);
+            },
+            onError() {
+                observations.sampleErrors += 1;
+                observations.samples.push({
+                    timestamp: new Date().toISOString(),
+                    rss_bytes: null,
+                    cpu_ticks: null,
+                });
+            },
+        }),
+    ]);
 }
 
-async function runRepresentativeTraffic(seconds, takeSamples) {
+async function runRepresentativeTraffic(seconds) {
     const endAt = performance.now() + seconds * 1_000;
     let targetIndex = 0;
     while (performance.now() < endAt && !stop) {
         const tickStarted = performance.now();
         const target = targets[targetIndex++ % targets.length];
-        const measurements = await Promise.all([
-            requestTarget(target, targetIndex - 1),
-            ...(takeSamples ? [sampleProcess()] : []),
-        ]);
-        if (takeSamples) {
-            const sample = measurements[1];
-            observations.samples.push(sample);
-        }
+        await requestTarget(target, targetIndex - 1);
         const delay = Math.max(0, 1_000 - (performance.now() - tickStarted));
         if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     }
@@ -224,7 +236,7 @@ async function runRepresentativeTraffic(seconds, takeSamples) {
 
 async function runLoad() {
     console.info(`Warm-up: ${warmupSeconds}s; load: ${users} users for ${durationSeconds}s.`);
-    await runRepresentativeTraffic(warmupSeconds, false);
+    await runRepresentativeTraffic(warmupSeconds);
     observations.latencyMs.reset();
     observations.requests = 0;
     observations.unexpectedErrors = 0;
