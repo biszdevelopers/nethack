@@ -19,6 +19,8 @@ ASSET_STORAGE_DIR=/var/lib/basishacks/assets
 
 Use a dedicated PostgreSQL role with only the privileges needed by the application. Keep the URL and authentication secrets in a root-readable environment file, such as `/etc/basishacks/basishacks.env`, and never commit production credentials.
 
+Event schedule fields (`start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, and `results_open_timestamp`) are epoch milliseconds exposed as JavaScript numbers. PostgreSQL stores these values as `bigint` so current-era millisecond values fit without changing the API representation. The latest migration widens existing integer columns without changing their stored values.
+
 Migrations run automatically before Nitro starts accepting requests. Release workflows and extracted release bundles can apply them explicitly with:
 
 ```bash
@@ -27,7 +29,7 @@ bun run db:migrate
 node .output/tools/db-migrate.mjs
 ```
 
-The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. Production-only installs skip source preparation because the Nuxt output has already been built. GitHub tag archives perform these steps automatically.
+The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. Migration `0004` advances or resets the `seasons` serial sequence to match existing rows and adds a foreign key from `seasons.rubric_version_id` to `rubric_versions.id`. It clears only dangling rubric pointers before adding the constraint; startup seeding restores the default version pointer before requests are served. The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. Production-only installs skip source preparation because the Nuxt output has already been built. GitHub tag archives perform these steps automatically.
 
 ## One-time SQLite import
 
@@ -44,6 +46,8 @@ sqlite3 /srv/backups/basishacks-pre-postgres.sqlite 'PRAGMA integrity_check;'
 ```
 
 The integrity check must return `ok`. Keep the original database and a separate backup until the new release has been verified. Back up user-uploaded files separately; the importer moves database rows only. The importer opens SQLite read-only and enables `query_only`; source orphan references, missing relationships, or unknown non-metadata tables stop the import without changing the source. In particular, each `team_scores.team_id` and `team_scores.judge_user_id` must resolve to an existing team and user.
+
+CI fixtures and local SQLite files without confirmed production provenance are rehearsal samples only. They verify importer behavior but do not qualify as the production backup or prove that production history is complete.
 
 ### Copy existing uploads to persistent storage
 
@@ -84,6 +88,10 @@ bun run db:import-sqlite -- --confirm
 The VPS release bundle includes the importer and its runtime dependencies. Bun reads SQLite through its built-in driver; Node.js uses the packaged `better-sqlite3` dependency. Both runtimes support the importer commands shown above.
 
 The importer preserves explicit IDs and records for teams, users, seasons, submissions, ballots, ballot scores, judge scores, peer-voting scores, legacy `sc_votes`, awards, OAuth application records, and historical team membership. It infers and persists a missing score `season_id` from its team's season (or the active/first season when a source team has no season ID), updates PostgreSQL serial sequences, creates one immutable `Imported legacy rubric` version per season, assigns legacy judge score rows to the version for their season, and writes removed SQLite-only fields (`users.role`, `users.age`, `oauth2_applications.proxy_microsoft`) and the legacy `judge_scores_migrate` artifact to `sqlite_legacy_data`. The CSV header row in that artifact is excluded; data-row counts are reported separately.
+
+The importer also supports the earlier single-hackathon schema when it has no `seasons` table and both `teams` and `team_scores` have no `season_id`. It requires exactly the canonical `hackathon` row (`id = 1`), maps that configuration to one active season with ID `1`, and assigns all imported teams and scores to that season. ISO-formatted legacy event timestamps are converted to epoch milliseconds for the PostgreSQL `bigint` columns; integer timestamps are retained. Missing score-visibility flags default to `0`. The import creates the same immutable default legacy rubric version for this season. A `seasons` table with no rows, or any mixed schema where season columns and tables do not agree, is rejected rather than guessed.
+
+Where the old SQLite `team_scores` table has a standalone `id` that the PostgreSQL composite key does not have, the value is retained in `sqlite_legacy_data` under the score's source row key while the score content, team ID, and judge ID are imported normally. Legacy `users.login_code` and `users.login_expiry` are deliberately discarded: these are one-time authentication credentials from the retired login flow, and neither is copied to PostgreSQL or the legacy archive. User IDs and team relationships remain preserved.
 
 Older SQLite schemas did not record an immutable rubric definition with each score. The importer snapshots the rubric definition available in `shared/rubric.ts` at import time. It cannot reconstruct rubric edits that were never stored in SQLite.
 
