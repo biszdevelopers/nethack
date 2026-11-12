@@ -98,7 +98,7 @@ Node.js >= v24 and Bun both support `es2020` without issue. The target can be re
 
 ## Vite build target
 
-`vite` is constrained by the compatible `^8.0.16` override in `package.json`. The lockfile selects the exact tested release. Keep the lockfile committed and run the production build after updating this override because Nuxt and Nitro also depend on the Vite/Rolldown integration.
+`vite` is constrained by the compatible `^8.3.5` override in `package.json`. The lockfile selects the exact tested release. Keep the lockfile committed and run the production build after updating this override because Nuxt and Nitro also depend on the Vite/Rolldown integration.
 
 ## Bounded server icon collection
 
@@ -124,12 +124,12 @@ and then start the server with `bun run start` or `node start-fix.mjs`.
 
 ## VPS measurement workflow
 
-Use `scripts/benchmark-vps.mjs` on the Linux VPS to collect app-process RSS, request throughput, unexpected error rate, latency percentiles, and app CPU percentage. The harness samples RSS every second and emits a JSON report. It fails when unexpected errors exceed 0.1%, when idle p95 RSS exceeds its runtime-specific ceiling, or when load max RSS reaches its ceiling. It measures the process ID supplied with `--pid`; run the Bun and Node services separately with the same build, database configuration, host, and request targets.
+Use `scripts/benchmark-vps.mjs` on the Linux VPS to collect app-process RSS, service cgroup memory, request throughput, unexpected error rate, latency percentiles, CPU percentage, and database timing metrics. The harness samples memory every second and drains response bodies incrementally so large responses do not accumulate in the load generator. It fails if the run is stopped early or if fewer than 90% of expected memory samples are available. A load run requires both `--cgroup-memory-file` and `--database-metrics`; the database log must contain measurements inside the run window. Requests are restricted to the same origin as `--url`, which prevents benchmark authorization headers from being sent to an external target by mistake. Run the Bun and Node services separately with the same build, database configuration, host, and request targets.
 
-The idle process RSS p95 ceilings are exactly 100,663,296 bytes (96 MiB) under Bun and 134,217,728 bytes (128 MiB) under Node. The load run checks maximum process RSS below 500,000,000 bytes. App-service cgroup memory must also stay below 500,000,000 bytes during startup and the 60-minute load run. `MemoryHigh=450000000` and `MemoryMax=500000000` enforce pressure and the hard limit for the systemd cgroup. The harness reports process RSS; also sample the unit's cgroup memory during startup and load:
+The idle process RSS p95 ceilings are exactly 100,663,296 bytes (96 MiB) under Bun and 134,217,728 bytes (128 MiB) under Node. The load run checks maximum process RSS and service cgroup memory below 500,000,000 bytes; `--cgroup-memory-limit-bytes` can override the cgroup threshold independently of the process RSS threshold. App-service cgroup memory must remain below 500,000,000 bytes during startup and the 60-minute load run. `MemoryHigh=450000000` and `MemoryMax=500000000` enforce pressure and the hard limit for the systemd cgroup. The harness reports both measurements; also sample the unit's cgroup memory during startup and load:
 
 ```bash
-watch -n 1 'systemctl show basishacks.service --property=MemoryCurrent --value'
+watch -n 1 'systemctl show basishacks-bun.service --property=MemoryCurrent --value'
 ```
 
 Common API p95 latency must be at most 500 ms, heavier report p95 at most 1 second, and unexpected request errors below 0.1%. For each measured N+1 bottleneck, target at least a 30% p95 reduction against the `main` baseline while meeting the absolute latency limit.
@@ -150,16 +150,16 @@ Measure five cold starts per runtime with the startup harness. In systemd mode, 
 
 ```bash
 sudo node scripts/benchmark-startup.mjs \
-  --systemd-unit basishacks.service \
+  --systemd-unit basishacks-bun.service \
   --url http://127.0.0.1:3000 \
   --runs 5 \
   --timeout-ms 60000 \
-  --cgroup-memory-file /sys/fs/cgroup/system.slice/basishacks.service/memory.current \
+  --cgroup-memory-file /sys/fs/cgroup/system.slice/basishacks-bun.service/memory.current \
   --memory-limit-bytes 500000000 \
   --output /var/log/basishacks/cold-start-bun.json
 ```
 
-Install the Bun unit as `basishacks.service` for that measurement. For Node, install the Node unit under the same service name, then rerun with a separate report file. The harness reads the unit's main PID and cgroup, so its own memory is excluded from service measurements.
+The supplied units are named `basishacks-bun.service` and `basishacks-node.service`. For Node, use `--systemd-unit basishacks-node.service`, its matching `memory.current` path, and a separate output file. The harness reads the unit's main PID and cgroup, so its own memory is excluded from service measurements.
 
 After each cold-start series, start the service and run the five-minute warm-up followed by five minutes of one-second RSS sampling:
 
@@ -214,14 +214,14 @@ Run a second soak against the Node service with `--runtime node` and a separate 
 Enable `DATABASE_METRICS=1` in the service environment before the run, restart the service, and capture its identifier-free PostgreSQL timing summaries from journald:
 
 ```bash
-sudo journalctl --output=cat --unit=basishacks.service --follow \
-  > /var/log/basishacks/postgres-metrics.jsonl &
+sudo journalctl --output=cat --unit=basishacks-bun.service --follow \
+  > /var/log/basishacks/main-metrics.jsonl &
 METRICS_CAPTURE_PID=$!
-# Run the 60-minute benchmark here.
+# Run the main-branch 60-minute benchmark here.
 sudo kill "$METRICS_CAPTURE_PID"
 ```
 
-Pass that JSON-lines file as `--database-metrics /var/log/basishacks/postgres-metrics.jsonl`. The benchmark reports query-runtime and pool-acquire-wait p50/p95/p99, counts, and errors from samples whose timestamps fall inside the measured window. Store the service's benchmark JSON separately from its metrics log.
+Pass the matching JSON-lines file as `--database-metrics`. Capture the candidate run into a separate `candidate-metrics.jsonl` file; for Node, capture `basishacks-node.service` into separate files for both builds. The benchmark reports query-runtime and actual pool-acquisition-wait p50/p95/p99, counts, and errors from samples whose timestamps fall inside the measured window. Store the service's benchmark JSON separately from its metrics log.
 
 Run the same 60-minute load command once against `main` and save its JSON report. Then run it against the candidate with `--baseline /var/log/basishacks/main-report.json`; the harness reports throughput, errors, latency percentiles, CPU, RSS, and database timing differences, and compares named targets marked `nPlusOne: true`. It fails unless each marked target's p95 latency improves by at least 30%. Use the same URL, target file, database snapshot, CPU limits, and warm-up/duration settings in both runs:
 
@@ -229,12 +229,16 @@ Run the same 60-minute load command once against `main` and save its JSON report
 # Baseline build from main
 node scripts/benchmark-vps.mjs --mode load --runtime bun --url http://127.0.0.1:3000 \
   --pid "$MAIN_PID" --targets /etc/basishacks/benchmark-targets.json \
+  --cgroup-memory-file /sys/fs/cgroup/system.slice/basishacks-bun.service/memory.current \
+  --database-metrics /var/log/basishacks/main-metrics.jsonl \
   --users 250 --warmup 300 --duration 3600 \
   --output /var/log/basishacks/main-report.json
 
 # Candidate build
 node scripts/benchmark-vps.mjs --mode load --runtime bun --url http://127.0.0.1:3000 \
   --pid "$CANDIDATE_PID" --targets /etc/basishacks/benchmark-targets.json \
+  --cgroup-memory-file /sys/fs/cgroup/system.slice/basishacks-bun.service/memory.current \
+  --database-metrics /var/log/basishacks/candidate-metrics.jsonl \
   --users 250 --warmup 300 --duration 3600 \
   --baseline /var/log/basishacks/main-report.json \
   --output /var/log/basishacks/candidate-report.json
