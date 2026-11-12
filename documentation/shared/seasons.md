@@ -25,9 +25,9 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `score_curve_preset` | text | Presentation curve: `original`, `gentle`, `moderate`, or `strong` |
 | `max_votes_per_user` | integer | Cap on peer votes per user |
 | `schedule_start` / `schedule_end` | text | Display dates |
-| `start_timestamp` / `end_timestamp` | integer | Unix timestamps (ms) |
-| `voting_start_timestamp` / `voting_end_timestamp` | integer | Voting window (ms) |
-| `results_open_timestamp` | integer | When results become visible (ms) |
+| `start_timestamp` / `end_timestamp` | bigint in PostgreSQL; JavaScript `number` | Epoch milliseconds |
+| `voting_start_timestamp` / `voting_end_timestamp` | bigint in PostgreSQL; JavaScript `number` | Voting window in epoch milliseconds |
+| `results_open_timestamp` | bigint in PostgreSQL; JavaScript `number` | When results become visible, in epoch milliseconds |
 | `theme_name` / `theme_description` | text | Season theme |
 
 The `hackathon` table remains a singleton (`id = 1`) holding the **live** state. The admin page shows a merged view — global values with the selected season's non-default overrides layered on top. Saving with a `season_id` writes to that season's row (and to the global row when the season is active); saving without one writes only to the global row.
