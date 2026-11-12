@@ -7,6 +7,7 @@ import { performance } from "node:perf_hooks";
 const args = parseArgs(process.argv.slice(2));
 const mode = args.mode;
 const baseUrl = args.url;
+let parsedBaseUrl;
 const pid = Number(args.pid);
 const targetFile = args.targets;
 const runtime = args.runtime ?? "bun";
@@ -18,6 +19,7 @@ const databaseMetricsFile = args["database-metrics"];
 const defaultMemoryLimit =
     mode === "idle" ? (runtime === "node" ? "134217728" : "100663296") : "500000000";
 const memoryLimitBytes = positiveInteger(args["memory-limit-bytes"] ?? defaultMemoryLimit);
+const cgroupMemoryLimitBytes = positiveInteger(args["cgroup-memory-limit-bytes"] ?? "500000000");
 const clockTicksPerSecond = positiveInteger(args["clock-ticks"] ?? "100");
 
 if (!new Set(["idle", "load"]).has(mode)) {
@@ -25,17 +27,31 @@ if (!new Set(["idle", "load"]).has(mode)) {
 }
 if (!new Set(["bun", "node"]).has(runtime)) throw new Error("--runtime must be bun or node.");
 if (!baseUrl) throw new Error("--url is required.");
+try {
+    parsedBaseUrl = new URL(baseUrl);
+} catch {
+    throw new Error("--url must be an absolute HTTP or HTTPS URL.");
+}
+if (!new Set(["http:", "https:"]).has(parsedBaseUrl.protocol) || !parsedBaseUrl.hostname) {
+    throw new Error("--url must be an absolute HTTP or HTTPS URL.");
+}
 if (!Number.isSafeInteger(pid) || pid <= 0)
     throw new Error("--pid must be a Linux app process ID.");
 if (!targetFile)
     throw new Error("--targets must point to a JSON array of representative requests.");
 if (mode === "load" && users < 1) throw new Error("--users must be at least one.");
+if (mode === "load" && !cgroupMemoryFile) {
+    throw new Error("--cgroup-memory-file is required for load runs to measure service memory.");
+}
+if (mode === "load" && !databaseMetricsFile) {
+    throw new Error("--database-metrics is required for load runs to measure database timings.");
+}
 
 const targets = JSON.parse(await readFile(targetFile, "utf8"));
 if (!Array.isArray(targets) || targets.length === 0) {
     throw new Error("The targets file must contain at least one request object.");
 }
-for (const [index, target] of targets.entries()) validateTarget(target, index);
+for (const [index, target] of targets.entries()) validateTarget(target, index, parsedBaseUrl);
 
 const extraHeaders = process.env.BENCHMARK_HEADERS_JSON
     ? JSON.parse(process.env.BENCHMARK_HEADERS_JSON)
@@ -98,6 +114,7 @@ const targetMeasurements = targets.map((target, index) => ({
 const observations = {
     latencyMs: new FixedHistogram(10_001),
     samples: [],
+    sampleErrors: 0,
     requests: 0,
     unexpectedErrors: 0,
     statusCounts: new Map(),
@@ -139,15 +156,24 @@ async function requestTarget(target, targetIndex) {
     let status = 0;
     let unexpected = false;
     try {
-        const response = await fetch(new URL(target.path, baseUrl), {
-            method: target.method ?? "GET",
+        const response = await fetch(new URL(target.path, parsedBaseUrl), {
+            method: (target.method ?? "GET").toUpperCase(),
             headers: { ...extraHeaders, ...(target.headers ?? {}) },
             body: target.body,
             redirect: "manual",
             signal: AbortSignal.timeout(30_000),
         });
         status = response.status;
-        await response.arrayBuffer();
+        const reader = response.body?.getReader();
+        if (reader) {
+            try {
+                while (!(await reader.read()).done) {
+                    // Drain incrementally so concurrent requests do not buffer full response bodies.
+                }
+            } finally {
+                reader.releaseLock();
+            }
+        }
         const expectedStatuses = target.expectedStatuses ?? [200, 204, 304];
         unexpected = !expectedStatuses.includes(status);
     } catch {
@@ -212,6 +238,7 @@ async function runLoad() {
             try {
                 observations.samples.push(await sampleProcess());
             } catch {
+                observations.sampleErrors += 1;
                 observations.samples.push({
                     timestamp: new Date().toISOString(),
                     rss_bytes: null,
@@ -242,12 +269,19 @@ process.on("SIGTERM", () => {
 if (mode === "idle") await runIdle();
 else await runLoad();
 const elapsedSeconds = (performance.now() - measurementStart) / 1_000;
+const minimumExpectedSamples = Math.max(1, Math.floor(durationSeconds * 0.9));
 const finishedAt = new Date().toISOString();
 const rssSamples = observations.samples
     .map((sample) => sample.rss_bytes)
     .filter((value) => typeof value === "number");
 const rssP95 = percentile(rssSamples, 0.95);
 const rssMax = rssSamples.length ? Math.max(...rssSamples) : null;
+const cgroupMemory = summarizeCgroupMemory(observations.samples, cgroupMemoryLimitBytes);
+const durationComplete = elapsedSeconds >= durationSeconds * 0.99;
+const memorySamplingComplete =
+    observations.sampleErrors === 0 &&
+    rssSamples.length >= minimumExpectedSamples &&
+    (!cgroupMemoryFile || (cgroupMemory?.sample_count ?? 0) >= minimumExpectedSamples);
 const cpuSamples = observations.samples.filter((sample) => typeof sample.cpu_ticks === "number");
 const cpuCount =
     typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
@@ -270,6 +304,15 @@ const report = {
     measurement_started_at: measurementStartedAt,
     finished_at: finishedAt,
     duration_seconds: Math.round(elapsedSeconds),
+    expected_duration_seconds: durationSeconds,
+    duration_complete: durationComplete,
+    memory_sampling: {
+        errors: observations.sampleErrors,
+        minimum_expected_samples: minimumExpectedSamples,
+        process_rss_samples: rssSamples.length,
+        cgroup_memory_samples: cgroupMemory?.sample_count ?? 0,
+        complete: memorySamplingComplete,
+    },
     users: mode === "load" ? users : 1,
     app_pid: pid,
     request_count: observations.requests,
@@ -288,7 +331,7 @@ const report = {
                 ? rssP95 !== null && rssP95 <= memoryLimitBytes
                 : rssMax !== null && rssMax < memoryLimitBytes,
     },
-    service_cgroup_memory_bytes: summarizeCgroupMemory(observations.samples, memoryLimitBytes),
+    service_cgroup_memory_bytes: cgroupMemory,
     app_cpu_percent_of_host: cpuPercent === null ? null : round(cpuPercent, 2),
     statuses: Object.fromEntries(observations.statusCounts),
     targets: targets.map((target, index) => {
@@ -348,6 +391,7 @@ console.log(output);
 if (report.unexpected_error_rate > 0.001) process.exitCode = 1;
 if (mode === "load" && !report.app_rss_bytes.within_limit) process.exitCode = 1;
 if (mode === "idle" && !report.app_rss_bytes.within_limit) process.exitCode = 1;
+if (!report.duration_complete || !report.memory_sampling.complete) process.exitCode = 1;
 if (report.targets.some((target) => !target.within_latency_limit)) process.exitCode = 1;
 if (report.n_plus_one_comparison?.some((target) => !target.meets_30_percent_reduction)) {
     process.exitCode = 1;
@@ -390,9 +434,18 @@ function positiveInteger(value) {
     return parsed;
 }
 
-function validateTarget(target, index) {
+function validateTarget(target, index, baseUrl) {
     if (!target || typeof target !== "object" || typeof target.path !== "string") {
         throw new Error(`Target ${index} must be an object with a path string.`);
+    }
+    let targetUrl;
+    try {
+        targetUrl = new URL(target.path, baseUrl);
+    } catch {
+        throw new Error(`Target ${index} path must resolve to a valid URL.`);
+    }
+    if (targetUrl.origin !== baseUrl.origin) {
+        throw new Error(`Target ${index} must use the same origin as --url.`);
     }
     const method = (target.method ?? "GET").toUpperCase();
     if (!/^[A-Z]+$/.test(method)) throw new Error(`Target ${index} has an invalid HTTP method.`);
