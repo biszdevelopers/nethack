@@ -80,10 +80,10 @@ export default defineNuxtConfig({
     },
     routeRules: {
         "/api/login": {
-            headers: { "Cache-Control": "no-store" },
+            headers: { "Cache-Control": "private, no-store" },
         },
         "/api/auth/**": {
-            headers: { "Cache-Control": "no-store" },
+            headers: { "Cache-Control": "private, no-store" },
         },
         "/_nuxt/**": {
             headers: { "Cache-Control": "public, max-age=31536000, immutable" },
