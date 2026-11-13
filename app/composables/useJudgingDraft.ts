@@ -30,6 +30,7 @@ export function useJudgingDraft() {
     let currentTrackKey = "";
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
     let inFlight: Promise<void> | null = null;
+    let loadGeneration = 0;
 
     function assignState(scores: Record<string, number>, reasoning: string) {
         state.scores = { ...scores };
@@ -39,8 +40,10 @@ export function useJudgingDraft() {
     async function load(teamId: number, trackKey: string, refresh = false) {
         if (currentTeamId === teamId && status.value !== "error" && !refresh) return;
 
+        const generation = ++loadGeneration;
         clearTimeout(saveTimer);
         if (dirty.value && currentTeamId !== null) await flush();
+        if (generation !== loadGeneration) return;
 
         const preserveCurrentDraft = refresh && currentTeamId === teamId && loaded.value;
         currentTeamId = teamId;
@@ -60,7 +63,7 @@ export function useJudgingDraft() {
                 rubric: JudgingRubric;
                 draft: JudgingDraft | null;
             }>(`/api/judging/drafts/${teamId}`);
-            if (currentTeamId !== teamId) return;
+            if (generation !== loadGeneration) return;
 
             rubric.value = response.rubric;
             rubricVersionId.value = response.rubric.version_id;
@@ -82,6 +85,7 @@ export function useJudgingDraft() {
             loaded.value = true;
             status.value = "saved";
         } catch (error) {
+            if (generation !== loadGeneration) return;
             loaded.value = preserveCurrentDraft;
             status.value = "error";
             errorMessage.value = getErrorMessage(error);
@@ -171,6 +175,7 @@ export function useJudgingDraft() {
     async function clear(teamId: number) {
         await $fetch(`/api/judging/drafts/${teamId}`, { method: "DELETE" });
         if (currentTeamId === teamId) {
+            loadGeneration++;
             clearTimeout(saveTimer);
             currentTeamId = null;
             rubric.value = null;
@@ -185,6 +190,7 @@ export function useJudgingDraft() {
     }
 
     function resetForCompletedProject() {
+        loadGeneration++;
         clearTimeout(saveTimer);
         currentTeamId = null;
         rubric.value = null;
