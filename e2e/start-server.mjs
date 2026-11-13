@@ -94,6 +94,18 @@ export function validateE2eConfiguration(env = process.env) {
         );
     }
 
+    const effectiveHost = env.NITRO_HOST || env.HOST;
+    const effectivePort = env.NITRO_PORT || env.PORT;
+    if (effectiveHost && effectiveHost !== "127.0.0.1") {
+        throw new Error("The E2E app host must bind only to 127.0.0.1.");
+    }
+    if (effectivePort && effectivePort !== appUrl.port) {
+        throw new Error("The E2E app port must match PLAYWRIGHT_BASE_URL.");
+    }
+    if (env.NITRO_UNIX_SOCKET) {
+        throw new Error("The E2E app cannot use a Unix socket.");
+    }
+
     return Object.freeze({
         appOrigin: appUrl.origin,
         port: appUrl.port,
@@ -185,23 +197,28 @@ export async function runE2eServer(env = process.env) {
             ],
         });
 
+        const childEnvironment = {
+            ...env,
+            NODE_ENV: "test",
+            PORT: config.port,
+            HOST: "127.0.0.1",
+            NITRO_PORT: config.port,
+            NITRO_HOST: "127.0.0.1",
+            CURRENT_URL_ORIGIN: config.appOrigin,
+            BASIS_AUTH_ISSUER: provider.issuer,
+            BASIS_AUTH_CLIENT_ID: clientId,
+            BASIS_AUTH_CLIENT_SECRET: clientSecret,
+            BASIS_AUTH_RESOURCE: resource,
+            BASIS_AUTH_COOKIE_SECRET: cookieSecret,
+            TRUSTED_PROXY_HOPS: "0",
+            DISABLE_DEBUG_ROUTES: "1",
+            DATABASE_URL: config.databaseUrl,
+        };
+        delete childEnvironment.NITRO_UNIX_SOCKET;
+
         child = spawn(process.execPath, [config.serverEntry], {
             cwd: config.projectRoot,
-            env: {
-                ...env,
-                NODE_ENV: "test",
-                PORT: config.port,
-                HOST: "127.0.0.1",
-                CURRENT_URL_ORIGIN: config.appOrigin,
-                BASIS_AUTH_ISSUER: provider.issuer,
-                BASIS_AUTH_CLIENT_ID: clientId,
-                BASIS_AUTH_CLIENT_SECRET: clientSecret,
-                BASIS_AUTH_RESOURCE: resource,
-                BASIS_AUTH_COOKIE_SECRET: cookieSecret,
-                TRUSTED_PROXY_HOPS: "0",
-                DISABLE_DEBUG_ROUTES: "1",
-                DATABASE_URL: config.databaseUrl,
-            },
+            env: childEnvironment,
             stdio: "inherit",
         });
         childExit = new Promise((resolvePromise) => {
