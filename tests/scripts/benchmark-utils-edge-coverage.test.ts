@@ -14,8 +14,8 @@ describe("benchmark utility edge cases", () => {
         let nextSample = 0;
 
         await sampleAtInterval({
-            durationMs: 30,
-            intervalMs: 5,
+            durationMs: 1_000,
+            intervalMs: 10,
             sample: async () => ++nextSample,
             onSample: (sample: number) => samples.push(sample),
         });
