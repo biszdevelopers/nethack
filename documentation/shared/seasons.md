@@ -51,16 +51,16 @@ Published judge feedback is available to current and past members of the evaluat
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| GET | `/api/seasons` | `PORTAL_SEASONS_VIEW` or admin | List all database seasons |
+| GET | `/api/seasons` | Public, read-only | List safe season details; unreleased themes are redacted |
 | GET | `/api/seasons/active` | None | Get the active season merged with the global hackathon state |
 | PATCH | `/api/seasons/active` | `PORTAL_SEASONS_EDIT` or admin | Set the active season |
-| GET | `/api/seasons/:id/tweaks` | Public, read-only | Get a season's tweakable settings |
+| GET | `/api/seasons/:id/tweaks` | Public, read-only | Get safe public season details; unreleased themes and organizer-only fields are hidden |
 | PATCH | `/api/seasons/:id/tweaks` | `PORTAL_SEASONS_EDIT` or admin | Update a season's tweakable settings |
 | PATCH | `/api/admin/seasons/:id/score-curve` | Season update permission | Set that season's score display curve |
 | GET | `/api/teams/:id/scores` | Current or past team member | Read anonymous feedback after results are published |
 | GET | `/api/admin/teams/:id/scores` | Admin with the all-permissions grant | Read full team score feedback, including before publication; judge identities remain hidden |
 
-For both season-tweaks routes, the `id` must be a positive safe integer. Missing or malformed IDs return `400`; a valid ID for a season that does not exist returns `404`.
+For both season-tweaks routes, the `id` must be a positive safe integer. Missing or malformed IDs return `400`; a valid ID for a season that does not exist returns `404`. The public `GET` response uses the `PublicSeason` allowlist and redacts theme values while a season has not started or is paused.
 
 `GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, and `theme_description`. Theme fields are hidden when the hackathon status is `not_started` or `paused`.
 
