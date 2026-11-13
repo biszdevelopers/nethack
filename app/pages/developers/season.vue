@@ -334,11 +334,14 @@ async function addSeason() {
             <section class="bg-ui-bg p-6">
                 <h2 class="text-xl font-semibold mb-3">Season</h2>
                 <div class="flex flex-wrap items-center gap-3">
-                    <USelect
-                        v-model="activeSeasonId"
-                        :items="activeSeasonItems"
-                        class="min-h-11 w-full sm:w-auto sm:max-w-xs"
-                    />
+                    <UFormField label="Select season" class="w-full sm:w-auto sm:max-w-xs">
+                        <USelect
+                            v-model="activeSeasonId"
+                            :items="activeSeasonItems"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                        />
+                    </UFormField>
                     <UButton class="min-h-11" @click="setActiveSeason" color="primary">
                         Set Active
                     </UButton>
@@ -353,7 +356,13 @@ async function addSeason() {
             <section class="bg-ui-bg p-6">
                 <h2 class="text-xl font-semibold mb-3">Season Name</h2>
                 <div class="flex flex-wrap items-center gap-3">
-                    <UInput v-model="seasonNameForm" class="min-h-11 min-w-0 flex-1" />
+                    <UFormField label="Season name" class="min-w-0 flex-1">
+                        <UInput
+                            v-model="seasonNameForm"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                        />
+                    </UFormField>
                     <UButton
                         class="min-h-11"
                         @click="renameSeason"
@@ -373,13 +382,16 @@ async function addSeason() {
                     and published ranking always uses that original score.
                 </p>
                 <div class="flex flex-wrap items-center gap-3">
-                    <USelect
-                        v-model="scoreCurvePreset"
-                        :items="scoreCurveItems"
-                        :disabled="scoreCurveSaving"
-                        class="min-h-11 w-full max-w-xs"
-                        @update:model-value="saveScoreCurvePreset"
-                    />
+                    <UFormField label="Display curve" class="w-full max-w-xs">
+                        <USelect
+                            v-model="scoreCurvePreset"
+                            :items="scoreCurveItems"
+                            :disabled="scoreCurveSaving"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                            @update:model-value="saveScoreCurvePreset"
+                        />
+                    </UFormField>
                     <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
                 </div>
             </section>
@@ -406,8 +418,7 @@ async function addSeason() {
                 </p>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Status</label>
+                    <UFormField label="Status" name="status" class="w-full">
                         <USelect
                             :items="[
                                 { label: 'Not Started', value: 'not_started' },
@@ -418,21 +429,23 @@ async function addSeason() {
                             ]"
                             v-model="hackathonForm.status"
                             @update:model-value="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Max Votes Per User</label>
+                    <UFormField label="Max Votes Per User" name="max_votes_per_user" class="w-full">
                         <UInput
                             type="number"
+                            name="max_votes_per_user"
                             v-model="hackathonForm.max_votes_per_user"
                             min="0"
                             max="100"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
@@ -489,94 +502,107 @@ async function addSeason() {
                         />
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Theme Name</label>
+                    <UFormField label="Theme Name" name="theme_name" class="w-full">
                         <UInput
+                            name="theme_name"
                             v-model="hackathonForm.theme_name"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium mb-1">Theme Description</label>
+                    <UFormField
+                        label="Theme Description"
+                        name="theme_description"
+                        class="w-full md:col-span-2"
+                    >
                         <UTextarea
+                            name="theme_description"
                             v-model="hackathonForm.theme_description"
                             :rows="2"
                             @change="onFieldChange()"
-                            class="min-h-11"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Schedule Start</label>
+                    <UFormField label="Schedule Start" name="schedule_start" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="schedule_start"
                             v-model="hackathonForm.schedule_start"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Schedule End</label>
+                    <UFormField label="Schedule End" name="schedule_end" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="schedule_end"
                             v-model="hackathonForm.schedule_end"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Start</label>
+                    <UFormField label="Start" name="start_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="start_timestamp"
                             v-model="hackathonForm.start_timestamp"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">End</label>
+                    <UFormField label="End" name="end_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="end_timestamp"
                             v-model="hackathonForm.end_timestamp"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Voting Start</label>
+                    <UFormField label="Voting Start" name="voting_start_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="voting_start_timestamp"
                             v-model="hackathonForm.voting_start_timestamp"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Voting End</label>
+                    <UFormField label="Voting End" name="voting_end_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="voting_end_timestamp"
                             v-model="hackathonForm.voting_end_timestamp"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Results Open</label>
+                    <UFormField label="Results Open" name="results_open_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="results_open_timestamp"
                             v-model="hackathonForm.results_open_timestamp"
                             @change="onFieldChange()"
-                            class="min-h-11 w-full"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
                 </div>
             </section>
             <USeparator />
