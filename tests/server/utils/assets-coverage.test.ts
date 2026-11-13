@@ -8,6 +8,7 @@ import {
     createAsset,
     createAssetFromStream,
     createUserAsset,
+    getNoFollowFlag,
     getAssetStorageRoot,
     getStoredAssetNames,
     getUserAsset,
@@ -37,6 +38,14 @@ describe("asset helpers coverage", () => {
         vi.restoreAllMocks();
         vi.unstubAllEnvs();
         await rm(tempDir, { recursive: true, force: true });
+    });
+
+    it("uses the available no-follow flag", () => {
+        expect(getNoFollowFlag(256)).toBe(256);
+    });
+
+    it("falls back to zero when the platform has no no-follow flag", () => {
+        expect(getNoFollowFlag(undefined)).toBe(0);
     });
 
     describe("configured storage roots", () => {
