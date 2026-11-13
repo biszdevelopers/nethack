@@ -1,17 +1,22 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-const outputPath = process.argv[2];
-if (!outputPath) {
-    throw new Error(
-        "Usage: bun scripts/create-import-smoke-db.mjs <output.sqlite> [--populate] [--legacy]",
-    );
-}
-const populate = process.argv.includes("--populate");
-const legacy = process.argv.includes("--legacy");
-const seasonTable = legacy
-    ? ""
-    : `
+export async function createImportSmokeDatabase(
+    outputPath,
+    flags = [],
+    dependencies = defaultDependencies,
+) {
+    if (!outputPath) {
+        throw new Error(
+            "Usage: bun scripts/create-import-smoke-db.mjs <output.sqlite> [--populate] [--legacy]",
+        );
+    }
+    const populate = flags.includes("--populate");
+    const legacy = flags.includes("--legacy");
+    const seasonTable = legacy
+        ? ""
+        : `
         CREATE TABLE seasons (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
@@ -20,20 +25,63 @@ const seasonTable = legacy
             show_scores INTEGER NOT NULL DEFAULT 0,
             show_ranking INTEGER NOT NULL DEFAULT 0
         );`;
-const teamSeasonColumn = legacy ? "" : "season_id INTEGER,";
-const scoreIdentityColumn = legacy ? "id INTEGER PRIMARY KEY AUTOINCREMENT," : "";
-const scoreSeasonColumn = legacy ? "" : "season_id INTEGER,";
-const visibilityColumns = legacy
-    ? ""
-    : `show_scores INTEGER NOT NULL DEFAULT 0,
+    const teamSeasonColumn = legacy ? "" : "season_id INTEGER,";
+    const scoreIdentityColumn = legacy ? "id INTEGER PRIMARY KEY AUTOINCREMENT," : "";
+    const scoreSeasonColumn = legacy ? "" : "season_id INTEGER,";
+    const visibilityColumns = legacy
+        ? ""
+        : `show_scores INTEGER NOT NULL DEFAULT 0,
             show_ranking INTEGER NOT NULL DEFAULT 0,`;
-const initialHackathonInsert =
-    legacy && populate ? "" : "INSERT INTO hackathon (id, status) VALUES (1, 'finished');";
+    const initialHackathonInsert =
+        legacy && populate ? "" : "INSERT INTO hackathon (id, status) VALUES (1, 'finished');";
 
-const { Database } = await import("bun:sqlite");
-const database = new Database(resolve(outputPath));
-try {
-    database.exec(`
+    const resolvedOutputPath = dependencies.resolvePath(outputPath);
+    const { Database } = await dependencies.loadSQLite();
+    const database = new Database(resolvedOutputPath);
+    try {
+        database.exec(
+            buildSchema({
+                seasonTable,
+                teamSeasonColumn,
+                scoreIdentityColumn,
+                scoreSeasonColumn,
+                visibilityColumns,
+                initialHackathonInsert,
+                legacy,
+            }),
+        );
+        if (populate) database.exec(buildPopulation({ legacy }));
+    } finally {
+        database.close();
+    }
+    return { outputPath: resolvedOutputPath, populate, legacy };
+}
+
+export async function main(argv, dependencies = defaultDependencies) {
+    const outputPath = argv[2];
+    if (!outputPath) {
+        throw new Error(
+            "Usage: bun scripts/create-import-smoke-db.mjs <output.sqlite> [--populate] [--legacy]",
+        );
+    }
+    return await createImportSmokeDatabase(outputPath, argv.slice(3), dependencies);
+}
+
+export async function runIfDirect(moduleUrl, argvPath, argv, dependencies = defaultDependencies) {
+    if (!isDirectExecution(moduleUrl, argvPath)) return null;
+    return await main(argv, dependencies);
+}
+
+function buildSchema({
+    seasonTable,
+    teamSeasonColumn,
+    scoreIdentityColumn,
+    scoreSeasonColumn,
+    visibilityColumns,
+    initialHackathonInsert,
+    legacy,
+}) {
+    return `
         CREATE TABLE hackathon (
             id INTEGER PRIMARY KEY,
             status TEXT NOT NULL,
@@ -154,99 +202,114 @@ try {
                 (1, 'Import smoke', 1, 'finished', 1, 1),
                 (2, 'Import smoke history', 0, 'finished', 1, 1);`
         }
-    `);
-    if (populate) {
-        if (legacy) {
-            database.exec(`
-                INSERT INTO hackathon (
-                    id, status, voting_enabled, results_published, max_votes_per_user,
-                    judging_open, start_timestamp, end_timestamp, voting_start_timestamp,
-                    voting_end_timestamp, results_open_timestamp
-                ) VALUES (
-                    1, 'finished', 1, 1, 10, 1,
-                    '2026-05-15T11:00:00.000Z', '2026-05-22T11:00:00.000Z',
-                    '2026-05-15T11:00:00.000Z', '2026-05-22T11:00:00.000Z',
-                    '2026-05-22T11:00:00.000Z'
-                );
-                INSERT INTO teams (
-                    id, name, pathway, score, rank, project_name, project_description,
-                    project_demo_url, project_repo_url, project_submitted
-                ) VALUES (
-                    42, 'Legacy import team', 'junior', 21, 1, 'Legacy project',
-                    'Preserved legacy submission', 'https://demo.example.invalid',
-                    'https://repo.example.invalid', 1
-                );
-                INSERT INTO users (id, email, name, team_id, role, age, login_code, login_expiry)
-                VALUES
-                    (100, 'legacy-judge@example.invalid', 'Legacy Judge', NULL, 'judge', 15,
-                        'fixture-one-time-login-code-must-not-import', 1779000000),
-                    (101, 'legacy-participant@example.invalid', 'Legacy Participant', 42,
-                        'participant', 14, NULL, NULL);
-                INSERT INTO team_scores (id, team_id, judge_user_id, scores, reasoning)
-                VALUES (
-                    801, 42, 100,
-                    '{"originality":5,"presentation":4,"technicality":3,"theme":4,"impact":5}',
-                    'Preserved legacy judge feedback.'
-                );
-            `);
-        } else
-            database.exec(`
-            INSERT INTO teams (
-                id, name, pathway, season_id, score, rank, project_name, project_description,
-                project_demo_url, project_repo_url, project_submitted, sourcing
-            )
-            VALUES
-                (42, 'Import smoke team', 'junior', 1, 21, 1, 'Smoke project', 'Current project',
-                    'https://demo.example.invalid', 'https://repo.example.invalid', 1, 'fixture'),
-                (43, 'Import smoke history team', 'senior', 2, 18, 2, 'Old project', 'Historical project',
-                    NULL, NULL, 1, 'legacy');
-            INSERT INTO users (id, email, name, team_id, role, age)
-            VALUES
-                (100, 'judge@example.invalid', 'Smoke Judge', NULL, 'judge', 15),
-                (101, 'participant@example.invalid', 'Smoke Participant', 42, 'participant', 14);
-            INSERT INTO team_scores (team_id, judge_user_id, season_id, scores, reasoning)
-            VALUES (
-                42,
-                100,
-                1,
-                '{"originality":5,"presentation":4,"technicality":3,"theme":4,"impact":5}',
-                'Representative imported feedback.'
-            );
-            INSERT INTO team_scores (team_id, judge_user_id, season_id, scores, reasoning)
-            VALUES (
-                43,
-                100,
-                2,
-                '{"originality":4,"presentation":3,"technicality":4,"theme":3,"impact":4}',
-                'Representative historical feedback.'
-            );
-            INSERT INTO ballots (id, user_id, reasoning, submitted)
-            VALUES (501, 101, 'Representative peer ballot.', 1);
-            INSERT INTO ballot_scores (id, ballot_id, project_id, score)
-            VALUES (601, 501, 43, 5);
-            INSERT INTO oauth2_applications (
-                client_id, client_secret, permissions, redirect_uris, name, description,
-                type, profile_picture, owner_id, proxy_microsoft
+    `;
+}
+
+function buildPopulation({ legacy }) {
+    if (legacy) {
+        return `
+            INSERT INTO hackathon (
+                id, status, voting_enabled, results_published, max_votes_per_user,
+                judging_open, start_timestamp, end_timestamp, voting_start_timestamp,
+                voting_end_timestamp, results_open_timestamp
             ) VALUES (
-                'smoke-client', 'legacy-client-secret', '["teams.read"]',
-                '["https://client.example.invalid/callback"]', 'Smoke OAuth app',
-                'Legacy integration fixture', 'confidential', NULL, 101, 1
+                1, 'finished', 1, 1, 10, 1,
+                '2026-05-15T11:00:00.000Z', '2026-05-22T11:00:00.000Z',
+                '2026-05-15T11:00:00.000Z', '2026-05-22T11:00:00.000Z',
+                '2026-05-22T11:00:00.000Z'
             );
-            INSERT INTO awards (namespace, name, description, icon, color)
-            VALUES ('smoke-award', 'Smoke Award', 'Legacy award fixture', 'trophy', 'gold');
-            INSERT INTO team_awards (team_id, award, meta)
-            VALUES (42, 'smoke-award', '{"source":"fixture"}');
-            INSERT INTO peer_voting_scores (user_id, score, reasoning)
-            VALUES (101, '{"impact":5}', 'Representative peer score.');
-            INSERT INTO user_past_teams (user_id, team_id) VALUES (101, 43);
-            INSERT INTO sc_votes (id, user_id, vote, submitted_at)
-            VALUES (701, 101, 'yes', 1760000000);
-            INSERT INTO judge_scores_migrate (field1, field2, field3, field4, field5)
+            INSERT INTO teams (
+                id, name, pathway, score, rank, project_name, project_description,
+                project_demo_url, project_repo_url, project_submitted
+            ) VALUES (
+                42, 'Legacy import team', 'junior', 21, 1, 'Legacy project',
+                'Preserved legacy submission', 'https://demo.example.invalid',
+                'https://repo.example.invalid', 1
+            );
+            INSERT INTO users (id, email, name, team_id, role, age, login_code, login_expiry)
             VALUES
-                ('id', 'team_id', 'judge_user_id', 'scores', 'reasoning'),
-                ('801', '42', '100', '{"theme":5}', 'Legacy artifact score row.');
-        `);
+                (100, 'legacy-judge@example.invalid', 'Legacy Judge', NULL, 'judge', 15,
+                    'fixture-one-time-login-code-must-not-import', 1779000000),
+                (101, 'legacy-participant@example.invalid', 'Legacy Participant', 42,
+                    'participant', 14, NULL, NULL);
+            INSERT INTO team_scores (id, team_id, judge_user_id, scores, reasoning)
+            VALUES (
+                801, 42, 100,
+                '{"originality":5,"presentation":4,"technicality":3,"theme":4,"impact":5}',
+                'Preserved legacy judge feedback.'
+            );
+        `;
     }
-} finally {
-    database.close();
+    return `
+        INSERT INTO teams (
+            id, name, pathway, season_id, score, rank, project_name, project_description,
+            project_demo_url, project_repo_url, project_submitted, sourcing
+        )
+        VALUES
+            (42, 'Import smoke team', 'junior', 1, 21, 1, 'Smoke project', 'Current project',
+                'https://demo.example.invalid', 'https://repo.example.invalid', 1, 'fixture'),
+            (43, 'Import smoke history team', 'senior', 2, 18, 2, 'Old project', 'Historical project',
+                NULL, NULL, 1, 'legacy');
+        INSERT INTO users (id, email, name, team_id, role, age)
+        VALUES
+            (100, 'judge@example.invalid', 'Smoke Judge', NULL, 'judge', 15),
+            (101, 'participant@example.invalid', 'Smoke Participant', 42, 'participant', 14);
+        INSERT INTO team_scores (team_id, judge_user_id, season_id, scores, reasoning)
+        VALUES (
+            42,
+            100,
+            1,
+            '{"originality":5,"presentation":4,"technicality":3,"theme":4,"impact":5}',
+            'Representative imported feedback.'
+        );
+        INSERT INTO team_scores (team_id, judge_user_id, season_id, scores, reasoning)
+        VALUES (
+            43,
+            100,
+            2,
+            '{"originality":4,"presentation":3,"technicality":4,"theme":3,"impact":4}',
+            'Representative historical feedback.'
+        );
+        INSERT INTO ballots (id, user_id, reasoning, submitted)
+        VALUES (501, 101, 'Representative peer ballot.', 1);
+        INSERT INTO ballot_scores (id, ballot_id, project_id, score)
+        VALUES (601, 501, 43, 5);
+        INSERT INTO oauth2_applications (
+            client_id, client_secret, permissions, redirect_uris, name, description,
+            type, profile_picture, owner_id, proxy_microsoft
+        ) VALUES (
+            'smoke-client', 'legacy-client-secret', '["teams.read"]',
+            '["https://client.example.invalid/callback"]', 'Smoke OAuth app',
+            'Legacy integration fixture', 'confidential', NULL, 101, 1
+        );
+        INSERT INTO awards (namespace, name, description, icon, color)
+        VALUES ('smoke-award', 'Smoke Award', 'Legacy award fixture', 'trophy', 'gold');
+        INSERT INTO team_awards (team_id, award, meta)
+        VALUES (42, 'smoke-award', '{"source":"fixture"}');
+        INSERT INTO peer_voting_scores (user_id, score, reasoning)
+        VALUES (101, '{"impact":5}', 'Representative peer score.');
+        INSERT INTO user_past_teams (user_id, team_id) VALUES (101, 43);
+        INSERT INTO sc_votes (id, user_id, vote, submitted_at)
+        VALUES (701, 101, 'yes', 1760000000);
+        INSERT INTO judge_scores_migrate (field1, field2, field3, field4, field5)
+        VALUES
+            ('id', 'team_id', 'judge_user_id', 'scores', 'reasoning'),
+            ('801', '42', '100', '{"theme":5}', 'Legacy artifact score row.');
+    `;
+}
+
+export async function loadBunSQLite(importModule) {
+    if (importModule) return await importModule("bun:sqlite");
+    return await import("bun:sqlite");
+}
+
+export const defaultDependencies = {
+    loadSQLite: loadBunSQLite,
+    resolvePath: resolve,
+};
+
+await runIfDirect(import.meta.url, process.argv[1], process.argv, defaultDependencies);
+
+function isDirectExecution(moduleUrl, argvPath) {
+    return Boolean(argvPath) && moduleUrl === pathToFileURL(resolve(argvPath)).href;
 }
