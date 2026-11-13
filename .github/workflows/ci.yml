@@ -114,6 +114,21 @@ jobs:
               env:
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
 
+            - name: Create isolated browser-test database
+              run: psql postgresql://postgres:postgres@127.0.0.1:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE basishacks_e2e'
+
+            - name: Test isolated OIDC provider
+              run: bun run test:e2e:oidc
+
+            - name: Install Playwright Chromium
+              run: bun run playwright install --with-deps chromium
+
+            - name: Run responsive browser journeys
+              run: bun run test:e2e
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_e2e
+                  PLAYWRIGHT_BASE_URL: http://127.0.0.1:3005
+
             - name: Smoke test Bun and Node production startup
               run: |
                   node scripts/smoke-production-start.mjs bun
