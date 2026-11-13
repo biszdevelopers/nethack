@@ -5,7 +5,7 @@ description: File-based routes in the basishacks frontend — home, dashboard, v
 
 # Pages
 
-The basishacks frontend contains **27 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
+The basishacks frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
 
 ## Public Pages
 
@@ -36,6 +36,14 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 ```vue
 // No auth required
 ```
+
+### `/seasons/:id`
+
+**File:** `app/pages/seasons/[id].vue`
+
+Public season details page linked from team score cards. It shows the selected season's event dates, theme when it is available, current-season status, and navigation to other seasons. Invalid or unknown season IDs return a not-found page.
+
+**Layout:** `default`
 
 ### `/profile`
 
