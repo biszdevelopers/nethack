@@ -126,27 +126,9 @@ The mod portal page `/developers/deepseek` provides the chat UI. It is gated by 
 
 ---
 
-## Microsoft Teams Chatbot
+## Microsoft Teams Integration
 
-The chatbot endpoints integrate with Microsoft Graph to send and receive Teams chat messages.
-
-### Endpoints
-
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| GET | `/api/chatbot/message` | OAuth2 JWT with `chat.readwrite` scope | Sends a test rich-text message to a hard-coded admin user |
-| GET | `/api/chatbot/index` | None | Empty placeholder / health-check endpoint |
-
-### `/api/chatbot/message`
-
-This endpoint demonstrates the Microsoft Graph proxy:
-
-1. Authenticates with an OAuth2 Bearer token using `withOAuth2JWT`.
-2. Requires the `chat.readwrite` scope.
-3. Creates or reuses a 1:1 direct chat with a target user via `createOrGetExistingDirectChat`.
-4. Sends a rich HTML message with `sendRichChatMessage`.
-
-The underlying Graph API calls live in `server/plugins/microsoft.ts` and are centralized for auditability.
+The unused test-message and anonymous no-op routes have been removed. Microsoft Graph webhook notifications continue to use the validated routes below; application login remains independent from Graph.
 
 ### Webhooks
 
@@ -189,7 +171,5 @@ Admins implicitly have all of the above.
 - `server/api/debug/deepseek/sessions/[id]/message.post.ts`
 - `server/api/debug/upload.post.ts`
 - `server/api/debug/files.get.ts`
-- `server/api/chatbot/message.get.ts`
-- `server/api/chatbot/index.get.ts`
 - `app/pages/developers/deepseek.vue`
 - `app/pages/developers/debug.vue`
