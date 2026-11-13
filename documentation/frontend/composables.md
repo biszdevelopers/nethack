@@ -5,7 +5,7 @@ description: Shared composables, middleware, constants, error handling, and cros
 
 # Composables & Utilities
 
-The basishacks frontend organizes shared logic into composables (`app/composables/`), route middleware (`app/middleware/`), utility functions (`app/utils/`), and app configuration (`app/app.config.ts`). The encrypted HTTP-only cookie holds basis-auth tokens on the server. `useBasisAuthSession()` exposes a browser-safe session summary; `app/plugins/api.client.ts` injects bearer headers, unwraps `APIResponse.data`, parses `APIError` envelopes, and performs one single-flight refresh-and-retry after an expired-token response. A failed refresh clears local authentication and restarts login.
+The basishacks frontend organizes shared logic into composables (`app/composables/`), route middleware (`app/middleware/`), utility functions (`app/utils/`), and app configuration (`app/app.config.ts`). The encrypted HTTP-only cookie holds basis-auth tokens on the server. `useBasisAuthSession()` exposes a browser-safe session summary. The server API fetch wrapper and `app/plugins/api.client.ts` unwrap `APIResponse.data`; the client plugin converts error envelopes to `APIError` and restarts login after an unauthorized protected request. Pass `$fetch: globalThis.$fetch` to `useFetch` for API routes so server-rendered requests use the same envelope handling as direct `$fetch` calls.
 
 ## Composables
 
@@ -21,6 +21,7 @@ export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUs
     const userID = computed(() => sessionUser.value?.id);
 
     const fetchResult = await useFetch<ApiUser>(() => `/api/users/${userID.value}`, {
+        $fetch: globalThis.$fetch,
         lazy: options?.lazy ?? false,
         immediate: !!userID.value,
         watch: [userID],
