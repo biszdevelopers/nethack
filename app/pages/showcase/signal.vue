@@ -320,7 +320,7 @@ useHead({
     ],
 });
 
-const { data: teams } = await useFetch("/api/teams?season_id=2");
+const { data: teams } = await useFetch("/api/teams?season_id=2", { $fetch: globalThis.$fetch });
 const modalOpen = ref(false);
 const selectedTeam = ref(null);
 
