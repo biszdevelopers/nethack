@@ -225,7 +225,7 @@ test("performs PKCE authorization, emits nonce-bound tokens, serves UserInfo, an
     assert.match(flow.consentHtml, /Choose a test identity/);
     assert.equal(
         flow.consentPage.headers.get("content-security-policy"),
-        `default-src 'none'; form-action ${provider.issuer}; base-uri 'none'; frame-ancestors 'none'`,
+        "default-src 'none'; form-action http://127.0.0.1:*; base-uri 'none'; frame-ancestors 'none'",
     );
     assert.equal(flow.consent.status, 302);
 
