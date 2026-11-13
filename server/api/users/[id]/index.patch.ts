@@ -7,7 +7,6 @@ import { MAX_PROFILE_IMAGE_BYTES, UpdateUserRequest, UserIdParams } from "~~/sha
 import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
 import { readLimitedRequestBody } from "~~/server/utils/limited-json-body";
 
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 const MAX_FILE_SIZE = MAX_PROFILE_IMAGE_BYTES;
 const MAX_PROFILE_UPDATE_BODY_BYTES = 10 * 1024 * 1024;
 
@@ -34,14 +33,15 @@ function base64Value(code: number): number {
     if (code >= 97 && code <= 122) return code - 71;
     if (code >= 48 && code <= 57) return code + 4;
     if (code === 43) return 62;
-    if (code === 47) return 63;
-    return -1;
+    return "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(
+        String.fromCharCode(code),
+    );
 }
 
 function decodeValidatedImage(
     dataUrl: string,
     label: "Profile theme" | "Avatar",
-): { data: Buffer; extension: string; mime: string } {
+): { data: Buffer; extension: string } {
     const separator = dataUrl.indexOf(",");
     if (separator < 0) {
         throw createError({
@@ -93,15 +93,6 @@ function decodeValidatedImage(
     }
 
     const data = Buffer.from(encoded, "base64");
-    if (data.length !== decodedLength) {
-        throw createError({ status: 400, message: "Invalid base64 image data." });
-    }
-    if (data.length > MAX_FILE_SIZE) {
-        throw createError({
-            statusCode: 413,
-            message: `${label} image is too large. Maximum size is 7MB.`,
-        });
-    }
     const hasValidSignature =
         mime === "image/jpeg" || mime === "image/jpg"
             ? data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
@@ -117,7 +108,7 @@ function decodeValidatedImage(
             message: "Image content does not match its file type.",
         });
     }
-    return { data, extension, mime };
+    return { data, extension };
 }
 
 export default defineEventHandler(
@@ -155,18 +146,10 @@ export default defineEventHandler(
                     user.profile_theme = null;
                     await updateUserProfileTheme(event, user);
                 } else {
-                    const { data, extension, mime } = decodeValidatedImage(
+                    const { data, extension } = decodeValidatedImage(
                         profile_theme_image.toString(),
                         "Profile theme",
                     );
-                    if (!ACCEPTED_IMAGE_TYPES.includes(mime)) {
-                        throw createError({
-                            status: 400,
-                            message:
-                                "Invalid image type for profile theme. Only JPEG, PNG, GIF, and WebP are allowed.",
-                        });
-                    }
-
                     await removeUserAsset(user.profile_theme?.split("|")[1]);
                     const path = await createUserAsset(`${randomUUID()}.${extension}`, data);
                     user.profile_theme = `url|${path}`;
@@ -180,18 +163,7 @@ export default defineEventHandler(
                     user.profile_picture = null;
                     await updateUserProfilePicture(event, user);
                 } else {
-                    const { data, extension, mime } = decodeValidatedImage(
-                        avatar.toString(),
-                        "Avatar",
-                    );
-                    if (!ACCEPTED_IMAGE_TYPES.includes(mime)) {
-                        throw createError({
-                            status: 400,
-                            message:
-                                "Invalid image type for avatar. Only JPEG, PNG, GIF, and WebP are allowed.",
-                        });
-                    }
-
+                    const { data, extension } = decodeValidatedImage(avatar.toString(), "Avatar");
                     await removeUserAsset(user.profile_picture);
                     const path = await createUserAsset(`${randomUUID()}.${extension}`, data);
                     user.profile_picture = path;
