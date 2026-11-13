@@ -210,7 +210,7 @@ bun run test:watch      # watch mode
 bun run test:coverage   # with coverage
 ```
 
-The suite currently contains **1,531 passing tests and 1 skipped test across 100 test files** covering API endpoints, server utilities, database helpers, shared schemas, frontend components, pages, composables, and middleware. Most isolated API and database-helper tests still use in-memory SQLite fixtures; the PostgreSQL integration test separately validates migrations, JSON storage, and database constraints against a configured PostgreSQL service.
+The authoritative test count is recorded in `tests/.test-meta.json`, which `bun run test` refreshes. Tests cover API endpoints, server utilities, database helpers, shared schemas, frontend components, pages, composables, and middleware. Most isolated API and database-helper tests still use in-memory SQLite fixtures; the PostgreSQL integration test separately validates migrations, JSON storage, and database constraints against a configured PostgreSQL service.
 
 Do **not** use `bun test`. Bun's native test runner cannot resolve Nuxt's `~~/` and `~/` path aliases. `bunfig.toml` redirects `bun test` to `bun-shim/shim.test.ts`, which prints guidance pointing to `bun run test`.
 
