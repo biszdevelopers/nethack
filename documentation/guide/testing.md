@@ -21,17 +21,19 @@ The canonical command is `bun run test`, which executes `vitest run --pool=forks
 
 ## Coverage Policy
 
-Coverage is measured by line, branch, function, and statement counts. Use `bun run test:coverage` to inspect gaps when changing application code.
+Coverage is measured by line, branch, function, and statement counts. `bun run test:coverage` measures executable JavaScript, TypeScript, and MJS source files under `app/`, `server/`, `shared/`, and `scripts/`, plus the production launcher and Drizzle configuration. It merges client and server builds for compile-time branches. The command fails unless every included metric reaches 100%, every executable source file has counters, every source file is represented, and each compile-time runtime conditional appears in both reports. Only the explicit type-only and static-configuration files listed below may have no executable counters.
 
 ### Current Coverage Status
 
-The test suite currently has **<TestCount /> passing tests** across **381 test files**.
+The test suite currently has **<TestCount /> passing tests**. The number is generated from the latest successful Vitest run.
 
 ### Coverage Exclusions
 
 The following files and directories are excluded from coverage because they are configuration, generated artifacts, test infrastructure, or documentation:
 
 - `nuxt.config.ts` — Nuxt configuration
+- `app/app.config.ts` — static UI configuration with no executable branches
+- `app/components/admin/rubric-types.ts` — type-only declarations
 - `tests/**/helpers.ts` — Test-only helper modules
 - `bun-shim/**` — Bun test runner shim
 - `drizzle/**` — Generated migration SQL and metadata snapshots
@@ -40,7 +42,7 @@ The following files and directories are excluded from coverage because they are 
 - `**/*.d.ts` — TypeScript declaration files
 - `**/node_modules/**` — Third-party dependencies
 
-These exclusions are configured in `vitest.config.ts` under `test.coverage.exclude`.
+These exclusions are configured in `vitest.config.ts` under `test.coverage.exclude`; the two zero-counter files are allowlisted in `tests/helpers/merge-vitest-coverage.mjs`. `start-fix.mjs` and `drizzle.config.ts` are included in coverage.
 
 ## Test Organization
 
@@ -67,7 +69,7 @@ Tests use Vitest's global API (`describe`, `it`, `expect`, `vi`) and the project
 
 Most API and database-helper tests use isolated in-memory SQLite fixtures for fast setup. The PostgreSQL integration test in `tests/server/database/postgres.integration.test.ts` runs the real migration and verifies JSON storage, uniqueness, and foreign-key enforcement. Run it with `DATABASE_URL` set and `BASISHACKS_POSTGRES_TEST=1`; CI provides a PostgreSQL service and runs the integration test with the full Vitest suite. The SQLite-backed unit fixtures do not replace broader PostgreSQL-backed API coverage.
 
-If you add a new branch to a source file, add a test that exercises it. The CI pipeline runs `bun run test:coverage` and will reject pull requests that reduce coverage below 100%.
+If you add a new branch to a source file, add a test that exercises it. CI runs `bun run test:coverage` and rejects pull requests when any included source file is missing, unmeasured, or falls below 100% statements, branches, functions, or lines. Vue single-file components and CSS are not runtime-instrumented by this gate. Current role-journey checks assert source contracts; they do not execute rendered UI, cover keyboard/focus interactions, or verify responsive layouts. Browser viewport and accessibility journeys remain a separate release check.
 
 ## About `bun test`
 
