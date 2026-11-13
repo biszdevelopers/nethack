@@ -15,7 +15,27 @@ const between = (source: string, start: string, end: string) => {
 
 describe("participant action paths", () => {
     const voting = readSource("pages", "voting.vue");
+    const votingCard = readSource("components", "VotingProjectCard.vue");
     const projectForm = readSource("components", "ProjectForm.vue");
+    const teamPage = readSource("pages", "dashboard", "teams", "index.vue");
+    const confirmModal = readSource("components", "ModalConfirm.vue");
+
+    it("gives peer-voting controls names, live scores, and 44px touch targets", () => {
+        expect(votingCard).toContain(':aria-label="`Remove a star from ${team.project.name}`"');
+        expect(votingCard).toContain(':aria-label="`Add a star to ${team.project.name}`"');
+        expect(votingCard).toContain('aria-live="polite"');
+        expect(votingCard.match(/class="min-h-11 min-w-11"/g)).toHaveLength(2);
+        expect(voting).toContain('class="min-h-11"');
+    });
+
+    it("keeps team creation, project save/submit, and confirmation actions touch-sized", () => {
+        expect(teamPage).toContain('<UButton type="submit" class="min-h-11">Create</UButton>');
+        expect(projectForm).toContain('id="project-save"');
+        expect(projectForm).toContain('id="project-submit"');
+        expect(projectForm).toMatch(/id="project-save"[\s\S]*?class="min-h-11"/);
+        expect(projectForm).toMatch(/id="project-submit"[\s\S]*?class="min-h-11"/);
+        expect(confirmModal.match(/class="min-h-11"/g)).toHaveLength(2);
+    });
 
     it("limits star distribution and makes voting available only at exactly ten stars", () => {
         expect(voting).toContain(
