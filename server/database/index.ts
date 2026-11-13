@@ -7,6 +7,12 @@ export type DrizzleDatabase = PostgresJsDatabase<typeof schema>;
 
 let client: Sql | undefined;
 let database: DrizzleDatabase | undefined;
+let databaseInitialization: Promise<void> = Promise.resolve();
+
+/** Publish the migration promise before Nitro begins accepting database-backed requests. */
+export function setDatabaseInitialization(initialization: Promise<void>): void {
+    databaseInitialization = initialization;
+}
 
 export function getDatabaseUrl(): string {
     const value = process.env.DATABASE_URL?.trim();
@@ -54,6 +60,7 @@ export async function createDrizzleDatabase(): Promise<DrizzleDatabase> {
 }
 
 export async function getDb(): Promise<DrizzleDatabase> {
+    await databaseInitialization;
     return createDrizzleDatabase();
 }
 
