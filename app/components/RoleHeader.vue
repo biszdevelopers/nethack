@@ -44,7 +44,10 @@ import { NethackPermissions } from "~~/shared/permissions";
 
 const { user, sessionUser: userRef } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
-const { data: hackathon } = useFetch("/api/seasons/active", { lazy: true });
+const { data: hackathon } = useFetch("/api/seasons/active", {
+    lazy: true,
+    $fetch: globalThis.$fetch,
+});
 
 const profileIconColor = computed(() => {
     return userRef.value ? "text-primary" : "text-ui-muted";
