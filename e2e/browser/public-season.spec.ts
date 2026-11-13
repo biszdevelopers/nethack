@@ -130,16 +130,11 @@ test("public season JSON and page redact a configured unreleased theme", async (
         "Voting End",
         "Results Open",
     ]) {
-        await expectTouchTarget(
-            configuration.getByText(label, { exact: true }).locator("xpath=..").locator("input"),
-        );
+        await expectTouchTarget(configuration.getByLabel(label, { exact: true }));
     }
     await setSeasonStatus(page, status, "Not Started");
 
-    const nameInput = page
-        .getByText("Theme Name", { exact: true })
-        .locator("xpath=..")
-        .locator("input");
+    const nameInput = configuration.getByLabel("Theme Name", { exact: true });
     await expectTouchTarget(nameInput);
     const saveName = page.waitForResponse(
         (candidate) =>
@@ -150,10 +145,7 @@ test("public season JSON and page redact a configured unreleased theme", async (
     await nameInput.press("Tab");
     expect((await saveName).ok()).toBeTruthy();
 
-    const descriptionInput = page
-        .getByText("Theme Description", { exact: true })
-        .locator("xpath=..")
-        .locator("textarea");
+    const descriptionInput = configuration.getByLabel("Theme Description", { exact: true });
     await expectTouchTarget(descriptionInput);
     const saveDescription = page.waitForResponse(
         (candidate) =>
