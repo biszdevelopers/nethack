@@ -10,6 +10,7 @@ import {
     type BasisAuthUserSession,
     type StoredBasisAuthTokens,
 } from "~~/server/utils/basis-auth-session";
+import { isValidE2ELoopbackOrigin } from "~~/server/utils/environment-validation";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
@@ -62,7 +63,25 @@ export function getBasisAuthConfig(): BasisAuthConfig {
             message: "BASIS_AUTH_ISSUER cannot contain credentials",
         });
     }
-    if (process.env.NODE_ENV === "production" && issuer.protocol !== "https:") {
+    const isolatedE2EIssuer =
+        process.env.BASISHACKS_E2E === "1" &&
+        issuer.protocol === "http:" &&
+        issuer.hostname === "127.0.0.1" &&
+        Boolean(issuer.port) &&
+        issuer.pathname === "/" &&
+        !issuer.search &&
+        !issuer.hash &&
+        isValidE2ELoopbackOrigin(
+            process.env.CURRENT_URL_ORIGIN,
+            process.env.NITRO_HOST || process.env.HOST,
+            process.env.NITRO_PORT || process.env.PORT,
+            process.env.NITRO_UNIX_SOCKET,
+        );
+    if (
+        process.env.NODE_ENV === "production" &&
+        issuer.protocol !== "https:" &&
+        !isolatedE2EIssuer
+    ) {
         throw createError({
             statusCode: 500,
             message: "BASIS_AUTH_ISSUER must use HTTPS in production",
