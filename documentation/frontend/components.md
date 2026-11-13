@@ -212,7 +212,7 @@ Primary results card used on the dashboard results page. Displays season results
 | #3          | `metallic-bronze` | Bronze gradient shimmer animation |
 | Score = 800 | `rainbow-once`    | One-time rainbow sweep animation  |
 
-The card displays season date and name (fetched from `/api/seasons`), score out of 800, ranking, team name, pathway badge, member avatars via `UserAvatarGroup`, awarded badges via `AwardButton`, and a link to season details. A modal trigger renders the full project inside a `ProjectCard`. When a project has not been submitted, the score and rank are blurred with an overlay message.
+The card displays the season name, original score, ranking, team name, pathway badge, member avatars via `UserAvatarGroup`, awarded badges via `AwardButton`, and a link to that team's season details at `/seasons/:id`. A modal trigger renders the full project inside a `ProjectCard`. When a project has not been submitted, the score and rank are blurred with an overlay message.
 
 ```vue
 <ScoreCard :team="team" />
