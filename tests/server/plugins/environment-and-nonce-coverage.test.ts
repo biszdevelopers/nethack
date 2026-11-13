@@ -100,6 +100,34 @@ describe("environment validation plugin", () => {
         expect(error).toHaveBeenCalledWith(expect.stringContaining("CURRENT_URL_ORIGIN"));
     });
 
+    it("allows the production build to use only its exact isolated E2E loopback origin", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("BASISHACKS_E2E", "1");
+        vi.stubEnv("HOST", "127.0.0.1");
+        vi.stubEnv("PORT", "3005");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+
+        await runPlugin();
+    });
+
+    it.each([
+        ["NITRO_HOST", "0.0.0.0"],
+        ["NITRO_PORT", "3006"],
+        ["NITRO_UNIX_SOCKET", "/tmp/basishacks.sock"],
+    ])("rejects the E2E origin exception with unsafe %s", async (name, value) => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("BASISHACKS_E2E", "1");
+        vi.stubEnv("HOST", "127.0.0.1");
+        vi.stubEnv("PORT", "3005");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+        vi.stubEnv(name, value);
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await expectExit();
+
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("CURRENT_URL_ORIGIN"));
+    });
+
     it("warns for invalid development proxy hops and rejects them in production", async () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
         vi.stubEnv("TRUSTED_PROXY_HOPS", "1x");
