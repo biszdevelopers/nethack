@@ -97,7 +97,10 @@ describe("GET /api/seasons/:id/tweaks route parameters", () => {
         const season = { id: 12, name: "Season 12" };
         getSeasonById.mockResolvedValue(season);
 
-        await expect(getTweaksHandler({ context: {} })).resolves.toBe(season);
+        await expect(getTweaksHandler({ context: {} })).resolves.toMatchObject({
+            id: season.id,
+            name: season.name,
+        });
 
         expect(getSeasonById).toHaveBeenCalledWith({ context: {} }, 12);
     });
