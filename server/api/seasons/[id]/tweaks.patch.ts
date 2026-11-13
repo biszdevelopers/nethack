@@ -7,7 +7,16 @@ export default defineEventHandler(
     applyRateLimit(async (event) => {
         await requireUser(event, NethackPermissions.Seasons.update);
 
-        const id = parseInt(getRouterParam(event, "id")!);
+        const rawId = getRouterParam(event, "id");
+        if (!rawId || !/^\d+$/.test(rawId)) {
+            throw createError({ statusCode: 400, message: "Invalid season ID" });
+        }
+
+        const id = Number(rawId);
+        if (!Number.isSafeInteger(id) || id < 1) {
+            throw createError({ statusCode: 400, message: "Invalid season ID" });
+        }
+
         const body = await readValidatedBody(event, UpdateSeasonTweaksRequest.parse);
 
         const data: Record<string, unknown> = {};
