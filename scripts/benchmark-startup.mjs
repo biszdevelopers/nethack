@@ -1,107 +1,193 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { spawn as nodeSpawn } from "node:child_process";
+import { readFile as nodeReadFile, writeFile as nodeWriteFile } from "node:fs/promises";
 import process from "node:process";
 import { performance } from "node:perf_hooks";
+import { pathToFileURL } from "node:url";
 import { maximum } from "./benchmark-utils.mjs";
 
-const args = parseArgs(process.argv.slice(2));
-const command = args.command;
-const commandArgs = JSON.parse(args.args ?? "[]");
-const systemdUnit = args["systemd-unit"];
-const url = args.url;
-const runs = positiveInteger(args.runs ?? "5");
-const timeoutMs = positiveInteger(args["timeout-ms"] ?? "60000");
-const memoryLimitBytes = positiveInteger(args["memory-limit-bytes"] ?? "500000000");
-const cgroupMemoryFile = args["cgroup-memory-file"];
-
-if (process.platform !== "linux") {
-    throw new Error("Cold-start measurement requires Linux /proc process statistics.");
-}
-if (
-    Boolean(command) === Boolean(systemdUnit) ||
-    !url ||
-    !Array.isArray(commandArgs) ||
-    commandArgs.some((value) => typeof value !== "string")
-) {
-    throw new Error("Provide either --command with --args, or --systemd-unit, and provide --url.");
-}
-if (systemdUnit && !/^[A-Za-z0-9_.@:-]+\.service$/.test(systemdUnit)) {
-    throw new Error("--systemd-unit must be a systemd service unit name ending in .service.");
-}
-if (systemdUnit && !cgroupMemoryFile) {
-    throw new Error("--systemd-unit requires --cgroup-memory-file for service memory sampling.");
+export function createRuntime(overrides = {}) {
+    return {
+        platform: overrides.platform ?? process.platform,
+        env: overrides.env ?? process.env,
+        cwd: overrides.cwd ?? (() => process.cwd()),
+        spawn: overrides.spawn ?? nodeSpawn,
+        readFile: overrides.readFile ?? nodeReadFile,
+        writeFile: overrides.writeFile ?? nodeWriteFile,
+        fetch: overrides.fetch ?? globalThis.fetch,
+        now: overrides.now ?? (() => performance.now()),
+        isoNow: overrides.isoNow ?? (() => new Date().toISOString()),
+        sleep:
+            overrides.sleep ??
+            ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))),
+        log: overrides.log ?? ((value) => console.log(value)),
+        setTimeout: overrides.setTimeout ?? setTimeout,
+        clearTimeout: overrides.clearTimeout ?? clearTimeout,
+        setExitCode:
+            overrides.setExitCode ??
+            ((value) => {
+                process.exitCode = value;
+            }),
+    };
 }
 
-const results = [];
-for (let run = 1; run <= runs; run += 1) {
-    results.push(await measureColdStart(run));
+const defaultRuntime = createRuntime();
+
+export async function runBenchmark(rawArgs, runtime = defaultRuntime) {
+    const args = parseArgs(rawArgs);
+    const command = args.command;
+    const commandArgs = JSON.parse(args.args ?? "[]");
+    const systemdUnit = args["systemd-unit"];
+    const url = args.url;
+    const runs = positiveInteger(args.runs ?? "5");
+    const timeoutMs = positiveInteger(args["timeout-ms"] ?? "60000");
+    const memoryLimitBytes = positiveInteger(args["memory-limit-bytes"] ?? "500000000");
+    const cgroupMemoryFile = args["cgroup-memory-file"];
+
+    if (runtime.platform !== "linux") {
+        throw new Error("Cold-start measurement requires Linux /proc process statistics.");
+    }
+    if (
+        Boolean(command) === Boolean(systemdUnit) ||
+        !url ||
+        !Array.isArray(commandArgs) ||
+        commandArgs.some((value) => typeof value !== "string")
+    ) {
+        throw new Error(
+            "Provide either --command with --args, or --systemd-unit, and provide --url.",
+        );
+    }
+    if (systemdUnit && !/^[A-Za-z0-9_.@:-]+\.service$/.test(systemdUnit)) {
+        throw new Error("--systemd-unit must be a systemd service unit name ending in .service.");
+    }
+    if (systemdUnit && !cgroupMemoryFile) {
+        throw new Error(
+            "--systemd-unit requires --cgroup-memory-file for service memory sampling.",
+        );
+    }
+
+    const options = {
+        args,
+        command,
+        commandArgs,
+        systemdUnit,
+        url,
+        runs,
+        timeoutMs,
+        memoryLimitBytes,
+        cgroupMemoryFile,
+    };
+    const results = [];
+    for (let run = 1; run <= runs; run += 1) {
+        results.push(await measureColdStart(run, options, runtime));
+    }
+
+    const report = buildReport(results, options);
+    const output = JSON.stringify(report, null, 2);
+    if (args.output) await runtime.writeFile(args.output, `${output}\n`, "utf8");
+    runtime.log(output);
+
+    let exitCode = 0;
+    const successfulStarts = results.filter((result) => result.ready);
+    if (successfulStarts.length !== runs || !report.process_rss_bytes.within_limit) exitCode = 1;
+    if (report.service_cgroup_memory_bytes && !report.service_cgroup_memory_bytes.within_limit) {
+        exitCode = 1;
+    }
+    return { report, exitCode };
 }
 
-const successfulStarts = results.filter((result) => result.ready);
-const startupTimes = successfulStarts.map((result) => result.startup_ms);
-const appRssMax = maximum(results.map((result) => result.process_rss_max_bytes));
-const cgroupMax = maximum(results.map((result) => result.cgroup_memory_max_bytes));
-const report = {
-    mode: "cold-start",
-    command: systemdUnit ? `systemctl start ${systemdUnit}` : `${command} ${commandArgs.join(" ")}`,
-    url,
-    started_at: results[0]?.started_at ?? new Date().toISOString(),
-    run_count: runs,
-    successful_starts: successfulStarts.length,
-    startup_ms: {
-        p50: percentile(startupTimes, 0.5),
-        p95: percentile(startupTimes, 0.95),
-        max: maximum(startupTimes),
-    },
-    process_rss_bytes: {
-        max: appRssMax,
-        limit_bytes: memoryLimitBytes,
-        within_limit: appRssMax !== null && appRssMax < memoryLimitBytes,
-    },
-    service_cgroup_memory_bytes: cgroupMemoryFile
-        ? {
-              source: cgroupMemoryFile,
-              max: cgroupMax,
-              limit_bytes: memoryLimitBytes,
-              within_limit: cgroupMax !== null && cgroupMax < memoryLimitBytes,
-          }
-        : null,
-    runs: results,
-};
-const output = JSON.stringify(report, null, 2);
-if (args.output) await writeFile(args.output, `${output}\n`, "utf8");
-console.log(output);
-if (successfulStarts.length !== runs || !report.process_rss_bytes.within_limit) {
-    process.exitCode = 1;
-}
-if (report.service_cgroup_memory_bytes && !report.service_cgroup_memory_bytes.within_limit) {
-    process.exitCode = 1;
+export function buildReport(results, options) {
+    const successfulStarts = results.filter((result) => result.ready);
+    const startupTimes = successfulStarts.map((result) => result.startup_ms);
+    const appRssMax = maximum(results.map((result) => result.process_rss_max_bytes));
+    const cgroupMax = maximum(results.map((result) => result.cgroup_memory_max_bytes));
+    return {
+        mode: "cold-start",
+        command: options.systemdUnit
+            ? `systemctl start ${options.systemdUnit}`
+            : `${options.command} ${options.commandArgs.join(" ")}`,
+        url: options.url,
+        started_at: results[0]?.started_at ?? new Date().toISOString(),
+        run_count: options.runs,
+        successful_starts: successfulStarts.length,
+        startup_ms: {
+            p50: percentile(startupTimes, 0.5),
+            p95: percentile(startupTimes, 0.95),
+            max: maximum(startupTimes),
+        },
+        process_rss_bytes: {
+            max: appRssMax,
+            limit_bytes: options.memoryLimitBytes,
+            within_limit: appRssMax !== null && appRssMax < options.memoryLimitBytes,
+        },
+        service_cgroup_memory_bytes: options.cgroupMemoryFile
+            ? {
+                  source: options.cgroupMemoryFile,
+                  max: cgroupMax,
+                  limit_bytes: options.memoryLimitBytes,
+                  within_limit: cgroupMax !== null && cgroupMax < options.memoryLimitBytes,
+              }
+            : null,
+        runs: results,
+    };
 }
 
-async function measureColdStart(run) {
+export function parseArgs(rawArgs) {
+    const parsed = {};
+    for (let index = 0; index < rawArgs.length; index += 1) {
+        const token = rawArgs[index];
+        if (!token.startsWith("--")) throw new Error(`Unexpected argument: ${token}`);
+        const key = token.slice(2);
+        const value = rawArgs[index + 1];
+        if (!value || value.startsWith("--")) throw new Error(`Missing value for --${key}.`);
+        parsed[key] = value;
+        index += 1;
+    }
+    return parsed;
+}
+
+export function positiveInteger(value) {
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0)
+        throw new Error(`Expected a positive integer: ${value}`);
+    return parsed;
+}
+
+export function percentile(values, fraction) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((left, right) => left - right);
+    return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
+}
+
+async function measureColdStart(run, options, runtime) {
+    const { args, command, commandArgs, systemdUnit, url, timeoutMs, cgroupMemoryFile } = options;
     if (systemdUnit) {
-        const stopped = await runProcess("systemctl", ["stop", systemdUnit]);
+        const stopped = await runProcess("systemctl", ["stop", systemdUnit], runtime);
         if (stopped.code !== 0) {
-            return failedSystemdRun(run, `Could not stop ${systemdUnit}: ${stopped.stderr}`);
+            return failedSystemdRun(
+                run,
+                `Could not stop ${systemdUnit}: ${stopped.stderr}`,
+                runtime,
+            );
         }
     }
 
-    const startedAt = new Date().toISOString();
-    const started = performance.now();
+    const startedAt = runtime.isoNow();
+    const started = runtime.now();
     let child;
     let childError;
     let exited;
+    let stopRequested = false;
     if (systemdUnit) {
-        const startResult = await runProcess("systemctl", ["start", systemdUnit]);
+        const startResult = await runProcess("systemctl", ["start", systemdUnit], runtime);
         if (startResult.code !== 0) {
             childError = `Could not start ${systemdUnit}: ${startResult.stderr}`;
             exited = true;
         }
     } else {
-        child = spawn(command, commandArgs, {
-            cwd: args.cwd ?? process.cwd(),
-            env: process.env,
+        child = runtime.spawn(command, commandArgs, {
+            cwd: args.cwd ?? runtime.cwd(),
+            env: runtime.env,
             stdio: "ignore",
             shell: false,
         });
@@ -111,7 +197,8 @@ async function measureColdStart(run) {
         });
         child.once("exit", (code, signal) => {
             exited = true;
-            if (code !== 0) childError ??= `Process exited with code ${code ?? signal}.`;
+            if (code !== 0 && !stopRequested)
+                childError ??= `Process exited with code ${code ?? signal}.`;
         });
     }
 
@@ -124,20 +211,19 @@ async function measureColdStart(run) {
     let lastPidReadAt = 0;
     let observedPid = systemdUnit ? null : child.pid;
     const deadline = started + timeoutMs;
-    while (!exited && performance.now() < deadline) {
+    while (!exited && runtime.now() < deadline) {
         try {
-            if (systemdUnit && performance.now() - lastPidReadAt >= 250) {
-                const pidResult = await runProcess("systemctl", [
-                    "show",
-                    "--property=MainPID",
-                    "--value",
-                    systemdUnit,
-                ]);
+            if (systemdUnit && runtime.now() - lastPidReadAt >= 250) {
+                const pidResult = await runProcess(
+                    "systemctl",
+                    ["show", "--property=MainPID", "--value", systemdUnit],
+                    runtime,
+                );
                 observedPid = pidResult.code === 0 ? Number(pidResult.stdout.trim()) || null : null;
-                lastPidReadAt = performance.now();
+                lastPidReadAt = runtime.now();
             }
             if (observedPid) {
-                const status = await readFile(`/proc/${observedPid}/status`, "utf8");
+                const status = await runtime.readFile(`/proc/${observedPid}/status`, "utf8");
                 const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
                 if (match) {
                     processRssMaxBytes = Math.max(processRssMaxBytes, Number(match[1]) * 1024);
@@ -145,7 +231,7 @@ async function measureColdStart(run) {
                 }
             }
             if (cgroupMemoryFile) {
-                const value = Number((await readFile(cgroupMemoryFile, "utf8")).trim());
+                const value = Number((await runtime.readFile(cgroupMemoryFile, "utf8")).trim());
                 if (!Number.isSafeInteger(value)) throw new Error("Invalid cgroup memory value");
                 cgroupMemoryMaxBytes = Math.max(cgroupMemoryMaxBytes ?? 0, value);
             }
@@ -154,8 +240,10 @@ async function measureColdStart(run) {
             if (cgroupMemoryFile && !String(error).includes("ENOENT")) childError ??= String(error);
         }
 
+        if (exited) break;
+
         try {
-            const response = await fetch(url, {
+            const response = await runtime.fetch(url, {
                 signal: AbortSignal.timeout(1_000),
                 redirect: "manual",
             });
@@ -166,22 +254,23 @@ async function measureColdStart(run) {
             // The server is not ready yet; keep sampling until it starts or times out.
         }
         if (ready || exited) break;
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await runtime.sleep(100);
     }
 
-    const startupMs = ready ? Math.round((performance.now() - started) * 100) / 100 : null;
+    const startupMs = ready ? Math.round((runtime.now() - started) * 100) / 100 : null;
     if (systemdUnit) {
         try {
-            const value = Number((await readFile(cgroupMemoryFile, "utf8")).trim());
+            const value = Number((await runtime.readFile(cgroupMemoryFile, "utf8")).trim());
             if (Number.isSafeInteger(value))
                 cgroupMemoryMaxBytes = Math.max(cgroupMemoryMaxBytes ?? 0, value);
         } catch {
             // The summary below fails when no cgroup memory samples were collected.
         }
-        const stopped = await runProcess("systemctl", ["stop", systemdUnit]);
+        const stopped = await runProcess("systemctl", ["stop", systemdUnit], runtime);
         if (stopped.code !== 0) childError ??= `Could not stop ${systemdUnit}: ${stopped.stderr}`;
-    } else if (!exited) {
-        await stopChild(child);
+    } else if (!exited && child.exitCode === null && child.signalCode === null) {
+        stopRequested = true;
+        await stopChild(child, runtime);
     }
     return {
         run,
@@ -196,10 +285,10 @@ async function measureColdStart(run) {
     };
 }
 
-async function failedSystemdRun(run, error) {
+async function failedSystemdRun(run, error, runtime) {
     return {
         run,
-        started_at: new Date().toISOString(),
+        started_at: runtime.isoNow(),
         ready: false,
         startup_ms: null,
         last_http_status: null,
@@ -210,9 +299,9 @@ async function failedSystemdRun(run, error) {
     };
 }
 
-async function runProcess(commandName, commandArgs) {
+export async function runProcess(commandName, commandArgs, runtime = defaultRuntime) {
     return await new Promise((resolve) => {
-        const childProcess = spawn(commandName, commandArgs, {
+        const childProcess = runtime.spawn(commandName, commandArgs, {
             stdio: ["ignore", "pipe", "pipe"],
             shell: false,
         });
@@ -225,43 +314,25 @@ async function runProcess(commandName, commandArgs) {
     });
 }
 
-async function stopChild(child) {
+export async function stopChild(child, runtime = defaultRuntime) {
     if (child.exitCode !== null || child.signalCode !== null) return;
     child.kill("SIGTERM");
     await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 10_000);
+        const timer = runtime.setTimeout(resolve, 10_000);
         timer.unref();
         child.once("exit", () => {
-            clearTimeout(timer);
+            runtime.clearTimeout(timer);
             resolve();
         });
     });
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
 }
 
-function parseArgs(rawArgs) {
-    const parsed = {};
-    for (let index = 0; index < rawArgs.length; index += 1) {
-        const token = rawArgs[index];
-        if (!token.startsWith("--")) throw new Error(`Unexpected argument: ${token}`);
-        const key = token.slice(2);
-        const value = rawArgs[index + 1];
-        if (!value || value.startsWith("--")) throw new Error(`Missing value for --${key}.`);
-        parsed[key] = value;
-        index += 1;
-    }
-    return parsed;
+export async function runIfDirect(moduleUrl, argvPath, args, runtime = defaultRuntime) {
+    if (!argvPath || moduleUrl !== pathToFileURL(argvPath).href) return null;
+    const { exitCode } = await runBenchmark(args, runtime);
+    runtime.setExitCode(exitCode);
+    return exitCode;
 }
 
-function positiveInteger(value) {
-    const parsed = Number(value);
-    if (!Number.isSafeInteger(parsed) || parsed <= 0)
-        throw new Error(`Expected a positive integer: ${value}`);
-    return parsed;
-}
-
-function percentile(values, fraction) {
-    if (!values.length) return null;
-    const sorted = [...values].sort((left, right) => left - right);
-    return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
-}
+await runIfDirect(import.meta.url, process.argv[1], process.argv.slice(2));
