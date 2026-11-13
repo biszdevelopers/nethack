@@ -36,7 +36,11 @@ function createVerifier() {
     return randomBytes(32).toString("base64url");
 }
 
-async function authorize({ redirectUri = `${appOrigin}/api/auth/basis/callback` } = {}) {
+async function authorize({
+    redirectUri = `${appOrigin}/api/auth/basis/callback`,
+    consentOrigin = provider.issuer,
+    submitConsent = true,
+} = {}) {
     const state = randomBytes(32).toString("base64url");
     const nonce = randomBytes(32).toString("base64url");
     const verifier = createVerifier();
@@ -60,16 +64,31 @@ async function authorize({ redirectUri = `${appOrigin}/api/auth/basis/callback` 
 
     const ticket = /name="ticket" value="([A-Za-z0-9_-]+)"/.exec(consentHtml)?.[1];
     assert.ok(ticket, "authorization page should contain its opaque consent ticket");
-    const consent = await fetch(`${provider.issuer}/authorize/consent`, {
+    if (!submitConsent) return { consentPage, consentHtml, ticket, state, nonce, verifier };
+
+    const consent = await submitConsentTicket(ticket, { origin: consentOrigin });
+    return { consentPage, consentHtml, ticket, consent, state, nonce, verifier };
+}
+
+async function submitConsentTicket(
+    ticket,
+    { origin, subject = testIdentity.sub, duplicateTicket = false, duplicateSubject = false } = {},
+) {
+    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    if (origin !== undefined) headers.Origin = origin;
+
+    const body = new URLSearchParams();
+    body.append("ticket", ticket);
+    if (duplicateTicket) body.append("ticket", ticket);
+    body.append("sub", subject);
+    if (duplicateSubject) body.append("sub", subject);
+
+    return await fetch(`${provider.issuer}/authorize/consent`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Origin: provider.issuer,
-        },
-        body: new URLSearchParams({ ticket, sub: testIdentity.sub }),
+        headers,
+        body,
         redirect: "manual",
     });
-    return { consentPage, consentHtml, consent, state, nonce, verifier };
 }
 
 function clientAuthorization() {
@@ -306,6 +325,68 @@ test("performs PKCE authorization, emits nonce-bound tokens, serves UserInfo, an
     assert.equal(revokeRefresh.status, 200);
 });
 
+test("accepts an opaque consent origin only with a valid single-use ticket", async () => {
+    const flow = await authorize({ consentOrigin: "null" });
+    assert.equal(flow.consentPage.status, 200);
+    assert.equal(flow.consent.status, 302);
+
+    const replay = await submitConsentTicket(flow.ticket, { origin: "null" });
+
+    assert.equal(replay.status, 400);
+    assert.deepEqual(await replay.json(), { error: "invalid_request" });
+});
+
+test("rejects unknown, expired, and duplicate consent ticket fields for opaque origins", async () => {
+    const unknown = await submitConsentTicket("unknown-ticket", { origin: "null" });
+    assert.equal(unknown.status, 400);
+
+    const duplicateFlow = await authorize({ submitConsent: false });
+    const duplicateTicket = await submitConsentTicket(duplicateFlow.ticket, {
+        origin: "null",
+        duplicateTicket: true,
+    });
+    assert.equal(duplicateTicket.status, 400);
+    const duplicateSubject = await submitConsentTicket(duplicateFlow.ticket, {
+        origin: "null",
+        duplicateSubject: true,
+    });
+    assert.equal(duplicateSubject.status, 400);
+    const usableAfterMalformedForms = await submitConsentTicket(duplicateFlow.ticket, {
+        origin: "null",
+    });
+    assert.equal(usableAfterMalformedForms.status, 302);
+
+    const expiredFlow = await authorize({ submitConsent: false });
+    const currentDateNow = Date.now;
+    Date.now = () => currentDateNow() + 6 * 60 * 1000;
+    try {
+        const expired = await submitConsentTicket(expiredFlow.ticket, { origin: "null" });
+        assert.equal(expired.status, 400);
+    } finally {
+        Date.now = currentDateNow;
+    }
+});
+
+test("consumes opaque-origin consent tickets after invalid identities and concurrent redemption", async () => {
+    const invalidIdentityFlow = await authorize({ submitConsent: false });
+    const invalidIdentity = await submitConsentTicket(invalidIdentityFlow.ticket, {
+        origin: "null",
+        subject: "unknown-user",
+    });
+    assert.equal(invalidIdentity.status, 400);
+    const consumedTicket = await submitConsentTicket(invalidIdentityFlow.ticket, {
+        origin: "null",
+    });
+    assert.equal(consumedTicket.status, 400);
+
+    const concurrentFlow = await authorize({ submitConsent: false });
+    const redemptions = await Promise.all([
+        submitConsentTicket(concurrentFlow.ticket, { origin: "null" }),
+        submitConsentTicket(concurrentFlow.ticket, { origin: "null" }),
+    ]);
+    assert.deepEqual(redemptions.map((response) => response.status).sort(), [302, 400]);
+});
+
 test("rejects non-loopback callbacks, failed PKCE, missing consent origin, and bad client credentials", async () => {
     const invalidCallback = await authorize({ redirectUri: "https://attacker.invalid/callback" });
     assert.equal(invalidCallback.consentPage.status, 400);
@@ -314,15 +395,15 @@ test("rejects non-loopback callbacks, failed PKCE, missing consent origin, and b
     const crossOriginConsentPage = await fetch(`${provider.issuer}/authorize?client_id=wrong`);
     assert.equal(crossOriginConsentPage.status, 400);
 
-    const flow = await authorize();
-    const ticket = /name="ticket" value="([A-Za-z0-9_-]+)"/.exec(flow.consentHtml)?.[1];
-    assert.ok(ticket);
-    const noOrigin = await fetch(`${provider.issuer}/authorize/consent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ ticket, sub: testIdentity.sub }),
-    });
+    const flow = await authorize({ submitConsent: false });
+    const noOrigin = await submitConsentTicket(flow.ticket);
     assert.equal(noOrigin.status, 403);
+    const foreignOrigin = await submitConsentTicket(flow.ticket, {
+        origin: "https://attacker.invalid",
+    });
+    assert.equal(foreignOrigin.status, 403);
+    const validOrigin = await submitConsentTicket(flow.ticket, { origin: provider.issuer });
+    assert.equal(validOrigin.status, 302);
 
     const nextFlow = await authorize();
     const wrongVerifier = `${nextFlow.verifier.slice(0, -1)}${
