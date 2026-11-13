@@ -40,12 +40,14 @@ async function expectUnreleasedThemeRedacted(
     const response = await request.get("/api/seasons");
     expect(response.ok()).toBeTruthy();
 
-    const seasons = (await response.json()) as Array<{
-        id: number;
-        status: string;
-        theme_name: string | null;
-        theme_description: string | null;
-    }>;
+    const { data: seasons } = (await response.json()) as {
+        data: Array<{
+            id: number;
+            status: string;
+            theme_name: string | null;
+            theme_description: string | null;
+        }>;
+    };
     const season = seasons.find((item) => item.id === 1);
     expect(season).toMatchObject({
         status: expectedStatus,
@@ -156,10 +158,10 @@ test("public season JSON and page redact a configured unreleased theme", async (
         if (!response.ok)
             throw new Error(`Could not verify admin season configuration: ${response.status}`);
         return (await response.json()) as {
-            seasons: { id: number; theme_name: string; theme_description: string }[];
+            data: { seasons: { id: number; theme_name: string; theme_description: string }[] };
         };
     });
-    expect(configured.seasons.find((item) => item.id === 1)).toMatchObject({
+    expect(configured.data.seasons.find((item) => item.id === 1)).toMatchObject({
         theme_name: secretName,
         theme_description: secretDescription,
     });
