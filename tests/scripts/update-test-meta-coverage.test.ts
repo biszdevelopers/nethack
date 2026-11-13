@@ -65,6 +65,32 @@ describe("test metadata stream processor", () => {
         expect(exit).toHaveBeenCalledWith(1);
     });
 
+    it("prints failed test names without printing assertion payloads", async () => {
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+
+        await run([
+            JSON.stringify({
+                numFailedTests: 1,
+                testResults: [
+                    {
+                        name: "tests/api/sample.test.ts",
+                        assertionResults: [
+                            { status: "failed", fullName: "rejects a missing resource" },
+                            { status: "passed", fullName: "accepts a valid resource" },
+                        ],
+                    },
+                    { name: "tests/setup.test.ts" },
+                ],
+            }),
+        ]);
+
+        expect(error).toHaveBeenCalledWith(
+            "Failed test: tests/api/sample.test.ts › rejects a missing resource",
+        );
+        expect(error).not.toHaveBeenCalledWith(expect.stringContaining("assertion payload"));
+    });
+
     it.each([{ chunks: [] as string[] }, { chunks: ["not-json"] }])(
         "rejects input without a valid final JSON line",
         async ({ chunks }) => {
