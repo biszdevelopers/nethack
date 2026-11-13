@@ -266,10 +266,10 @@ Developer endpoint returning per-season judging progress (project, submitted, an
 
 List all seasons.
 
-| Field        | Details                                             |
-| ------------ | --------------------------------------------------- |
-| **Auth**     | User with `portal.seasons.view` permission or admin |
-| **Response** | `Season[]`                                          |
+| Field        | Details           |
+| ------------ | ----------------- |
+| **Auth**     | Public, read-only |
+| **Response** | `Season[]`        |
 
 ### GET `/api/seasons/active`
 
@@ -294,6 +294,8 @@ Set the active season. The newly active season's tweaks are copied into the live
 
 Get the tweakable settings of a single season.
 
+The `id` path value must be a positive safe integer. Missing, malformed, zero, negative, or unsafe values return `400`; a well-formed ID with no matching season returns `404`.
+
 | Field        | Details                                             |
 | ------------ | --------------------------------------------------- |
 | **Auth**     | User with `portal.seasons.view` permission or admin |
@@ -302,6 +304,8 @@ Get the tweakable settings of a single season.
 ### PATCH `/api/seasons/:id/tweaks`
 
 Update the tweakable settings of a single season. Accepts a partial body with any of: `status`, `show_scores`, `show_ranking` (booleans). Only these three settings are tweakable; any other fields in the request body are stripped.
+
+The `id` path value must be a positive safe integer. Missing, malformed, zero, negative, or unsafe values return `400`; a well-formed ID with no matching season returns `404`.
 
 When the season is the currently active (live) season, the `hackathon` singleton row is updated as well so changes take effect immediately.
 
@@ -462,26 +466,6 @@ List all uploaded files.
 | POST | `/api/debug/deepseek/sessions/:id/message` | `dev_deepseek` or admin | Send a message `{ message, role?, toolCallId?, toolResult? }` |
 
 ---
-
-## Chatbot
-
-### GET `/api/chatbot/message`
-
-Handle Microsoft Teams chatbot messages (test endpoint). Sends a test rich-text message to a hard-coded admin user.
-
-| Field        | Details                                       |
-| ------------ | --------------------------------------------- |
-| **Auth**     | OAuth2 JWT Bearer with `chat.readwrite` scope |
-| **Response** | `{ test: "ok" }`                              |
-
-### GET `/api/chatbot/index`
-
-Chatbot health check / no-op endpoint.
-
-| Field        | Details |
-| ------------ | ------- |
-| **Auth**     | None    |
-| **Response** | Empty   |
 
 ---
 
