@@ -138,7 +138,6 @@ basishacks-r2/
 │   │   ├── admin/              # Admin endpoints (scores, teams)
 │   │   ├── auth/               # basis-auth callback, token refresh, and logout
 │   │   ├── ballot/             # Ballot and peer voting endpoints
-│   │   ├── chatbot/            # AI chatbot endpoints (Microsoft Teams integration)
 │   │   ├── debug/              # Debug endpoints (DeepSeek sessions, file upload)
 │   │   ├── seasons/            # Season management endpoints
 │   │   ├── teams/              # Team CRUD, member management, scoring, submission
