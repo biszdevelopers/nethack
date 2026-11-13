@@ -577,7 +577,7 @@ export async function startOidcTestProvider(options) {
                 response,
                 200,
                 `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Choose test identity</title></head><body><main><h1>Choose a test identity</h1><form method="post" action="${issuer}/authorize/consent"><input type="hidden" name="ticket" value="${ticket}"><fieldset><legend>Available E2E identities</legend>${choices}</fieldset></form></main></body></html>`,
-                issuer,
+                "http://127.0.0.1:*",
             );
         }
 
