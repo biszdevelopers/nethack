@@ -223,7 +223,10 @@ test("performs PKCE authorization, emits nonce-bound tokens, serves UserInfo, an
     const flow = await authorize();
     assert.equal(flow.consentPage.status, 200);
     assert.match(flow.consentHtml, /Choose a test identity/);
-    assert.match(flow.consentPage.headers.get("content-security-policy"), /default-src 'none'/);
+    assert.equal(
+        flow.consentPage.headers.get("content-security-policy"),
+        `default-src 'none'; form-action ${provider.issuer}; base-uri 'none'; frame-ancestors 'none'`,
+    );
     assert.equal(flow.consent.status, 302);
 
     const location = new URL(flow.consent.headers.get("location"));
