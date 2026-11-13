@@ -1,3 +1,5 @@
+import { toPublicSeason } from "~~/server/utils/public-season";
+
 export default defineEventHandler(async (event) => {
     const rawId = getRouterParam(event, "id");
     if (!rawId || !/^\d+$/.test(rawId)) {
@@ -18,5 +20,5 @@ export default defineEventHandler(async (event) => {
         });
     }
 
-    return season;
+    return toPublicSeason(season);
 });
