@@ -3,7 +3,7 @@ useHead({
     title: `${WEBSITE_NAME}`,
 });
 
-const { data, error } = await useFetch("/api/seasons/active");
+const { data, error } = await useFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
 if (error.value) {
     throw error.value;
 }
