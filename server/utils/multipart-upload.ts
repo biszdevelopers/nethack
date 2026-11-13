@@ -6,7 +6,6 @@ import type { Readable } from "node:stream";
 import { createError } from "h3";
 import {
     createAssetFromStream,
-    getStoredAssetNames,
     removeAsset,
     removeUserAsset,
     type AssetCollection,
@@ -50,14 +49,10 @@ function getPrefixValidator(extension: string): ((prefix: Buffer) => boolean) | 
     return signatures[extension];
 }
 
-async function createUnusedFilename(collection: AssetCollection, extension: string) {
-    const directory = collection === "assets" ? "uploads" : undefined;
-    const existingNames = new Set(await getStoredAssetNames(collection, directory));
-    for (let attempt = 0; attempt < 10; attempt++) {
-        const filename = `${randomUUID()}${extension}`;
-        if (!existingNames.has(filename)) return filename;
-    }
-    throw uploadError(500, "Unable to allocate a unique upload name");
+function createUploadFilename(extension: string) {
+    // Exclusive publication below rejects the astronomically unlikely UUID collision
+    // without scanning the ever-growing asset directory for every upload.
+    return `${randomUUID()}${extension}`;
 }
 
 /** Accept exactly one file part and stream it to disk with bounded memory. */
@@ -144,7 +139,7 @@ export async function storeMultipartAsset(
         stream.on("limit", () => fail(413, "File too large"));
         fileTask = (async () => {
             try {
-                const filename = await createUnusedFilename(collection, extension);
+                const filename = createUploadFilename(extension);
                 const relativePath = collection === "assets" ? `uploads/${filename}` : filename;
                 await createAssetFromStream(
                     relativePath,
@@ -156,6 +151,9 @@ export async function storeMultipartAsset(
                 );
                 savedFilename = filename;
             } catch (error) {
+                // If setup failed before the bounded storage pipeline took ownership,
+                // drain the part so Busboy can finish parsing the request.
+                stream.resume();
                 const uploadFailure = error as { statusCode?: number; statusMessage?: string };
                 failure ??= uploadError(
                     uploadFailure.statusCode === 413
