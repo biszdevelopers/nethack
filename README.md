@@ -131,10 +131,10 @@ The custom Nitro error-handler path is normalized to forward slashes in `nuxt.co
 ```bash
 bun run test            # full suite (also generates tests/.test-meta.json)
 bun run test:watch      # watch mode
-bun run test:coverage   # with coverage
+bun run test:coverage   # enforce 100% executable source coverage
 ```
 
-The canonical test count is stored in `tests/.test-meta.json` and displayed dynamically in the VitePress documentation.
+The canonical test count is stored in `tests/.test-meta.json` and displayed dynamically in the VitePress documentation. Coverage enforces 100% statements, branches, functions, and lines for instrumented `.js`, `.mjs`, and `.ts` files under `app/`, `server/`, `shared/`, and `scripts/`, plus the production launcher and Drizzle config. It verifies per-file counters and merges the client and server builds for compile-time branches. Vue single-file components and CSS are not runtime-instrumented; source-contract checks do not replace rendered browser journeys or viewport accessibility checks.
 
 Do **not** use `bun test` — it cannot resolve Nuxt path aliases. `bunfig.toml` redirects it to a guidance shim.
 
