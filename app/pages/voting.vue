@@ -146,7 +146,11 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                 </UFormField>
 
                 <UFormField v-if="!submitted">
-                    <UButton :disabled="totalStars !== 10 || projects.length === 0" type="submit">
+                    <UButton
+                        :disabled="totalStars !== 10 || projects.length === 0"
+                        class="min-h-11"
+                        type="submit"
+                    >
                         Submit
                     </UButton>
                 </UFormField>
