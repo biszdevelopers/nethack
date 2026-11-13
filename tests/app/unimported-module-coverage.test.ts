@@ -227,13 +227,15 @@ describe("server-only app plugin modules", () => {
 });
 
 describe("session, permission, and API user composables", () => {
-    it("starts with empty client permissions and answers direct and grouped requirements", async () => {
+    it("reads authenticated session permissions for direct and grouped requirements", async () => {
         const { useNethackPermissions } = await import("~~/app/composables/useNethackPermissions");
+        const permissions = ref<string[]>([]);
+        vi.stubGlobal("useBasisAuthSession", () => ({ permissions }));
         const state = useNethackPermissions();
 
         expect(state.permissions.value).toEqual([]);
         expect(state.can("nethack.Teams.create")).toBe(false);
-        state.permissions.value = ["participant"];
+        permissions.value = ["participant"];
         expect(state.can("nethack.Projects.submitOwn")).toBe(true);
         expect(
             state.can({ anyOf: ["nethack.Debug.filesRead", "nethack.Projects.submitOwn"] }),
