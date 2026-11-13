@@ -264,12 +264,12 @@ Developer endpoint returning per-season judging progress (project, submitted, an
 
 ### GET `/api/seasons`
 
-List all seasons.
+List public season details. Theme fields are null while a season has not started or is paused. Rubric identifiers, score-curve configuration, and other organizer-only fields are not included.
 
 | Field        | Details           |
 | ------------ | ----------------- |
 | **Auth**     | Public, read-only |
-| **Response** | `Season[]`        |
+| **Response** | `PublicSeason[]`  |
 
 ### GET `/api/seasons/active`
 
@@ -292,14 +292,16 @@ Set the active season. The newly active season's tweaks are copied into the live
 
 ### GET `/api/seasons/:id/tweaks`
 
-Get the tweakable settings of a single season.
+Get the public details of a single season.
 
 The `id` path value must be a positive safe integer. Missing, malformed, zero, negative, or unsafe values return `400`; a well-formed ID with no matching season returns `404`.
 
-| Field        | Details                                             |
-| ------------ | --------------------------------------------------- |
-| **Auth**     | User with `portal.seasons.view` permission or admin |
-| **Response** | `Season`                                            |
+| Field        | Details           |
+| ------------ | ----------------- |
+| **Auth**     | Public, read-only |
+| **Response** | `PublicSeason`    |
+
+This response is an allowlisted public DTO. Rubric identifiers, score-curve configuration, judging controls, and other organizer-only fields are omitted. Theme fields are `null` until the season begins and while it is paused.
 
 ### PATCH `/api/seasons/:id/tweaks`
 
