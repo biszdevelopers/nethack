@@ -29,6 +29,7 @@ vi.mock("node:fs/promises", () => ({
 const realManifest = JSON.parse(
     readFileSync(resolve(process.cwd(), "shared/icon-bundle-manifest.json"), "utf8"),
 );
+const projectRoot = resolve(import.meta.dirname, "..", "..");
 
 function bundleFor(manifest: any, scannedIcons: string[]) {
     const ignored = new Set(manifest.ignoreScanMatches ?? []);
@@ -85,11 +86,11 @@ describe("server icon bundle generation", () => {
 
         await run();
 
-        expect(mocks.scanFiles).toHaveBeenCalledWith(expect.stringContaining("basishacks-r2"));
+        expect(mocks.scanFiles).toHaveBeenCalledWith(projectRoot);
         expect(mocks.resolveBundleIcons).toHaveBeenCalledWith({
             icons: manifest.icons,
             scannedIcons: ["lucide:check"],
-            resolvePaths: [expect.stringContaining("basishacks-r2")],
+            resolvePaths: [projectRoot],
         });
         expect(mocks.mkdir).toHaveBeenCalledWith(
             expect.stringMatching(/node_modules[\\/]\.cache/),
