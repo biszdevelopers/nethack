@@ -74,9 +74,41 @@ describe("GET /api/seasons/:id/tweaks", () => {
         expect(result).toHaveProperty("id", season.id);
         expect(result).toHaveProperty("name", "Season 1");
         expect(result).toHaveProperty("status", "not_started");
-        expect(result).toHaveProperty("show_scores", 0);
-        expect(result).toHaveProperty("show_ranking", 0);
-        expect(result).toHaveProperty("voting_enabled", 0);
+        expect(result).toHaveProperty("results_published", 0);
+        expect(result).not.toHaveProperty("score_curve_preset");
+        expect(result).not.toHaveProperty("rubric_version_id");
+        expect(result).not.toHaveProperty("judging_open");
+        expect(result).not.toHaveProperty("voting_enabled");
+    });
+
+    it("redacts non-empty themes for unreleased seasons", async () => {
+        const season = seedSeason(ctx, {
+            status: "paused",
+            theme_name: "Secret title",
+            theme_description: "Secret details",
+        });
+        mockParams.values["id"] = String(season.id);
+
+        const result = await getTweaksHandler(createEvent());
+
+        expect(result).toMatchObject({ theme_name: null, theme_description: null });
+        expect(result).not.toHaveProperty("score_curve_preset");
+    });
+
+    it("includes the theme for a published season", async () => {
+        const season = seedSeason(ctx, {
+            status: "in_progress",
+            theme_name: "Published title",
+            theme_description: "Published details",
+        });
+        mockParams.values["id"] = String(season.id);
+
+        const result = await getTweaksHandler(createEvent());
+
+        expect(result).toMatchObject({
+            theme_name: "Published title",
+            theme_description: "Published details",
+        });
     });
 
     it("returns 404 when the season does not exist", async () => {
