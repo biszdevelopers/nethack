@@ -40,7 +40,6 @@ if (!Number.isSafeInteger(pid) || pid <= 0)
     throw new Error("--pid must be a Linux app process ID.");
 if (!targetFile)
     throw new Error("--targets must point to a JSON array of representative requests.");
-if (mode === "load" && users < 1) throw new Error("--users must be at least one.");
 if (mode === "load" && !cgroupMemoryFile) {
     throw new Error("--cgroup-memory-file is required for load runs to measure service memory.");
 }
@@ -227,8 +226,9 @@ async function runRepresentativeTraffic(seconds) {
     let targetIndex = 0;
     while (performance.now() < endAt && !stop) {
         const tickStarted = performance.now();
-        const target = targets[targetIndex++ % targets.length];
-        await requestTarget(target, targetIndex - 1);
+        const currentTargetIndex = targetIndex++ % targets.length;
+        const target = targets[currentTargetIndex];
+        await requestTarget(target, currentTargetIndex);
         const delay = Math.max(0, 1_000 - (performance.now() - tickStarted));
         if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     }
