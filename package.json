@@ -12,7 +12,7 @@
         "test": "vitest run --pool=forks --reporter=json | bun run test:meta",
         "test:postgres": "vitest run tests/server/database/postgres.integration.test.ts --pool=forks",
         "test:watch": "vitest",
-        "test:coverage": "vitest run --coverage",
+        "test:coverage": "vitest run --coverage --config vitest.coverage.config.ts && vitest run --coverage --config vitest.server-coverage.config.ts && node tests/helpers/merge-vitest-coverage.mjs .tmp-vitest/full-source-coverage/coverage-final.json .tmp-vitest/server-mode-coverage/coverage-final.json",
         "test:meta": "bun scripts/update-test-meta.ts",
         "generate": "nuxt generate",
         "pregenerate": "node scripts/generate-icon-server-bundle.mjs",
