@@ -23,7 +23,18 @@ async function newMobilePage(browser: Browser): Promise<{ context: BrowserContex
 async function loginAs(page: Page, email: string, redirectPath: string) {
     await page.goto(`/api/login?redirect=${encodeURIComponent(redirectPath)}`);
     await expect(page.getByRole("heading", { name: "Choose a test identity" })).toBeVisible();
+    const consentResponse = page.waitForResponse(
+        (response) =>
+            new URL(response.url()).pathname === "/authorize/consent" &&
+            response.request().method() === "POST",
+    );
     await page.getByRole("button").filter({ hasText: email }).click();
+    const consent = await consentResponse;
+    const consentBody = consent.status() === 302 ? "" : await consent.text();
+    expect(
+        consent.status(),
+        `OIDC test provider consent failed with HTTP ${consent.status()}: ${consentBody}`,
+    ).toBe(302);
     await expect(page).toHaveURL((url) => url.pathname === redirectPath);
 }
 
