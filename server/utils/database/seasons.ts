@@ -138,9 +138,7 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
 
             // Copy the newly active season's tweaks into the live hackathon row
             const tweaks = pickTweaks(season as unknown as Record<string, unknown>);
-            if (Object.keys(tweaks).length > 0) {
-                await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
-            }
+            await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
         }
     });
 }
