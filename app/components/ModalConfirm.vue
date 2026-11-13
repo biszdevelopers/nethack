@@ -8,6 +8,7 @@
         <template #footer="{ close }">
             <UButton
                 :color="color"
+                class="min-h-11"
                 @click="
                     click();
                     close();
@@ -15,7 +16,9 @@
             >
                 Confirm
             </UButton>
-            <UButton :color="colorSecond" variant="outline" @click="close">Cancel</UButton>
+            <UButton :color="colorSecond" variant="outline" class="min-h-11" @click="close">
+                Cancel
+            </UButton>
         </template>
     </UModal>
 </template>
