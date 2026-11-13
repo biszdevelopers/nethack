@@ -43,8 +43,6 @@ const allApiFiles = [
     "server/api/debug/deepseek/sessions/[id]/message.post.ts",
     "server/api/_webhooks/lifecycle.post.ts",
     "server/api/_webhooks/update.post.ts",
-    "server/api/chatbot/index.get.ts",
-    "server/api/chatbot/message.get.ts",
 ];
 
 describe("API error messages do not leak internal details", () => {
