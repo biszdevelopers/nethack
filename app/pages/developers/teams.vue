@@ -154,6 +154,7 @@ const columns: TableColumn<AdminTeam>[] = [
                 icon: "i-lucide-message-square-text",
                 color: "neutral",
                 variant: "subtle",
+                class: "min-h-11",
                 onClick: () => {
                     selectedFeedbackTeam.value = row.original;
                     feedbackModalOpen.value = true;
