@@ -267,6 +267,7 @@ export async function createAssetFromStream(
     let prefix = Buffer.alloc(0);
     const prefixGuard = validatePrefix
         ? new Transform({
+              decodeStrings: false,
               transform(chunk: Buffer | string, _encoding, callback) {
                   const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
                   if (prefixChecked) {
@@ -277,15 +278,6 @@ export async function createAssetFromStream(
                   const part = buffer.subarray(0, bytesNeeded);
                   prefix = Buffer.concat([prefix, part]);
                   if (prefix.length < 16) {
-                      if (buffer.length > part.length) {
-                          callback(
-                              createError({
-                                  statusCode: 400,
-                                  statusMessage: "Invalid file content",
-                              }),
-                          );
-                          return;
-                      }
                       callback();
                       return;
                   }
@@ -300,14 +292,15 @@ export async function createAssetFromStream(
                   callback(null, buffer.subarray(part.length));
               },
               flush(callback) {
-                  if (!prefixChecked && !validatePrefix(prefix)) {
+                  if (!prefixChecked) {
                       callback(
-                          createError({ statusCode: 400, statusMessage: "Invalid file content" }),
+                          createError({
+                              statusCode: 400,
+                              statusMessage: "Invalid file content",
+                          }),
                       );
                       return;
                   }
-                  if (!prefixChecked && prefix.length > 0) this.push(prefix);
-                  prefixChecked = true;
                   callback();
               },
           })
@@ -319,9 +312,6 @@ export async function createAssetFromStream(
         else await pipeline(input, sizeGuard, destination);
         if (exceededLimit) {
             throw createError({ statusCode: 413, statusMessage: "File too large" });
-        }
-        if (!prefixChecked) {
-            throw createError({ statusCode: 400, statusMessage: "Invalid file content" });
         }
         if (overwriteExisting) {
             try {
