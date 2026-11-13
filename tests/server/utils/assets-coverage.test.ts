@@ -180,20 +180,17 @@ describe("asset helpers coverage", () => {
             await expect(readFile(join(assetsDir, "images", name))).resolves.toEqual(body);
         });
 
-        it("supports short valid signatures when the stream ends before 16 bytes", async () => {
+        it("rejects truncated content even when its partial prefix matches a signature", async () => {
             const body = Buffer.from("GIF89a");
-            let checked: Buffer | undefined;
-            await createAssetFromStream(
-                "short.gif",
-                Readable.from([body.subarray(0, 2), body.subarray(2)]),
-                body.length,
-                (prefix) => {
-                    checked = Buffer.from(prefix);
-                    return prefix.toString("ascii").startsWith("GIF");
-                },
-            );
-            expect(checked).toEqual(body);
-            await expect(readFile(join(assetsDir, "short.gif"))).resolves.toEqual(body);
+            await expect(
+                createAssetFromStream(
+                    "short.gif",
+                    Readable.from([body.subarray(0, 2), body.subarray(2)]),
+                    body.length,
+                    (prefix) => prefix.toString("ascii").startsWith("GIF"),
+                ),
+            ).rejects.toMatchObject({ statusCode: 400 });
+            await expect(readdir(assetsDir)).resolves.toEqual([]);
         });
 
         it("allows string chunks and a caller-selected user asset collection", async () => {
