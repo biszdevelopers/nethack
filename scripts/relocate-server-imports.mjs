@@ -2,6 +2,7 @@
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 async function walk(directory) {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -82,9 +83,12 @@ export async function relocateServerImports({ serverDirectory, sourceRoot, packa
     return rewrittenImports;
 }
 
-if (import.meta.main) {
-    const [serverDirectory = ".output/server", packageRoot = "."] = process.argv.slice(2);
-    const sourceRoot = resolve(import.meta.dirname, "..");
+export async function runRelocateServerImportsCli(
+    args = process.argv.slice(2),
+    scriptDirectory = import.meta.dirname,
+) {
+    const [serverDirectory = ".output/server", packageRoot = "."] = args;
+    const sourceRoot = resolve(scriptDirectory, "..");
     const rewrittenImports = await relocateServerImports({
         serverDirectory: resolve(serverDirectory),
         sourceRoot,
@@ -94,3 +98,22 @@ if (import.meta.main) {
         `Rewrote ${rewrittenImports} absolute dependency import(s) to package-relative paths.`,
     );
 }
+
+export function isMainModule(metaMain, moduleUrl, argvEntry) {
+    if (typeof metaMain === "boolean") return metaMain;
+    return argvEntry !== undefined && resolve(argvEntry) === fileURLToPath(moduleUrl);
+}
+
+export async function runRelocationCliIfMain({
+    metaMain = import.meta.main,
+    moduleUrl = import.meta.url,
+    argvEntry = process.argv[1],
+    args = process.argv.slice(2),
+    scriptDirectory = import.meta.dirname,
+} = {}) {
+    if (!isMainModule(metaMain, moduleUrl, argvEntry)) return false;
+    await runRelocateServerImportsCli(args, scriptDirectory);
+    return true;
+}
+
+await runRelocationCliIfMain();
