@@ -235,6 +235,38 @@ describe("PATCH /api/users/:id", () => {
             });
         });
 
+        it.each(["", "A", "AA=A", "AB==", "AAF="])(
+            "rejects non-canonical base64 payload %j",
+            async (encoded) => {
+                const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+
+                mockParams.values["id"] = String(alice.id);
+                mockSession.value = { user: { id: alice.id } };
+                mockBody.value = { profile_theme_image: `data:image/png;base64,${encoded}` };
+
+                await expect(handler(createEvent())).rejects.toMatchObject({
+                    statusCode: 400,
+                    message: "Invalid base64 image data.",
+                });
+            },
+        );
+
+        it.each(["+w==", "/w=="])(
+            "accepts canonical base64 alphabet characters before rejecting a bad image signature (%s)",
+            async (encoded) => {
+                const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+
+                mockParams.values["id"] = String(alice.id);
+                mockSession.value = { user: { id: alice.id } };
+                mockBody.value = { profile_theme_image: `data:image/png;base64,${encoded}` };
+
+                await expect(handler(createEvent())).rejects.toMatchObject({
+                    statusCode: 400,
+                    message: "Image content does not match its file type.",
+                });
+            },
+        );
+
         it("rejects an unsupported image mime type", async () => {
             const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
 
@@ -278,19 +310,24 @@ describe("PATCH /api/users/:id", () => {
 
         it("uploads a new profile theme image for each accepted image type", async () => {
             const testCases = [
-                { dataUrl: VALID_JPEG_BASE64, ext: "jpg" },
-                { dataUrl: VALID_PNG_BASE64, ext: "png" },
-                { dataUrl: VALID_GIF_BASE64, ext: "gif" },
-                { dataUrl: VALID_WEBP_BASE64, ext: "webp" },
+                { dataUrl: VALID_JPEG_BASE64, ext: "jpg", tag: "jpeg" },
+                { dataUrl: VALID_PNG_BASE64, ext: "png", tag: "png" },
+                { dataUrl: VALID_GIF_BASE64, ext: "gif", tag: "gif89" },
+                {
+                    dataUrl: "data:image/gif;base64," + Buffer.from("GIF87a").toString("base64"),
+                    ext: "gif",
+                    tag: "gif87",
+                },
+                { dataUrl: VALID_WEBP_BASE64, ext: "webp", tag: "webp" },
             ];
 
-            for (const { dataUrl, ext } of testCases) {
+            for (const { dataUrl, ext, tag } of testCases) {
                 resetMockState();
                 createUserAsset.mockClear();
                 removeUserAsset.mockClear();
 
                 const alice = seedUser(ctx, {
-                    email: `alice-${ext}@basischina.com`,
+                    email: `alice-${tag}@basischina.com`,
                     name: "Alice",
                 });
                 ctx.drizzle
@@ -319,6 +356,26 @@ describe("PATCH /api/users/:id", () => {
                     .get();
                 expect(updated!.profile_theme).toMatch(/^url\|test-asset\.png$/);
             }
+        });
+
+        it.each([
+            ["image/jpeg", "AQID"],
+            ["image/jpg", "AQID"],
+            ["image/png", "AQID"],
+            ["image/gif", "AQID"],
+            ["image/webp", "AQID"],
+            ["image/webp", "UklGAAAAAFdFVFA="],
+        ])("rejects %s data with an invalid image signature", async (mime, encoded) => {
+            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+
+            mockParams.values["id"] = String(alice.id);
+            mockSession.value = { user: { id: alice.id } };
+            mockBody.value = { profile_theme_image: `data:${mime};base64,${encoded}` };
+
+            await expect(handler(createEvent())).rejects.toMatchObject({
+                statusCode: 400,
+                message: "Image content does not match its file type.",
+            });
         });
     });
 
