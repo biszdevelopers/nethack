@@ -201,7 +201,7 @@ async function confirmSubmit() {
         <UFormField name="project.name" label="Project name" help="Make it sound even cooler!">
             <UInput
                 v-model="state.project.name"
-                class="w-full"
+                class="min-h-11 w-full"
                 :maxlength="MAX_PROJECT_NAME_LENGTH"
             />
         </UFormField>
@@ -224,7 +224,11 @@ async function confirmSubmit() {
         </UFormField>
 
         <UFormField name="project.demo_url" label="Demo URL">
-            <UInput v-model="state.project.demo_url" class="w-full" :maxlength="MAX_URL_LENGTH" />
+            <UInput
+                v-model="state.project.demo_url"
+                class="min-h-11 w-full"
+                :maxlength="MAX_URL_LENGTH"
+            />
 
             <template #help>
                 This should allow anyone can experience your project. For more information, please
@@ -233,7 +237,11 @@ async function confirmSubmit() {
         </UFormField>
 
         <UFormField name="project.repo_url" label="Repository URL">
-            <UInput v-model="state.project.repo_url" class="w-full" :maxlength="MAX_URL_LENGTH" />
+            <UInput
+                v-model="state.project.repo_url"
+                class="min-h-11 w-full"
+                :maxlength="MAX_URL_LENGTH"
+            />
 
             <template #help>
                 Your project must be open source on
@@ -249,6 +257,7 @@ async function confirmSubmit() {
                 v-model="state.pathway"
                 :items="pathwayOptions"
                 :disabled="disabled || rubricPending || pathwayOptions.length === 0"
+                class="min-h-11"
             />
 
             <template #help>
@@ -265,6 +274,7 @@ async function confirmSubmit() {
                 id="project-save"
                 :disabled="disabled"
                 variant="subtle"
+                class="min-h-11"
                 type="submit"
                 @click="intent = 'save'"
             >
@@ -274,6 +284,7 @@ async function confirmSubmit() {
             <UButton
                 id="project-submit"
                 :disabled="disabled"
+                class="min-h-11"
                 type="button"
                 @click="
                     intent = 'submit';
