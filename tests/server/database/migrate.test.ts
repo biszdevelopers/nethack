@@ -4,11 +4,13 @@ import type { Sql } from "postgres";
 
 const mocks = vi.hoisted(() => ({
     migrate: vi.fn(),
+    getPostgresClient: vi.fn(),
 }));
 
 vi.mock("drizzle-orm/postgres-js/migrator", () => ({ migrate: mocks.migrate }));
+vi.mock("~~/server/database/index", () => ({ getPostgresClient: mocks.getPostgresClient }));
 
-import { migrateDatabase } from "~~/server/database/migrate";
+import { createAndMigrateDatabase, migrateDatabase } from "~~/server/database/migrate";
 
 type SqlCall = {
     strings: TemplateStringsArray;
@@ -34,6 +36,7 @@ describe("PostgreSQL migrations", () => {
     beforeEach(() => {
         mocks.migrate.mockReset();
         mocks.migrate.mockResolvedValue(undefined);
+        mocks.getPostgresClient.mockReset();
     });
 
     it("holds a PostgreSQL advisory transaction lock while Drizzle migrates", async () => {
@@ -70,5 +73,75 @@ describe("PostgreSQL migrations", () => {
         mocks.migrate.mockRejectedValueOnce(failure);
 
         await expect(migrateDatabase(database, undefined, client)).rejects.toBe(failure);
+    });
+
+    it("runs migrations, event seeding, and default season seeding before startup", async () => {
+        const events: string[] = [];
+        const connection = vi.fn(async () => {
+            events.push("advisory-lock");
+        });
+        const client = {
+            begin: vi.fn(async (callback: (sql: typeof connection) => Promise<unknown>) => {
+                events.push("begin-migration-transaction");
+                return callback(connection);
+            }),
+        } as unknown as Sql;
+        mocks.getPostgresClient.mockReturnValue(client);
+        mocks.migrate.mockImplementation(async () => {
+            events.push("migrations");
+        });
+
+        const selectResults: unknown[][] = [[], [{ id: 10, name: "BIBS-C Default" }], []];
+        let selectIndex = 0;
+        const makeInsert = (table: string) => {
+            const builder = {
+                values: vi.fn(() => builder),
+                onConflictDoNothing: vi.fn(() => builder),
+                returning: vi.fn(async () => []),
+                then: (
+                    resolve: (value: unknown) => unknown,
+                    reject: (error: unknown) => unknown,
+                ) => {
+                    events.push(`seed:${table}`);
+                    return Promise.resolve([]).then(resolve, reject);
+                },
+            };
+            return builder;
+        };
+        const transaction = {
+            select: () => {
+                const builder = {
+                    from: () => builder,
+                    where: () => builder,
+                    orderBy: () => builder,
+                    limit: () => builder,
+                    then: (
+                        resolve: (value: unknown) => unknown,
+                        reject: (error: unknown) => unknown,
+                    ) => Promise.resolve(selectResults[selectIndex++] ?? []).then(resolve, reject),
+                };
+                return builder;
+            },
+            insert: (table: unknown) => makeInsert(table === undefined ? "unknown" : "seeded"),
+        };
+        const database = {
+            insert: () => makeInsert("hackathon"),
+            transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) => {
+                events.push("begin-default-seed-transaction");
+                return callback(transaction);
+            },
+        } as unknown as DrizzleDatabase;
+
+        await createAndMigrateDatabase(database);
+
+        expect(events).toEqual([
+            "begin-migration-transaction",
+            "advisory-lock",
+            "migrations",
+            "seed:hackathon",
+            "begin-default-seed-transaction",
+            "seed:seeded",
+        ]);
+        expect(mocks.getPostgresClient).toHaveBeenCalledOnce();
     });
 });
