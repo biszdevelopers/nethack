@@ -6,7 +6,18 @@ const viewports = [320, 375, 768, 1024, 1440] as const;
 async function loginAsAdmin(page: Page) {
     await page.goto(`/api/login?redirect=${encodeURIComponent("/developers/season")}`);
     await expect(page.getByRole("heading", { name: "Choose a test identity" })).toBeVisible();
+    const consentResponse = page.waitForResponse(
+        (response) =>
+            new URL(response.url()).pathname === "/authorize/consent" &&
+            response.request().method() === "POST",
+    );
     await page.getByRole("button").filter({ hasText: "admin@e2e.basishacks.invalid" }).click();
+    const consent = await consentResponse;
+    const consentBody = consent.status() === 302 ? "" : await consent.text();
+    expect(
+        consent.status(),
+        `OIDC test provider consent failed with HTTP ${consent.status()}: ${consentBody}`,
+    ).toBe(302);
     await expect(page).toHaveURL((url: URL) => url.pathname === "/developers/season");
 }
 
