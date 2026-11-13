@@ -140,6 +140,54 @@ describe("basis-auth authorization-code flow", () => {
         }
     });
 
+    it("allows HTTP only for the isolated numeric loopback E2E issuer in production", () => {
+        const environmentKeys = [
+            "NODE_ENV",
+            "BASISHACKS_E2E",
+            "CURRENT_URL_ORIGIN",
+            "NITRO_HOST",
+            "NITRO_PORT",
+            "NITRO_UNIX_SOCKET",
+            "HOST",
+            "PORT",
+        ] as const;
+        const originalEnvironment = Object.fromEntries(
+            environmentKeys.map((key) => [key, process.env[key]]),
+        );
+        try {
+            process.env.NODE_ENV = "production";
+            process.env.BASISHACKS_E2E = "1";
+            process.env.CURRENT_URL_ORIGIN = "http://127.0.0.1:3005";
+            process.env.NITRO_HOST = "127.0.0.1";
+            process.env.NITRO_PORT = "3005";
+            process.env.BASIS_AUTH_ISSUER = "http://127.0.0.1:45123";
+
+            expect(getBasisAuthConfig().issuer).toBe("http://127.0.0.1:45123");
+
+            delete process.env.NITRO_HOST;
+            delete process.env.NITRO_PORT;
+            process.env.HOST = "127.0.0.1";
+            process.env.PORT = "3005";
+            expect(getBasisAuthConfig().issuer).toBe("http://127.0.0.1:45123");
+
+            process.env.NITRO_HOST = "127.0.0.1";
+            process.env.NITRO_PORT = "3005";
+            process.env.BASIS_AUTH_ISSUER = "http://localhost:45123";
+            expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
+
+            process.env.BASIS_AUTH_ISSUER = "http://127.0.0.1:45123";
+            process.env.NITRO_HOST = "0.0.0.0";
+            expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
+        } finally {
+            for (const key of environmentKeys) {
+                const value = originalEnvironment[key];
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+            process.env.BASIS_AUTH_ISSUER = "https://auth.example.test/";
+        }
+    });
+
     it("caches discovery by client configuration and enables HTTP only for HTTP issuers", async () => {
         const httpConfig = {
             issuer: "http://local-auth.test",
