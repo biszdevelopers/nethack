@@ -4,11 +4,13 @@ const mocks = vi.hoisted(() => ({
     closeDatabase: vi.fn(),
     createDrizzleDatabase: vi.fn(),
     createAndMigrateDatabase: vi.fn(),
+    setDatabaseInitialization: vi.fn(),
 }));
 
 vi.mock("~~/server/database", () => ({
     closeDatabase: mocks.closeDatabase,
     createDrizzleDatabase: mocks.createDrizzleDatabase,
+    setDatabaseInitialization: mocks.setDatabaseInitialization,
 }));
 vi.mock("~~/server/database/migrate", () => ({
     createAndMigrateDatabase: mocks.createAndMigrateDatabase,
@@ -22,6 +24,7 @@ describe("init-database plugin", () => {
         mocks.closeDatabase.mockResolvedValue(undefined);
         mocks.createDrizzleDatabase.mockResolvedValue({});
         mocks.createAndMigrateDatabase.mockResolvedValue(undefined);
+        mocks.setDatabaseInitialization.mockReset();
     });
 
     afterEach(() => {
@@ -29,6 +32,7 @@ describe("init-database plugin", () => {
         mocks.closeDatabase.mockResolvedValue(undefined);
         mocks.createDrizzleDatabase.mockResolvedValue({});
         mocks.createAndMigrateDatabase.mockResolvedValue(undefined);
+        mocks.setDatabaseInitialization.mockReset();
     });
 
     it("migrates before serving and closes the process-wide pool on shutdown", async () => {
@@ -36,9 +40,35 @@ describe("init-database plugin", () => {
         await initDatabase({ hooks: { hook } });
 
         expect(mocks.createAndMigrateDatabase).toHaveBeenCalledWith({});
+        expect(mocks.setDatabaseInitialization).toHaveBeenCalledOnce();
         expect(hook).toHaveBeenCalledWith("close", expect.any(Function));
         await hook.mock.calls[0]![1]();
         expect(mocks.closeDatabase).toHaveBeenCalledTimes(1);
+    });
+
+    it("publishes readiness before Nitro can dispatch requests while migrations are pending", async () => {
+        let finishMigration!: () => void;
+        const migration = new Promise<void>((resolve) => {
+            finishMigration = resolve;
+        });
+        mocks.createAndMigrateDatabase.mockReturnValueOnce(migration);
+        const hook = vi.fn();
+        const pluginPromise = initDatabase({ hooks: { hook } });
+
+        expect(mocks.setDatabaseInitialization).toHaveBeenCalledOnce();
+        const readiness = mocks.setDatabaseInitialization.mock.calls[0]![0] as Promise<void>;
+        let requestReady = false;
+        const request = readiness.then(() => {
+            requestReady = true;
+        });
+        await Promise.resolve();
+        expect(mocks.createAndMigrateDatabase).toHaveBeenCalledWith({});
+        expect(requestReady).toBe(false);
+
+        finishMigration();
+        await Promise.all([pluginPromise, request]);
+        expect(requestReady).toBe(true);
+        expect(hook).toHaveBeenCalledWith("close", expect.any(Function));
     });
 
     it("closes PostgreSQL and rejects startup when migration or seeding fails", async () => {
