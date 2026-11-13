@@ -1,4 +1,8 @@
-import { isValidProductionOrigin, isValidTrustedProxyHops } from "../utils/environment-validation";
+import {
+    isValidE2ELoopbackOrigin,
+    isValidProductionOrigin,
+    isValidTrustedProxyHops,
+} from "../utils/environment-validation";
 
 export default defineNitroPlugin(() => {
     const sessionPassword = process.env.BASIS_AUTH_COOKIE_SECRET;
@@ -49,7 +53,15 @@ export default defineNitroPlugin(() => {
     }
 
     if (isProduction) {
-        if (!isValidProductionOrigin(process.env.CURRENT_URL_ORIGIN)) {
+        const isIsolatedE2EOrigin =
+            process.env.BASISHACKS_E2E === "1" &&
+            isValidE2ELoopbackOrigin(
+                process.env.CURRENT_URL_ORIGIN,
+                process.env.NITRO_HOST || process.env.HOST,
+                process.env.NITRO_PORT || process.env.PORT,
+                process.env.NITRO_UNIX_SOCKET,
+            );
+        if (!isValidProductionOrigin(process.env.CURRENT_URL_ORIGIN) && !isIsolatedE2EOrigin) {
             console.error(
                 "[FATAL] CURRENT_URL_ORIGIN must be the public HTTPS origin without a path, query, or credentials.",
             );
