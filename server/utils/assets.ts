@@ -188,9 +188,11 @@ async function ensureNoSymlinkDirectories(collection: AssetCollection, directory
     }
 }
 
-function noFollowFlag() {
-    return constants.O_NOFOLLOW ?? 0;
+export function getNoFollowFlag(value: number | undefined): number {
+    return value ?? 0;
 }
+
+const noFollowFlag = getNoFollowFlag(constants.O_NOFOLLOW);
 
 async function writeAsset(
     collection: AssetCollection,
@@ -211,7 +213,7 @@ async function writeAsset(
 
     const handle = await open(
         filePath,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | noFollowFlag(),
+        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | noFollowFlag,
         0o640,
     );
     try {
@@ -391,7 +393,7 @@ export async function openStoredAsset(collection: AssetCollection, name: string)
     if (!entry.isFile() || entry.isSymbolicLink()) {
         throw createError({ statusCode: 404, statusMessage: "Asset not found" });
     }
-    const handle = await open(filePath, constants.O_RDONLY | noFollowFlag());
+    const handle = await open(filePath, constants.O_RDONLY | noFollowFlag);
     const info = await handle.stat();
     if (!info.isFile()) {
         await handle.close();
