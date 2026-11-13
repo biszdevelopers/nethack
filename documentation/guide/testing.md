@@ -15,6 +15,14 @@ bun run test:watch
 
 # Run tests with coverage reporting
 bun run test:coverage
+
+# Verify the isolated OIDC provider's PKCE, token, and claim behavior
+bun run test:e2e:oidc
+
+# Build first; use a dedicated PostgreSQL database named exactly `basishacks_e2e` on loopback
+bun run build
+$env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/basishacks_e2e"
+bun run test:e2e
 ```
 
 The canonical command is `bun run test`, which executes `vitest run --pool=forks --reporter=json | bun run test:meta`. This resolves Nuxt's `~~/` and `~/` path aliases through `vitest.config.ts`, loads `tests/setup.ts` before each test file, and automatically generates `tests/.test-meta.json` with the current test count. The `test:meta` script reads the vitest JSON output from stdin and writes a summary file used by the VitePress documentation's `<TestCount />` component for dynamic test count display.
@@ -69,7 +77,7 @@ Tests use Vitest's global API (`describe`, `it`, `expect`, `vi`) and the project
 
 Most API and database-helper tests use isolated in-memory SQLite fixtures for fast setup. The PostgreSQL integration test in `tests/server/database/postgres.integration.test.ts` runs the real migration and verifies JSON storage, uniqueness, and foreign-key enforcement. Run it with `DATABASE_URL` set and `BASISHACKS_POSTGRES_TEST=1`; CI provides a PostgreSQL service and runs the integration test with the full Vitest suite. The SQLite-backed unit fixtures do not replace broader PostgreSQL-backed API coverage.
 
-If you add a new branch to a source file, add a test that exercises it. CI runs `bun run test:coverage` and rejects pull requests when any included source file is missing, unmeasured, or falls below 100% statements, branches, functions, or lines. Vue single-file components and CSS are not runtime-instrumented by this gate. Current role-journey checks assert source contracts; they do not execute rendered UI, cover keyboard/focus interactions, or verify responsive layouts. Browser viewport and accessibility journeys remain a separate release check.
+If you add a new branch to a source file, add a test that exercises it. CI runs `bun run test:coverage` and rejects pull requests when any included source file is missing, unmeasured, or falls below 100% statements, branches, functions, or lines. This 100% gate covers executable JavaScript, TypeScript, and MJS files under `app/`, `server/`, `shared/`, and `scripts/`; Vue templates and CSS are covered through component and browser tests rather than runtime instrumentation. Playwright tests exercise the built UI; they use a loopback-only OIDC issuer with real state, nonce, PKCE, signed tokens, and role permissions. The E2E launcher requires `BASISHACKS_E2E=1`, a numeric loopback PostgreSQL host, and the exact database name `basishacks_e2e` before it can start the app and apply migrations. CI runs the public-season and participant, judge, and admin journeys at 320, 375, 768, 1024, and 1440 px, including keyboard, touch-target, overflow, and axe WCAG 2.2 AA checks against Chromium. These automated checks complement manual review; they do not prove every accessibility issue or undiscovered defect has been eliminated.
 
 ## About `bun test`
 
