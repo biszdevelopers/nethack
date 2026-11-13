@@ -6,7 +6,7 @@ definePageMeta({
     middleware: ["auth"],
 });
 
-const { data: hackathon } = await useFetch("/api/seasons/active");
+const { data: hackathon } = await useFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
 if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
     throw await navigateTo("/");
 }
