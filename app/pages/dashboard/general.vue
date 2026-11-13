@@ -10,7 +10,9 @@ useHead({
     title: `General | ${WEBSITE_NAME}`,
 });
 
-const { data: hackathon, error: hackathonError } = await useFetch("/api/seasons/active");
+const { data: hackathon, error: hackathonError } = await useFetch("/api/seasons/active", {
+    $fetch: globalThis.$fetch,
+});
 if (hackathonError.value) {
     throw hackathonError.value;
 }
