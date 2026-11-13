@@ -18,8 +18,10 @@ vi.mock("drizzle-orm/postgres-js", () => ({ drizzle: drizzleMock }));
 import {
     closeDatabase,
     createDrizzleDatabase,
+    getDb,
     getDatabaseUrl,
     getPostgresClient,
+    setDatabaseInitialization,
 } from "~~/server/database";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -27,12 +29,14 @@ const originalDatabaseUrl = process.env.DATABASE_URL;
 describe("PostgreSQL connection boundary actions", () => {
     beforeEach(async () => {
         await closeDatabase();
+        setDatabaseInitialization(Promise.resolve());
         vi.clearAllMocks();
         delete process.env.DATABASE_URL;
     });
 
     afterEach(async () => {
         await closeDatabase();
+        setDatabaseInitialization(Promise.resolve());
         if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
         else process.env.DATABASE_URL = originalDatabaseUrl;
     });
@@ -65,5 +69,37 @@ describe("PostgreSQL connection boundary actions", () => {
         await createDrizzleDatabase();
 
         expect(getPostgresClient()).toBe(client);
+    });
+
+    it("holds database requests until migrations have completed", async () => {
+        process.env.DATABASE_URL = "postgres://app:secret@localhost:5432/basishacks";
+        let finishInitialization!: () => void;
+        const initialization = new Promise<void>((resolve) => {
+            finishInitialization = resolve;
+        });
+        setDatabaseInitialization(initialization);
+
+        let requestFinished = false;
+        const requestDatabase = getDb().then((database) => {
+            requestFinished = true;
+            return database;
+        });
+        await Promise.resolve();
+
+        expect(requestFinished).toBe(false);
+        expect(postgresMock).not.toHaveBeenCalled();
+
+        finishInitialization();
+        await expect(requestDatabase).resolves.toEqual({ __coveragePostgresDrizzle: true });
+        expect(requestFinished).toBe(true);
+        expect(postgresMock).toHaveBeenCalledOnce();
+    });
+
+    it("does not provide a database when migrations fail", async () => {
+        const failure = new Error("migration failed");
+        setDatabaseInitialization(Promise.reject(failure));
+
+        await expect(getDb()).rejects.toBe(failure);
+        expect(postgresMock).not.toHaveBeenCalled();
     });
 });
