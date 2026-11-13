@@ -66,6 +66,21 @@ interface GetUserResponse extends APIUser {
 
 interface GetTeamResponse extends APITeam {}
 
+interface PublicSeason {
+    id: number;
+    name: string;
+    is_active: number;
+    status: string;
+    results_published: number;
+    start_timestamp: number;
+    end_timestamp: number;
+    voting_start_timestamp: number;
+    voting_end_timestamp: number;
+    results_open_timestamp: number;
+    theme_name: string | null;
+    theme_description: string | null;
+}
+
 type CreateTeamResponse = APITeam;
 
 type GetTeamMembersResponse = {
