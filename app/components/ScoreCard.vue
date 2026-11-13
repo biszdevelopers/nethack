@@ -89,7 +89,7 @@
         <template #footer>
             <div class="flex flex-col gap-2">
                 <UModal :title="team.name">
-                    <UButton variant="link" class="p-0 h-auto text-xs">
+                    <UButton variant="link" class="min-h-11 text-xs">
                         <UIcon name="i-lucide-file" class="text-xs"></UIcon>
                         See Project Details
                     </UButton>
@@ -97,7 +97,11 @@
                         <ProjectCard :id="team.id" />
                     </template>
                 </UModal>
-                <ULink class="text-xs" href="#" target="_blank" external>
+                <ULink
+                    v-if="team.season_id"
+                    :to="`/seasons/${team.season_id}`"
+                    class="inline-flex min-h-11 items-center gap-1 text-xs"
+                >
                     <UIcon name="i-lucide-calendar" class="text-xs"></UIcon>
                     See Season Details
                     <UIcon name="i-lucide-arrow-right" class="text-xs"></UIcon>
@@ -112,7 +116,7 @@ const props = defineProps<{
     team: GetTeamResponse;
 }>();
 
-const { data: seasons } = await useFetch<Season[]>("/api/seasons", { lazy: true });
+const { data: seasons } = await useFetch<PublicSeason[]>("/api/seasons", { lazy: true });
 
 const seasonMeta = computed(() => {
     if (!props.team.season_id) return { name: "Unknown", date: null, resultsPublished: false };
