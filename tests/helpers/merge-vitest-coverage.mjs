@@ -70,7 +70,7 @@ function assertMetadataCompatible(target, additional, file) {
 }
 
 function comparableMetadata(property, map = {}, file) {
-    const normalizedFile = normalizeSourcePath(file);
+    const normalizedFile = normalizeSourcePath(file).toLowerCase();
     const allowedIds = COLUMN_VARIANCE_ALLOWLIST[normalizedFile]?.[property] ?? new Set();
     const entries = Object.entries(map)
         .sort(([left], [right]) => left.localeCompare(right))
