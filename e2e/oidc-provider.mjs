@@ -581,7 +581,12 @@ export async function startOidcTestProvider(options) {
         }
 
         if (request.method === "POST" && requestUrl.pathname === "/authorize/consent") {
-            if (request.headers.origin !== issuer) throw new ProviderError(403, "access_denied");
+            if (request.headers.origin !== issuer) {
+                console.error(
+                    `[E2E OIDC] Consent Origin mismatch: received ${JSON.stringify(request.headers.origin)}, expected ${JSON.stringify(issuer)}.`,
+                );
+                throw new ProviderError(403, "access_denied");
+            }
             const params = await readForm(request);
             const ticket = readUnique(params, "ticket");
             const subject = readUnique(params, "sub");
