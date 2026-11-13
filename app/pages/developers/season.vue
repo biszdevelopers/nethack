@@ -336,10 +336,14 @@ async function addSeason() {
                     <USelect
                         v-model="activeSeasonId"
                         :items="activeSeasonItems"
-                        class="w-full sm:w-auto sm:max-w-xs"
+                        class="min-h-11 w-full sm:w-auto sm:max-w-xs"
                     />
-                    <UButton @click="setActiveSeason" color="primary">Set Active</UButton>
-                    <UButton @click="addSeason" variant="outline">+ New Season</UButton>
+                    <UButton class="min-h-11" @click="setActiveSeason" color="primary">
+                        Set Active
+                    </UButton>
+                    <UButton class="min-h-11" @click="addSeason" variant="outline">
+                        + New Season
+                    </UButton>
                 </div>
             </section>
             <USeparator />
@@ -348,8 +352,13 @@ async function addSeason() {
             <section class="bg-ui-bg p-6">
                 <h2 class="text-xl font-semibold mb-3">Season Name</h2>
                 <div class="flex flex-wrap items-center gap-3">
-                    <UInput v-model="seasonNameForm" class="flex-1 min-w-0" />
-                    <UButton @click="renameSeason" :loading="seasonNameSaving" color="primary">
+                    <UInput v-model="seasonNameForm" class="min-h-11 min-w-0 flex-1" />
+                    <UButton
+                        class="min-h-11"
+                        @click="renameSeason"
+                        :loading="seasonNameSaving"
+                        color="primary"
+                    >
                         Rename Season
                     </UButton>
                 </div>
@@ -367,7 +376,7 @@ async function addSeason() {
                         v-model="scoreCurvePreset"
                         :items="scoreCurveItems"
                         :disabled="scoreCurveSaving"
-                        class="w-full max-w-xs"
+                        class="min-h-11 w-full max-w-xs"
                         @update:model-value="saveScoreCurvePreset"
                     />
                     <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
@@ -408,7 +417,7 @@ async function addSeason() {
                             ]"
                             v-model="hackathonForm.status"
                             @update:model-value="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -420,7 +429,7 @@ async function addSeason() {
                             min="0"
                             max="100"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -484,7 +493,7 @@ async function addSeason() {
                         <UInput
                             v-model="hackathonForm.theme_name"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -494,6 +503,7 @@ async function addSeason() {
                             v-model="hackathonForm.theme_description"
                             :rows="2"
                             @change="onFieldChange()"
+                            class="min-h-11"
                         />
                     </div>
 
@@ -503,7 +513,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.schedule_start"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -513,7 +523,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.schedule_end"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -523,7 +533,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.start_timestamp"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -533,7 +543,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.end_timestamp"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -543,7 +553,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.voting_start_timestamp"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -553,7 +563,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.voting_end_timestamp"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
 
@@ -563,7 +573,7 @@ async function addSeason() {
                             type="datetime-local"
                             v-model="hackathonForm.results_open_timestamp"
                             @change="onFieldChange()"
-                            class="w-full"
+                            class="min-h-11 w-full"
                         />
                     </div>
                 </div>
@@ -575,10 +585,20 @@ async function addSeason() {
                 <h2 class="text-xl font-semibold">Database Export</h2>
                 <p class="text-sm text-ui-text-muted">Download a full snapshot of the database.</p>
                 <div class="flex flex-wrap items-center gap-3">
-                    <UButton color="primary" variant="solid" @click="downloadDatabase('json')">
+                    <UButton
+                        class="min-h-11"
+                        color="primary"
+                        variant="solid"
+                        @click="downloadDatabase('json')"
+                    >
                         Download JSON
                     </UButton>
-                    <UButton color="neutral" variant="outline" @click="downloadDatabase('csv')">
+                    <UButton
+                        class="min-h-11"
+                        color="neutral"
+                        variant="outline"
+                        @click="downloadDatabase('csv')"
+                    >
                         Download CSV
                     </UButton>
                 </div>
