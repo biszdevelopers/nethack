@@ -146,7 +146,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         @submit="onNameSubmit($event, close)"
                     >
                         <UFormField name="name" label="New name">
-                            <UInput v-model="nameState.name" class="w-full" />
+                            <UInput v-model="nameState.name" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
@@ -173,7 +173,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         @submit="onSubmit($event, close)"
                     >
                         <UFormField name="email" label="New member email">
-                            <UInput v-model="state.email" type="email" class="w-full" />
+                            <UInput v-model="state.email" type="email" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
