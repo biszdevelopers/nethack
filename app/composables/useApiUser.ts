@@ -17,6 +17,7 @@ export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUs
     const userID = computed(() => sessionUser.value?.id);
 
     const fetchResult = await useFetch<ApiUser>(() => `/api/users/${userID.value}`, {
+        $fetch: globalThis.$fetch,
         lazy: options?.lazy ?? false,
         server: false,
         immediate: !!userID.value,
