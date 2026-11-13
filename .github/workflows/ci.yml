@@ -103,6 +103,12 @@ jobs:
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
                   BASISHACKS_POSTGRES_TEST: "1"
 
+            - name: Enforce 100% executable source coverage
+              run: bun run test:coverage
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
+                  BASISHACKS_POSTGRES_TEST: "1"
+
             - name: Build Nuxt app
               run: bun run build
               env:
