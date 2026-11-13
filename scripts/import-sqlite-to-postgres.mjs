@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import postgres from "postgres";
 import { DEFAULT_RUBRIC_DEFINITION } from "../shared/rubric.ts";
@@ -64,7 +65,7 @@ const RELATIONSHIPS = [
 // The season's active rubric pointer is nullable during import; the rubric
 // version is inserted before the pointer is restored, so the cyclic table
 // relationship remains compatible with ordinary foreign-key enforcement.
-const DATABASE_FOREIGN_KEYS = RELATIONSHIPS;
+export const DATABASE_FOREIGN_KEYS = RELATIONSHIPS;
 
 const GENERATED_COLUMNS = new Set();
 const ARCHIVED_COLUMNS = {
@@ -88,12 +89,15 @@ const LEGACY_TIMESTAMP_FIELDS = [
 const LEGACY_SEASON_ID = 1;
 const quote = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
 const asCount = (value) => Number(value ?? 0);
-const sourcePathValue = process.env.SQLITE_IMPORT_PATH?.trim();
-const databaseUrl = process.env.DATABASE_URL?.trim();
-const confirmImport = process.argv.includes("--confirm");
-const checkOnly = process.argv.includes("--check-only");
-
-async function openSource() {
+export async function openSource(
+    sourcePathValue = process.env.SQLITE_IMPORT_PATH?.trim(),
+    {
+        isBun = Boolean(process.versions.bun),
+        loadBunDatabase = () => import("bun:sqlite"),
+        loadBetterSqlite = () => require("better-sqlite3"),
+    } = {},
+) {
+    sourcePathValue = sourcePathValue?.trim();
     if (!sourcePathValue) {
         throw new Error("Set SQLITE_IMPORT_PATH to the SQLite backup that will be imported.");
     }
@@ -101,18 +105,18 @@ async function openSource() {
     if (!existsSync(sourcePath))
         throw new Error(`SQLite import file does not exist: ${sourcePath}`);
     let source;
-    if (process.versions.bun) {
-        const { Database } = await import("bun:sqlite");
+    if (isBun) {
+        const { Database } = await loadBunDatabase();
         source = new Database(sourcePath, { readonly: true, create: false });
     } else {
-        const BetterSqlite = require("better-sqlite3");
+        const BetterSqlite = loadBetterSqlite();
         source = new BetterSqlite(sourcePath, { readonly: true, fileMustExist: true });
     }
     source.exec("PRAGMA query_only = ON");
     return { source, sourcePath: realpathSync(sourcePath) };
 }
 
-function sourceTables(source) {
+export function sourceTables(source) {
     return new Set(
         source
             .prepare("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE ?")
@@ -121,7 +125,7 @@ function sourceTables(source) {
     );
 }
 
-function validateSourceTables(availableTables) {
+export function validateSourceTables(availableTables) {
     const unknownTables = [...availableTables].filter(
         (tableName) => !SOURCE_TABLES.includes(tableName) && !SOURCE_METADATA_TABLES.has(tableName),
     );
@@ -134,22 +138,22 @@ function validateSourceTables(availableTables) {
     return [...availableTables].filter((tableName) => SOURCE_METADATA_TABLES.has(tableName));
 }
 
-function sourceColumns(source, tableName) {
+export function sourceColumns(source, tableName) {
     return source
         .prepare(`PRAGMA table_info(${quote(tableName)})`)
         .all()
         .map(({ name }) => name);
 }
 
-function countSourceRows(source, tableName) {
+export function countSourceRows(source, tableName) {
     return asCount(source.prepare(`SELECT count(*) AS count FROM ${quote(tableName)}`).get().count);
 }
 
-function rowsFromSource(source, tableName) {
+export function rowsFromSource(source, tableName) {
     return source.prepare(`SELECT * FROM ${quote(tableName)}`).all();
 }
 
-function checkSourceRelationships(source, availableTables) {
+export function checkSourceRelationships(source, availableTables) {
     const failures = [];
     for (const [childTable, childColumn, parentTable, parentColumn, nullable] of RELATIONSHIPS) {
         if (!availableTables.has(childTable) || !availableTables.has(parentTable)) continue;
@@ -170,7 +174,7 @@ function checkSourceRelationships(source, availableTables) {
     return failures;
 }
 
-function prepareLegacyJudgeRows(source, availableTables) {
+export function prepareLegacyJudgeRows(source, availableTables) {
     if (!availableTables.has("judge_scores_migrate"))
         return { rows: [], sourceCount: 0, headerCount: 0 };
     const rows = rowsFromSource(source, "judge_scores_migrate");
@@ -201,7 +205,7 @@ function prepareLegacyJudgeRows(source, availableTables) {
     return { rows: dataRows, sourceCount: rows.length, headerCount: headers.length };
 }
 
-function prepareLegacyColumnRows(source, availableTables) {
+export function prepareLegacyColumnRows(source, availableTables) {
     const legacyRows = [];
     for (const [tableName, fields] of Object.entries(ARCHIVED_COLUMNS)) {
         if (!availableTables.has(tableName)) continue;
@@ -226,7 +230,7 @@ function prepareLegacyColumnRows(source, availableTables) {
     return legacyRows;
 }
 
-function normalizeLegacyTimestamp(value, field) {
+export function normalizeLegacyTimestamp(value, field) {
     if (typeof value === "number" && Number.isSafeInteger(value)) return value;
     if (typeof value !== "string" || !value.trim()) {
         throw new Error(
@@ -245,7 +249,7 @@ function normalizeLegacyTimestamp(value, field) {
     );
 }
 
-function normalizeLegacyHackathonRow(row) {
+export function normalizeLegacyHackathonRow(row) {
     const normalized = { ...row };
     for (const field of LEGACY_TIMESTAMP_FIELDS) {
         if (!(field in normalized)) {
@@ -258,7 +262,7 @@ function normalizeLegacyHackathonRow(row) {
     return normalized;
 }
 
-function detectSeasonSchema(source, availableTables) {
+export function detectSeasonSchema(source, availableTables) {
     const teamColumns = new Set(sourceColumns(source, "teams"));
     const scoreColumns = new Set(sourceColumns(source, "team_scores"));
     const hasSeasonTable = availableTables.has("seasons");
@@ -289,7 +293,7 @@ function detectSeasonSchema(source, availableTables) {
     return { kind: "single-hackathon", seasons: null };
 }
 
-function makeLegacySeason(hackathon) {
+export function makeLegacySeason(hackathon) {
     return {
         id: LEGACY_SEASON_ID,
         name: "Imported legacy season",
@@ -315,7 +319,7 @@ function makeLegacySeason(hackathon) {
     };
 }
 
-function validateSource(source, availableTables) {
+export function validateSource(source, availableTables) {
     const metadataTables = validateSourceTables(availableTables);
     for (const requiredTable of ["hackathon", "teams", "users", "team_scores"]) {
         if (!availableTables.has(requiredTable)) {
@@ -368,7 +372,7 @@ function validateSource(source, availableTables) {
     };
 }
 
-function requireDatabaseUrl() {
+export function requireDatabaseUrl(databaseUrl = process.env.DATABASE_URL?.trim()) {
     if (!databaseUrl)
         throw new Error("DATABASE_URL must point to the empty PostgreSQL target database.");
     let parsed;
@@ -380,9 +384,10 @@ function requireDatabaseUrl() {
     if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !parsed.hostname) {
         throw new Error("DATABASE_URL must use postgres:// or postgresql:// and include a host.");
     }
+    return databaseUrl;
 }
 
-async function getTargetColumns(sql, tableName) {
+export async function getTargetColumns(sql, tableName) {
     const rows = await sql`
         SELECT column_name, data_type, is_identity, column_default
         FROM information_schema.columns
@@ -394,12 +399,16 @@ async function getTargetColumns(sql, tableName) {
     return new Map(rows.map((row) => [row.column_name, row]));
 }
 
-async function targetRows(sql, tableName) {
+export async function targetRows(sql, tableName) {
     const [row] = await sql.unsafe(`SELECT count(*)::bigint AS count FROM ${quote(tableName)}`);
     return asCount(row.count);
 }
 
-async function ensureEmptyTarget(sql, columnsByTable) {
+export async function ensureEmptyTarget(
+    sql,
+    columnsByTable,
+    sourceColumnsForTargetCheck = new Map(),
+) {
     const counts = {};
     for (const tableName of IMPORT_TABLES) {
         counts[tableName] = await targetRows(sql, tableName);
@@ -419,7 +428,7 @@ async function ensureEmptyTarget(sql, columnsByTable) {
             .filter(([, count]) => count > 0)
             .map(([tableName, count]) => `${tableName} (${count})`);
         throw new Error(
-            `PostgreSQL target contains data outside the exact fresh-migration seed state${populated.length ? `: ${populated.join(", ")}` : "."} Import only into a newly migrated, otherwise empty database.`,
+            `PostgreSQL target contains data outside the exact fresh-migration seed state: ${populated.join(", ")}. Import only into a newly migrated, otherwise empty database.`,
         );
     }
 
@@ -448,7 +457,7 @@ async function ensureEmptyTarget(sql, columnsByTable) {
 // fail before the PostgreSQL transaction writes any rows.
 const sourceColumnsForTargetCheck = new Map();
 
-async function insertRows(sql, tableName, rows, columnsByTable, overrides = () => ({})) {
+export async function insertRows(sql, tableName, rows, columnsByTable, overrides = () => ({})) {
     if (!rows.length) return 0;
     const targetColumns = columnsByTable.get(tableName);
     const sourceColumns = Object.keys(rows[0]);
@@ -482,7 +491,7 @@ async function insertRows(sql, tableName, rows, columnsByTable, overrides = () =
     return rows.length;
 }
 
-async function insertLegacyArchive(sql, rows) {
+export async function insertLegacyArchive(sql, rows) {
     if (!rows.length) return 0;
     const values = [];
     const tuples = rows.map((row) => {
@@ -496,7 +505,7 @@ async function insertLegacyArchive(sql, rows) {
     return rows.length;
 }
 
-async function insertRubricVersions(sql, seasons) {
+export async function insertRubricVersions(sql, seasons) {
     const seasonRubricIds = new Map();
     for (const season of seasons) {
         const [version] = await sql`
@@ -512,13 +521,13 @@ async function insertRubricVersions(sql, seasons) {
     return seasonRubricIds;
 }
 
-function importSeasonForScore(row, teams, activeSeasonId) {
+export function importSeasonForScore(row, teams, activeSeasonId) {
     if (row.season_id !== null && row.season_id !== undefined) return Number(row.season_id);
     const teamSeason = teams.get(Number(row.team_id));
     return Number(teamSeason ?? activeSeasonId ?? 1);
 }
 
-async function validateTargetRelationships(sql) {
+export async function validateTargetRelationships(sql) {
     const failures = [];
     for (const [childTable, childColumn, parentTable, parentColumn, nullable] of RELATIONSHIPS) {
         const nullFilter = nullable ? ` AND c.${quote(childColumn)} IS NOT NULL` : "";
@@ -536,7 +545,7 @@ async function validateTargetRelationships(sql) {
         );
 }
 
-async function validateTargetForeignKeys(sql) {
+export async function validateTargetForeignKeys(sql) {
     const rows = await sql`
         SELECT
             source.relname AS table_name,
@@ -571,7 +580,7 @@ async function validateTargetForeignKeys(sql) {
     }
 }
 
-async function setIdentitySequences(sql) {
+export async function setIdentitySequences(sql) {
     for (const tableName of [
         "teams",
         "users",
@@ -589,9 +598,18 @@ async function setIdentitySequences(sql) {
     }
 }
 
-async function importToPostgres(source, availableTables, sourceInfo) {
-    requireDatabaseUrl();
-    const sql = postgres(databaseUrl, {
+export async function importToPostgres(
+    source,
+    availableTables,
+    sourceInfo,
+    {
+        databaseUrl = process.env.DATABASE_URL?.trim(),
+        postgresClient = postgres,
+        logger = console,
+    } = {},
+) {
+    const connectionString = requireDatabaseUrl(databaseUrl);
+    const sql = postgresClient(connectionString, {
         max: 1,
         connect_timeout: 10,
         prepare: false,
@@ -599,6 +617,7 @@ async function importToPostgres(source, availableTables, sourceInfo) {
     });
     try {
         const columnsByTable = new Map();
+        const sourceColumnsForTargetCheck = new Map();
         for (const tableName of IMPORT_TABLES) {
             columnsByTable.set(tableName, await getTargetColumns(sql, tableName));
         }
@@ -613,7 +632,11 @@ async function importToPostgres(source, availableTables, sourceInfo) {
             await tx.unsafe(
                 `LOCK TABLE ${IMPORT_TABLES.map(quote).join(", ")} IN ACCESS EXCLUSIVE MODE`,
             );
-            const seedPlan = await ensureEmptyTarget(tx, columnsByTable);
+            const seedPlan = await ensureEmptyTarget(
+                tx,
+                columnsByTable,
+                sourceColumnsForTargetCheck,
+            );
             await clearFreshImportTargetSeeds(tx, seedPlan);
 
             const sourceSeasons = sourceInfo.seasons.map((season) => ({
@@ -726,7 +749,7 @@ async function importToPostgres(source, availableTables, sourceInfo) {
                 );
             }
 
-            console.log(
+            logger.log(
                 JSON.stringify(
                     {
                         sourcePath: sourceInfo.sourcePath,
@@ -757,7 +780,15 @@ async function importToPostgres(source, availableTables, sourceInfo) {
     }
 }
 
-async function main() {
+export async function main({
+    argv = process.argv,
+    env = process.env,
+    sourceOpener = openSource,
+    postgresClient = postgres,
+    logger = console,
+} = {}) {
+    const checkOnly = argv.includes("--check-only");
+    const confirmImport = argv.includes("--confirm");
     if (checkOnly && confirmImport)
         throw new Error("Choose either --check-only or --confirm, not both.");
     if (!checkOnly && !confirmImport) {
@@ -765,13 +796,13 @@ async function main() {
             "This is a write operation. Review the source and pass --confirm to perform the import.",
         );
     }
-    const { source, sourcePath } = await openSource();
+    const { source, sourcePath } = await sourceOpener(env.SQLITE_IMPORT_PATH?.trim());
     try {
         const availableTables = sourceTables(source);
         const sourceInfo = validateSource(source, availableTables);
         sourceInfo.sourcePath = sourcePath;
         if (checkOnly) {
-            console.log(
+            logger.log(
                 JSON.stringify(
                     {
                         sourcePath,
@@ -797,13 +828,27 @@ async function main() {
             );
             return;
         }
-        await importToPostgres(source, availableTables, sourceInfo);
+        await importToPostgres(source, availableTables, sourceInfo, {
+            databaseUrl: env.DATABASE_URL?.trim(),
+            postgresClient,
+            logger,
+        });
     } finally {
         source.close();
     }
 }
 
-main().catch((error) => {
-    console.error(`[SQLite import] ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-});
+export async function runCli(options = {}) {
+    const logger = options.logger ?? console;
+    try {
+        await main(options);
+        return true;
+    } catch (error) {
+        logger.error(`[SQLite import] ${error instanceof Error ? error.message : String(error)}`);
+        (options.setExitCode ?? ((code) => (process.exitCode = code)))(1);
+        return false;
+    }
+}
+
+const entryPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
+if (entryPath === fileURLToPath(import.meta.url)) await runCli();
