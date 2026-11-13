@@ -26,6 +26,7 @@ if (status.value !== "pending" && status.value !== "idle") {
 // ---------------------------------------------------------------------------
 const { data: adminData, refresh: refreshAdmin } = await useFetch("/api/admin/hackathon", {
     server: false,
+    $fetch: globalThis.$fetch,
 });
 const hackathon = computed(() => adminData.value?.hackathon ?? null);
 const seasons = computed(() => adminData.value?.seasons ?? []);
