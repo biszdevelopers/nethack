@@ -73,11 +73,11 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
             @submit="onSubmit"
         >
             <UFormField name="name" label="Team name">
-                <UInput v-model="state.name" />
+                <UInput v-model="state.name" class="min-h-11 w-full" />
             </UFormField>
 
             <UFormField>
-                <UButton type="submit">Create</UButton>
+                <UButton type="submit" class="min-h-11">Create</UButton>
             </UFormField>
         </UForm>
     </div>
