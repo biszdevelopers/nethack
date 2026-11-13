@@ -581,10 +581,9 @@ export async function startOidcTestProvider(options) {
         }
 
         if (request.method === "POST" && requestUrl.pathname === "/authorize/consent") {
-            if (request.headers.origin !== issuer) {
-                console.error(
-                    `[E2E OIDC] Consent Origin mismatch: received ${JSON.stringify(request.headers.origin)}, expected ${JSON.stringify(issuer)}.`,
-                );
+            const origin = request.headers.origin;
+            // Opaque browser origins serialize as "null"; the unguessable, single-use ticket remains the CSRF proof.
+            if (origin !== issuer && origin !== "null") {
                 throw new ProviderError(403, "access_denied");
             }
             const params = await readForm(request);
