@@ -431,4 +431,33 @@ test("requires the E2E opt-in and a port-specific loopback app origin", () => {
             }),
         /explicit port/,
     );
+    const safeEnvironment = {
+        BASISHACKS_E2E: "1",
+        DATABASE_URL: "postgresql://e2e:secret@127.0.0.1:5432/basishacks_e2e",
+        PLAYWRIGHT_BASE_URL: "http://127.0.0.1:3005",
+    };
+    assert.throws(
+        () => validateE2eConfiguration({ ...safeEnvironment, NITRO_HOST: "0.0.0.0" }),
+        /app host must bind only to 127.0.0.1/,
+    );
+    assert.throws(
+        () => validateE2eConfiguration({ ...safeEnvironment, HOST: "0.0.0.0" }),
+        /app host must bind only to 127.0.0.1/,
+    );
+    assert.throws(
+        () => validateE2eConfiguration({ ...safeEnvironment, NITRO_PORT: "3006" }),
+        /app port must match PLAYWRIGHT_BASE_URL/,
+    );
+    assert.throws(
+        () => validateE2eConfiguration({ ...safeEnvironment, PORT: "3006" }),
+        /app port must match PLAYWRIGHT_BASE_URL/,
+    );
+    assert.throws(
+        () =>
+            validateE2eConfiguration({
+                ...safeEnvironment,
+                NITRO_UNIX_SOCKET: "/tmp/basishacks.sock",
+            }),
+        /cannot use a Unix socket/,
+    );
 });
