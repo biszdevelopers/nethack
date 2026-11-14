@@ -12,6 +12,6 @@
             <slot />
         </UMain>
 
-        <Footer />
+        <Footer v-if="!$route.meta.hideFooter" />
     </div>
 </template>

@@ -48,7 +48,6 @@ function focusReviewHeading(event: Event) {
         @update:open="!$event && emit('close')"
     >
         <template #title>
-            <span class="block text-sm font-normal text-muted" aria-hidden="true">Step 2</span>
             <span
                 ref="reviewHeading"
                 tabindex="-1"
@@ -85,7 +84,7 @@ function focusReviewHeading(event: Event) {
                         <span class="text-lg">/ 100</span>
                     </p>
                     <p class="mt-1 text-sm text-muted">
-                        This is your normalized score. Final rankings combine judges' evaluations.
+                        This is a normalized score. Final rankings combine judges' evaluations.
                     </p>
                 </div>
 
@@ -99,11 +98,9 @@ function focusReviewHeading(event: Event) {
                             <span class="font-medium">{{ criterion.name }}</span>
                             <span class="ml-2 text-sm text-muted">{{ criterion.weight }}%</span>
                         </dt>
-                        <dd class="shrink-0 text-right tabular-nums">
-                            <span class="font-semibold">{{ scores[criterion.id] }}</span>
-                            <span class="text-sm text-muted">
-                                ({{ criterion.minScore }}–{{ criterion.maxScore }})
-                            </span>
+                        <dd class="shrink-0 font-semibold tabular-nums">
+                            {{ scores[criterion.id] }}
+                            <span class="font-normal text-muted">/{{ criterion.maxScore }}</span>
                         </dd>
                     </div>
                 </dl>

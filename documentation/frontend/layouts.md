@@ -68,6 +68,8 @@ A keyboard-visible **Skip to main content** link moves focus to the `UMain` land
 
 **Used by:** `/judging/continue`, `/user/[id]` (the profile sets it programmatically via `setPageLayout`)
 
+Pages can set `hideFooter: true` in their page metadata. The judging workspace uses this setting.
+
 ## fullwidth-nostick
 
 **File:** `app/layouts/fullwidth-nostick.vue`

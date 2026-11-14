@@ -202,11 +202,11 @@ Active judging interface. Protected by `auth` middleware. Accessible only by jud
 2. Shows one project at a time. Project details and the AI-use statement appear in the left pane. The right pane shows repository and demo links below Scoring Guidelines, followed by the rubric and feedback form. The panes fill the main canvas edge to edge, scroll independently on wider screens, and stack on mobile.
 3. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
 4. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores, and the page blocks leaving when unsaved changes cannot be saved.
-5. Opens a Step 2 review dialog over the scoring workspace before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
+5. Opens the **Review before you finalize** dialog over the scoring workspace before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
 
 Previous and Next appear above Scoring Guidelines and let judges move through the queue while retaining recoverable drafts. The interface is mobile-first, uses keyboard-operable score controls, and shows draft saving, validation, and submission states. Evaluation progress is shown on the judging overview.
 
-**Layout:** `fullwidth`
+**Layout:** `fullwidth` with the footer hidden
 
 ## Dashboard Pages
 

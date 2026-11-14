@@ -25,6 +25,7 @@ interface FinalizedEvaluation {
 
 definePageMeta({
     layout: "fullwidth",
+    hideFooter: true,
     middleware: ["auth"],
 });
 useHead({ title: `Judging queue | ${WEBSITE_NAME}` });
