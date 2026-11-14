@@ -16,7 +16,7 @@ Every API endpoint in the system enforces the following security measures:
 | Measure | Implementation |
 | --- | --- |
 | **Rate limiting** | All endpoints are wrapped with `applyRateLimit()` using one of four tier configs (`DEFAULT`, `AUTH`, `VOTE`, `UPLOAD`). Returns 429 with `Retry-After` header when exceeded. |
-| **Input validation** | `readValidatedBody(event, Schema.parse)` or `getValidatedQuery(event, Schema.parse)` with shared Zod schemas from `shared/schemas.ts`. |
+| **Input validation** | `readValidatedBody(event, Schema.parse)` or `getValidatedQuery(event, Schema.parse)` with bounded Zod schemas. Streaming and webhook bodies retain their byte limits before schema validation. |
 | **Length-bounded inputs** | All string fields in Zod schemas have explicit `min()`/`max()` bounds to prevent resource exhaustion. Example: `name: z.string().min(1).max(50)`. |
 | **Authentication** | Protected APIs validate a basis-auth token from the encrypted HTTP-only cookie or an explicit bearer header. The separate browser session cookie alone is not authorization. |
 | **OAuth2 JWT** | RS256 tokens require the exact issuer and `devconnect://nethack.bisz.dev` audience. Scope hierarchy comes from `@basis/schema`. |
@@ -91,7 +91,7 @@ Get a single user's profile.
 | Field | Details |
 | --- | --- |
 | **Auth** | Anonymous for the public profile; a valid bearer token reveals the caller's own extended profile |
-| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. For participants, each team's `score`/`rank` (current and past teams alike) are only included when the `show_scores`/`show_ranking` toggles of that team's own season are enabled; users with `portal.teams.view` or admin always see them |
+| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. In the self response, current and past team scores require published results, at least three judge evaluations, and that season's `show_scores`; ranks require published results, at least three evaluations, and `show_ranking`. A self-request with `nethack.Judging.resultsRead` or `nethack.all` can see them without those public gates |
 
 ### PATCH `/api/users/:id`
 
@@ -124,9 +124,9 @@ List all teams for the active season, or filter by season.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Current/past team member or all-permissions grant |
+| **Auth** | Public for the normal listing; `judging=1` requires `nethack.Judging.assignmentsRead` |
 | **Query** | `judging` (if `1`, returns only submitted unjudged teams for the current judge); `season_id` (optional season filter) |
-| **Response** | `APITeam[]`; in the public listing, each team's `rank` is only included when the `show_ranking` toggle of that team's own season is enabled |
+| **Response** | `APITeam[]`; in the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled |
 
 ### POST `/api/teams`
 
@@ -146,8 +146,8 @@ Get a single team's details.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Current/past team member or all-permissions grant |
-| **Response** | `APITeam`; score is included only for team members (when the `show_scores` toggle of the team's own season is enabled) or users with the `portal.teams.view` permission/admin. `rank` is only included when the team's season `show_ranking` toggle is enabled, or for privileged users |
+| **Auth** | Public; optional authentication enables the caller's team membership to control score visibility |
+| **Response** | `APITeam`; a team member sees `score` only after results are published, at least three judges have evaluated the team, and its season's `show_scores` setting is enabled. Rank requires publication, at least three evaluations, and `show_ranking`. Users with `nethack.Judging.resultsRead` or `nethack.all` bypass these public visibility gates |
 
 ### PATCH `/api/teams/:id`
 
@@ -181,15 +181,18 @@ Finalize a judge's evaluation for an assigned project. New drafts and evaluation
 | **Auth** | Judge with an assignment permission |
 | **Validation** | `SubmitTeamScoresRequest` — `{ scores: Record<string, integer>, reasoning: string, rubric_version_id: number }` |
 | **Constraint** | Judging must be open; one score per judge per team; every criterion must be an integer in its configured range |
+| **Privacy check** | Rejects a comment containing the judge's exact email address or display name with `400 Bad Request`; this does not detect indirect identity clues |
 | **Response** | `{ message: string }` |
+
+The active judging rubric and saved-draft rubric responses include the selected rubric version's `commentGuidance` object (`introduction`, `guidelines`, and `templates`). Older versions without this field use the built-in defaults. Organizers edit guidance by creating a new immutable rubric version.
 
 ### GET `/api/teams/:id/scores`
 
-Read published judge feedback for a team you belong to now or belonged to previously. The route returns 403 until the team's season publishes results. Judge IDs are omitted and evaluation order is randomized. Score details and ranks are returned only when the team's season enables their corresponding visibility settings.
+Read feedback for a team you belong to now or belonged to previously. The response follows `TeamScoreFeedbackResponse`. The route returns 403 until the team's season publishes results. Comments are withheld until at least three judges have evaluated the team; while withheld, `feedback_withheld_for_anonymity` is `true` so the UI can explain the gate without returning the exact review count. When comments are shown, the response contains comment text only and omits judge names and IDs, rubric and track metadata, individual score breakdowns, and stable evaluation ordering. The overall score additionally requires the season's `show_scores` setting, and rank requires `show_ranking`; both remain hidden until at least three judges have evaluated the team.
 
 ### GET `/api/admin/teams/:id/scores`
 
-Read the team's full judge feedback with the all-permissions grant. This admin view is available before and after results publication; judge names and account IDs are omitted.
+Read the team's full judge feedback with the all-permissions grant. This admin view is available before and after results publication and includes judge names and account IDs in its `TeamScoreFeedbackResponse` entries.
 
 ### GET `/api/teams/:id/users`
 
@@ -443,29 +446,43 @@ Upload a file to the static assets or user assets directory.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Authenticated user with `dev_debug` permission or admin |
+| **Auth** | Authenticated user with `nethack.Debug.filesWrite` permission or `nethack.all` |
 | **Body** | `FormData` with `file` field |
 | **Query** | `mode` (`static` or `user`, required) |
-| **Response** | `{ permalink: string }` — content-addressed `/assets/<name>` or `/userast/<name>` |
+| **Response** | `{ permalink: string, referenceId: string }` — content-addressed permalink plus its owner-managed reference ID. The `mode` query is Zod-validated before authorization and file parsing. |
 | **Extensions** | png, jpg, jpeg, gif, webp, pdf, txt, md, json, zip, mp4 |
 
 ### GET `/api/debug/files`
 
 List all uploaded files.
 
-| Field        | Details                                           |
-| ------------ | ------------------------------------------------- |
-| **Auth**     | User with `portal.debug.view` permission or admin |
-| **Response** | `{ assets: string[], userast: string[] }`         |
+| Field | Details |
+| --- | --- |
+| **Auth** | Authenticated user with `nethack.Debug.filesRead` permission or `nethack.all` |
+| **Response** | `{ assets: string[], userast: string[] }` — filenames from `assets/uploads` and top-level `userassets` |
+
+### GET `/api/assets/references`
+
+List active permalink references owned by the authenticated user. A user with `nethack.all` sees all references.
+
+| Field | Details |
+| --- | --- |
+| **Auth** | Authenticated user; admins with `nethack.all` can view all owners' references |
+| **Query** | `page` (default `1`, maximum `100000`); `page_size` (default `20`, range `1–50`) |
+| **Response** | `{ items, page, page_size, total, total_pages }`; each item contains `id`, `collection`, `asset_path`, `created_at`, and `permalink` |
+
+### DELETE `/api/assets/references/:referenceId`
+
+Release one permalink reference by UUID. Only its owner or a user with `nethack.all` can release it. Missing and non-owned references both return `404`. Releasing a reference does not delete the file immediately; the daily bounded collector may remove a registered object after seven days with no references and a locked database recheck.
 
 ### DeepSeek Sessions
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/deepseek/sessions` | `dev_deepseek` or admin | Create a new chat session `{ sessionName }` |
-| GET | `/api/debug/deepseek/sessions/:id` | `portal.deepseek.view` or admin | Get session with messages |
-| DELETE | `/api/debug/deepseek/sessions/:id` | `dev_deepseek` or admin | Delete a session |
-| POST | `/api/debug/deepseek/sessions/:id/message` | `dev_deepseek` or admin | Send a message `{ message, role?, toolCallId?, toolResult? }` |
+| POST | `/api/debug/deepseek/sessions` | `nethack.Debug.deepseekWrite` or `nethack.all` | Create a new chat session `{ sessionName }` |
+| GET | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekRead` or `nethack.all` | Get session with messages |
+| DELETE | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekWrite` or `nethack.all` | Delete a session |
+| POST | `/api/debug/deepseek/sessions/:id/message` | `nethack.Debug.deepseekWrite` or `nethack.all` | Send a message `{ message, role?, toolCallId?, toolResult? }` |
 
 ---
 
@@ -483,6 +500,8 @@ Microsoft Graph webhook notification endpoint.
 | **Body**     | Microsoft Graph change notification payload                                |
 | **Response** | 200 OK (echoes `validationToken` as `text/plain` when present)             |
 
+The optional validation token and each bounded notification field are validated with Zod after the request body limit is enforced.
+
 ### POST `/api/_webhooks/lifecycle`
 
 Microsoft Graph lifecycle notification endpoint (reauthorization, etc.).
@@ -492,6 +511,8 @@ Microsoft Graph lifecycle notification endpoint (reauthorization, etc.).
 | **Auth** | Microsoft Graph (validated via `clientState` and `validationToken`) |
 | **Body** | Lifecycle notification payload |
 | **Response** | 202 Accepted; refreshes the subscription when `lifecycleEvent` is `reauthorizationRequired` |
+
+The optional validation token and each bounded notification field are validated with Zod after the request body limit is enforced.
 
 ---
 
