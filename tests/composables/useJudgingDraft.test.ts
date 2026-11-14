@@ -13,6 +13,7 @@ describe("useJudgingDraft", () => {
         vi.useFakeTimers();
         fetchMock.mockReset();
         vi.stubGlobal("$fetch", fetchMock);
+        vi.stubGlobal("tryUseNuxtApp", () => null);
         vi.stubGlobal("getErrorMessage", (error: unknown) =>
             error instanceof Error ? error.message : "Request failed",
         );
@@ -47,7 +48,7 @@ describe("useJudgingDraft", () => {
         expect(draft.state.reasoning).toBe("Clear and thoughtful work.");
         expect(draft.rubricVersionId.value).toBe(3);
         expect(draft.status.value).toBe("saved");
-        expect(fetchMock).toHaveBeenCalledWith("/api/judging/drafts/42");
+        expect(fetchMock).toHaveBeenCalledWith("/api/judging/drafts/42", undefined);
     });
 
     it("initializes a new draft at each criterion's configured minimum score", async () => {
