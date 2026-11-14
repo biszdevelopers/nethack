@@ -197,3 +197,5 @@ tests/.test-meta.json
 userassets/
 .test-meta.json
 tests/.test-meta.json
+
+.vitest/

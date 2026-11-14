@@ -1,11 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const fsMocks = vi.hoisted(() => ({ writeFileSync: vi.fn() }));
-vi.mock("node:fs", () => ({ writeFileSync: fsMocks.writeFileSync }));
+const fsMocks = vi.hoisted(() => ({
+    writeFileSync: vi.fn(),
+    readFileSync: vi.fn(),
+}));
+vi.mock("node:fs", () => ({
+    writeFileSync: fsMocks.writeFileSync,
+    readFileSync: fsMocks.readFileSync,
+}));
 
 describe("test metadata stream processor", () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        fsMocks.readFileSync.mockReset();
+        process.argv = process.argv.slice(0, 2);
     });
 
     const run = async (chunks: string[]) => {
@@ -103,4 +111,42 @@ describe("test metadata stream processor", () => {
             expect(exit).toHaveBeenCalledWith(1);
         },
     );
+
+    it("reads the JSON report from the file argument supplied by the test script", async () => {
+        const log = vi.spyOn(console, "log").mockImplementation(() => {});
+        fsMocks.writeFileSync.mockClear();
+        fsMocks.readFileSync.mockReturnValue(
+            '{"numTotalTests":5,"testResults":[{}],"numFailedTests":0}',
+        );
+        process.argv = [...process.argv.slice(0, 2), ".tmp-vitest/test-results.json"];
+
+        vi.resetModules();
+        await import("../../scripts/update-test-meta.ts");
+
+        expect(fsMocks.readFileSync).toHaveBeenCalledWith(
+            expect.stringContaining("test-results.json"),
+            "utf8",
+        );
+        expect(JSON.parse(fsMocks.writeFileSync.mock.calls[0][1])).toMatchObject({
+            total: 5,
+            files: 1,
+            failed: 0,
+        });
+        expect(log).toHaveBeenCalledWith("Test meta written: 5 tests, 1 files");
+    });
+
+    it("reports an unreadable report file", async () => {
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+        fsMocks.readFileSync.mockImplementation(() => {
+            throw new Error("ENOENT");
+        });
+        process.argv = [...process.argv.slice(0, 2), "missing-report.json"];
+
+        vi.resetModules();
+        await import("../../scripts/update-test-meta.ts");
+
+        expect(error).toHaveBeenCalledWith("Failed to generate test meta:", expect.any(Error));
+        expect(exit).toHaveBeenCalledWith(1);
+    });
 });
