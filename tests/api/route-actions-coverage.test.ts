@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NethackPermissions } from "~~/shared/permissions";
+import { DEFAULT_JUDGE_COMMENT_GUIDANCE } from "~~/shared/judge-comments";
 import {
     mockBody,
     mockParams,
@@ -197,6 +198,7 @@ describe("judge rubric read actions", () => {
             version_id: 7,
             name: "Active rubric",
             tracks: [],
+            commentGuidance: DEFAULT_JUDGE_COMMENT_GUIDANCE,
         });
         expect(globalThis.requireUser).toHaveBeenCalledWith(
             event,
