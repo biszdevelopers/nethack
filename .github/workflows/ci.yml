@@ -134,7 +134,9 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                   name: browser-journey-diagnostics
-                  path: .tmp-playwright-results/
+                  path: |
+                      .tmp-playwright-results/**/error-context.md
+                      .tmp-playwright-results/**/test-failed-*.png
                   if-no-files-found: ignore
                   retention-days: 3
                   include-hidden-files: true
