@@ -34,15 +34,19 @@ describe("participant action paths", () => {
         expect(projectForm).toContain('id="project-submit"');
         expect(projectForm).toMatch(/id="project-save"[\s\S]*?class="min-h-11"/);
         expect(projectForm).toMatch(/id="project-submit"[\s\S]*?class="min-h-11"/);
-        expect(confirmModal.match(/class="min-h-12"/g)).toHaveLength(2);
+        expect(confirmModal.split('class="min-h-12"').length - 1).toBe(2);
     });
 
     it("limits star distribution and makes voting available only at exactly ten stars", () => {
+        expect(voting).toContain('await useApiFetch<GetBallotResponse>("/api/ballot"');
+        expect(voting).toContain("useHead({ title: `Peer voting | ${WEBSITE_NAME}` })");
         expect(voting).toContain(
             "const totalStars = computed(() => state.scores.reduce((a, b) => a + b, 0))",
         );
         expect(voting).toContain("(state.scores[index] ?? 0) < 5 && totalStars < 10");
         expect(voting).toContain("(state.scores[index] ?? 0) > 0");
+        expect(voting).toContain("state.scores = [...ballot.scores]");
+        expect(voting).toContain("Math.min(5, (state.scores[index] ?? 0) + 1)");
         expect(voting).toContain(':disabled="totalStars !== 10 || projects.length === 0"');
         expect(voting).toContain(':disabled="submitted"');
     });
@@ -98,6 +102,27 @@ describe("participant action paths", () => {
     });
 });
 
+describe("API response consumers", () => {
+    it("unwraps API envelopes in every page and component that fetches API data", () => {
+        const consumers = [
+            ["voting page", readSource("pages", "voting.vue")],
+            ["admin users page", readSource("pages", "developers", "users.vue")],
+            ["admin teams page", readSource("pages", "developers", "teams.vue")],
+            ["season detail page", readSource("pages", "seasons", "[id].vue")],
+            ["user detail page", readSource("pages", "user", "[id].vue")],
+            ["project card", readSource("components", "ProjectCard.vue")],
+            ["score feedback panel", readSource("components", "ScoreFeedbackPanel.vue")],
+            ["score card", readSource("components", "ScoreCard.vue")],
+            ["showcase team list", readSource("components", "showcase", "BeneathTheSurface.vue")],
+            ["team form", readSource("components", "TeamForm.vue")],
+        ] as const;
+
+        expect(
+            consumers.filter(([, source]) => !source.includes("useApiFetch")).map(([name]) => name),
+        ).toEqual([]);
+    });
+});
+
 describe("judge action paths", () => {
     const scoringCard = readSource("components", "JudgingCard.vue");
     const judgingQueue = readSource("pages", "judging", "continue.vue");
@@ -115,6 +140,7 @@ describe("judge action paths", () => {
     });
 
     it("keeps scoring accessible and prevents edits after an evaluation is finalized", () => {
+        expect(judgingQueue).toContain("useHead({ title: `Judging queue | ${WEBSITE_NAME}` })");
         expect(scoringCard).toContain('role="radiogroup"');
         expect(scoringCard).toContain(
             ':aria-label="`${score} of ${criterion.maxScore} for ${criterion.name}`"',
