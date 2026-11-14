@@ -149,7 +149,6 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 | `HOST` | Server host override | `0.0.0.0` |
 | `DATABASE_POOL_MAX` | Maximum PostgreSQL connections; integer from 2 through 64 | `10` |
 | `DATABASE_METRICS` | Set to `1` to emit bounded PostgreSQL query-runtime and pool-acquisition wait summaries every minute | unset |
-| `ASSET_STORAGE_DIR` | Persistent upload directory outside the release directory | `/var/lib/basishacks/assets` |
 | `SQLITE_IMPORT_PATH` | Source SQLite backup path for the one-time migration command only | unset |
 | `MICROSOFT_DUMMY_USER_NAME` | ROPC test user email (rarely used, testing only) | — |
 | `MICROSOFT_DUMMY_USER_PASSWORD` | ROPC test user password (rarely used, testing only) | — |
@@ -333,7 +332,7 @@ In production on the VPS, environment variables are configured through the serve
 DATABASE_URL=postgresql://basishacks:secret@127.0.0.1:5432/basishacks bun run start
 ```
 
-Configure credentials in a protected server environment file. For systemd, set `DATABASE_URL`, `DATABASE_POOL_MAX=10`, and `ASSET_STORAGE_DIR=/var/lib/basishacks/assets` in the service's `EnvironmentFile`. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for the unit files, import steps, and service hardening.
+Configure credentials in a protected server environment file. For systemd, set `DATABASE_URL` and `DATABASE_POOL_MAX=10` in the service's `EnvironmentFile`; upload storage is always project-root `/assets`, not an environment variable. Make that directory writable by the service account. In-place pull/build/start updates preserve it because git ignores it; preserve or restore it before serving from a re-clone, and back it up separately. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for the unit files, import steps, and service hardening.
 
 :::: warning Never commit `.env` files to version control. The `.gitignore` file excludes `.env` by default. ::::
 
