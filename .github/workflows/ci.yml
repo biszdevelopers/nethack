@@ -129,6 +129,15 @@ jobs:
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_e2e
                   PLAYWRIGHT_BASE_URL: http://127.0.0.1:3005
 
+            - name: Upload browser journey diagnostics
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: browser-journey-diagnostics
+                  path: .tmp-playwright-results/
+                  if-no-files-found: ignore
+                  retention-days: 3
+
             - name: Smoke test Bun and Node production startup
               run: |
                   node scripts/smoke-production-start.mjs bun
