@@ -101,7 +101,8 @@ export async function getClientIdentifier(event: H3Event): Promise<string> {
     // Fall back to the direct peer unless the operator configured the exact
     // number of trusted reverse proxies. Walk the forwarded chain from the
     // server outward; the selected address is the first untrusted hop.
-    const socketAddress = event.node.req.socket?.remoteAddress;
+    const request = event.node?.req;
+    const socketAddress = request?.socket?.remoteAddress;
     let ip = socketAddress || "unknown";
     const configuredHops = process.env.TRUSTED_PROXY_HOPS;
     const trustedProxyHops =
