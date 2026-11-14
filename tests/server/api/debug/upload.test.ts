@@ -35,7 +35,8 @@ describe("debug upload endpoint", () => {
         expect(parserSource).toContain("files: 1");
         expect(parserSource).toContain("parts: 2");
         expect(parserSource).toContain("MAX_DEBUG_UPLOAD_BYTES + 1");
-        expect(parserSource).toContain("createAssetFromStream(");
+        expect(parserSource).toContain("stageAssetFromStream(");
+        expect(parserSource).toContain("publishStagedAssetContentAddressed(");
     });
 
     it("whitelists passive file extensions and rejects active SVG content", () => {
