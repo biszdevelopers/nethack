@@ -126,7 +126,11 @@ describe("VPS release package builder", () => {
         state.optionalDirectoriesExist = false;
         await run();
 
-        expect(state.cp).toHaveBeenCalledTimes(5);
+        expect(state.cp).toHaveBeenCalledTimes(6);
+        expect(state.cp).toHaveBeenCalledWith(
+            resolve(projectRoot, "scripts/start.sh"),
+            resolve(projectRoot, "release-package/scripts/start.sh"),
+        );
         expect(state.relocate).toHaveBeenCalledWith({
             serverDirectory: resolve(projectRoot, "release-package/.output/server"),
             sourceRoot: projectRoot,
@@ -147,7 +151,7 @@ describe("VPS release package builder", () => {
             private: true,
             type: "module",
             engines: { node: ">=24" },
-            scripts: { start: "bun start-fix.mjs", "start:node": "node start-fix.mjs" },
+            scripts: { start: "sh scripts/start.sh", "start:node": "node start-fix.mjs" },
         });
         expect(manifest.scripts["db:import-sqlite:check:node"]).toContain("--check-only");
     });
