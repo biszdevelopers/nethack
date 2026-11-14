@@ -245,9 +245,21 @@ async function confirmSubmit() {
 
             <template #help>
                 Your project must be open source on
-                <ULink href="https://github.com" target="_blank">GitHub</ULink>
+                <ULink
+                    href="https://github.com"
+                    target="_blank"
+                    class="text-default underline underline-offset-2"
+                >
+                    GitHub
+                </ULink>
                 (preferred) or
-                <ULink href="https://gitee.com" target="_blank">Gitee</ULink>
+                <ULink
+                    href="https://gitee.com"
+                    target="_blank"
+                    class="text-default underline underline-offset-2"
+                >
+                    Gitee
+                </ULink>
                 .
             </template>
         </UFormField>
