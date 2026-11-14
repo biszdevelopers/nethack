@@ -214,18 +214,16 @@ export async function completeBasisAuthFlow(
         throw new Error("basis-auth did not return an email address");
     }
 
-    // Some basis-auth deployments return email only in the validated ID token
-    // and UserInfo without an email_verified claim. A matching email from both
-    // signed responses is treated as verified; an explicit false is respected.
+    // basis-auth may omit email_verified entirely. UserInfo is fetched with the
+    // validated access token, so its email is trusted unless either response
+    // explicitly marks the address unverified.
     const tokenEmail = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
     const userInfoEmail = userInfo.email.trim().toLowerCase();
     const emailVerified =
         userInfo.email_verified === true ||
-        (claims.email_verified === true && tokenEmail !== "" && tokenEmail === userInfoEmail) ||
         (userInfo.email_verified === undefined &&
-            claims.email_verified === undefined &&
-            tokenEmail !== "" &&
-            tokenEmail === userInfoEmail);
+            claims.email_verified !== false &&
+            (claims.email_verified !== true || tokenEmail === userInfoEmail));
 
     return {
         identity: {

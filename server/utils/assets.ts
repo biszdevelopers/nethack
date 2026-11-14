@@ -1623,7 +1623,15 @@ export async function getStoredAssetNames(
 export async function openStoredAsset(collection: AssetCollection, name: string) {
     const filePath = resolveAssetPath(collection, name);
     await ensureNoSymlinkDirectories(collection, dirname(filePath));
-    const entry = await lstat(filePath);
+    let entry;
+    try {
+        entry = await lstat(filePath);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            throw createError({ statusCode: 404, statusMessage: "Asset not found" });
+        }
+        throw error;
+    }
     if (!entry.isFile() || entry.isSymbolicLink()) {
         throw createError({ statusCode: 404, statusMessage: "Asset not found" });
     }

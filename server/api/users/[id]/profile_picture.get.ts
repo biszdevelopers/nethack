@@ -17,13 +17,18 @@ export default defineEventHandler(
             });
         }
         if (user.profile_picture) {
-            const asset = await openStoredAsset("userassets", user.profile_picture);
-            setResponseHeader(event, "Content-Type", assetContentType(user.profile_picture));
-            setResponseHeader(event, "Content-Length", asset.size);
-            setResponseHeader(event, "X-Content-Type-Options", "nosniff");
-            setResponseHeader(event, "Cache-Control", "private, max-age=300");
-            setResponseHeader(event, "Content-Security-Policy", "default-src 'none'; sandbox");
-            return sendStream(event, asset.stream);
+            try {
+                const asset = await openStoredAsset("userassets", user.profile_picture);
+                setResponseHeader(event, "Content-Type", assetContentType(user.profile_picture));
+                setResponseHeader(event, "Content-Length", asset.size);
+                setResponseHeader(event, "X-Content-Type-Options", "nosniff");
+                setResponseHeader(event, "Cache-Control", "private, max-age=300");
+                setResponseHeader(event, "Content-Security-Policy", "default-src 'none'; sandbox");
+                return sendStream(event, asset.stream);
+            } catch (error) {
+                if ((error as { statusCode?: number }).statusCode !== 404) throw error;
+                // A migrated profile may point at an asset that was never copied.
+            }
         }
         const png = toPng(user.email.toString(), 200);
         setResponseHeader(event, "Content-Type", "image/png");

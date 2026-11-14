@@ -22,6 +22,7 @@ const assetMocks = vi.hoisted(() => ({
 
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (handler: (event: unknown) => unknown) => handler,
+    UPLOAD_RATE_LIMIT_CONFIG: { maxRequests: 100, windowMs: 60 * 1000 },
 }));
 vi.mock("~~/server/utils/assets", () => assetMocks);
 

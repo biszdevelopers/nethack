@@ -72,9 +72,12 @@ export function expandLegacyNethackPermissions(
         if (!effective.has(key)) effective.set(key, permission);
     };
 
+    let hasGranularNethackGrant = false;
     for (const permission of permissions ?? []) {
+        const normalized = permission.toLocaleLowerCase("en-US");
+        if (normalized.startsWith("nethack.")) hasGranularNethackGrant = true;
         add(permission);
-        switch (permission.toLocaleLowerCase("en-US")) {
+        switch (normalized) {
             case "participant":
                 LEGACY_PARTICIPANT_PERMISSIONS.forEach(add);
                 break;
@@ -85,6 +88,12 @@ export function expandLegacyNethackPermissions(
                 add(NethackPermissions.all);
                 break;
         }
+    }
+
+    // Clients that only issue identity scopes still get normal participant
+    // capabilities. Elevated judge/admin access still requires an explicit grant.
+    if (!hasGranularNethackGrant) {
+        LEGACY_PARTICIPANT_PERMISSIONS.forEach(add);
     }
 
     return [...effective.values()];

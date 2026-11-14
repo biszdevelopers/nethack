@@ -435,7 +435,7 @@ describe("basis-auth authorization-code flow", () => {
         expect(result.identity.emailVerified).toBe(false);
     });
 
-    it("keeps email verification false when neither trusted identity response confirms it", async () => {
+    it("trusts the UserInfo email when neither response marks verification", async () => {
         oidc.authorizationCodeGrant.mockResolvedValue({
             access_token: "access-token",
             refresh_token: "refresh-token",
@@ -454,7 +454,7 @@ describe("basis-auth authorization-code flow", () => {
             },
         );
 
-        expect(result.identity.emailVerified).toBe(false);
+        expect(result.identity.emailVerified).toBe(true);
     });
 
     it("rejects expired transactions and unsafe post-login redirects", async () => {

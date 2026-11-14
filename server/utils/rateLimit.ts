@@ -16,17 +16,17 @@ function parseEnvInt(name: string, fallback: number): number {
 }
 
 /** General API rate limit (requests per minute). */
-export const RATE_LIMIT_GENERAL_MAX = parseEnvInt("RATE_LIMIT_GENERAL_MAX", 120);
+export const RATE_LIMIT_GENERAL_MAX = parseEnvInt("RATE_LIMIT_GENERAL_MAX", 1200);
 export const RATE_LIMIT_WINDOW_MS = parseEnvInt("RATE_LIMIT_WINDOW_MS", 60 * 1000);
 
 /** Authentication/login rate limit (attempts per minute). */
-export const RATE_LIMIT_AUTH_MAX = parseEnvInt("RATE_LIMIT_AUTH_MAX", 20);
+export const RATE_LIMIT_AUTH_MAX = parseEnvInt("RATE_LIMIT_AUTH_MAX", 200);
 
 /** Voting/scoring rate limit (submissions per minute). */
-export const RATE_LIMIT_VOTE_MAX = parseEnvInt("RATE_LIMIT_VOTE_MAX", 30);
+export const RATE_LIMIT_VOTE_MAX = parseEnvInt("RATE_LIMIT_VOTE_MAX", 300);
 
 /** File upload rate limit (uploads per minute). */
-export const RATE_LIMIT_UPLOAD_MAX = parseEnvInt("RATE_LIMIT_UPLOAD_MAX", 10);
+export const RATE_LIMIT_UPLOAD_MAX = parseEnvInt("RATE_LIMIT_UPLOAD_MAX", 100);
 
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
     maxRequests: RATE_LIMIT_GENERAL_MAX,

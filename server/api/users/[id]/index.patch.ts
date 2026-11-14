@@ -6,7 +6,7 @@ import {
     withAssetLifecycleLocks,
 } from "~~/server/utils/assets";
 import { users } from "~~/server/database/schema";
-import { applyRateLimit } from "~~/server/utils/rateLimit";
+import { applyRateLimit, UPLOAD_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { MAX_PROFILE_IMAGE_BYTES, UpdateUserRequest, UserIdParams } from "~~/shared/schemas";
 import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
 import { readLimitedRequestBody } from "~~/server/utils/limited-json-body";
@@ -231,6 +231,6 @@ export default defineEventHandler(
                 return { message: "Your profile is updated" };
             });
         },
-        { maxRequests: 10, windowMs: 60 * 1000 },
+        UPLOAD_RATE_LIMIT_CONFIG,
     ),
 );

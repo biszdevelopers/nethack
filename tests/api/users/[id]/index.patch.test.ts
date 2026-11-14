@@ -23,6 +23,7 @@ const assetMocks = vi.hoisted(() => ({
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
     AUTH_RATE_LIMIT_CONFIG: { maxRequests: 600, windowMs: 60 * 1000 },
+    UPLOAD_RATE_LIMIT_CONFIG: { maxRequests: 100, windowMs: 60 * 1000 },
 }));
 
 vi.mock("~~/server/utils/assets", () => {

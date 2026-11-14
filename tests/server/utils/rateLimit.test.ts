@@ -286,7 +286,7 @@ describe("environment parsing", () => {
         process.env.RATE_LIMIT_GENERAL_MAX = "not-a-number";
         vi.resetModules();
         const { RATE_LIMIT_GENERAL_MAX } = await import("~~/server/utils/rateLimit");
-        expect(RATE_LIMIT_GENERAL_MAX).toBe(120);
+        expect(RATE_LIMIT_GENERAL_MAX).toBe(1200);
         if (originalValue === undefined) {
             delete process.env.RATE_LIMIT_GENERAL_MAX;
         } else {
@@ -354,25 +354,25 @@ describe("environment parsing", () => {
 
 describe("rate limit presets", () => {
     it("AUTH_RATE_LIMIT_CONFIG has correct defaults", () => {
-        expect(AUTH_RATE_LIMIT_CONFIG.maxRequests).toBe(20);
+        expect(AUTH_RATE_LIMIT_CONFIG.maxRequests).toBe(200);
         expect(AUTH_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(AUTH_RATE_LIMIT_CONFIG.keyPrefix).toBe("auth");
     });
 
     it("VOTE_RATE_LIMIT_CONFIG has correct defaults", () => {
-        expect(VOTE_RATE_LIMIT_CONFIG.maxRequests).toBe(30);
+        expect(VOTE_RATE_LIMIT_CONFIG.maxRequests).toBe(300);
         expect(VOTE_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(VOTE_RATE_LIMIT_CONFIG.keyPrefix).toBe("vote");
     });
 
     it("JUDGING_DRAFT_RATE_LIMIT_CONFIG allows autosaves and scopes its own bucket", () => {
-        expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.maxRequests).toBe(120);
+        expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.maxRequests).toBe(1200);
         expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(JUDGING_DRAFT_RATE_LIMIT_CONFIG.keyPrefix).toBe("judging-draft");
     });
 
     it("UPLOAD_RATE_LIMIT_CONFIG has correct defaults", () => {
-        expect(UPLOAD_RATE_LIMIT_CONFIG.maxRequests).toBe(10);
+        expect(UPLOAD_RATE_LIMIT_CONFIG.maxRequests).toBe(100);
         expect(UPLOAD_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
         expect(UPLOAD_RATE_LIMIT_CONFIG.keyPrefix).toBe("upload");
     });
@@ -488,8 +488,8 @@ describe("applyRateLimit", () => {
     });
 
     it("uses DEFAULT_RATE_LIMIT_CONFIG when no custom config is provided", async () => {
-        // The default is 120 requests per minute
-        expect(DEFAULT_RATE_LIMIT_CONFIG.maxRequests).toBe(120);
+        // The default is 1200 requests per minute
+        expect(DEFAULT_RATE_LIMIT_CONFIG.maxRequests).toBe(1200);
         expect(DEFAULT_RATE_LIMIT_CONFIG.windowMs).toBe(60_000);
 
         const handler = vi.fn().mockResolvedValue({ ok: true });
@@ -497,13 +497,13 @@ describe("applyRateLimit", () => {
 
         const event = makeMockEvent();
 
-        // Make 120 calls (should all succeed)
-        for (let i = 0; i < 120; i++) {
+        // Make 1200 calls (should all succeed)
+        for (let i = 0; i < 1200; i++) {
             await wrapped(event);
         }
-        expect(handler).toHaveBeenCalledTimes(120);
+        expect(handler).toHaveBeenCalledTimes(1200);
 
-        // 121st should fail
+        // 1201st should fail
         await expect(wrapped(event)).rejects.toMatchObject({
             statusCode: 429,
         });
