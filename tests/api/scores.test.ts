@@ -15,6 +15,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { hackathon, judgingDrafts, seasons, teamScores } from "~~/server/database/schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
+import { JUDGE_COMMENT_IDENTITY_ERROR } from "~~/shared/judge-comments";
 
 const createTeamScoresMock = vi.hoisted(() => vi.fn());
 const getTeamMock = vi.hoisted(() => vi.fn());
@@ -129,6 +130,30 @@ describe("POST /api/teams/:id/scores", () => {
             .get();
         expect(score).toBeTruthy();
         expect(score!.reasoning).toBe("Well-built project with clear presentation.");
+    });
+
+    it.each([
+        ["email", "A good review; contact judge@basischina.com for details."],
+        ["display name", "Jordan Example reviewed this submission."],
+    ])("rejects the judge's exact %s in anonymous feedback", async (_identityType, reasoning) => {
+        const team = seedTeam(ctx, {
+            name: "Identity Guard Team",
+            project_submitted: 1,
+            pathway: "junior",
+        });
+        prepareScoringRequest(team.id, { reasoning });
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            role: "judge",
+            email: "judge@basischina.com",
+            name: "Jordan Example",
+        } as any);
+
+        await expect(scoresHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            statusMessage: JUDGE_COMMENT_IDENTITY_ERROR,
+        });
+        expect(createTeamScoresMock).not.toHaveBeenCalled();
     });
 
     it("rejects finalizing with a different rubric than the saved draft", async () => {
