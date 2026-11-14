@@ -185,6 +185,10 @@ export async function updateUserName(event: H3Event, user: User) {
     }
 }
 
+/**
+ * @deprecated Profile reference changes must use the lifecycle-locked profile
+ * route so the PostgreSQL advisory lock spans the object and database update.
+ */
 export async function updateUserProfileTheme(event: H3Event, user: User) {
     const changed = await changedRows(
         event.context.drizzle
@@ -202,6 +206,10 @@ export async function updateUserProfileTheme(event: H3Event, user: User) {
     }
 }
 
+/**
+ * @deprecated Profile reference changes must use the lifecycle-locked profile
+ * route so the PostgreSQL advisory lock spans the object and database update.
+ */
 export async function updateUserProfilePicture(event: H3Event, user: User) {
     const changed = await changedRows(
         event.context.drizzle
