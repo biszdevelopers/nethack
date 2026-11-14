@@ -276,8 +276,18 @@ test("participant, judge, and admin can complete the published scoring journey o
             .getByPlaceholder("For example, Project showcase rubric")
             .fill(templateName);
         const templateSave = apiResponse(admin.page, "/api/admin/rubric-templates", "POST");
+        const templateRefresh = apiResponse(admin.page, "/api/admin/seasons/1/rubric", "GET");
         await admin.page.getByRole("button", { name: "Save as new template" }).click();
-        expect((await templateSave).ok()).toBeTruthy();
+        const templateResponse = await templateSave;
+        expect(templateResponse.ok()).toBeTruthy();
+        expect(await templateResponse.json()).toMatchObject({ template: { name: templateName } });
+        const refreshedRubric = await templateRefresh;
+        expect(await refreshedRubric.json()).toMatchObject({
+            templates: expect.arrayContaining([expect.objectContaining({ name: templateName })]),
+        });
+        await expect(
+            admin.page.getByRole("heading", { name: templateName, exact: true }),
+        ).toBeVisible();
         await expect(admin.page.getByText("Reusable template saved.")).toBeVisible();
 
         markProgress("setting the score curve and season status");
