@@ -44,7 +44,7 @@ routeRules: {
 ```
 
 - `/_nuxt/**` covers hashed Nuxt build chunks.
-- `/assets/**` covers user-uploaded and static assets under `public/assets`.
+- `/assets/**` covers the runtime upload endpoint. Files are stored in the gitignored project-root `/assets` directory; committed static showcase files are under `public/assets` and are separate.
 - `/fonts/**` covers the Monaspace Neon font files.
 
 ::: tip These paths are assumed to contain hashed or versioned filenames. If you add mutable files under `/assets/` or `/fonts/`, either use a hash in the filename or lower the cache time for that path. :::
