@@ -85,7 +85,7 @@ const WINNERS: readonly WinnerConfig[] = [
     },
 ] as const;
 
-const { data: teams, error } = await useFetch<GetTeamResponse[]>("/api/teams?season_id=1");
+const { data: teams, error } = await useApiFetch<GetTeamResponse[]>("/api/teams?season_id=1");
 
 const winners = computed(() => {
     const byId = new Map((teams.value ?? []).map((team) => [team.id, team]));
