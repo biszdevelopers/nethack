@@ -278,7 +278,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         const templateSave = apiResponse(admin.page, "/api/admin/rubric-templates", "POST");
         const templateRefresh = apiResponse(admin.page, "/api/admin/seasons/1/rubric", "GET");
         const templateSavedToast = expect(
-            admin.page.getByText("Reusable template saved."),
+            admin.page.getByText("Reusable template saved.", { exact: true }),
         ).toBeVisible();
         await admin.page.getByRole("button", { name: "Save as new template" }).click();
         const [templateResponse] = await Promise.all([templateSave, templateSavedToast]);
