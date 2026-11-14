@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     createTestContext,
@@ -17,14 +18,15 @@ import { eq } from "drizzle-orm";
 import { users } from "~~/server/database/schema";
 
 const mocks = vi.hoisted(() => ({
-    createUserAsset: vi.fn(),
-    removeUserAsset: vi.fn(),
+    createUserAssetContentAddressed: vi.fn(),
+    withAssetLifecycleLocks: vi.fn(),
     clearSession: vi.fn(),
 }));
 
-vi.mock("~~/server/utils/assets", () => ({
-    createUserAsset: mocks.createUserAsset,
-    removeUserAsset: mocks.removeUserAsset,
+vi.mock("~~/server/utils/assets", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("~~/server/utils/assets")>()),
+    createUserAssetContentAddressed: mocks.createUserAssetContentAddressed,
+    withAssetLifecycleLocks: mocks.withAssetLifecycleLocks,
 }));
 vi.mock("~~/server/utils/basis-auth-session", () => ({
     clearBasisAuthUserSession: mocks.clearSession,
@@ -54,9 +56,13 @@ beforeAll(async () => {
 beforeEach(async () => {
     resetMockState();
     vi.clearAllMocks();
-    mocks.createUserAsset.mockResolvedValue("stored/new-image.png");
-    mocks.removeUserAsset.mockResolvedValue(undefined);
+    mocks.createUserAssetContentAddressed.mockImplementation(
+        async (data: Buffer, extension: string) => contentAddress(data, extension),
+    );
     ctx = await createTestContext();
+    mocks.withAssetLifecycleLocks.mockImplementation(async (_database, _paths, callback) =>
+        callback(ctx.drizzle),
+    );
     const usersDb = await import("~~/server/utils/database/users");
     vi.stubGlobal("getUser", usersDb.getUser);
     seedHackathon(ctx);
@@ -95,37 +101,51 @@ function dataUrl(mime: string, bytes: number[]) {
     return `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
 }
 
+function contentAddress(data: Buffer, extension: string) {
+    const normalizedExtension = extension.toLowerCase().replace(/^\./, "");
+    const canonicalExtension = normalizedExtension === "jpeg" ? "jpg" : normalizedExtension;
+    const digest = createHash("sha256").update(data).digest("hex");
+    return `profiles/${digest}.${canonicalExtension}`;
+}
+
 describe("PATCH /api/users/:id profile action edges", () => {
     it("stores validated theme and avatar images and replaces previous assets", async () => {
         ctx.drizzle
             .update(users)
-            .set({ profile_theme: "url|old-theme.png", profile_picture: "old-avatar.png" })
+            .set({
+                profile_theme: "url|profiles/old-theme.png",
+                profile_picture: "profiles/old-avatar.png",
+            })
             .where(eq(users.id, 1))
             .run();
-        mocks.createUserAsset
-            .mockResolvedValueOnce("stored/theme.png")
-            .mockResolvedValueOnce("stored/avatar.webp");
+        const themeBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+        const avatarBytes = Buffer.from([82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]);
         mockBody.value = {
-            profile_theme_image: dataUrl("image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
-            avatar: dataUrl("image/webp", [82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]),
+            profile_theme_image: dataUrl("image/png", [...themeBytes]),
+            avatar: dataUrl("image/webp", [...avatarBytes]),
         };
 
         await expect(handler(makeEvent())).resolves.toEqual({ message: "Your profile is updated" });
 
         const saved = owner();
-        expect(saved.profile_theme).toBe("url|stored/theme.png");
-        expect(saved.profile_picture).toBe("stored/avatar.webp");
-        expect(mocks.removeUserAsset).toHaveBeenNthCalledWith(1, "old-theme.png");
-        expect(mocks.removeUserAsset).toHaveBeenNthCalledWith(2, "old-avatar.png");
-        expect(mocks.createUserAsset).toHaveBeenCalledTimes(2);
-        expect(mocks.createUserAsset.mock.calls[0][0]).toMatch(/\.png$/);
-        expect(mocks.createUserAsset.mock.calls[1][0]).toMatch(/\.webp$/);
+        expect(saved.profile_theme).toBe(`url|${contentAddress(themeBytes, ".png")}`);
+        expect(saved.profile_picture).toBe(contentAddress(avatarBytes, ".webp"));
+        expect(mocks.createUserAssetContentAddressed).toHaveBeenCalledTimes(2);
+        expect(mocks.createUserAssetContentAddressed).toHaveBeenNthCalledWith(1, themeBytes, "png");
+        expect(mocks.createUserAssetContentAddressed).toHaveBeenNthCalledWith(
+            2,
+            avatarBytes,
+            "webp",
+        );
     });
 
     it("removes old theme and avatar assets when both values are cleared", async () => {
         ctx.drizzle
             .update(users)
-            .set({ profile_theme: "url|old-theme.png", profile_picture: "old-avatar.jpg" })
+            .set({
+                profile_theme: "url|profiles/old-theme.png",
+                profile_picture: "profiles/old-avatar.jpg",
+            })
             .where(eq(users.id, 1))
             .run();
         mockBody.value = { profile_theme_image: null, avatar: null };
@@ -134,8 +154,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
 
         expect(owner().profile_theme).toBeNull();
         expect(owner().profile_picture).toBeNull();
-        expect(mocks.removeUserAsset.mock.calls).toEqual([["old-theme.png"], ["old-avatar.jpg"]]);
-        expect(mocks.createUserAsset).not.toHaveBeenCalled();
+        expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -151,7 +170,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
         mockBody.value = { avatar: value };
 
         await expect(handler(makeEvent())).rejects.toThrow();
-        expect(mocks.createUserAsset).not.toHaveBeenCalled();
+        expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
     });
 
     it("rejects profile images above the decoded file limit", async () => {
@@ -159,7 +178,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
         mockBody.value = { avatar: `data:image/png;base64,${oversizedBase64}` };
 
         await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 413 });
-        expect(mocks.createUserAsset).not.toHaveBeenCalled();
+        expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
     });
 
     it("enforces the decoded limit when encoded length is exactly at its upper bound", async () => {
@@ -169,7 +188,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
         };
 
         await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 413 });
-        expect(mocks.createUserAsset).not.toHaveBeenCalled();
+        expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -181,8 +200,9 @@ describe("PATCH /api/users/:id profile action edges", () => {
         mockBody.value = { avatar: dataUrl(mime, bytes) };
 
         await expect(handler(makeEvent())).resolves.toEqual({ message: "Your profile is updated" });
-        expect(owner().profile_picture).toBe("stored/new-image.png");
-        expect(mocks.createUserAsset).toHaveBeenCalledOnce();
+        const extension = mime === "image/jpeg" ? ".jpg" : ".gif";
+        expect(owner().profile_picture).toBe(contentAddress(Buffer.from(bytes), extension));
+        expect(mocks.createUserAssetContentAddressed).toHaveBeenCalledOnce();
     });
 
     it("rejects compressed request bodies before parsing profile data", async () => {
