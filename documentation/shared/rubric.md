@@ -49,6 +49,11 @@ interface RubricTrack {
 
 interface RubricDefinition {
     tracks: Record<string, RubricTrack>;
+    commentGuidance?: {
+        introduction: string;
+        guidelines: string[];
+        templates: { label: string; body: string }[];
+    };
 }
 ```
 
@@ -145,9 +150,11 @@ Each season can choose one score display curve. For a raw score `s` from 0 to 10
 | `moderate` |     0.80 | Apply a moderate uplift           |
 | `strong`   |     0.65 | Apply a stronger uplift           |
 
-The curve changes the score shown to participants, while saved judge evaluations, the arithmetic mean, and ranking stay unchanged. The season's `show_scores` and `show_ranking` settings independently control participant visibility.
+The curve changes the score shown to participants, while saved judge evaluations, the arithmetic mean, and ranking stay unchanged. Participants see the score only after results are published, at least three judges have evaluated the team, and the season's `show_scores` setting is enabled. Rank requires the same publication and reviewer-count gates plus `show_ranking`.
 
-Current and past team members can view anonymous judge comments only after results are published. The response omits judge IDs and randomizes evaluation order. Score values and rubric criteria are hidden when `show_scores` is off; rank is hidden when `show_ranking` is off. Authorized administrators can inspect full feedback before publication.
+Current and past team members can view anonymous judge comments only after results are published and at least three judges have evaluated the team. While comments are withheld, the public response includes a boolean status so the UI can explain the gate without returning an exact review count. Public feedback contains the comment text only: it omits judge names and IDs, rubric and track metadata, individual scores, and evaluation ordering signals. The overall score also requires `show_scores`, and rank requires `show_ranking`; both remain hidden until results are published and at least three evaluations exist. Authorized administrators can inspect full evaluations, including judge names and account IDs, before or after publication.
+
+Each immutable rubric version also stores the judge-comment introduction, guidelines, and prompt templates. Organizers configure them in the season rubric editor when saving a new version. Copying a rubric from a prior season or a reusable template carries that version's settings forward; older definitions without settings resolve to the built-in defaults. The API validates nonempty text, maximum lengths and counts, and case-insensitive unique template labels.
 
 Judges must write at least 20 characters of feedback before reviewing and finalizing an evaluation. The form offers editable prompts:
 
@@ -162,7 +169,7 @@ Implementation strength: {{name a technical choice and its effect}}
 Area to explore next: {{suggest a useful test or refinement}}
 ```
 
-Replace every double-braced example with an observation about the project. Comments should be specific, respectful, actionable, and focused on the work. Avoid comments about a competitor's personal traits, background, or identity, and do not include identifying details about the judge. Judge names and account IDs are omitted from both participant and administrator feedback, but free text should not disclose the judge's identity.
+Replace every double-braced example with an observation about the project. Comments should be specific, respectful, actionable, and focused on the work. Avoid comments about a competitor's personal traits, background, or identity, and do not include identifying details about the judge. Competitor feedback omits judge names and account IDs; authorized administrators can see those identities in the admin view. As a limited safeguard, final submission rejects the judge's exact email address or display name in the comment; this check does not detect indirect clues, alternate spellings, or other identifying text.
 
 ## Seasons
 
