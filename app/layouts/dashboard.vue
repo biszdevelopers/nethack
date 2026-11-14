@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from "@nuxt/ui";
 
-const { data: hackathon, error: hackathonError } = await useFetch("/api/seasons/active", {
+const { data: hackathon, error: hackathonError } = await useApiFetch("/api/seasons/active", {
     $fetch: globalThis.$fetch,
 });
 if (hackathonError.value) {
