@@ -32,6 +32,8 @@ public/userast
 
 # database
 /database
+# Runtime uploads are stored in this project-local directory and must not enter git history.
+/assets/
 # Logs
 logs
 *.log
