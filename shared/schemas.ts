@@ -134,12 +134,33 @@ export const RubricTrackSchema = z
         },
     );
 
+export const JudgeCommentGuidanceSchema = z.object({
+    introduction: z.string().trim().min(1).max(300),
+    guidelines: z.array(z.string().trim().min(1).max(240)).min(1).max(10),
+    templates: z
+        .array(
+            z.object({
+                label: z.string().trim().min(1).max(60),
+                body: z.string().trim().min(1).max(1_000),
+            }),
+        )
+        .min(1)
+        .max(8)
+        .refine(
+            (templates) =>
+                new Set(templates.map((template) => template.label.toLocaleLowerCase())).size ===
+                templates.length,
+            { message: "Comment template labels must be unique" },
+        ),
+});
+
 export const RubricDefinitionSchema: z.ZodType<RubricDefinition> = z.object({
     tracks: z
         .record(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/), RubricTrackSchema)
         .refine((tracks) => Object.keys(tracks).length >= 1 && Object.keys(tracks).length <= 8, {
             message: "A rubric must contain between 1 and 8 tracks",
         }),
+    commentGuidance: JudgeCommentGuidanceSchema.optional(),
 });
 
 const DynamicRubricScores = z.record(
