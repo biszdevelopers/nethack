@@ -1,7 +1,7 @@
 import { closeDatabase, createDrizzleDatabase, setDatabaseInitialization } from "../database";
 import type { DrizzleDatabase } from "../database";
 import { createAndMigrateDatabase } from "../database/migrate";
-import { collectOrphanProfileAssets } from "../utils/assets";
+import { collectOrphanPermalinkAssets, collectOrphanProfileAssets } from "../utils/assets";
 
 const INITIAL_PROFILE_ASSET_GC_DELAY_MS = 60 * 1000;
 const PROFILE_ASSET_GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -49,17 +49,30 @@ export default defineNitroPlugin((nitroApp) => {
 
             activeGc = (async () => {
                 try {
-                    const result = await collectOrphanProfileAssets(database!, {
-                        maxScanned: PROFILE_ASSET_GC_MAX_SCANNED,
-                        maxDeletions: PROFILE_ASSET_GC_MAX_DELETIONS,
-                    });
+                    const [profileResult, permalinkResult] = await Promise.all([
+                        collectOrphanProfileAssets(database!, {
+                            maxScanned: PROFILE_ASSET_GC_MAX_SCANNED,
+                            maxDeletions: PROFILE_ASSET_GC_MAX_DELETIONS,
+                        }),
+                        collectOrphanPermalinkAssets(database!, {
+                            maxScanned: PROFILE_ASSET_GC_MAX_SCANNED,
+                            maxDeletions: PROFILE_ASSET_GC_MAX_DELETIONS,
+                        }),
+                    ]);
                     console.info("[Nitro] Profile asset cleanup complete", {
-                        entriesVisited: result.entriesVisited,
-                        scanned: result.scanned,
-                        deleted: result.deleted,
-                        referenced: result.referenced,
-                        tooRecent: result.tooRecent,
-                        staleTemporaryFilesDeleted: result.staleTemporaryFilesDeleted,
+                        entriesVisited: profileResult.entriesVisited,
+                        scanned: profileResult.scanned,
+                        deleted: profileResult.deleted,
+                        referenced: profileResult.referenced,
+                        tooRecent: profileResult.tooRecent,
+                        staleTemporaryFilesDeleted: profileResult.staleTemporaryFilesDeleted,
+                    });
+                    console.info("[Nitro] Permalink asset cleanup complete", {
+                        scanned: permalinkResult.scanned,
+                        deleted: permalinkResult.deleted,
+                        missing: permalinkResult.missing,
+                        referenced: permalinkResult.referenced,
+                        unsafe: permalinkResult.unsafe,
                     });
                 } catch {
                     // Never log driver errors or query text; they can contain credentials or data.
