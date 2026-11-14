@@ -4,6 +4,8 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { GetTeamsQuery } from "~~/shared/schemas";
 import { teamScores, teams as teamsTable } from "~~/server/database/schema";
 import { isJudgingOpen } from "~~/server/utils/judging";
+import { getTeamEvaluationCounts } from "~~/server/utils/database/scores";
+import { MIN_PUBLIC_FEEDBACK_REVIEWERS } from "~~/server/utils/score-feedback";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -136,16 +138,28 @@ export default defineEventHandler(
             );
 
             // Public listing: ranks are only exposed when the team's own season
-            // has the ranking toggle enabled
+            // has published results, enabled ranking, and enough judge evaluations.
             const resolveVisibility = await getScoreRankVisibilityResolver(event);
-
-            return teams.map((t) =>
-                convertTeamToPublic(
-                    t,
-                    { withRank: resolveVisibility(t.season_id).showRanking },
-                    awardsByTeam[t.id] ?? [],
-                ),
+            const evaluationsByTeam = await getTeamEvaluationCounts(
+                event,
+                teams.map((team) => team.id),
             );
+
+            return teams.map((team) => {
+                const visibility = resolveVisibility(team.season_id);
+                const meetsAnonymityThreshold =
+                    (evaluationsByTeam.get(team.id) ?? 0) >= MIN_PUBLIC_FEEDBACK_REVIEWERS;
+                return convertTeamToPublic(
+                    team,
+                    {
+                        withRank:
+                            visibility.resultsPublished &&
+                            visibility.showRanking &&
+                            meetsAnonymityThreshold,
+                    },
+                    awardsByTeam[team.id] ?? [],
+                );
+            });
         }
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );
