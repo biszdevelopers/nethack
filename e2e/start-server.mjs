@@ -212,6 +212,7 @@ export async function runE2eServer(env = process.env) {
         const childEnvironment = {
             ...env,
             NODE_ENV: "test",
+            YAML_SOURCE_HACKATHON: "database",
             PORT: config.port,
             HOST: "127.0.0.1",
             NITRO_PORT: config.port,

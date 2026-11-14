@@ -25,7 +25,7 @@ onMounted(() => nextTick(() => reviewHeading.value?.focus()));
 
 <template>
     <UCard variant="subtle" class="review-card">
-        <p class="text-sm text-muted">Step 2 of 2</p>
+        <p class="text-sm text-muted">Step 2</p>
         <h2
             ref="reviewHeading"
             tabindex="-1"
@@ -39,7 +39,15 @@ onMounted(() => nextTick(() => reviewHeading.value?.focus()));
         </p>
 
         <div class="mt-5 rounded-xl border border-default p-4">
-            <p class="text-sm text-muted">{{ team.name }} · {{ track.name }}</p>
+            <p class="text-sm text-muted">{{ team.name }}
+                <UBadge
+                variant="outline"
+                :color="team.pathway === 'junior' ? 'primary' : 'warning'"
+                class="shrink-0"
+            >
+                {{ track.name }}
+            </UBadge>
+            </p>
             <h3 class="mt-1 break-words text-lg font-semibold">{{ team.project.name }}</h3>
         </div>
 

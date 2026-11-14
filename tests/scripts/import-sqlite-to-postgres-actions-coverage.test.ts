@@ -370,6 +370,39 @@ describe("SQLite importer source inspection", () => {
         source.close();
     });
 
+    it("preserves compatibility archives and counts retired sessions without importing them", () => {
+        const source = createSource();
+        try {
+            source.exec(`
+                CREATE TABLE basis_auth_sessions (encrypted_tokens TEXT);
+                INSERT INTO basis_auth_sessions VALUES ('retired-token');
+                CREATE TABLE legacy_schema_compat_archive (
+                    table_name TEXT, row_key TEXT, payload TEXT, archived_at INTEGER
+                );
+                INSERT INTO legacy_schema_compat_archive VALUES ('seasons', '1', '{"id":1}', 100);
+            `);
+            const info = validateSource(source, sourceTables(source));
+            expect(info.counts).toMatchObject({
+                basis_auth_sessions: 1,
+                legacy_schema_compat_archive: 1,
+            });
+            expect(info.targetCountExpectations).not.toHaveProperty("basis_auth_sessions");
+            expect(info.targetCountExpectations).not.toHaveProperty("legacy_schema_compat_archive");
+            expect(info.legacyColumnRows).toContainEqual({
+                table_name: "legacy_schema_compat_archive",
+                row_key: '["seasons","1"]',
+                payload: {
+                    table_name: "seasons",
+                    row_key: "1",
+                    payload: '{"id":1}',
+                    archived_at: 100,
+                },
+            });
+        } finally {
+            source.close();
+        }
+    });
+
     it("normalizes seasonal epoch timestamps stored as zero-fraction strings", () => {
         const source = createSource();
         source.exec(`

@@ -29,8 +29,6 @@ export default defineEventHandler(
                 : value;
         }
 
-        // Updates the season row; when the season is the live (active) season,
-        // the hackathon singleton is updated as well.
         const updated = await updateSeasonTweaks(event, id, data);
         if (!updated) {
             throw createError({

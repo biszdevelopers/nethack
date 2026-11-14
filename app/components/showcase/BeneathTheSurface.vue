@@ -515,7 +515,6 @@ onUnmounted(() => {
                 <i />
                 <i />
             </div>
-            <p>Expedition complete · Six signals recovered</p>
             <h2>The surface looks different once you know what lies beneath.</h2>
             <UButton
                 to="/showcase"

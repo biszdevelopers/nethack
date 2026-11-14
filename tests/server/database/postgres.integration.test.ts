@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { closeDatabase, createDrizzleDatabase, type DrizzleDatabase } from "~~/server/database";
 import { createAndMigrateDatabase } from "~~/server/database/migrate";
+import { readHackathonConfig } from "~~/server/utils/hackathon-config";
+import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import {
     hackathon,
     judgingDrafts,
@@ -34,6 +36,53 @@ describe.skipIf(!enabled || !hasDatabaseUrl)("PostgreSQL integration", () => {
             await database.delete(users).where(eq(users.id, createdUserId));
         }
         await closeDatabase();
+    });
+
+    it("activates the YAML rubric once under concurrent reads and preserves prior versions", async () => {
+        const db = database!;
+        const [active] = await db.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1);
+        const [previous] = await db
+            .select()
+            .from(rubricVersions)
+            .where(eq(rubricVersions.id, active!.rubric_version_id!));
+        const event = { context: { drizzle: db } } as Parameters<
+            typeof resolveLiveRubricVersionId
+        >[0];
+        const originalSource = process.env.YAML_SOURCE_HACKATHON;
+        process.env.YAML_SOURCE_HACKATHON = "local";
+        let newVersionId: number | null | undefined;
+        try {
+            const { rubric } = await readHackathonConfig();
+            const ids = await Promise.all([
+                resolveLiveRubricVersionId(event, active!),
+                resolveLiveRubricVersionId(event, active!),
+            ]);
+            newVersionId = ids[0];
+            expect(newVersionId).toBeTypeOf("number");
+            expect(ids[1]).toBe(newVersionId);
+            expect(newVersionId).not.toBe(previous!.id);
+            const versions = await db
+                .select()
+                .from(rubricVersions)
+                .where(eq(rubricVersions.season_id, active!.id));
+            expect(versions).toHaveLength(2);
+            expect(versions.find(({ id }) => id === previous!.id)?.definition).toEqual(
+                previous!.definition,
+            );
+            expect(versions.find(({ id }) => id === newVersionId)).toMatchObject({
+                name: rubric!.name,
+                definition: { tracks: rubric!.tracks },
+            });
+        } finally {
+            process.env.YAML_SOURCE_HACKATHON = originalSource!;
+            await db
+                .update(seasons)
+                .set({ rubric_version_id: active!.rubric_version_id })
+                .where(eq(seasons.id, active!.id));
+            if (newVersionId && newVersionId !== previous!.id) {
+                await db.delete(rubricVersions).where(eq(rubricVersions.id, newVersionId));
+            }
+        }
     });
 
     it("migrates PostgreSQL tables, stores rubric JSON, and enforces relationships", async () => {

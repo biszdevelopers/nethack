@@ -22,12 +22,9 @@ const parserSource = readFileSync(
 );
 
 describe("debug upload endpoint", () => {
-    it("requires permission and checks cookie-authenticated requests for same-origin", () => {
-        expect(routeSource).toContain('import { requireUser } from "~~/server/utils/auth"');
-        expect(routeSource).toContain(
-            "await requireUser(event, NethackPermissions.Debug.filesWrite)",
-        );
-        expect(routeSource).toContain("enforceSameOriginCookieRequest(event)");
+    it("returns gone without invoking the multipart parser", () => {
+        expect(routeSource).toContain("statusCode: 410");
+        expect(routeSource).not.toContain("storeMultipartAsset");
     });
 
     it("streams one bounded file part and limits parser metadata", () => {

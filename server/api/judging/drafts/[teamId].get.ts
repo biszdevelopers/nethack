@@ -8,6 +8,7 @@ import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { z } from "zod";
 import { resolveJudgeCommentGuidance } from "~~/shared/judge-comments";
+import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 
 const ParamsSchema = z.object({ teamId: PositiveIntParam });
 
@@ -50,7 +51,9 @@ export default defineEventHandler(
               );
 
         const rubricVersionId =
-            draft?.rubric_version_id ?? finalized?.rubric_version_id ?? season.rubric_version_id;
+            draft?.rubric_version_id ??
+            finalized?.rubric_version_id ??
+            (await resolveLiveRubricVersionId(event, season));
         const version = rubricVersionId
             ? await firstRow(
                   event.context.drizzle

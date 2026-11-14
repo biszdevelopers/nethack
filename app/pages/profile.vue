@@ -28,24 +28,7 @@ async function doLogout() {
 const state = reactive({
     name: user.value.name || "",
     profile_theme_image: undefined,
-    avatar: undefined,
 });
-
-const avatarPreviewUrl = ref(undefined);
-
-watch(
-    () => state.avatar,
-    (newVal, oldVal) => {
-        if (avatarPreviewUrl.value?.startsWith("blob:")) {
-            URL.revokeObjectURL(avatarPreviewUrl.value);
-        }
-        if (newVal instanceof File) {
-            avatarPreviewUrl.value = URL.createObjectURL(newVal);
-        } else {
-            avatarPreviewUrl.value = undefined;
-        }
-    },
-);
 
 const fileToBase64 = function (file) {
     return new Promise((resolve, reject) => {
@@ -60,28 +43,6 @@ const fileToBase64 = function (file) {
         reader.onerror = (error) => reject(error);
     });
 };
-
-async function removeAvatar() {
-    try {
-        const { message } = await withLoadingIndicator(async () => {
-            return $fetch(`/api/users/${userID.value}`, {
-                method: "PATCH",
-                body: { avatar: null },
-            });
-        });
-        toast.add({
-            color: "success",
-            title: message,
-        });
-        await refresh();
-    } catch (e) {
-        toast.add({
-            color: "error",
-            title: "Failed to remove avatar",
-            description: getErrorMessage(e),
-        });
-    }
-}
 
 async function removeProfileTheme() {
     try {
@@ -111,7 +72,6 @@ async function removeProfileTheme() {
 async function onSubmitName(event) {
     try {
         let themeResult;
-        let avatarResult;
 
         if (
             event.data.profile_theme_image != undefined &&
@@ -119,11 +79,6 @@ async function onSubmitName(event) {
         ) {
             themeResult = await fileToBase64(event.data.profile_theme_image);
             if (themeResult) event.data.profile_theme_image = themeResult.toString();
-        }
-
-        if (event.data.avatar != undefined && event.data.avatar instanceof File) {
-            avatarResult = await fileToBase64(event.data.avatar);
-            if (avatarResult) event.data.avatar = avatarResult.toString();
         }
 
         const { message } = await withLoadingIndicator(async () => {
@@ -142,10 +97,6 @@ async function onSubmitName(event) {
             state.profile_theme_image = undefined;
             fileUploadRef.value.style = `background-image:url("${themeResult}");`;
         }
-
-        if (avatarResult) {
-            state.avatar = undefined;
-        }
     } catch (e) {
         toast.add({
             color: "error",
@@ -154,8 +105,6 @@ async function onSubmitName(event) {
         });
     }
 }
-
-const profileThemeMode = user.value.profile_theme?.mode;
 
 const profileThemeValue = ref(user.value.profile_theme);
 
@@ -167,13 +116,7 @@ onMounted(() => {
     if (profileThemeValue.value == undefined) return;
 
     if (fileUploadRef.value) {
-        const v = profileThemeValue.value;
-        const url =
-            v.mode === "url" && v.value?.startsWith("http")
-                ? v.value
-                : v.value
-                  ? `/api/users/${userID.value}/profile_picture`
-                  : undefined;
+        const url = getProfileThemeUrl(profileThemeValue.value);
         if (url) fileUploadRef.value.style = `background-image:url("${url}");`;
     }
 });
@@ -198,53 +141,10 @@ onMounted(() => {
                 <UButton color="warning" variant="subtle" @click="doLogout">Log out</UButton>
             </div>
 
-            <USeparator />
-
-            <UFormField name="avatar" label="Avatar">
-                <p class="text-muted text-xs mb-4">An avatar that shows your cool avatar...</p>
-
-                <UFileUpload v-slot="{ open, removeFile }" v-model="state.avatar" accept="image/*">
-                    <div class="flex flex-wrap items-center gap-3">
-                        <UserAvatar
-                            size="lg"
-                            :user="user"
-                            :preview-src="avatarPreviewUrl || undefined"
-                            icon="i-lucide-image"
-                        />
-
-                        <UButton
-                            :label="state.avatar ? 'Change image' : 'Upload image'"
-                            color="neutral"
-                            variant="outline"
-                            @click="open()"
-                        />
-                    </div>
-
-                    <p v-if="state.avatar" class="text-xs text-muted mt-1.5">
-                        {{ state.avatar.name }}
-
-                        <UButton
-                            label="Remove"
-                            color="error"
-                            variant="link"
-                            size="xs"
-                            class="p-0"
-                            @click="removeFile()"
-                        />
-                    </p>
-                </UFileUpload>
-
-                <div class="flex gap-3 mt-4">
-                    <UButton type="submit">Update profile</UButton>
-                    <UButton
-                        v-if="user.profile_picture"
-                        label="Remove avatar"
-                        color="error"
-                        variant="outline"
-                        @click="removeAvatar"
-                    />
-                </div>
-            </UFormField>
+            <div class="flex items-center gap-3">
+                <UserAvatar :user="user" size="lg" />
+                <p class="text-sm text-muted">This is... YOU!</p>
+            </div>
 
             <USeparator />
 

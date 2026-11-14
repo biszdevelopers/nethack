@@ -73,7 +73,7 @@ Keep the overrides and `bun.lock` in sync when upgrading dependencies. :::
 
 ## Database Initialization
 
-Local development, CI, and production use PostgreSQL. Set `DATABASE_URL` to a reachable PostgreSQL instance before starting Nuxt. The Nitro startup plugin creates a bounded pool, applies migrations under a PostgreSQL advisory lock, and seeds the default hackathon row.
+Local development, CI, and production use PostgreSQL. Set `DATABASE_URL` to a reachable PostgreSQL instance before starting Nuxt. The Nitro startup plugin creates a bounded pool, applies migrations under a PostgreSQL advisory lock, and seeds the default hackathon row. Set `YAML_SOURCE_HACKATHON=local` for the checkout's `HACKATHON.yml`, or set an assets server origin or full manifest URL. See [live configuration cutover](/deployment/postgresql-migration#move-the-live-hackathon-configuration-to-yaml).
 
 ### Applying Migrations
 

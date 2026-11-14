@@ -36,10 +36,12 @@ After an external redirect, route middleware first reconciles `/api/auth/session
 The `users` table contains nullable `auth_issuer` and `auth_subject` columns with a unique composite index.
 
 1. A returning identity is resolved by exact issuer and subject.
-2. On the first basis-auth login only, a verified email may link to an existing unlinked local user using normalized lowercase comparison. basis-auth omits `email_verified`, so a matching email in the validated ID token and UserInfo is treated as verified; an explicit `false` in either response is respected.
+2. On the first basis-auth login only, the email returned by the configured basis-auth UserInfo endpoint may link to an existing unlinked local user using normalized lowercase comparison. If there is no match, the callback creates a local user. Initial administrator emails are recognized case-insensitively.
 3. Linking preserves the local integer user ID and all records that reference it.
-4. An unverified email cannot create or link an account. A returning issuer-and-subject link remains usable if the provider temporarily omits verification, but the unverified email is not applied to the local account.
-5. An identity already linked to another account, or a verified email owned by another linked user, is rejected.
+4. A returning user can update their local email from UserInfo when the address is available. The callback rejects email collisions and attempts to link a second identity to an already linked account.
+5. The callback requires an email from subject-validated UserInfo. Account linking depends on the configured basis-auth provider controlling which address it returns for each subject.
+
+The callback stores the basis-auth picture URL from the validated ID token or subject-validated UserInfo. The avatar endpoint loads it from the configured issuer and falls back to an identicon if the provider image is unavailable. Existing local avatars remain usable until a login supplies a provider URL.
 
 ## Roles and sessions
 

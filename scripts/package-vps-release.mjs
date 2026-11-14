@@ -40,6 +40,7 @@ await cp(resolve(projectRoot, "start-fix.mjs"), resolve(releaseRoot, "start-fix.
 await mkdir(resolve(releaseRoot, "scripts"), { recursive: true });
 await cp(resolve(projectRoot, "scripts/start.sh"), resolve(releaseRoot, "scripts/start.sh"));
 await cp(resolve(projectRoot, ".env.example"), resolve(releaseRoot, ".env.example"));
+await cp(resolve(projectRoot, "HACKATHON.yml"), resolve(releaseRoot, "HACKATHON.yml"));
 await cp(resolve(projectRoot, "bun.lock"), resolve(releaseRoot, "bun.lock"));
 for (const directory of ["patches", "vendor"]) {
     if (existsSync(resolve(projectRoot, directory))) {
@@ -58,6 +59,7 @@ await mkdir(resolve(releaseRoot, ".output/tools"), { recursive: true });
 const buildOutput = await Bun.build({
     entrypoints: [
         resolve(projectRoot, "scripts/db-migrate.ts"),
+        resolve(projectRoot, "scripts/export-hackathon.ts"),
         resolve(projectRoot, "scripts/import-sqlite-to-postgres.mjs"),
     ],
     outdir: resolve(releaseRoot, ".output/tools"),
@@ -102,6 +104,7 @@ const releaseManifest = {
         "start:node": "node start-fix.mjs",
         "db:migrate": "bun .output/tools/db-migrate.mjs",
         "db:migrate:node": "node .output/tools/db-migrate.mjs",
+        "db:export-hackathon": "bun .output/tools/export-hackathon.mjs",
         "db:import-sqlite": "bun .output/tools/import-sqlite-to-postgres.mjs",
         "db:import-sqlite:check": "bun .output/tools/import-sqlite-to-postgres.mjs --check-only",
         "db:import-sqlite:node": "node .output/tools/import-sqlite-to-postgres.mjs",
@@ -132,9 +135,11 @@ if (includeProductionDependencies) {
 for (const requiredPath of [
     ".output/server/index.mjs",
     ".output/tools/db-migrate.mjs",
+    ".output/tools/export-hackathon.mjs",
     ".output/tools/import-sqlite-to-postgres.mjs",
     "drizzle/postgres/meta/_journal.json",
     "start-fix.mjs",
+    "HACKATHON.yml",
     "scripts/start.sh",
     "package.json",
     ...(includeProductionDependencies

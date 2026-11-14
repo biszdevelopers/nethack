@@ -1,22 +1,26 @@
 import type { H3Event } from "h3";
 import type { PermissionRequirement } from "@basis/schema/permissions";
-import { expandLegacyNethackPermissions, hasNethackPermission } from "~~/shared/permissions";
+import {
+    effectiveNethackPermissions,
+    hasEffectiveNethackPermission,
+} from "~~/shared/permissions";
 import { resolveOAuth2User, verifyOAuth2JWT } from "./oauth2-jwt";
 import { readBasisAuthUserSession } from "./basis-auth-session";
 
 export async function requireUser(event: H3Event, permissions?: PermissionRequirement) {
     const payload = event.context.oauth2?.payload ?? (await verifyOAuth2JWT(event));
-    if (permissions && !hasNethackPermission(payload.permissions, permissions)) {
+    const user = event.context.oauth2?.user ?? (await resolveOAuth2User(event, payload));
+    const effectivePermissions = effectiveNethackPermissions(payload.permissions, user);
+    if (permissions && !hasEffectiveNethackPermission(payload.permissions, permissions, user)) {
         throw createError({
             statusCode: 403,
             statusMessage: "insufficient_permission",
             message: "The access token lacks a required permission",
         });
     }
-    const user = event.context.oauth2?.user ?? (await resolveOAuth2User(event, payload));
     event.context.oauth2 = {
         payload,
-        permissions: expandLegacyNethackPermissions(payload.permissions),
+        permissions: effectivePermissions,
         user,
     };
     return user;

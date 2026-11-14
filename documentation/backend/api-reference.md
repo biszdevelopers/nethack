@@ -95,24 +95,24 @@ Get a single user's profile.
 
 ### PATCH `/api/users/:id`
 
-Update user profile (name, avatar, profile theme image).
+Update the user’s display name or profile theme image. Avatars synchronize from basis-auth on login.
 
 | Field | Details |
 | --- | --- |
 | **Auth** | The user themselves |
-| **Validation** | `UpdateUserRequest` — `{ name?, avatar?, profile_theme_image? }` |
+| **Validation** | `UpdateUserRequest` — `{ name?, profile_theme_image? }` |
 | **Response** | `{ message: string }` |
-| **File handling** | Avatar and theme images are validated as base64 data URLs, limited to 7 MiB decoded, and stored as persistent assets |
+| **File handling** | Theme images are validated as base64 data URLs, limited to 7 MiB decoded, and stored as persistent assets |
 
 ### GET `/api/users/:id/profile_picture`
 
 Get a user's profile picture.
 
-| Field        | Details                                                           |
-| ------------ | ----------------------------------------------------------------- |
-| **Auth**     | None                                                              |
-| **Response** | Image file (served from `/userast/` directory)                    |
-| **Fallback** | Generates a 200px jdenticon identicon if no custom picture exists |
+| Field        | Details                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| **Auth**     | None                                                                |
+| **Response** | Image from the configured basis-auth issuer or a legacy local asset |
+| **Fallback** | Generates a 200px jdenticon identicon if no picture is available    |
 
 ---
 
@@ -285,7 +285,7 @@ Get the currently active season (public).
 
 ### PATCH `/api/seasons/active`
 
-Set the active season. The newly active season's tweaks are copied into the live `hackathon` row.
+Set the active season. In YAML mode, the outgoing season's settings are captured from the current manifest.
 
 | Field          | Details                                                    |
 | -------------- | ---------------------------------------------------------- |
@@ -312,7 +312,7 @@ Update the tweakable settings of a single season. Accepts a partial body with an
 
 The `id` path value must be a positive safe integer. Missing, malformed, zero, negative, or unsafe values return `400`; a well-formed ID with no matching season returns `404`.
 
-When the season is the currently active (live) season, the `hackathon` singleton row is updated as well so changes take effect immediately.
+The active season uses YAML settings and this endpoint returns 409 for live edits in YAML mode.
 
 | Field          | Details                                             |
 | -------------- | --------------------------------------------------- |
@@ -369,6 +369,8 @@ Recompute and persist judge averages and ranks for a season. Pass `?season_id={i
 
 Season update permission is required for these endpoints. Rubric definitions support named tracks, integer score ranges, and criteria weights totaling 100 per track.
 
+When `HACKATHON.yml` defines the live rubric, the admin response includes `yamlManaged: true` and the version-creation endpoint returns 409 for the active season. Edit the manifest to activate a different rubric.
+
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/admin/seasons/:id/rubric` | Get the active rubric version, season history, and reusable templates |
@@ -379,7 +381,7 @@ Season update permission is required for these endpoints. Rubric definitions sup
 
 ### GET `/api/admin/hackathon`
 
-Read the current global hackathon configuration and all seasons.
+Read live hackathon configuration and all seasons. The response includes `configSource` (`local`, `remote`, or `database`).
 
 | Field        | Details                                       |
 | ------------ | --------------------------------------------- |
@@ -388,7 +390,7 @@ Read the current global hackathon configuration and all seasons.
 
 ### PATCH `/api/admin/hackathon`
 
-Update hackathon configuration. All fields are per-season when `season_id` is provided. When `season_id` matches the currently active season, changes are also synced to the global hackathon row so the rest of the app sees the active season's config.
+Update stored settings for a season. In YAML mode, requests without a season ID or targeting the active season return 409. Edit the selected manifest to change live settings.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -442,19 +444,11 @@ Download an anonymized JSON snapshot or CSV export of the database.
 
 ### POST `/api/debug/upload`
 
-Upload a file to the static assets or user assets directory.
-
-| Field | Details |
-| --- | --- |
-| **Auth** | Authenticated user with `nethack.Debug.filesWrite` permission or `nethack.all` |
-| **Body** | `FormData` with `file` field |
-| **Query** | `mode` (`static` or `user`, required) |
-| **Response** | `{ permalink: string, referenceId: string }` — content-addressed permalink plus its owner-managed reference ID. The `mode` query is Zod-validated before authorization and file parsing. |
-| **Extensions** | png, jpg, jpeg, gif, webp, pdf, txt, md, json, zip, mp4 |
+The debug upload endpoint has been retired. It returns `410 Gone` for requests that pass the global middleware where debug routes are enabled. Existing download URLs continue to work.
 
 ### GET `/api/debug/files`
 
-List all uploaded files.
+List existing files in the debug asset collections.
 
 | Field | Details |
 | --- | --- |
@@ -473,7 +467,7 @@ List active permalink references owned by the authenticated user. A user with `n
 
 ### DELETE `/api/assets/references/:referenceId`
 
-Release one permalink reference by UUID. Only its owner or a user with `nethack.all` can release it. Missing and non-owned references both return `404`. Releasing a reference does not delete the file immediately; the daily bounded collector may remove a registered object after seven days with no references and a locked database recheck.
+Release one permalink reference by UUID. Only its owner or a user with `nethack.all` can release it. Missing and non-owned references both return `404`. Releasing a reference removes the record. The file remains accessible at its existing URL.
 
 ### DeepSeek Sessions
 

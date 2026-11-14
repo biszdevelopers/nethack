@@ -191,20 +191,13 @@ describe("Failed request error responses", () => {
         expect(source).not.toMatch(/return createError/);
     });
 
-    it("debug/upload.post.ts validates all file upload scenarios with 400/413", () => {
+    it("debug/upload.post.ts returns 410 for the retired endpoint", () => {
         const source = readFileSync(
             resolve(import.meta.dirname, "..", "..", "server", "api", "debug", "upload.post.ts"),
             "utf-8",
         );
-        expect(source).toContain("getValidatedQuery");
-        expect(source).toContain("DebugUploadQuery");
+        expect(source).toContain("statusCode: 410");
         expect(source).not.toMatch(/return createError/);
-
-        const multipart = readFileSync(
-            resolve(import.meta.dirname, "..", "..", "server", "utils", "multipart-upload.ts"),
-            "utf-8",
-        );
-        expect(multipart).toContain("413");
     });
 });
 

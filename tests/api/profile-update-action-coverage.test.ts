@@ -109,7 +109,7 @@ function contentAddress(data: Buffer, extension: string) {
 }
 
 describe("PATCH /api/users/:id profile action edges", () => {
-    it("stores validated theme and avatar images and replaces previous assets", async () => {
+    it("updates the theme while ignoring a legacy avatar upload", async () => {
         ctx.drizzle
             .update(users)
             .set({
@@ -129,17 +129,14 @@ describe("PATCH /api/users/:id profile action edges", () => {
 
         const saved = owner();
         expect(saved.profile_theme).toBe(`url|${contentAddress(themeBytes, ".png")}`);
-        expect(saved.profile_picture).toBe(contentAddress(avatarBytes, ".webp"));
-        expect(mocks.createUserAssetContentAddressed).toHaveBeenCalledTimes(2);
-        expect(mocks.createUserAssetContentAddressed).toHaveBeenNthCalledWith(1, themeBytes, "png");
-        expect(mocks.createUserAssetContentAddressed).toHaveBeenNthCalledWith(
-            2,
-            avatarBytes,
-            "webp",
+        expect(saved.profile_picture).toBe("profiles/old-avatar.png");
+        expect(mocks.createUserAssetContentAddressed).toHaveBeenCalledExactlyOnceWith(
+            themeBytes,
+            "png",
         );
     });
 
-    it("removes old theme and avatar assets when both values are cleared", async () => {
+    it("clears a theme while ignoring a legacy avatar removal", async () => {
         ctx.drizzle
             .update(users)
             .set({
@@ -153,7 +150,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
         await handler(makeEvent());
 
         expect(owner().profile_theme).toBeNull();
-        expect(owner().profile_picture).toBeNull();
+        expect(owner().profile_picture).toBe("profiles/old-avatar.jpg");
         expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
     });
 
@@ -167,7 +164,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
         ["invalid single-padding bits", "data:image/png;base64,AAB="],
         ["content that does not match the declared type", "data:image/png;base64,AQID"],
     ])("rejects %s before writing an asset", async (_label, value) => {
-        mockBody.value = { avatar: value };
+        mockBody.value = { profile_theme_image: value };
 
         await expect(handler(makeEvent())).rejects.toThrow();
         expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
@@ -175,7 +172,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
 
     it("rejects profile images above the decoded file limit", async () => {
         const oversizedBase64 = "A".repeat(Math.ceil((7 * 1024 * 1024) / 3) * 4 + 4);
-        mockBody.value = { avatar: `data:image/png;base64,${oversizedBase64}` };
+        mockBody.value = { profile_theme_image: `data:image/png;base64,${oversizedBase64}` };
 
         await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 413 });
         expect(mocks.createUserAssetContentAddressed).not.toHaveBeenCalled();
@@ -184,7 +181,7 @@ describe("PATCH /api/users/:id profile action edges", () => {
     it("enforces the decoded limit when encoded length is exactly at its upper bound", async () => {
         const maximumEncodedLength = Math.ceil((7 * 1024 * 1024) / 3) * 4;
         mockBody.value = {
-            avatar: `data:image/png;base64,${"A".repeat(maximumEncodedLength)}`,
+            profile_theme_image: `data:image/png;base64,${"A".repeat(maximumEncodedLength)}`,
         };
 
         await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 413 });
@@ -197,11 +194,11 @@ describe("PATCH /api/users/:id profile action edges", () => {
         ["JPEG digit alphabet", "image/jpeg", [255, 216, 255, 0, 0, 52]],
         ["GIF signature", "image/gif", [71, 73, 70, 56, 57, 97]],
     ])("accepts %s with a matching signature", async (_label, mime, bytes) => {
-        mockBody.value = { avatar: dataUrl(mime, bytes) };
+        mockBody.value = { profile_theme_image: dataUrl(mime, bytes) };
 
         await expect(handler(makeEvent())).resolves.toEqual({ message: "Your profile is updated" });
         const extension = mime === "image/jpeg" ? ".jpg" : ".gif";
-        expect(owner().profile_picture).toBe(contentAddress(Buffer.from(bytes), extension));
+        expect(owner().profile_theme).toBe(`url|${contentAddress(Buffer.from(bytes), extension)}`);
         expect(mocks.createUserAssetContentAddressed).toHaveBeenCalledOnce();
     });
 

@@ -439,12 +439,13 @@ describe("asset helpers coverage", () => {
             });
         });
 
-        it("rejects traversal and exposes missing-file errors from the file system", async () => {
+        it("rejects traversal and returns a 404 for a missing file", async () => {
             await expect(openStoredAsset("assets", "../secret.txt")).rejects.toMatchObject({
                 statusCode: 400,
             });
             await expect(openStoredAsset("assets", "missing.txt")).rejects.toMatchObject({
-                code: "ENOENT",
+                statusCode: 404,
+                statusMessage: "Asset not found",
             });
         });
 

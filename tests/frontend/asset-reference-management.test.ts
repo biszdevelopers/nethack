@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const readPage = (...segments: string[]) =>
     readFileSync(resolve(import.meta.dirname, "..", "..", "app", ...segments), "utf8");
 
-describe("debug permalink reference management", () => {
+describe("read-only debug file listings", () => {
     const pages = [
         ["admin debug page", readPage("pages", "debug.vue")],
         ["developer files page", readPage("pages", "developers", "debug.vue")],
@@ -14,7 +14,7 @@ describe("debug permalink reference management", () => {
     it.each(pages)("loads and paginates outstanding references on the %s", (_name, source) => {
         expect(source).toContain('"/api/assets/references"');
         expect(source).toContain("query: { page, page_size: referencePageSize }");
-        expect(source).toContain("onMounted(refreshUploads)");
+        expect(source).toContain("onMounted(refreshFiles)");
         expect(source).toContain('v-for="reference in references"');
         expect(source).toContain(
             "Page {{ referencePage }} of {{ referencePagination.total_pages }}",
@@ -23,13 +23,14 @@ describe("debug permalink reference management", () => {
     });
 
     it.each(pages)(
-        "releases any listed reference and refreshes after upload on the %s",
+        "keeps existing links without upload or release controls on the %s",
         (_name, source) => {
-            expect(source).toContain("releaseReference(reference.id)");
-            expect(source).toContain("encodeURIComponent(id)");
-            expect(source).toContain("await refreshUploads(true)");
-            expect(source).toContain("/api/assets/references/${encodeURIComponent(id)}");
-            expect(source).toContain("No active permalink references.");
+            expect(source).toContain('"/api/debug/files"');
+            expect(source).toContain("/assets/uploads/${name}");
+            expect(source).toContain("/userast/${name}");
+            expect(source).not.toContain("/api/debug/upload");
+            expect(source).not.toContain("releaseReference");
+            expect(source).not.toContain('type="file"');
         },
     );
 });

@@ -287,12 +287,12 @@ Asset names may include safe nested path segments, but empty, `.` and `..` segme
 | `collectOrphanProfileAssets(...)` | Bounded cleanup of old managed profile objects after checking every supported database reference under the lifecycle lock |
 | `releaseAssetReference(...)` | Releases an owned permalink reference, or an admin-managed reference, without revealing whether another user's reference exists |
 | `listAssetReferences(...)` | Returns paginated references for one owner, or every owner for an administrator |
-| `collectOrphanPermalinkAssets(...)` | Collects registered permalink objects only after a seven-day grace period and an advisory-locked zero-reference recheck |
+| `collectOrphanPermalinkAssets(...)` | Legacy helper for collecting registered permalink objects. Application startup no longer schedules this collector. |
 | `removeAsset(name)` / `removeUserAsset(name)` | Explicit low-level deletion helpers; do not use them for lifecycle cleanup of potentially referenced content |
 | `getUserAsset(name)` | Reads a file from the checked project-root `userassets/` collection as a Buffer |
 | `openStoredAsset(collection, name)` | Opens a checked file as a stream and returns its size |
 
-New multipart uploads use content-addressed SHA-256 names and deduplicate within their collection. Collection files are served from `/assets/uploads/*` and `/userast/*` by explicit Nitro routes that set a fixed content type, `nosniff`, a restrictive CSP, and attachment disposition for non-image/video formats. Each new public permalink has a database reference that its owner or an admin can explicitly release. Registered permalink objects and managed profile objects below `userassets/profiles/` become eligible for cleanup only after at least seven days without references and a locked zero-reference recheck. The collector starts one minute after database startup, then runs daily with bounded scan and deletion counts. Profile cleanup also checks URL profile themes and legacy OAuth application pictures. Existing files that are absent from the registry, including legacy uploads, remain pinned. Missing assets return a not-found response. Upload parsing and limits are documented in [Debug & AI](./debug-and-ai).
+Existing files are served from `/assets/uploads/*` and `/userast/*` by explicit Nitro routes that set a fixed content type, `nosniff`, a restrictive CSP, and attachment disposition for non-image/video formats. Debug upload creation has been retired. The scheduled cleanup starts one minute after database startup, then runs daily with bounded scan and deletion counts for managed profile assets and stale temporary files. Profile cleanup checks profile pictures, URL profile themes, and legacy OAuth application pictures. Published debug files remain available at their original URLs.
 
 ---
 
@@ -454,8 +454,8 @@ Per-table database helper modules in `server/utils/database/`.
 
 | Function                       | Description                                                    |
 | ------------------------------ | -------------------------------------------------------------- |
-| `getHackathon(event)`          | Get the hackathon status row (single row, id=1)                |
-| `updateHackathon(event, data)` | Update hackathon settings (partial) and return the updated row |
+| `getHackathon(event)`          | Read live settings from YAML or the PostgreSQL rollback source |
+| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode               |
 
 ### ballots.ts
 
@@ -476,9 +476,9 @@ Per-table database helper modules in `server/utils/database/`.
 | `getSeasons(event)` | List all seasons ordered by ID |
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
-| `setActiveSeason(event, seasonId)` | Set the active season (pass `null` to clear); copies the newly active season's tweaks into the `hackathon` row |
-| `updateSeasonTweaks(event, seasonId, data)` | Update a season's tweakable settings; also updates the `hackathon` row when the season is live |
-| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, falling back to the `hackathon` row when the season is missing. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
+| `setActiveSeason(event, seasonId)` | Set or clear the active season and snapshot the outgoing live YAML settings |
+| `updateSeasonTweaks(event, seasonId, data)` | Update a season's stored settings. Live edits are rejected in YAML mode. |
+| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, using live YAML for the active season. Unknown seasons keep results private in YAML mode. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
 
 `SEASON_TWEAK_FIELDS` lists the tweakable columns shared by the `seasons` and `hackathon` tables.
 

@@ -57,7 +57,7 @@ The page loads the signed-in user's API record through `useApiUser()`. This wait
 
 - Displays greeting with user name or email
 - **Name editing** — text input validated by `UpdateUserRequest`
-- **Avatar upload** — `UFileUpload` with live preview via `UserAvatar`. Supports removing the current avatar. Converts uploaded files to base64 before sending.
+- **Avatar** — displays the basis-auth picture through `UserAvatar`. The image URL is synchronized at login.
 - **Profile theme image** — `UFileUpload` for background image. Displays the current theme as a CSS background. Affects the user's profile page (`/user/{id}`) and `UserPopover` card.
 - **Logout button** — clears the session and navigates to `/`
 
@@ -323,7 +323,7 @@ DeepSeek AI chat interface.
 
 **File:** `app/pages/developers/debug.vue`
 
-File upload and debug utilities. Permission-gated.
+Permission-gated, read-only listings of existing files and active permalink references.
 
 **Layout:** `developers-dashboard`
 
@@ -335,9 +335,9 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). Contains:
 
 - **Season** — pick the season to manage and activate it (`PATCH /api/seasons/active`); "New Season" creates one via `POST /api/admin/seasons`.
 - **Season Name** — rename the selected season via `PATCH /api/admin/seasons`.
-- **Judging rubric** — edit track keys and labels, criteria, integer score ranges, and weights. Weights are checked to total 100% for each track. Saving creates a new immutable version; the version history shows which rubric is active. Organizers can copy a prior season directly or load its rubric to customize, apply or copy reusable named templates, and save, update, or delete templates. A track used by a submitted project must be reassigned before it can be removed.
+- **Judging rubric** — publish the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured. For database-managed seasons, edit track keys and labels, criteria, integer score ranges, and weights. Weights are checked to total 100% for each track. Saving creates a new immutable version; the version history shows which rubric is active. Organizers can copy a prior season directly or load its rubric to customize, apply or copy reusable named templates, and save, update, or delete templates. A track used by a submitted project must be reassigned before it can be removed.
 - **Score display curve** — choose a season-level presentation curve while preserving original judge averages and rankings.
-- **Hackathon Configuration** — all settings are per-season (including score and rank visibility) and auto-save through `/api/admin/hackathon` with `season_id`. Editing the active season also syncs to the global `hackathon` row. No "Save" button; every field change is persisted via a serialized PATCH chain carrying all form fields, so no field is ever dropped and no two PATCHes race.
+- **Hackathon Configuration** — live settings are read-only with a YAML source. Other seasons retain editable stored settings, auto-saved through `/api/admin/hackathon`.
 - **Database Export** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
 
 **Layout:** `developers-dashboard`
@@ -376,7 +376,7 @@ Redirects an authenticated user to their own profile page (`/user/{id}`). If the
 
 Admin-only debug page with two tabs:
 
-- **File Upload** — upload files to `/assets` or `/userast`, list uploaded files and active permalink references, copy permalinks, and release references owned by the current user
+- **Existing Files** — browse existing files and active permalink references
 - **DeepSeek Chat** — create chat sessions, send messages, and delete sessions via `/api/debug/deepseek/sessions`
 
 Protected by `auth` middleware and an admin permission check.

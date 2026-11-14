@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
 vi.mock("~~/server/utils/database/rubrics", () => ({
+    resolveLiveRubricVersionId: async (
+        _event: unknown,
+        season: { rubric_version_id: number | null },
+    ) => season.rubric_version_id,
     listRubricTemplates: mocks.listRubricTemplates,
 }));
 vi.mock("~~/server/utils/rateLimit", () => ({

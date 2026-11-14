@@ -40,6 +40,21 @@ export const NethackPermissions = {
     Database: { export: "nethack.Database.export" },
 } as const;
 
+/** Accounts that always retain administrator access and cannot be demoted. */
+export const INITIAL_ADMIN_EMAILS = [
+    "zhiyu.jiang90454-bisz@basischina.com",
+    "chunping.wong12024-bisz@basischina.com",
+    "michael.davison@basis-global.com",
+    "cindy.cheng-bisz@basischina.com",
+] as const;
+
+const INITIAL_ADMIN_EMAIL_SET = new Set<string>(INITIAL_ADMIN_EMAILS);
+
+export function isInitialAdminEmail(email: string | null | undefined): boolean {
+    const normalized = email?.trim().toLowerCase();
+    return !!normalized && INITIAL_ADMIN_EMAIL_SET.has(normalized);
+}
+
 /**
  * Temporary compatibility grants for accounts created before nethack moved
  * from role strings to granular basis-auth permissions.
@@ -104,6 +119,36 @@ export function hasNethackPermission(
     requirement: PermissionRequirement,
 ): boolean {
     return new DelegatedPermissionSet(expandLegacyNethackPermissions(permissions)).satisfies(
+        requirement,
+    );
+}
+
+export interface NethackPermissionUser {
+    email?: string | null;
+    is_admin?: boolean;
+}
+
+/** Add local administrator grants for designated or promoted users. */
+export function effectiveNethackPermissions(
+    permissions: Iterable<string> | undefined,
+    user?: NethackPermissionUser,
+): string[] {
+    const effective = expandLegacyNethackPermissions(permissions);
+    if (!user?.is_admin && !isInitialAdminEmail(user?.email)) return effective;
+
+    const allKey = NethackPermissions.all.toLocaleLowerCase("en-US");
+    if (!effective.some((permission) => permission.toLocaleLowerCase("en-US") === allKey)) {
+        effective.push(NethackPermissions.all);
+    }
+    return effective;
+}
+
+export function hasEffectiveNethackPermission(
+    permissions: Iterable<string> | undefined,
+    requirement: PermissionRequirement,
+    user?: NethackPermissionUser,
+): boolean {
+    return new DelegatedPermissionSet(effectiveNethackPermissions(permissions, user)).satisfies(
         requirement,
     );
 }

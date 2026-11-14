@@ -48,9 +48,6 @@ async function openQueue() {
 <template>
     <main class="mx-auto mt-4 w-full max-w-4xl pb-8">
         <header class="mb-6">
-            <p class="text-sm font-semibold uppercase tracking-wide text-primary">
-                Judge workspace
-            </p>
             <h1 class="mt-2 text-4xl font-bold text-primary glow">Judging</h1>
             <p class="mt-3 max-w-prose text-muted">
                 Evaluate one project at a time, save your progress as you work, and review every

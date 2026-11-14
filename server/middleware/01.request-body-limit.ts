@@ -1,11 +1,7 @@
 import { readLimitedRequestBody } from "~~/server/utils/limited-json-body";
 
 const API_REQUEST_BODY_MAX_BYTES = 1024 * 1024;
-const STREAMED_BODY_PATHS = new Set([
-    "/api/_webhooks/lifecycle",
-    "/api/_webhooks/update",
-    "/api/debug/upload",
-]);
+const STREAMED_BODY_PATHS = new Set(["/api/_webhooks/lifecycle", "/api/_webhooks/update"]);
 const BODY_METHODS = new Set(["DELETE", "PATCH", "POST", "PUT"]);
 
 /** Bound API request buffering before route handlers and schema validation run. */

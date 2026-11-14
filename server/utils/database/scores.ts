@@ -9,6 +9,7 @@ import {
 } from "~~/server/database/schema";
 import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
 import { validateRubricScores } from "~~/shared/rubric";
+import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type NewTeamScore = Pick<
     TeamScores,
@@ -26,7 +27,13 @@ export async function createTeamScores(event: H3Event, scores: NewTeamScore): Pr
             tx.select().from(seasons).where(eq(seasons.id, scores.season_id)).limit(1),
         );
         const [season] = await seasonQuery;
-        if (!season || season.is_active !== 1 || season.results_published) {
+        if (!season || season.is_active !== 1) {
+            throw createError({ statusCode: 409, message: "Judging is not open for this season." });
+        }
+        const resultsPublished = hackathonUsesYaml()
+            ? (await readHackathonConfig()).results_published
+            : season.results_published;
+        if (resultsPublished) {
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }
 

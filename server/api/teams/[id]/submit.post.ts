@@ -42,7 +42,7 @@ export default defineEventHandler(
         }
 
         const rubric = await getRubricVersionForSeason(event, team.season_id);
-        if (!rubric?.definition.tracks[payload.pathway]) {
+        if (!rubric || !Object.hasOwn(rubric.definition.tracks, payload.pathway)) {
             throw createError({
                 statusCode: 400,
                 message: "Choose a track that is available for this season.",

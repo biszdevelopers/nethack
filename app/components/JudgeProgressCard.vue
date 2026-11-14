@@ -33,7 +33,7 @@ const progress = computed(() =>
                     </span>
                 </div>
                 <div
-                    class="mt-3 h-2 overflow-hidden rounded-full bg-muted/20"
+                    class="mt-3 h-2 overflow-hidden rounded-full bg-muted"
                     role="progressbar"
                     :aria-valuenow="props.season.scored_count"
                     :aria-valuemin="0"

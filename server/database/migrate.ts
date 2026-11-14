@@ -1,10 +1,11 @@
 import { resolve } from "node:path";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Sql } from "postgres";
 import { getPostgresClient, type DrizzleDatabase } from "./index";
-import { hackathon, rubricTemplates, rubricVersions, seasons } from "./schema";
+import { hackathon, rubricTemplates, rubricVersions, seasons, users } from "./schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "../../shared/rubric";
+import { INITIAL_ADMIN_EMAILS } from "../../shared/permissions";
 
 const MIGRATIONS_FOLDER = resolve(process.cwd(), "drizzle/postgres");
 const MIGRATION_LOCK_ID = BigInt("75110114284009");
@@ -140,9 +141,18 @@ export async function seedDefaultSeasonAndRubrics(database: DrizzleDatabase): Pr
     });
 }
 
+/** Keep the designated initial administrators elevated across restarts and imports. */
+export async function seedInitialAdmins(database: DrizzleDatabase): Promise<void> {
+    await database
+        .update(users)
+        .set({ is_admin: true })
+        .where(inArray(sql`lower(${users.email})`, [...INITIAL_ADMIN_EMAILS]));
+}
+
 /** Migrate and seed before Nitro begins accepting requests. */
 export async function createAndMigrateDatabase(database: DrizzleDatabase): Promise<void> {
     await migrateDatabase(database);
     await seedHackathon(database);
     await seedDefaultSeasonAndRubrics(database);
+    await seedInitialAdmins(database);
 }

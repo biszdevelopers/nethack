@@ -51,6 +51,10 @@ vi.mock("~~/server/utils/database/seasons", () => ({
 vi.mock("~~/server/utils/scoring", () => ({ computeScores: mocks.computeScores }));
 vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
 vi.mock("~~/server/utils/database/rubrics", () => ({
+    resolveLiveRubricVersionId: async (
+        _event: unknown,
+        season: { rubric_version_id: number | null },
+    ) => season.rubric_version_id,
     listRubricTemplates: mocks.listRubricTemplates,
     getRubricVersionForSeason: mocks.getRubricVersionForSeason,
 }));

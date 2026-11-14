@@ -50,10 +50,7 @@ function base64Value(code: number): number {
     );
 }
 
-function decodeValidatedImage(
-    dataUrl: string,
-    label: "Profile theme" | "Avatar",
-): { data: Buffer; extension: string } {
+function decodeValidatedImage(dataUrl: string): { data: Buffer; extension: string } {
     const separator = dataUrl.indexOf(",");
     if (separator < 0) {
         throw createError({
@@ -83,14 +80,15 @@ function decodeValidatedImage(
     if (!extension) {
         throw createError({
             status: 400,
-            message: `Invalid image type for ${label.toLowerCase()}. Only JPEG, PNG, GIF, and WebP are allowed.`,
+            message:
+                "Invalid image type for profile theme. Only JPEG, PNG, GIF, and WebP are allowed.",
         });
     }
 
     if (encoded.length > Math.ceil(MAX_FILE_SIZE / 3) * 4) {
         throw createError({
             statusCode: 413,
-            message: `${label} image is too large. Maximum size is 7MB.`,
+            message: "Profile theme image is too large. Maximum size is 7MB.",
         });
     }
     const decodedLength = decodedBase64Length(encoded);
@@ -100,7 +98,7 @@ function decodeValidatedImage(
     if (decodedLength > MAX_FILE_SIZE) {
         throw createError({
             statusCode: 413,
-            message: `${label} image is too large. Maximum size is 7MB.`,
+            message: "Profile theme image is too large. Maximum size is 7MB.",
         });
     }
 
@@ -138,7 +136,7 @@ export default defineEventHandler(
                     event,
                     MAX_PROFILE_UPDATE_BODY_BYTES,
                 )) as unknown as BodyInit;
-                const { name, profile_theme_image, avatar } = await readValidatedBody(
+                const { name, profile_theme_image } = await readValidatedBody(
                     event,
                     UpdateUserRequest.parse,
                 );
@@ -148,84 +146,49 @@ export default defineEventHandler(
                     throw createError({ status: 401, message: "Logged in user not found" });
                 }
 
-                // Decode and validate every uploaded image before any write so a bad
-                // second field cannot leave a partially updated profile.
                 const themeImage =
                     profile_theme_image !== undefined && profile_theme_image !== null
-                        ? decodeValidatedImage(profile_theme_image.toString(), "Profile theme")
+                        ? decodeValidatedImage(profile_theme_image.toString())
                         : null;
-                const avatarImage =
-                    avatar !== undefined && avatar !== null
-                        ? decodeValidatedImage(avatar.toString(), "Avatar")
+                const previousTheme =
+                    profile_theme_image !== undefined
+                        ? getManagedProfileAssetPath(user.profile_theme)
                         : null;
-
-                const lockPaths = [
-                    ...(profile_theme_image !== undefined
-                        ? [getManagedProfileAssetPath(user.profile_theme)]
-                        : []),
-                    ...(avatar !== undefined
-                        ? [getManagedProfileAssetPath(user.profile_picture)]
-                        : []),
-                    ...(themeImage
-                        ? [getUserAssetContentAddress(themeImage.data, themeImage.extension)]
-                        : []),
-                    ...(avatarImage
-                        ? [getUserAssetContentAddress(avatarImage.data, avatarImage.extension)]
-                        : []),
-                ].filter((path): path is string => path !== null);
-                const uniqueLockPaths = [...new Set(lockPaths)];
+                const themePath = themeImage
+                    ? getUserAssetContentAddress(themeImage.data, themeImage.extension)
+                    : null;
+                const lockPaths = [previousTheme, themePath].filter(
+                    (path): path is string => path !== null,
+                );
 
                 const updates: Partial<typeof users.$inferInsert> = {};
                 if (name !== undefined) updates.name = name;
                 if (profile_theme_image !== undefined) {
-                    updates.profile_theme = themeImage
-                        ? `url|${getUserAssetContentAddress(themeImage.data, themeImage.extension)}`
-                        : null;
-                }
-                if (avatar !== undefined) {
-                    updates.profile_picture = avatarImage
-                        ? getUserAssetContentAddress(avatarImage.data, avatarImage.extension)
-                        : null;
+                    updates.profile_theme = themePath ? `url|${themePath}` : null;
                 }
 
                 if (Object.keys(updates).length > 0) {
-                    await withAssetLifecycleLocks(
-                        event.context.drizzle,
-                        uniqueLockPaths,
-                        async (tx) => {
-                            if (themeImage) {
-                                const publishedPath = await createUserAssetContentAddressed(
-                                    themeImage.data,
-                                    themeImage.extension,
+                    await withAssetLifecycleLocks(event.context.drizzle, lockPaths, async (tx) => {
+                        if (themeImage) {
+                            const publishedPath = await createUserAssetContentAddressed(
+                                themeImage.data,
+                                themeImage.extension,
+                            );
+                            if (publishedPath !== themePath) {
+                                throw new Error(
+                                    "Published profile theme path does not match its digest",
                                 );
-                                if (publishedPath !== updates.profile_theme?.slice(4)) {
-                                    throw new Error(
-                                        "Published profile theme path does not match its digest",
-                                    );
-                                }
                             }
-                            if (avatarImage) {
-                                const publishedPath = await createUserAssetContentAddressed(
-                                    avatarImage.data,
-                                    avatarImage.extension,
-                                );
-                                if (publishedPath !== updates.profile_picture) {
-                                    throw new Error(
-                                        "Published avatar path does not match its digest",
-                                    );
-                                }
-                            }
-
-                            const changed = await tx
-                                .update(users)
-                                .set(updates)
-                                .where(eq(users.id, id))
-                                .returning({ id: users.id });
-                            if (changed.length === 0) {
-                                throw createError({ status: 404, message: "User not found" });
-                            }
-                        },
-                    );
+                        }
+                        const changed = await tx
+                            .update(users)
+                            .set(updates)
+                            .where(eq(users.id, id))
+                            .returning({ id: users.id });
+                        if (changed.length === 0) {
+                            throw createError({ status: 404, message: "User not found" });
+                        }
+                    });
                 }
 
                 return { message: "Your profile is updated" };

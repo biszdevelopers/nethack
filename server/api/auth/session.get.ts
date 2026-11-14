@@ -4,7 +4,7 @@ import { getFreshBasisAuthUserSession } from "~~/server/utils/basis-auth";
 import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
 import { verifyAccessToken } from "~~/server/utils/oauth2-jwt";
 import { applyRateLimit, AUTH_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { expandLegacyNethackPermissions } from "~~/shared/permissions";
+import { effectiveNethackPermissions } from "~~/shared/permissions";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -17,10 +17,11 @@ export default defineEventHandler(
 
         try {
             const payload = await verifyAccessToken(session.tokens.accessToken);
+            const user = await getUser(event, session.userId);
             return {
                 user: { id: session.userId },
                 expiresAt: session.tokens.accessTokenExpiresAt,
-                permissions: expandLegacyNethackPermissions(payload.permissions),
+                permissions: effectiveNethackPermissions(payload.permissions, user ?? undefined),
             };
         } catch (error) {
             clearBasisAuthUserSession(event);

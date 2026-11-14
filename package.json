@@ -27,6 +27,7 @@
         "format:css": "oxfmt \"**/*.css\"",
         "format:json": "oxfmt \"**/*.json\"",
         "db:generate": "drizzle-kit generate",
+        "db:export-hackathon": "bun scripts/export-hackathon.ts",
         "db:migrate": "bun scripts/db-migrate.ts",
         "release:package": "bun scripts/package-vps-release.mjs",
         "db:import-sqlite": "bun scripts/import-sqlite-to-postgres.mjs",
@@ -64,6 +65,7 @@
         "typescript": "^6.0.3",
         "vue": "^3.5.45",
         "vue-router": "^5.4.0",
+        "yaml": "2.9.0",
         "zod": "^4.6.7"
     },
     "overrides": {

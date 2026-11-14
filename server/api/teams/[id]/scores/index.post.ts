@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { isJudgingOpen } from "~~/server/utils/judging";
+import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import {
     commentContainsJudgeIdentity,
     JUDGE_COMMENT_IDENTITY_ERROR,
@@ -77,6 +78,7 @@ export default defineEventHandler(
         }
 
         try {
+            await resolveLiveRubricVersionId(event, season);
             await createTeamScores(event, {
                 team_id: teamID,
                 season_id: season.id,

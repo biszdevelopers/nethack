@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
     //                               Self-hosted CSS plus inline styles used by Vue/
     //                               Nuxt UI components (e.g. :style bindings).
     // font-src 'self'               Fonts are self-hosted via @nuxt/fonts local provider.
-    // img-src 'self' blob: data:    Self-hosted images, avatar blob previews, and data URIs.
+    // img-src 'self' blob: data:    Self-hosted images, image previews, and data URIs.
     // connect-src 'self'           API calls to the same origin.
     // object-src 'none'             No Flash / plugin objects.
     // base-uri 'self'               Prevent injected <base> tags from rewriting origins.

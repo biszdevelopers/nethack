@@ -234,7 +234,10 @@ describe("session, permission, and API user composables", () => {
         const state = useNethackPermissions();
 
         expect(state.permissions.value).toEqual([]);
+        expect(state.can("nethack.Teams.create")).toBe(true);
+        permissions.value = ["nethack.Voting.readOwn"];
         expect(state.can("nethack.Teams.create")).toBe(false);
+        expect(state.can("nethack.Voting.readOwn")).toBe(true);
         permissions.value = ["participant"];
         expect(state.can("nethack.Projects.submitOwn")).toBe(true);
         expect(

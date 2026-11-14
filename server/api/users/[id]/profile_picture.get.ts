@@ -4,6 +4,7 @@ import { toPng } from "jdenticon";
 import { sendStream } from "h3";
 import { Readable } from "stream";
 import { UserIdParams } from "~~/shared/schemas";
+import { fetchBasisAuthPicture, getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -16,24 +17,36 @@ export default defineEventHandler(
                 message: "User not found",
             });
         }
-        if (user.profile_picture) {
+
+        setResponseHeader(event, "X-Content-Type-Options", "nosniff");
+        setResponseHeader(event, "Cache-Control", "private, max-age=300");
+        setResponseHeader(event, "Content-Security-Policy", "default-src 'none'; sandbox");
+
+        const providerUrl = getBasisAuthPictureUrl(
+            user.profile_picture,
+            process.env.BASIS_AUTH_ISSUER,
+        );
+        if (providerUrl) {
+            const picture = await fetchBasisAuthPicture(providerUrl);
+            if (picture) {
+                setResponseHeader(event, "Content-Type", picture.contentType);
+                setResponseHeader(event, "Content-Length", picture.bytes.length);
+                return picture.bytes;
+            }
+        } else if (user.profile_picture && !URL.parse(user.profile_picture)) {
             try {
                 const asset = await openStoredAsset("userassets", user.profile_picture);
                 setResponseHeader(event, "Content-Type", assetContentType(user.profile_picture));
                 setResponseHeader(event, "Content-Length", asset.size);
-                setResponseHeader(event, "X-Content-Type-Options", "nosniff");
-                setResponseHeader(event, "Cache-Control", "private, max-age=300");
-                setResponseHeader(event, "Content-Security-Policy", "default-src 'none'; sandbox");
                 return sendStream(event, asset.stream);
             } catch (error) {
                 if ((error as { statusCode?: number }).statusCode !== 404) throw error;
                 // A migrated profile may point at an asset that was never copied.
             }
         }
+
         const png = toPng(user.email.toString(), 200);
         setResponseHeader(event, "Content-Type", "image/png");
-        setResponseHeader(event, "X-Content-Type-Options", "nosniff");
-        setResponseHeader(event, "Cache-Control", "private, max-age=300");
         return Readable.from(png);
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

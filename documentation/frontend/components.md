@@ -329,14 +329,13 @@ Hover popover button that renders an award icon. On hover, it shows the award na
 
 **File:** `app/components/UserAvatar.vue`
 
-Single user avatar with skeleton loading state. Resolves the image source from the user's `profile_picture` field (served from `/userast/`).
+Single user avatar with skeleton loading state. Loads the user's basis-auth picture through `/api/users/:id/profile_picture`. The endpoint also supports legacy local avatar paths and generated identicons.
 
 **Props:**
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | `user` | `object \| null \| undefined` | — | User object with `name`, `email`, `profile_picture` |
-| `previewSrc` | `string` | — | Override source (e.g., for upload preview) |
 | `size` | `'3xs' \| '2xs' \| 'xs' \| 'sm' \| 'md' \| 'lg' \| 'xl' \| '2xl' \| '3xl'` | `'md'` | Avatar size |
 
 When `user` is `null`, renders a `USkeleton` placeholder.

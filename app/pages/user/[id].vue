@@ -14,11 +14,7 @@ if (error.value) {
 
 const user = computed(() => data.value as APIUser);
 
-const backgroundUrl = computed(() => {
-    if (!user.value?.profile_theme?.value) return null;
-    const v = user.value.profile_theme.value;
-    return v.startsWith("http") ? v : `/api/users/${userID}/profile_picture`;
-});
+const backgroundUrl = computed(() => getProfileThemeUrl(user.value?.profile_theme));
 </script>
 
 <template>

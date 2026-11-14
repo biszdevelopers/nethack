@@ -358,9 +358,11 @@ function issueIdToken({ identity, scope, nonce, clientId, issuer, privateKey, ke
     };
     if (scope.split(/\s+/).includes("email")) {
         claims.email = identity.email;
-        claims.email_verified = true;
     }
-    if (scope.split(/\s+/).includes("profile")) claims.name = identity.name;
+    if (scope.split(/\s+/).includes("profile")) {
+        claims.name = identity.name;
+        claims.picture = `${issuer}/api/picture/${encodeURIComponent(identity.sub)}`;
+    }
     return jwtSign(claims, "JWT", keyId, privateKey);
 }
 
@@ -508,6 +510,17 @@ export async function startOidcTestProvider(options) {
 
         const requestUrl = new URL(request.url ?? "/", issuer);
         if (requestUrl.origin !== issuer) throw new ProviderError(400, "invalid_request");
+
+        if (request.method === "GET" && requestUrl.pathname.startsWith("/api/picture/")) {
+            const user = users.find(
+                ({ sub }) => requestUrl.pathname === `/api/picture/${encodeURIComponent(sub)}`,
+            );
+            if (!user) throw new ProviderError(404, "invalid_request");
+            response.writeHead(200, { "Content-Type": "image/gif" });
+            return response.end(
+                Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64"),
+            );
+        }
 
         if (
             request.method === "GET" &&
@@ -707,7 +720,6 @@ export async function startOidcTestProvider(options) {
             const userInfo = { sub: record.identity.sub };
             if (claims.scope.split(/\s+/).includes("email")) {
                 userInfo.email = record.identity.email;
-                userInfo.email_verified = true;
             }
             if (claims.scope.split(/\s+/).includes("profile")) userInfo.name = record.identity.name;
             return sendJson(response, 200, userInfo);

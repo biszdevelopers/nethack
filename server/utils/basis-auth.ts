@@ -15,6 +15,7 @@ import {
     isLoopbackHttpOrigin,
     isValidE2ELoopbackOrigin,
 } from "~~/server/utils/environment-validation";
+import { getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
@@ -210,28 +211,19 @@ export async function completeBasisAuthFlow(
     }
 
     const userInfo = await oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub);
-    if (typeof userInfo.email !== "string" || !userInfo.email) {
+    if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
     }
-
-    // basis-auth may omit email_verified entirely. UserInfo is fetched with the
-    // validated access token, so its email is trusted unless either response
-    // explicitly marks the address unverified.
-    const tokenEmail = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
-    const userInfoEmail = userInfo.email.trim().toLowerCase();
-    const emailVerified =
-        userInfo.email_verified === true ||
-        (userInfo.email_verified === undefined &&
-            claims.email_verified !== false &&
-            (claims.email_verified !== true || tokenEmail === userInfoEmail));
 
     return {
         identity: {
             issuer: config.issuer,
             subject: claims.sub,
             email: userInfo.email,
-            emailVerified,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
+            picture:
+                getBasisAuthPictureUrl(claims.picture, config.issuer) ??
+                getBasisAuthPictureUrl(userInfo.picture, config.issuer),
         },
         tokens: normalizeTokenSet(tokens),
     };

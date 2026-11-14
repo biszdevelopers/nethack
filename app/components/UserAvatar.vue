@@ -9,12 +9,10 @@ const props = defineProps<{
           }
         | null
         | undefined;
-    previewSrc?: string;
     size?: "3xs" | "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
 }>();
 
 const src = computed(() => {
-    if (props.previewSrc) return props.previewSrc;
     if (props.user?.id) return `/api/users/${props.user.id}/profile_picture`;
     return undefined;
 });

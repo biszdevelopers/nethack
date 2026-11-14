@@ -370,35 +370,8 @@ describe("UpdateUserRequest", () => {
         expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).not.toThrow();
     });
 
-    it("accepts an avatar as null", () => {
-        expect(() => UpdateUserRequest.parse({ avatar: null })).not.toThrow();
-    });
-
-    it("accepts an avatar as a data string", () => {
-        expect(() =>
-            UpdateUserRequest.parse({ avatar: "data:image/png;base64,abc" }),
-        ).not.toThrow();
-    });
-
-    it("accepts an avatar as a valid File", () => {
-        const file = new File([new Uint8Array([1, 2, 3])], "avatar.png", { type: "image/png" });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).not.toThrow();
-    });
-
-    it("rejects an avatar File that is too large", () => {
-        const file = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "avatar.png", {
-            type: "image/png",
-        });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("smaller than 7 MB");
-    });
-
-    it("accepts GIF avatars because the uploader supports them", () => {
-        const file = new File([new Uint8Array([1, 2, 3])], "avatar.gif", { type: "image/gif" });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).not.toThrow();
-    });
-
-    it("rejects an avatar that is not a data string, null, or File", () => {
-        expect(() => UpdateUserRequest.parse({ avatar: "not-data-or-file" })).toThrow();
+    it("ignores the retired avatar field", () => {
+        expect(UpdateUserRequest.parse({ avatar: "data:image/png;base64,abc" })).toEqual({});
     });
 
     it("rejects a name longer than MAX_USER_NAME_LENGTH characters", () => {
@@ -1762,12 +1735,6 @@ describe("UpdateUserRequest - additional", () => {
         expect(() => UpdateUserRequest.parse({ name: "John O'Brien-Smith" })).not.toThrow();
     });
 
-    it("accepts both profile_theme_image and avatar set to null", () => {
-        expect(() =>
-            UpdateUserRequest.parse({ profile_theme_image: null, avatar: null }),
-        ).not.toThrow();
-    });
-
     it("accepts a name as an empty string", () => {
         expect(() => UpdateUserRequest.parse({ name: "" })).not.toThrow();
     });
@@ -1775,12 +1742,6 @@ describe("UpdateUserRequest - additional", () => {
     it("accepts a profile_theme_image as a data JPEG URL", () => {
         expect(() =>
             UpdateUserRequest.parse({ profile_theme_image: "data:image/jpeg;base64,xyz" }),
-        ).not.toThrow();
-    });
-
-    it("accepts an avatar as a data JPEG URL", () => {
-        expect(() =>
-            UpdateUserRequest.parse({ avatar: "data:image/jpeg;base64,xyz" }),
         ).not.toThrow();
     });
 
