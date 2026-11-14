@@ -302,6 +302,38 @@ export function seedTeam(
         .get();
 }
 
+export function seedTeamEvaluations(
+    ctx: TestContext,
+    team: { id: number; season_id: number },
+    count: number,
+) {
+    const season = ctx.drizzle
+        .select()
+        .from(schema.seasons)
+        .where(eq(schema.seasons.id, team.season_id))
+        .get();
+    if (!season?.rubric_version_id) throw new Error("The test team needs a rubric version.");
+
+    return Array.from({ length: count }, (_, index) => {
+        const judge = seedUser(ctx, {
+            email: `judge-${team.id}-${index}@basischina.com`,
+            role: "judge",
+        });
+        ctx.drizzle
+            .insert(schema.teamScores)
+            .values({
+                team_id: team.id,
+                judge_user_id: judge.id,
+                season_id: team.season_id,
+                rubric_version_id: season.rubric_version_id,
+                scores: "{}",
+                reasoning: `Evaluation ${index + 1}`,
+            } as any)
+            .run();
+        return judge;
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Mock state
 // ---------------------------------------------------------------------------
