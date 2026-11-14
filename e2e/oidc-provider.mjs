@@ -358,7 +358,6 @@ function issueIdToken({ identity, scope, nonce, clientId, issuer, privateKey, ke
     };
     if (scope.split(/\s+/).includes("email")) {
         claims.email = identity.email;
-        claims.email_verified = true;
     }
     if (scope.split(/\s+/).includes("profile")) claims.name = identity.name;
     return jwtSign(claims, "JWT", keyId, privateKey);
@@ -707,7 +706,6 @@ export async function startOidcTestProvider(options) {
             const userInfo = { sub: record.identity.sub };
             if (claims.scope.split(/\s+/).includes("email")) {
                 userInfo.email = record.identity.email;
-                userInfo.email_verified = true;
             }
             if (claims.scope.split(/\s+/).includes("profile")) userInfo.name = record.identity.name;
             return sendJson(response, 200, userInfo);

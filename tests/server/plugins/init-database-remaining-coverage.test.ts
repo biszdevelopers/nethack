@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
     createAndMigrateDatabase: vi.fn(),
     setDatabaseInitialization: vi.fn(),
     collectOrphanProfileAssets: vi.fn(),
-    collectOrphanPermalinkAssets: vi.fn(),
 }));
 
 vi.mock("~~/server/database", () => ({
@@ -19,7 +18,6 @@ vi.mock("~~/server/database/migrate", () => ({
 }));
 vi.mock("~~/server/utils/assets", () => ({
     collectOrphanProfileAssets: mocks.collectOrphanProfileAssets,
-    collectOrphanPermalinkAssets: mocks.collectOrphanPermalinkAssets,
 }));
 vi.stubGlobal("defineNitroPlugin", (plugin: (nitroApp: unknown) => Promise<void>) => plugin);
 
@@ -39,13 +37,6 @@ describe("init-database remaining lifecycle coverage", () => {
             tooRecent: 0,
             staleTemporaryFilesDeleted: 0,
         });
-        mocks.collectOrphanPermalinkAssets.mockResolvedValue({
-            scanned: 0,
-            deleted: 0,
-            missing: 0,
-            referenced: 0,
-            unsafe: 0,
-        });
     });
 
     afterEach(() => {
@@ -56,7 +47,6 @@ describe("init-database remaining lifecycle coverage", () => {
         mocks.createAndMigrateDatabase.mockReset();
         mocks.setDatabaseInitialization.mockReset();
         mocks.collectOrphanProfileAssets.mockReset();
-        mocks.collectOrphanPermalinkAssets.mockReset();
     });
 
     it("ignores an expired timer after shutdown and waits for an in-flight cleanup", async () => {
@@ -86,14 +76,12 @@ describe("init-database remaining lifecycle coverage", () => {
 
         timerCallbacks[0]!();
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledOnce();
-        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledOnce();
 
         const close = hook.mock.calls[0]![1] as () => Promise<void>;
         const closePromise = close();
         // A timer already queued by the runtime can overlap the active cleanup.
         timerCallbacks[0]!();
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledOnce();
-        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledOnce();
 
         finishCleanup({
             entriesVisited: 0,
@@ -110,6 +98,5 @@ describe("init-database remaining lifecycle coverage", () => {
         timerCallbacks[0]!();
         await Promise.resolve();
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledOnce();
-        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledOnce();
     });
 });

@@ -106,7 +106,6 @@ beforeEach(() => {
             issuer: "https://identity.example.test",
             subject: "subject-42",
             email: "participant@example.test",
-            emailVerified: true,
         },
         tokens: {
             accessToken: "access-token",
@@ -172,7 +171,6 @@ describe("authentication route action patterns", () => {
             issuer: "https://identity.example.test",
             subject: "subject-42",
             email: "participant@example.test",
-            emailVerified: true,
         });
         expect(mocks.establishSession).toHaveBeenCalledWith(event, 42, {
             accessToken: "access-token",

@@ -11,40 +11,15 @@ The platform includes a set of development and AI utilities gated by developer p
 
 ## Debug File Utilities
 
-Debug file endpoints let authorized users upload and list static assets without going through the normal project-submission flow.
-
-### Endpoints
+Debug uploads have been retired. Existing files remain accessible at their original `/assets/uploads/*` and `/userast/*` URLs. The application no longer schedules cleanup of debug permalink files.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/upload` | `nethack.Debug.filesWrite` or `nethack.all` | Stream one bounded file into persistent asset storage and create an owner-managed permalink reference |
-| GET | `/api/debug/files` | `nethack.Debug.filesRead` or `nethack.all` | List filenames in the upload directory and top-level user-asset directory |
+| GET | `/api/debug/files` | `nethack.Debug.filesRead` or `nethack.all` | List existing files in the static and top-level user asset collections |
 | GET | `/api/assets/references` | Authenticated user; `nethack.all` lists all owners | List the caller's active references with pagination |
-| DELETE | `/api/assets/references/:referenceId` | Reference owner or `nethack.all` | Release a permalink reference; cleanup waits seven days and rechecks under a lock |
+| DELETE | `/api/assets/references/:referenceId` | Reference owner or `nethack.all` | Remove the reference record while preserving the file |
 
-### Upload Request
-
-`POST /api/debug/upload` accepts `multipart/form-data`:
-
-| Field          | Description                                         |
-| -------------- | --------------------------------------------------- |
-| `file`         | The file to upload                                  |
-| `mode` (query) | `static` → `/assets/uploads/`, `user` → `/userast/` |
-
-Uploads accept exactly one file part named `file`, with a maximum file size of 10 MiB. The request parser rejects extra fields/parts and caps multipart overhead at 64 KiB. Stored names are SHA-256 content-addressed names with canonical extensions; identical bytes and extensions deduplicate within the same collection. Allowed extensions are `png`, `jpg`, `jpeg`, `gif`, `webp`, `pdf`, `txt`, `md`, `json`, `zip`, and `mp4`; SVG is rejected. Raster images, PDF, ZIP, and MP4 signatures are checked against their extensions. The request is streamed to a temporary file, then published after the limits and content checks pass.
-
-Response:
-
-```json
-{
-    "permalink": "/assets/uploads/<sha256>.<extension>",
-    "referenceId": "<uuid>"
-}
-```
-
-For `mode=user` the response path is `/userast/<sha256>.<extension>`. Files are stored in the project-root `/assets/userassets` collection; static uploads are stored under project-root `/assets/assets/uploads`. The response also includes an opaque `referenceId`. Repeated uploads of identical bytes reuse the object but create separate owner-managed references. `GET /api/assets/references` lists the caller's references (or all references for an admin) in pages of up to 50. Releasing a reference does not immediately delete a file: collection waits at least seven days after the last reference is released, then the daily bounded collector rechecks the database under an advisory lock. Existing files that are missing from the registry, including legacy uploads, remain pinned. Runtime uploads are separate from the committed static showcase in `public/assets`; see [Persistent upload storage](../deployment/security#persistent-upload-storage) for persistence, backups, deduplication, and cleanup behavior. The file routes set `X-Content-Type-Options: nosniff`, a restrictive CSP, and attachment disposition for non-image/video content.
-
-All cookie-authenticated mutations, including uploads, pass the global same-origin `Origin`/`Referer` check. Requests authenticated with an explicit bearer token do not use cookie-based CSRF protection. Debug routes always return 404 in production; `DISABLE_DEBUG_ROUTES=true` also disables them in non-production environments.
+Debug routes return 404 in production. Set `DISABLE_DEBUG_ROUTES=true` to disable them in non-production environments. Where debug routes are enabled, the retired `POST /api/debug/upload` route responds with 410 for requests that pass the global middleware.
 
 ---
 
@@ -154,12 +129,12 @@ See [Plugins & Middleware](./plugins-middleware) for subscription creation and r
 
 ## Permissions
 
-| Permission                    | Allows                                              |
-| ----------------------------- | --------------------------------------------------- |
-| `nethack.Debug.filesRead`     | List uploaded filenames and permalink references    |
-| `nethack.Debug.filesWrite`    | Upload files and release owned permalink references |
-| `nethack.Debug.deepseekRead`  | Read DeepSeek sessions and messages                 |
-| `nethack.Debug.deepseekWrite` | Create, update, and delete DeepSeek sessions        |
+| Permission                    | Allows                                                  |
+| ----------------------------- | ------------------------------------------------------- |
+| `nethack.Debug.filesRead`     | List uploaded filenames and permalink references        |
+| `nethack.Debug.filesWrite`    | Legacy file-write permission retained for compatibility |
+| `nethack.Debug.deepseekRead`  | Read DeepSeek sessions and messages                     |
+| `nethack.Debug.deepseekWrite` | Create, update, and delete DeepSeek sessions            |
 
 `nethack.all` grants all of these permissions.
 

@@ -35,12 +35,11 @@ export interface BasisAuthIdentity {
     issuer: string;
     subject: string;
     email: string;
-    emailVerified: boolean;
     name?: string;
 }
 
 /**
- * Links a verified basis-auth identity to a local user without changing the
+ * Links an authenticated basis-auth identity to a local user without changing the
  * local integer id that owns teams, votes, and submissions.
  */
 export async function findOrLinkBasisAuthUser(
@@ -65,20 +64,6 @@ export async function findOrLinkBasisAuthUser(
         );
 
         if (linked) {
-            // Existing OIDC subject links remain usable if the provider later
-            // omits or clears email verification. Never apply that unverified
-            // address to the local account or use it to link another account.
-            if (!identity.emailVerified) {
-                if (!trimmedName || trimmedName === linked.name) return linked;
-                return (await firstRow(
-                    tx
-                        .update(users)
-                        .set({ name: trimmedName })
-                        .where(eq(users.id, linked.id))
-                        .returning(),
-                ))!;
-            }
-
             const emailOwner = await firstRow(
                 tx
                     .select()
@@ -89,7 +74,7 @@ export async function findOrLinkBasisAuthUser(
             if (emailOwner && emailOwner.id !== linked.id) {
                 throw createError({
                     statusCode: 409,
-                    message: "The verified email belongs to another account",
+                    message: "The email belongs to another account",
                 });
             }
 
@@ -100,13 +85,6 @@ export async function findOrLinkBasisAuthUser(
                     .where(eq(users.id, linked.id))
                     .returning(),
             ))!;
-        }
-
-        if (!identity.emailVerified) {
-            throw createError({
-                statusCode: 403,
-                message: "A verified email address is required to link this account",
-            });
         }
 
         const emailMatch = await firstRow(
@@ -120,7 +98,7 @@ export async function findOrLinkBasisAuthUser(
         if (emailMatch?.auth_subject || emailMatch?.auth_issuer) {
             throw createError({
                 statusCode: 409,
-                message: "The verified email is linked to another identity",
+                message: "The email is linked to another identity",
             });
         }
 

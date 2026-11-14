@@ -5,14 +5,7 @@ definePageMeta({
     layout: "developers-dashboard",
 });
 
-// File upload state
-const file = ref<File | null>(null);
-const uploading = ref(false);
-const permalink = ref("");
-const referenceId = ref("");
-const releasingReferenceId = ref<string | null>(null);
-const safePermalink = computed(() => safeUrl(permalink.value));
-const uploadError = ref("");
+const fileListError = ref("");
 const loadingFiles = ref(false);
 const loadingReferences = ref(false);
 const references = ref<AssetReference[]>([]);
@@ -31,9 +24,6 @@ interface AssetReference {
     created_at: string;
 }
 
-const items = ref(["static", "user"]);
-const value = ref("static");
-
 const loadFiles = async () => {
     loadingFiles.value = true;
     try {
@@ -47,7 +37,7 @@ const loadFiles = async () => {
             url: `/userast/${name}`,
         }));
     } catch (err: any) {
-        uploadError.value = err.message || "Unable to load file list";
+        fileListError.value = err.message || "Unable to load file list";
     } finally {
         loadingFiles.value = false;
     }
@@ -72,72 +62,15 @@ const loadReferences = async (page = referencePage.value) => {
             total_pages: response.total_pages,
         };
     } catch (err: any) {
-        uploadError.value = err.message || "Unable to load permalink references";
+        fileListError.value = err.message || "Unable to load permalink references";
     } finally {
         loadingReferences.value = false;
     }
 };
 
-const refreshUploads = async (resetReferencePage = false) => {
-    if (resetReferencePage) referencePage.value = 1;
-    await Promise.all([loadFiles(), loadReferences()]);
-};
+const refreshFiles = () => Promise.all([loadFiles(), loadReferences()]);
 
-const handleFileChange = (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    file.value = target.files?.[0] || null;
-};
-
-const uploadFile = async () => {
-    if (!file.value) return;
-
-    uploading.value = true;
-    uploadError.value = "";
-    permalink.value = "";
-    referenceId.value = "";
-
-    try {
-        const formData = new FormData();
-        formData.append("file", file.value);
-
-        const params = new URLSearchParams({ mode: value.value });
-        const response = await $fetch<{ permalink: string; referenceId: string }>(
-            `/api/debug/upload?${params.toString()}`,
-            {
-                method: "POST",
-                body: formData,
-            },
-        );
-
-        permalink.value = response.permalink;
-        referenceId.value = response.referenceId;
-        await refreshUploads(true);
-    } catch (err: any) {
-        uploadError.value = err.message || "Upload failed";
-    } finally {
-        uploading.value = false;
-    }
-};
-
-const releaseReference = async (id = referenceId.value) => {
-    if (!id || releasingReferenceId.value) return;
-    releasingReferenceId.value = id;
-    uploadError.value = "";
-    try {
-        await $fetch(`/api/assets/references/${encodeURIComponent(id)}`, { method: "DELETE" });
-        if (referenceId.value === id) {
-            permalink.value = "";
-            referenceId.value = "";
-        }
-        await refreshUploads(true);
-    } catch (err: any) {
-        uploadError.value = err.message || "Unable to release this permalink";
-    } finally {
-        releasingReferenceId.value = null;
-    }
-};
-
-onMounted(refreshUploads);
+onMounted(refreshFiles);
 </script>
 
 <template>
@@ -152,14 +85,14 @@ onMounted(refreshUploads);
 
         <template #body>
             <UAlert
-                v-if="uploadError"
+                v-if="fileListError"
                 color="error"
                 variant="soft"
                 class="mb-4"
-                :title="uploadError"
+                :title="fileListError"
                 :close="{
                     onClick: () => {
-                        uploadError = '';
+                        fileListError = '';
                     },
                 }"
             />
@@ -167,73 +100,14 @@ onMounted(refreshUploads);
             <div class="space-y-6">
                 <UCard>
                     <template #header>
-                        <h2 class="text-lg font-semibold">Upload File</h2>
-                    </template>
-
-                    <form class="space-y-4" @submit.prevent="uploadFile">
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Select File</label>
-                            <input
-                                type="file"
-                                class="block w-full text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white hover:file:bg-primary/90"
-                                required
-                                @change="handleFileChange"
-                            />
-                        </div>
-
-                        <USelectMenu v-model="value" :items="items" />
-
-                        <UButton
-                            type="submit"
-                            label="Upload"
-                            :loading="uploading"
-                            :disabled="!file || uploading"
-                        />
-                    </form>
-
-                    <div v-if="permalink" class="mt-4">
-                        <p class="text-sm">
-                            Permalink:
-                            <a
-                                v-if="safePermalink"
-                                :href="safePermalink"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="text-primary hover:underline"
-                            >
-                                {{ permalink }}
-                            </a>
-                            <span v-else class="text-muted">
-                                {{ permalink }} (blocked unsafe URL)
-                            </span>
-                        </p>
-                        <p class="mt-2 text-sm text-muted">
-                            This permalink stays active until released. After release, its file can
-                            be collected after seven days if no other permalink uses it.
-                        </p>
-                        <UButton
-                            v-if="referenceId"
-                            class="mt-2"
-                            color="error"
-                            variant="soft"
-                            :loading="releasingReferenceId === referenceId"
-                            :disabled="releasingReferenceId !== null"
-                            label="Release this permalink"
-                            @click="releaseReference(referenceId)"
-                        />
-                    </div>
-                </UCard>
-
-                <UCard>
-                    <template #header>
                         <div class="flex items-center justify-between">
-                            <h2 class="text-lg font-semibold">Uploaded Asset Files</h2>
+                            <h2 class="text-lg font-semibold">Existing Asset Files</h2>
                             <UButton
                                 icon="i-lucide-refresh-cw"
                                 color="neutral"
                                 variant="ghost"
                                 size="sm"
-                                @click="refreshUploads()"
+                                @click="refreshFiles()"
                             />
                         </div>
                     </template>
@@ -249,7 +123,7 @@ onMounted(refreshUploads);
                                     v-else-if="fileLists.assets.length === 0"
                                     class="text-sm text-muted"
                                 >
-                                    No file uploads found.
+                                    No files found.
                                 </li>
                                 <li v-for="f in fileLists.assets" :key="f.name">
                                     <a
@@ -273,7 +147,7 @@ onMounted(refreshUploads);
                                     v-else-if="fileLists.userast.length === 0"
                                     class="text-sm text-muted"
                                 >
-                                    No user asset uploads found.
+                                    No user assets found.
                                 </li>
                                 <li v-for="f in fileLists.userast" :key="f.name">
                                     <a
@@ -297,8 +171,7 @@ onMounted(refreshUploads);
                             <div>
                                 <h2 class="text-lg font-semibold">Active Permalink References</h2>
                                 <p class="mt-1 text-sm text-muted">
-                                    References remain active until released. Shared files stay
-                                    available while any reference remains.
+                                    Links recorded for existing files.
                                 </p>
                             </div>
                             <UButton
@@ -343,19 +216,6 @@ onMounted(refreshUploads);
                                     · {{ reference.created_at }}
                                 </p>
                             </div>
-                            <UButton
-                                class="min-h-11 min-w-11 shrink-0"
-                                color="error"
-                                variant="soft"
-                                :loading="releasingReferenceId === reference.id"
-                                :disabled="releasingReferenceId !== null"
-                                :label="
-                                    releasingReferenceId === reference.id
-                                        ? 'Releasing...'
-                                        : 'Release'
-                                "
-                                @click="releaseReference(reference.id)"
-                            />
                         </li>
                     </ul>
                     <div

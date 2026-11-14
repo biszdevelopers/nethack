@@ -206,26 +206,15 @@ export async function completeBasisAuthFlow(
     }
 
     const userInfo = await oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub);
-    if (typeof userInfo.email !== "string" || !userInfo.email) {
+    if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
     }
-
-    // Some basis-auth deployments return email_verified only in the validated
-    // ID token. Trust that claim only when it names the same address returned
-    // by UserInfo; otherwise verification applies only to the UserInfo email.
-    const tokenEmail = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
-    const emailVerified =
-        userInfo.email_verified === true ||
-        (claims.email_verified === true &&
-            tokenEmail !== "" &&
-            tokenEmail === userInfo.email.trim().toLowerCase());
 
     return {
         identity: {
             issuer: config.issuer,
             subject: claims.sub,
             email: userInfo.email,
-            emailVerified,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
         },
         tokens: normalizeTokenSet(tokens),

@@ -280,7 +280,7 @@ describe("basis-auth authorization-code flow", () => {
         });
     });
 
-    it("validates the stored transaction and builds identity from ID token plus UserInfo", async () => {
+    it("validates the transaction and builds identity without an email verification claim", async () => {
         oidc.authorizationCodeGrant.mockResolvedValue({
             access_token: "access-token",
             refresh_token: "refresh-token",
@@ -290,7 +290,6 @@ describe("basis-auth authorization-code flow", () => {
         });
         oidc.fetchUserInfo.mockResolvedValue({
             email: "user@example.com",
-            email_verified: true,
             name: "User",
         });
 
@@ -309,7 +308,6 @@ describe("basis-auth authorization-code flow", () => {
                 issuer: "https://auth.example.test",
                 subject: "subject-1",
                 email: "user@example.com",
-                emailVerified: true,
                 name: "User",
             },
             tokens: {
@@ -332,80 +330,6 @@ describe("basis-auth authorization-code flow", () => {
             "access-token",
             "subject-1",
         );
-    });
-
-    it("accepts the validated ID token email verification claim when UserInfo omits it", async () => {
-        oidc.authorizationCodeGrant.mockResolvedValue({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            expires_in: 300,
-            claims: () => ({
-                sub: "subject-1",
-                email: "user@example.com",
-                email_verified: true,
-            }),
-        });
-        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: "User" });
-
-        const result = await completeBasisAuthFlow(
-            new URL("https://hacks.example.test/api/auth/basis/callback?code=code&state=state"),
-            {
-                state: "state",
-                nonce: "nonce",
-                codeVerifier: "verifier",
-                startedAt: Date.now(),
-            },
-        );
-
-        expect(result.identity.emailVerified).toBe(true);
-    });
-
-    it("does not apply an ID token email verification claim to a different UserInfo address", async () => {
-        oidc.authorizationCodeGrant.mockResolvedValue({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            expires_in: 300,
-            claims: () => ({
-                sub: "subject-1",
-                email: "first@example.com",
-                email_verified: true,
-            }),
-        });
-        oidc.fetchUserInfo.mockResolvedValue({ email: "other@example.com", name: "User" });
-
-        const result = await completeBasisAuthFlow(
-            new URL("https://hacks.example.test/api/auth/basis/callback?code=code&state=state"),
-            {
-                state: "state",
-                nonce: "nonce",
-                codeVerifier: "verifier",
-                startedAt: Date.now(),
-            },
-        );
-
-        expect(result.identity.emailVerified).toBe(false);
-    });
-
-    it("keeps email verification false when neither trusted identity response confirms it", async () => {
-        oidc.authorizationCodeGrant.mockResolvedValue({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            expires_in: 300,
-            claims: () => ({ sub: "subject-1" }),
-        });
-        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: "User" });
-
-        const result = await completeBasisAuthFlow(
-            new URL("https://hacks.example.test/api/auth/basis/callback?code=code&state=state"),
-            {
-                state: "state",
-                nonce: "nonce",
-                codeVerifier: "verifier",
-                startedAt: Date.now(),
-            },
-        );
-
-        expect(result.identity.emailVerified).toBe(false);
     });
 
     it("rejects expired transactions and unsafe post-login redirects", async () => {
@@ -441,16 +365,12 @@ describe("basis-auth authorization-code flow", () => {
         expect(sanitizePostLoginRedirect(uncoercibleValue as any)).toBeUndefined();
     });
 
-    it("uses a case-insensitive ID token email match and omits a non-string display name", async () => {
+    it("omits a non-string display name from UserInfo", async () => {
         oidc.authorizationCodeGrant.mockResolvedValue({
             access_token: "access-token",
             refresh_token: "refresh-token",
             expires_in: 300,
-            claims: () => ({
-                sub: "subject-1",
-                email: " USER@example.com ",
-                email_verified: true,
-            }),
+            claims: () => ({ sub: "subject-1" }),
         });
         oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: 9 });
 
@@ -462,7 +382,7 @@ describe("basis-auth authorization-code flow", () => {
                 startedAt: Date.now(),
             }),
         ).resolves.toMatchObject({
-            identity: { emailVerified: true, name: undefined },
+            identity: { email: "user@example.com", name: undefined },
         });
     });
 
@@ -490,23 +410,26 @@ describe("basis-auth authorization-code flow", () => {
         expect(oidc.fetchUserInfo).not.toHaveBeenCalled();
     });
 
-    it.each([undefined, "", 42])("rejects UserInfo without a valid email (%s)", async (email) => {
-        oidc.authorizationCodeGrant.mockResolvedValue({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            claims: () => ({ sub: "subject-1" }),
-        });
-        oidc.fetchUserInfo.mockResolvedValue({ email });
+    it.each([undefined, "", "   ", 42])(
+        "rejects UserInfo without a valid email (%s)",
+        async (email) => {
+            oidc.authorizationCodeGrant.mockResolvedValue({
+                access_token: "access-token",
+                refresh_token: "refresh-token",
+                claims: () => ({ sub: "subject-1" }),
+            });
+            oidc.fetchUserInfo.mockResolvedValue({ email });
 
-        await expect(
-            completeBasisAuthFlow(new URL("https://hacks.example.test/callback"), {
-                state: "state",
-                nonce: "nonce",
-                codeVerifier: "verifier",
-                startedAt: Date.now(),
-            }),
-        ).rejects.toThrow("basis-auth did not return an email address");
-    });
+            await expect(
+                completeBasisAuthFlow(new URL("https://hacks.example.test/callback"), {
+                    state: "state",
+                    nonce: "nonce",
+                    codeVerifier: "verifier",
+                    startedAt: Date.now(),
+                }),
+            ).rejects.toThrow("basis-auth did not return an email address");
+        },
+    );
 
     it("rejects transactions older than the ten-minute flow window", async () => {
         vi.useFakeTimers();

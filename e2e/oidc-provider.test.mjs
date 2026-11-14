@@ -211,12 +211,12 @@ test("interoperates with the application's OpenID client discovery, code exchang
     );
     assert.equal(tokens.claims()?.sub, testIdentity.sub);
     assert.equal(tokens.claims()?.email, testIdentity.email);
-    assert.equal(tokens.claims()?.email_verified, true);
+    assert.equal(tokens.claims()?.email_verified, undefined);
 
     const userInfo = await oidc.fetchUserInfo(configuration, tokens.access_token, testIdentity.sub);
     assert.equal(userInfo.sub, testIdentity.sub);
     assert.equal(userInfo.email, testIdentity.email);
-    assert.equal(userInfo.email_verified, true);
+    assert.equal(userInfo.email_verified, undefined);
 });
 
 test("performs PKCE authorization, emits nonce-bound tokens, serves UserInfo, and revokes", async () => {
@@ -249,7 +249,7 @@ test("performs PKCE authorization, emits nonce-bound tokens, serves UserInfo, an
     assert.equal(idClaims.sub, testIdentity.sub);
     assert.equal(idClaims.nonce, flow.nonce);
     assert.equal(idClaims.email, testIdentity.email);
-    assert.equal(idClaims.email_verified, true);
+    assert.equal(idClaims.email_verified, undefined);
     assert.equal(idClaims.name, testIdentity.name);
 
     const accessClaims = await readAndVerifyJwt(tokens.access_token, jwks.keys[0], "at+jwt");
@@ -265,7 +265,6 @@ test("performs PKCE authorization, emits nonce-bound tokens, serves UserInfo, an
     assert.deepEqual(await userInfoResponse.json(), {
         sub: testIdentity.sub,
         email: testIdentity.email,
-        email_verified: true,
         name: testIdentity.name,
     });
 

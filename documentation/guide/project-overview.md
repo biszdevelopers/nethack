@@ -138,7 +138,7 @@ basishacks-r2/
 │   │   ├── admin/              # Admin endpoints (scores, teams)
 │   │   ├── auth/               # basis-auth callback, token refresh, and logout
 │   │   ├── ballot/             # Ballot and peer voting endpoints
-│   │   ├── debug/              # Debug endpoints (DeepSeek sessions, file upload)
+│   │   ├── debug/              # Debug endpoints (DeepSeek sessions, existing file listings)
 │   │   ├── seasons/            # Season management endpoints
 │   │   ├── teams/              # Team CRUD, member management, scoring, submission
 │   │   ├── users/              # User CRUD and profile pictures

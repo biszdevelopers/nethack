@@ -21,7 +21,7 @@ This generates **gzip and brotli** versions of eligible static files so the Node
 
 ## Request body size limits
 
-`server/middleware/01.request-body-limit.ts` applies a streaming byte limit before API route handlers parse buffered request bodies. Ordinary API payloads are capped at **1 MiB** and receive `413 Payload Too Large` when they exceed it. The user profile handler authenticates and authorizes the caller, then acquires a one-slot, per-process capacity limit before reading its separate **10 MiB** allowance for base64 images. Additional simultaneous profile updates receive `503 Service Unavailable` with `Retry-After: 2` without buffering their bodies. This bounds the number of concurrently retained request bodies and decoded image buffers under both Bun and Node; each image remains limited to **7 MiB** decoded. Microsoft Graph webhooks have a stricter **64 KiB** route-specific cap, while multipart uploads are streamed and capped by their file and multipart-overhead limits.
+`server/middleware/01.request-body-limit.ts` applies a streaming byte limit before API route handlers parse buffered request bodies. Ordinary API payloads are capped at **1 MiB** and receive `413 Payload Too Large` when they exceed it. The user profile handler authenticates and authorizes the caller, then acquires a one-slot, per-process capacity limit before reading its separate **10 MiB** allowance for base64 images. Additional simultaneous profile updates receive `503 Service Unavailable` with `Retry-After: 2` without buffering their bodies. This bounds the number of concurrently retained request bodies and decoded image buffers under both Bun and Node; each image remains limited to **7 MiB** decoded. Microsoft Graph webhooks have a stricter **64 KiB** route-specific cap, for notification JSON.
 
 The application discards over-limit bodies without retaining the remaining chunks. Keep an ingress body-size limit and request-body timeout enabled as a second boundary. The supplied Nginx configuration uses a 10 MiB limit, which accommodates the supported profile-image request format.
 
@@ -44,7 +44,7 @@ routeRules: {
 ```
 
 - `/_nuxt/**` covers hashed Nuxt build chunks.
-- `/assets/**` covers the runtime upload endpoint. Files are stored in the gitignored project-root `/assets` directory; committed static showcase files are under `public/assets` and are separate.
+- `/assets/**` covers downloads of existing runtime assets. Files are stored in the gitignored project-root `/assets` directory; committed static showcase files are under `public/assets` and are separate.
 - `/fonts/**` covers the Monaspace Neon font files.
 
 ::: tip These paths are assumed to contain hashed or versioned filenames. If you add mutable files under `/assets/` or `/fonts/`, either use a hash in the filename or lower the cache time for that path. :::

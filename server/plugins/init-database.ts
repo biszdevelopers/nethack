@@ -1,7 +1,7 @@
 import { closeDatabase, createDrizzleDatabase, setDatabaseInitialization } from "../database";
 import type { DrizzleDatabase } from "../database";
 import { createAndMigrateDatabase } from "../database/migrate";
-import { collectOrphanPermalinkAssets, collectOrphanProfileAssets } from "../utils/assets";
+import { collectOrphanProfileAssets } from "../utils/assets";
 
 const INITIAL_PROFILE_ASSET_GC_DELAY_MS = 60 * 1000;
 const PROFILE_ASSET_GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -49,16 +49,10 @@ export default defineNitroPlugin((nitroApp) => {
 
             activeGc = (async () => {
                 try {
-                    const [profileResult, permalinkResult] = await Promise.all([
-                        collectOrphanProfileAssets(database!, {
-                            maxScanned: PROFILE_ASSET_GC_MAX_SCANNED,
-                            maxDeletions: PROFILE_ASSET_GC_MAX_DELETIONS,
-                        }),
-                        collectOrphanPermalinkAssets(database!, {
-                            maxScanned: PROFILE_ASSET_GC_MAX_SCANNED,
-                            maxDeletions: PROFILE_ASSET_GC_MAX_DELETIONS,
-                        }),
-                    ]);
+                    const profileResult = await collectOrphanProfileAssets(database!, {
+                        maxScanned: PROFILE_ASSET_GC_MAX_SCANNED,
+                        maxDeletions: PROFILE_ASSET_GC_MAX_DELETIONS,
+                    });
                     console.info("[Nitro] Profile asset cleanup complete", {
                         entriesVisited: profileResult.entriesVisited,
                         scanned: profileResult.scanned,
@@ -66,13 +60,6 @@ export default defineNitroPlugin((nitroApp) => {
                         referenced: profileResult.referenced,
                         tooRecent: profileResult.tooRecent,
                         staleTemporaryFilesDeleted: profileResult.staleTemporaryFilesDeleted,
-                    });
-                    console.info("[Nitro] Permalink asset cleanup complete", {
-                        scanned: permalinkResult.scanned,
-                        deleted: permalinkResult.deleted,
-                        missing: permalinkResult.missing,
-                        referenced: permalinkResult.referenced,
-                        unsafe: permalinkResult.unsafe,
                     });
                 } catch {
                     // Never log driver errors or query text; they can contain credentials or data.

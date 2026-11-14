@@ -7,11 +7,6 @@ const mocks = vi.hoisted(() => ({
     stateValid: true,
     user: null as any,
     profileAsset: { stream: { profile: true }, size: 23 } as any,
-    uploadResult: {
-        filename: "photo.png",
-        relativePath: "uploads/photo.png",
-        referenceId: "3e45b75f-8a46-4b98-b3dc-a6ad84955e45",
-    },
     storedNames: vi.fn(async (collection: string, path?: string) => [
         `${collection}:${path ?? "root"}`,
     ]),
@@ -21,8 +16,6 @@ const mocks = vi.hoisted(() => ({
     getChatbotWebhookId: vi.fn(() => "subscription-1"),
     refreshChatbotWebhook: vi.fn(async () => undefined),
     requireUser: vi.fn(async () => ({ id: 9 })),
-    enforceSameOriginCookieRequest: vi.fn(),
-    storeMultipartAsset: vi.fn(async () => mocks.uploadResult),
     assetContentType: vi.fn((path: string) =>
         path.endsWith(".png") ? "image/png" : "application/octet-stream",
     ),
@@ -44,15 +37,8 @@ vi.mock("~~/server/utils/microsoft-webhook-security", () => ({
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (handler: any) => handler,
     DEFAULT_RATE_LIMIT_CONFIG: {},
-    UPLOAD_RATE_LIMIT_CONFIG: {},
 }));
 vi.mock("~~/server/utils/auth", () => ({ requireUser: mocks.requireUser }));
-vi.mock("~~/server/utils/request-security", () => ({
-    enforceSameOriginCookieRequest: mocks.enforceSameOriginCookieRequest,
-}));
-vi.mock("~~/server/utils/multipart-upload", () => ({
-    storeMultipartAsset: mocks.storeMultipartAsset,
-}));
 vi.mock("~~/server/utils/assets", () => ({
     getStoredAssetNames: mocks.storedNames,
     assetContentType: mocks.assetContentType,
@@ -226,35 +212,20 @@ describe("Microsoft webhook route actions", () => {
 });
 
 describe("debug asset actions", () => {
-    let upload: (event: any) => Promise<any>;
+    let upload: (event: any) => never;
     let files: (event: any) => Promise<any>;
     let event: any;
-    let mode: unknown;
 
     beforeEach(async () => {
         vi.stubGlobal("defineEventHandler", (handler: any) => handler);
-        vi.stubGlobal("getValidatedQuery", (_event: unknown, validate: (query: unknown) => any) => {
-            try {
-                return validate({ mode });
-            } catch (error) {
-                throw Object.assign(error as Error, { statusCode: 400 });
-            }
-        });
-        vi.stubGlobal("getHeader", (_event: any, name: string) => {
-            expect(name).toBe("content-type");
-            return "multipart/form-data; boundary=test";
-        });
         vi.stubGlobal("createError", (error: any) =>
             Object.assign(new Error(error.message ?? error.statusMessage), {
                 ...error,
                 statusCode: error.statusCode ?? error.status,
             }),
         );
-        mode = "static";
         event = { node: { req: { body: "multipart" } }, context: { drizzle: {} } };
         mocks.requireUser.mockReset().mockResolvedValue({ id: 9 });
-        mocks.enforceSameOriginCookieRequest.mockReset();
-        mocks.storeMultipartAsset.mockReset().mockResolvedValue(mocks.uploadResult);
         mocks.storedNames.mockClear();
         upload = (await import("~~/server/api/debug/upload.post")).default;
         files = (await import("~~/server/api/debug/files.get")).default;
@@ -262,68 +233,9 @@ describe("debug asset actions", () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it("rejects invalid upload modes before authorization or parsing", async () => {
-        mode = "other";
-
-        await expect(upload(event)).rejects.toMatchObject({ statusCode: 400 });
-
-        expect(mocks.enforceSameOriginCookieRequest).not.toHaveBeenCalled();
+    it("rejects requests to the retired upload endpoint", () => {
+        expect(() => upload(event)).toThrow(expect.objectContaining({ statusCode: 410 }));
         expect(mocks.requireUser).not.toHaveBeenCalled();
-    });
-
-    it.each([
-        ["static", "/assets/uploads/photo.png", "assets"],
-        ["user", "/userast/photo.png", "userassets"],
-    ])(
-        "stores a %s upload and returns its permalink",
-        async (uploadMode, permalink, collection) => {
-            mode = uploadMode;
-
-            await expect(upload(event)).resolves.toEqual({
-                permalink,
-                referenceId: mocks.uploadResult.referenceId,
-            });
-
-            expect(mocks.enforceSameOriginCookieRequest).toHaveBeenCalledWith(event);
-            expect(mocks.requireUser).toHaveBeenCalledWith(event, "nethack.Debug.filesWrite");
-            expect(mocks.storeMultipartAsset).toHaveBeenCalledWith(
-                event.node.req,
-                "multipart/form-data; boundary=test",
-                collection,
-                { database: event.context.drizzle, createdBy: 9 },
-            );
-        },
-    );
-
-    it("fails closed when the storage layer cannot register an uploaded reference", async () => {
-        mocks.storeMultipartAsset.mockResolvedValueOnce({
-            filename: "photo.png",
-            relativePath: "uploads/photo.png",
-        } as any);
-
-        await expect(upload(event)).rejects.toMatchObject({
-            statusCode: 500,
-            statusMessage: "Unable to register asset reference",
-        });
-    });
-
-    it("stops uploads when same-origin protection rejects the request", async () => {
-        const failure = new Error("origin rejected");
-        mocks.enforceSameOriginCookieRequest.mockImplementation(() => {
-            throw failure;
-        });
-
-        await expect(upload(event)).rejects.toBe(failure);
-        expect(mocks.requireUser).not.toHaveBeenCalled();
-        expect(mocks.storeMultipartAsset).not.toHaveBeenCalled();
-    });
-
-    it("stops uploads when permission authorization rejects the user", async () => {
-        const failure = new Error("forbidden");
-        mocks.requireUser.mockRejectedValue(failure);
-
-        await expect(upload(event)).rejects.toBe(failure);
-        expect(mocks.storeMultipartAsset).not.toHaveBeenCalled();
     });
 
     it("returns both asset collections after read permission is granted", async () => {

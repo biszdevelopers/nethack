@@ -4,11 +4,11 @@
             <button
                 :class="[
                     'px-4 py-2 rounded font-medium',
-                    activeTab === 'upload' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-800',
+                    activeTab === 'files' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-800',
                 ]"
-                @click="activeTab = 'upload'"
+                @click="activeTab = 'files'"
             >
-                File Upload
+                Existing Files
             </button>
             <button
                 :class="[
@@ -23,70 +23,17 @@
             </button>
         </div>
 
-        <!-- File Upload Tab -->
-        <div v-if="activeTab === 'upload'">
-            <h1 class="text-2xl font-bold mb-4">Debug File Upload</h1>
-            <form class="space-y-4" @submit.prevent="uploadFile">
-                <div>
-                    <label for="file" class="block text-sm font-medium">Select File</label>
-                    <input
-                        id="file"
-                        type="file"
-                        class="mt-1 block w-full"
-                        required
-                        @change="handleFileChange"
-                    />
-                </div>
-                <USelectMenu v-model="value" :items="items" />
-                <button
-                    type="submit"
-                    :disabled="!file || uploading"
-                    class="bg-primary text-white px-4 py-2 rounded disabled:opacity-50"
-                >
-                    {{ uploading ? "Uploading..." : "Upload" }}
-                </button>
-            </form>
-            <div v-if="permalink" class="mt-4">
-                <p>
-                    Permalink:
-                    <a
-                        v-if="safePermalink"
-                        :href="safePermalink"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-blue-500"
-                    >
-                        {{ permalink }}
-                    </a>
-                    <span v-else class="text-muted">{{ permalink }} (blocked unsafe URL)</span>
-                </p>
-                <p class="mt-2 text-sm text-muted">
-                    This permalink remains active until its reference is released. Unreferenced
-                    files become eligible for cleanup after seven days.
-                </p>
-                <button
-                    v-if="referenceId"
-                    type="button"
-                    class="mt-2 min-h-11 rounded bg-red-700 px-3 py-2 text-white disabled:opacity-50"
-                    :disabled="releasingReferenceId !== null"
-                    @click="releaseReference(referenceId)"
-                >
-                    {{
-                        releasingReferenceId === referenceId
-                            ? "Releasing..."
-                            : "Release this permalink"
-                    }}
-                </button>
-            </div>
+        <!-- Existing Files Tab -->
+        <div v-if="activeTab === 'files'">
             <div v-if="error" class="mt-4 text-red-500">Error: {{ error }}</div>
 
             <section class="mt-8">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-2xl font-bold">Uploaded Asset Files</h2>
+                    <h2 class="text-2xl font-bold">Existing Asset Files</h2>
                     <button
                         type="button"
                         class="bg-secondary text-white px-3 py-2 rounded"
-                        @click="refreshUploads()"
+                        @click="refreshFiles()"
                     >
                         Refresh
                     </button>
@@ -103,7 +50,7 @@
                                 v-else-if="fileLists.assets.length === 0"
                                 class="text-sm text-slate-500"
                             >
-                                No file uploads found.
+                                No files found.
                             </li>
                             <li v-for="file in fileLists.assets" :key="file.name">
                                 <a
@@ -127,7 +74,7 @@
                                 v-else-if="fileLists.userast.length === 0"
                                 class="text-sm text-slate-500"
                             >
-                                No user asset uploads found.
+                                No user assets found.
                             </li>
                             <li v-for="file in fileLists.userast" :key="file.name">
                                 <a
@@ -148,8 +95,7 @@
                     <div>
                         <h2 class="text-xl font-bold">Active Permalink References</h2>
                         <p class="mt-1 text-sm text-slate-600">
-                            References remain active until released. Shared files stay available
-                            while any reference remains.
+                            Links recorded for existing files.
                         </p>
                     </div>
                     <button
@@ -191,14 +137,6 @@
                                 · {{ reference.created_at }}
                             </p>
                         </div>
-                        <button
-                            type="button"
-                            class="min-h-11 min-w-11 shrink-0 rounded bg-red-700 px-3 py-2 text-white disabled:opacity-50"
-                            :disabled="releasingReferenceId !== null"
-                            @click="releaseReference(reference.id)"
-                        >
-                            {{ releasingReferenceId === reference.id ? "Releasing..." : "Release" }}
-                        </button>
                     </li>
                 </ul>
                 <div
@@ -342,15 +280,8 @@ if (!can(NethackPermissions.all)) {
 }
 
 // Tab management
-const activeTab = ref<"upload" | "deepseek">("upload");
+const activeTab = ref<"files" | "deepseek">("files");
 
-// File upload state
-const file = ref<File | null>(null);
-const uploading = ref(false);
-const permalink = ref("");
-const referenceId = ref("");
-const releasingReferenceId = ref<string | null>(null);
-const safePermalink = computed(() => safeUrl(permalink.value));
 const error = ref("");
 const loadingFiles = ref(false);
 const loadingReferences = ref(false);
@@ -369,9 +300,6 @@ interface AssetReference {
     permalink: string;
     created_at: string;
 }
-
-const items = ref(["static", "user"]);
-const value = ref("static");
 
 // DeepSeek state
 const newSessionName = ref("");
@@ -392,7 +320,7 @@ const deletingSessionId = ref<number | null>(null);
 const roleValue = ref("user");
 const roleValues = ref(["user", "tool"]);
 
-// File upload functions
+// Existing file listings
 const loadFiles = async () => {
     loadingFiles.value = true;
     try {
@@ -437,66 +365,9 @@ const loadReferences = async (page = referencePage.value) => {
     }
 };
 
-const refreshUploads = async (resetReferencePage = false) => {
-    if (resetReferencePage) referencePage.value = 1;
-    await Promise.all([loadFiles(), loadReferences()]);
-};
+const refreshFiles = () => Promise.all([loadFiles(), loadReferences()]);
 
-const handleFileChange = (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    file.value = target.files?.[0] || null;
-};
-
-const uploadFile = async () => {
-    if (!file.value) return;
-
-    uploading.value = true;
-    error.value = "";
-    permalink.value = "";
-    referenceId.value = "";
-
-    try {
-        const formData = new FormData();
-        formData.append("file", file.value);
-
-        const params = new URLSearchParams({ mode: value.value });
-        const response = await $fetch<{ permalink: string; referenceId: string }>(
-            `/api/debug/upload?${params.toString()}`,
-            {
-                method: "POST",
-                body: formData,
-            },
-        );
-
-        permalink.value = response.permalink;
-        referenceId.value = response.referenceId;
-        await refreshUploads(true);
-    } catch (err: any) {
-        error.value = err.message || "Upload failed";
-    } finally {
-        uploading.value = false;
-    }
-};
-
-const releaseReference = async (id = referenceId.value) => {
-    if (!id || releasingReferenceId.value) return;
-    releasingReferenceId.value = id;
-    error.value = "";
-    try {
-        await $fetch(`/api/assets/references/${encodeURIComponent(id)}`, { method: "DELETE" });
-        if (referenceId.value === id) {
-            permalink.value = "";
-            referenceId.value = "";
-        }
-        await refreshUploads(true);
-    } catch (err: any) {
-        error.value = err.message || "Unable to release this permalink";
-    } finally {
-        releasingReferenceId.value = null;
-    }
-};
-
-onMounted(refreshUploads);
+onMounted(refreshFiles);
 
 // DeepSeek functions
 const createSession = async () => {

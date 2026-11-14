@@ -323,7 +323,7 @@ DeepSeek AI chat interface.
 
 **File:** `app/pages/developers/debug.vue`
 
-File upload and debug utilities. Permission-gated.
+Permission-gated, read-only listings of existing files and active permalink references.
 
 **Layout:** `developers-dashboard`
 
@@ -376,7 +376,7 @@ Redirects an authenticated user to their own profile page (`/user/{id}`). If the
 
 Admin-only debug page with two tabs:
 
-- **File Upload** — upload files to `/assets` or `/userast`, list uploaded files and active permalink references, copy permalinks, and release references owned by the current user
+- **Existing Files** — browse existing files and active permalink references
 - **DeepSeek Chat** — create chat sessions, send messages, and delete sessions via `/api/debug/deepseek/sessions`
 
 Protected by `auth` middleware and an admin permission check.

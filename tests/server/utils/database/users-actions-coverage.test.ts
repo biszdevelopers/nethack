@@ -8,7 +8,6 @@ describe("existing basis-auth link update actions", () => {
         issuer: "https://auth.example.test",
         subject: "linked-subject",
         email: "member@example.test",
-        emailVerified: true,
         name: "Initial Member",
     };
 
@@ -16,26 +15,25 @@ describe("existing basis-auth link update actions", () => {
         event = await createMockEvent();
     });
 
-    it("updates only the display name when a linked subject returns an unverified email", async () => {
+    it("updates the address and trims the display name for a linked subject", async () => {
         const initial = await findOrLinkBasisAuthUser(event, identity);
 
         const updated = await findOrLinkBasisAuthUser(event, {
             ...identity,
-            email: "unverified-address@example.test",
-            emailVerified: false,
+            email: "updated-address@example.test",
             name: "  Current Display Name  ",
         });
 
         expect(updated).toMatchObject({
             id: initial.id,
-            email: "member@example.test",
+            email: "updated-address@example.test",
             name: "Current Display Name",
             auth_issuer: identity.issuer,
             auth_subject: identity.subject,
         });
     });
 
-    it("creates a new local account when a verified subject has no matching email", async () => {
+    it("creates a new local account when a subject has no matching email", async () => {
         const user = await findOrLinkBasisAuthUser(event, {
             ...identity,
             email: "new-member@example.test",
@@ -49,7 +47,7 @@ describe("existing basis-auth link update actions", () => {
         });
     });
 
-    it("links a verified email match without overwriting its existing name when none is supplied", async () => {
+    it("links an email match without overwriting its existing name when none is supplied", async () => {
         event.context.drizzle
             .prepare("INSERT INTO users(email, name) VALUES('member@example.test', 'Local Name')")
             .run();
@@ -65,7 +63,7 @@ describe("existing basis-auth link update actions", () => {
         });
     });
 
-    it("keeps a linked display name when a verified profile omits its name", async () => {
+    it("keeps a linked display name when the provider omits its name", async () => {
         const initial = await findOrLinkBasisAuthUser(event, identity);
 
         const updated = await findOrLinkBasisAuthUser(event, {
@@ -82,20 +80,19 @@ describe("existing basis-auth link update actions", () => {
     });
 
     it.each([undefined, " \t "])(
-        "preserves an existing name when an unverified profile has no useful name (%s)",
+        "preserves an existing name when the provider has no useful name (%s)",
         async (name) => {
             const initial = await findOrLinkBasisAuthUser(event, identity);
 
             const updated = await findOrLinkBasisAuthUser(event, {
                 ...identity,
-                email: "unverified-address@example.test",
-                emailVerified: false,
+                email: "updated-address@example.test",
                 name,
             });
 
             expect(updated).toMatchObject({
                 id: initial.id,
-                email: identity.email,
+                email: "updated-address@example.test",
                 name: identity.name,
             });
         },

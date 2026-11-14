@@ -133,7 +133,7 @@ bun run test
 - `server/plugins/init-database.ts` creates the pool, applies advisory-locked migrations, seeds initial rows, and closes the pool during shutdown.
 - `server/middleware/02.database.ts` attaches the shared Drizzle instance to each request as `event.context.drizzle`.
 - Runtime uploads live under the project-root `/assets` directory. Git ignores this directory so it survives an in-place pull/build/start; back it up separately, and preserve or restore it before serving after a re-clone. The static showcase at `public/assets` is separate.
-- Profile image objects use SHA-256 content-addressed names under `/assets/userassets/profiles/`, deduplicated by image bytes and canonical extension. Cleanup only considers those managed profile objects after at least seven days and a locked database check confirms zero references. Public permalink/debug uploads and legacy non-hashed objects are pinned and are not automatically collected.
+- Profile image objects use SHA-256 content-addressed names under `/assets/userassets/profiles/`, deduplicated by image bytes and canonical extension. Cleanup only considers those managed profile objects after at least seven days and a locked database check confirms zero references. The application does not schedule cleanup of existing debug permalink files.
 
 ---
 
@@ -292,7 +292,7 @@ In production, these are configured in the server environment.
 - Peer voting scores must sum to exactly 10.
 - Judge scoring uses the season's immutable rubric version, integer criteria ranges, and weights totaling 100 per track. Weighted normalized criteria are averaged to 0–100; the original score is retained when a display curve is applied.
 - Judge drafts can be resumed before finalization. Competitor comments are anonymous and become visible after results are published.
-- The `/api/debug/*` routes expose DeepSeek chat sessions and file upload utilities; these are intended for development only.
+- The `/api/debug/*` routes expose DeepSeek chat sessions and existing file listings; these are intended for development only.
 
 ---
 

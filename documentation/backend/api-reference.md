@@ -442,19 +442,11 @@ Download an anonymized JSON snapshot or CSV export of the database.
 
 ### POST `/api/debug/upload`
 
-Upload a file to the static assets or user assets directory.
-
-| Field | Details |
-| --- | --- |
-| **Auth** | Authenticated user with `nethack.Debug.filesWrite` permission or `nethack.all` |
-| **Body** | `FormData` with `file` field |
-| **Query** | `mode` (`static` or `user`, required) |
-| **Response** | `{ permalink: string, referenceId: string }` — content-addressed permalink plus its owner-managed reference ID. The `mode` query is Zod-validated before authorization and file parsing. |
-| **Extensions** | png, jpg, jpeg, gif, webp, pdf, txt, md, json, zip, mp4 |
+The debug upload endpoint has been retired. It returns `410 Gone` for requests that pass the global middleware where debug routes are enabled. Existing download URLs continue to work.
 
 ### GET `/api/debug/files`
 
-List all uploaded files.
+List existing files in the debug asset collections.
 
 | Field | Details |
 | --- | --- |
@@ -473,7 +465,7 @@ List active permalink references owned by the authenticated user. A user with `n
 
 ### DELETE `/api/assets/references/:referenceId`
 
-Release one permalink reference by UUID. Only its owner or a user with `nethack.all` can release it. Missing and non-owned references both return `404`. Releasing a reference does not delete the file immediately; the daily bounded collector may remove a registered object after seven days with no references and a locked database recheck.
+Release one permalink reference by UUID. Only its owner or a user with `nethack.all` can release it. Missing and non-owned references both return `404`. Releasing a reference removes the record. The file remains accessible at its existing URL.
 
 ### DeepSeek Sessions
 

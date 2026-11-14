@@ -55,7 +55,7 @@ describe("API request body limit middleware", () => {
         expect(event.node.req.readableEnded).toBe(false);
     });
 
-    it.each(["/api/debug/upload", "/api/_webhooks/update", "/api/_webhooks/lifecycle"])(
+    it.each(["/api/_webhooks/update", "/api/_webhooks/lifecycle"])(
         "leaves the route-specific streaming limit to %s",
         async (path) => {
             const event = eventFor(path, Buffer.from("streamed"));
