@@ -150,7 +150,8 @@ describe("judge action paths", () => {
             ":disabled=\"readOnly || !draftReady || draftStatus === 'loading'\"",
         );
         expect(scoringCard).toContain('if (!props.readOnly) emit("score"');
-        expect(scoringCard).toContain("Your submitted evaluation");
+        expect(scoringCard).toContain('<div v-if="readOnly"');
+        expect(scoringCard).toContain("Evaluation submitted");
     });
 
     it("provides anonymous comment prompts and returns focus to the comment editor", () => {

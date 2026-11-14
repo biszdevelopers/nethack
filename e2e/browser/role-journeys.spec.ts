@@ -371,7 +371,9 @@ async function evaluateProject(
     await expect(page.getByRole("heading", { name: "Judge projects" })).toBeVisible();
     await navigateToProject(page, projectName);
 
-    const commentInput = page.getByLabel("Anonymous feedback and score rationale");
+    const commentInput = page.getByRole("textbox", {
+        name: "Anonymous feedback and score rationale",
+    });
     await replaceTextWithKeyboard(page, commentInput, comment);
     await setJudgeScores(page, score);
     await pressWithKeyboard(page, page.getByRole("button", { name: "Review evaluation" }));
@@ -388,23 +390,16 @@ async function evaluateProject(
 }
 
 async function navigateToProject(page: Page, projectName: string) {
-    const currentProject = page.getByRole("heading", { level: 2 });
+    await expect(page.getByRole("dialog", { name: "Review before you finalize" })).toBeHidden();
+    const currentProject = page.getByRole("main").getByRole("heading", { level: 2 });
     for (let visited = 0; visited < 100; visited += 1) {
         if ((await currentProject.textContent())?.trim() === projectName) return;
 
         const nextProject = page.getByRole("button", { name: "Next project" });
         if (!(await nextProject.isEnabled())) {
-            const progress = await page
-                .getByText(/Project \d+ of \d+/)
-                .first()
-                .textContent()
-                .catch(() => "progress unavailable");
             const currentName =
                 (await currentProject.textContent())?.trim() ?? "project unavailable";
-            throw new Error(
-                `Could not navigate to judging project ${projectName}; current=${currentName}; ` +
-                    `progress=${progress}`,
-            );
+            throw new Error(`Could not reach judging project ${projectName} from ${currentName}.`);
         }
         const previousName = (await currentProject.textContent())?.trim();
         await pressWithKeyboard(page, nextProject);
@@ -589,6 +584,26 @@ test("participant and admin complete mobile journeys while judging and review st
         await navigateToProject(judge.page, adminProject);
         await expect(judge.page.getByRole("button", { name: "Next project" })).toBeEnabled();
         await expectResponsivePage(judge.page);
+        await judge.page.setViewportSize({ width: 1280, height: 900 });
+        try {
+            const projectPane = judge.page.getByRole("region", { name: adminProject });
+            const rubricPane = judge.page.getByRole("region", { name: "Scoring Guidelines" });
+            await expect(projectPane).toHaveCSS("overflow-y", "auto");
+            await expect(rubricPane).toHaveCSS("overflow-y", "auto");
+            const projectBox = await projectPane.boundingBox();
+            const rubricBox = await rubricPane.boundingBox();
+            const mainBox = await judge.page.getByRole("main").boundingBox();
+            if (!projectBox || !rubricBox || !mainBox)
+                throw new Error("Judging workspace is hidden");
+            expect(projectBox.x).toBe(0);
+            expect(projectBox.y).toBe(mainBox.y);
+            expect(projectBox.x + projectBox.width).toBeCloseTo(rubricBox.x, 0);
+            expect(rubricBox.x).toBeCloseTo(mainBox.x + mainBox.width / 2, 0);
+            expect(rubricBox.x + rubricBox.width).toBeCloseTo(mainBox.x + mainBox.width, 0);
+            expect(rubricBox.y + rubricBox.height).toBeCloseTo(mainBox.y + mainBox.height, 0);
+        } finally {
+            await judge.page.setViewportSize({ width: 320, height: 900 });
+        }
 
         await expect(judge.page.getByText(customGuideline, { exact: true })).toBeVisible();
         const firstPrompt = judge.page.getByRole("button", { name: "Evidence + next step" });
@@ -596,7 +611,9 @@ test("participant and admin complete mobile journeys while judging and review st
         await expectTouchTarget(firstPrompt);
         await expect(firstPrompt).toBeEnabled();
         await pressWithKeyboard(judge.page, firstPrompt);
-        const commentInput = judge.page.getByLabel("Anonymous feedback and score rationale");
+        const commentInput = judge.page.getByRole("textbox", {
+            name: "Anonymous feedback and score rationale",
+        });
         await expect(commentInput).toHaveValue(/Evidence I observed/);
         await replaceTextWithKeyboard(judge.page, commentInput, comment);
         await replaceTextWithKeyboard(
@@ -621,9 +638,9 @@ test("participant and admin complete mobile journeys while judging and review st
         await expect(judge.page.getByRole("heading", { name: "Judge projects" })).toBeVisible();
         await beginKeyboardOnlyAudit(judge.page);
         await navigateToProject(judge.page, adminProject);
-        await expect(judge.page.getByLabel("Anonymous feedback and score rationale")).toHaveValue(
-            comment,
-        );
+        await expect(
+            judge.page.getByRole("textbox", { name: "Anonymous feedback and score rationale" }),
+        ).toHaveValue(comment);
         await expect(judge.page.getByRole("radio", { name: /3 of 5 for/ })).toHaveCount(5);
         for (const savedScore of await judge.page
             .getByRole("radio", { name: /3 of 5 for/ })
@@ -643,14 +660,17 @@ test("participant and admin complete mobile journeys while judging and review st
         await expect(judge.page.getByRole("heading", { name: adminProject })).toBeVisible();
         await expect(commentInput).toHaveValue(comment);
 
-        await pressWithKeyboard(
-            judge.page,
-            judge.page.getByRole("button", { name: "Review evaluation" }),
-        );
+        const reviewButton = judge.page.getByRole("button", { name: "Review evaluation" });
+        const reviewDialog = judge.page.getByRole("dialog", { name: "Review before you finalize" });
+        await pressWithKeyboard(judge.page, reviewButton);
+        await expect(reviewDialog).toBeVisible();
+        await judge.page.keyboard.press("Escape");
+        await expect(reviewDialog).toBeHidden();
+        await expect(reviewButton).toBeFocused();
+        await expect(commentInput).toHaveValue(comment);
+        await pressWithKeyboard(judge.page, reviewButton);
         markProgress("finalizing the administrator evaluation");
-        await expect(
-            judge.page.getByRole("heading", { name: "Review before you finalize" }),
-        ).toBeVisible();
+        await expect(reviewDialog).toBeVisible();
         await expect(judge.page.getByText(/your identity will not be shown/i)).toBeVisible();
         await expectResponsivePage(judge.page);
         const firstEvaluation = scoreSubmission(judge.page, adminTeamId);
@@ -667,7 +687,7 @@ test("participant and admin complete mobile journeys while judging and review st
             "The project states its goal clearly. Add one example to show how the team will measure progress.";
         await replaceTextWithKeyboard(
             judge.page,
-            judge.page.getByLabel("Anonymous feedback and score rationale"),
+            judge.page.getByRole("textbox", { name: "Anonymous feedback and score rationale" }),
             lastProjectComment,
         );
         await setJudgeScores(judge.page, "2");
@@ -685,6 +705,7 @@ test("participant and admin complete mobile journeys while judging and review st
             judge.page.getByRole("button", { name: "Finalize evaluation" }),
         );
         expect((await lastEvaluation).ok()).toBeTruthy();
+        await expect(reviewDialog).toBeHidden();
         await expect(
             judge.page.getByRole("heading", { level: 2, name: participantProject }),
         ).toBeVisible();
@@ -692,9 +713,9 @@ test("participant and admin complete mobile journeys while judging and review st
         markProgress("finalizing the participant evaluation");
         const participantComment =
             "The helpful onboarding flow makes the main task easy to understand. Add one example so new users can get started faster.";
-        const participantCommentInput = judge.page.getByLabel(
-            "Anonymous feedback and score rationale",
-        );
+        const participantCommentInput = judge.page.getByRole("textbox", {
+            name: "Anonymous feedback and score rationale",
+        });
         await replaceTextWithKeyboard(judge.page, participantCommentInput, participantComment);
         await setJudgeScores(judge.page, "4");
         await expect(judge.page.getByRole("button", { name: "Review evaluation" })).toBeEnabled();

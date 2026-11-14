@@ -9,7 +9,7 @@
                     {{ new Date().getFullYear() }} BISZ Developers' Club, BINJ Hack Club
                 </p>
                 <ULink
-                    class="text-xs inline-flex min-h-11 items-center"
+                    class="text-xs inline-flex items-center"
                     to="/contributing"
                     target="_blank"
                 >
@@ -17,7 +17,7 @@
                 </ULink>
                 <ULink
                     v-if="isAdmin"
-                    class="text-xs inline-flex min-h-11 items-center"
+                    class="text-xs inline-flex items-center"
                     to="/developers"
                 >
                     Mod Portal

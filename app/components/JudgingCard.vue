@@ -26,7 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     score: [criterionId: string, value: number];
     reasoning: [value: string];
-    review: [];
+    review: [event: MouseEvent];
     retry: [];
 }>();
 
@@ -98,88 +98,82 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
 </script>
 
 <template>
-    <UCard variant="subtle" class="judging-card">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-                <p class="text-sm text-muted">{{ team.name }}</p>
-                <h2
-                    ref="projectHeading"
-                    tabindex="-1"
-                    class="mt-1 break-words text-2xl font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary sm:text-3xl"
+    <div class="judging-split">
+        <section class="judging-pane project-pane" aria-labelledby="project-heading" tabindex="0">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="text-sm text-muted">{{ team.name }}</p>
+                    <h2
+                        id="project-heading"
+                        ref="projectHeading"
+                        tabindex="-1"
+                        class="mt-1 break-words text-2xl font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary sm:text-3xl"
+                    >
+                        {{ team.project.name }}
+                    </h2>
+                </div>
+                <UBadge
+                    variant="outline"
+                    :color="team.pathway === 'junior' ? 'primary' : 'warning'"
+                    class="shrink-0"
                 >
-                    {{ team.project.name }}
-                </h2>
+                    {{ track.name }}
+                </UBadge>
             </div>
-            <UBadge
-                variant="outline"
-                :color="team.pathway === 'junior' ? 'primary' : 'warning'"
-                class="shrink-0"
-            >
-                {{ track.name }}
-            </UBadge>
-        </div>
 
-        <SafeComark class="my-5 max-w-prose text-wrap leading-relaxed">
-            {{ team.project.description }}
-        </SafeComark>
+            <SafeComark class="my-5 text-wrap leading-relaxed">
+                {{ team.project.description }}
+            </SafeComark>
 
-        <UAlert
-            v-if="team.project.sourcing"
-            icon="i-lucide-book-open"
-            color="info"
-            variant="subtle"
-            title="Team's AI-use statement"
-            class="mb-5"
-        >
-            <template #description>
-                <SafeComark>{{ team.project.sourcing }}</SafeComark>
-            </template>
-        </UAlert>
-
-        <div class="flex flex-wrap gap-2">
-            <UButton
-                v-if="safeRepoUrl"
-                :href="safeRepoUrl"
-                external
-                target="_blank"
-                rel="noopener noreferrer"
+            <UAlert
+                v-if="team.project.sourcing"
+                icon="i-lucide-book-open"
+                color="info"
                 variant="subtle"
-                icon="i-material-symbols-merge"
-                class="min-h-11"
+                title="Team's AI-use statement"
+                class="mb-5"
             >
-                Open repository
-            </UButton>
-            <UButton
-                v-if="safeDemoUrl"
-                :href="safeDemoUrl"
-                external
-                target="_blank"
-                rel="noopener noreferrer"
-                variant="subtle"
-                icon="i-material-symbols-play-arrow"
-                class="min-h-11"
-            >
-                Open demo
-            </UButton>
-            <p v-if="!safeRepoUrl && !safeDemoUrl" class="text-sm text-muted">
-                This project has no available repository or demo links.
-            </p>
-        </div>
+                <template #description>
+                    <SafeComark>{{ team.project.sourcing }}</SafeComark>
+                </template>
+            </UAlert>
+        </section>
 
-        <USeparator class="my-6" />
-
-        <section aria-labelledby="rubric-heading">
+        <section class="judging-pane rubric-pane" aria-labelledby="rubric-heading" tabindex="0">
+            <slot name="navigation" />
             <div class="mb-4">
-                <p class="text-sm text-muted">Step 1</p>
                 <h3 id="rubric-heading" class="text-xl font-bold sm:text-2xl">
-                    {{ readOnly ? "Your submitted evaluation" : "Score this project" }}
+                    Scoring Guidelines
                 </h3>
-                <p class="mt-1 text-sm text-muted">
-                    {{
-                        readOnly
-                            ? "This evaluation is finalized and read-only."
-                            : "Choose one score for every criterion. Your draft saves as you work."
-                    }}
+            </div>
+
+            <div class="mb-4 flex flex-wrap gap-2">
+                <UButton
+                    v-if="safeRepoUrl"
+                    :href="safeRepoUrl"
+                    external
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="subtle"
+                    icon="i-material-symbols-merge"
+                    class="min-h-11"
+                >
+                    Open repository
+                </UButton>
+                <UButton
+                    v-if="safeDemoUrl"
+                    :href="safeDemoUrl"
+                    external
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="subtle"
+                    icon="i-material-symbols-play-arrow"
+                    class="min-h-11"
+                >
+                    Open demo
+                </UButton>
+                <p v-if="!safeRepoUrl && !safeDemoUrl" class="text-sm text-muted">
+                    This project has no available repository or demo links.
                 </p>
             </div>
 
@@ -339,47 +333,89 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                     {{ commentIdentityError }}
                 </p>
             </div>
-        </section>
 
-        <div class="mt-4 min-h-11" aria-live="polite" aria-atomic="true">
-            <p v-if="draftStatus === 'loading'" class="text-sm text-muted">
-                Loading your saved draft…
-            </p>
-            <p v-else-if="draftStatus === 'saving'" class="text-sm text-muted">
-                Saving your draft…
-            </p>
-            <p v-else-if="draftStatus === 'unsaved'" class="text-sm text-muted">Unsaved changes</p>
-            <p v-else-if="draftStatus === 'saved'" class="text-sm text-success">
-                {{ savedLabel }}
-            </p>
-            <div v-else-if="draftStatus === 'error'" class="flex flex-wrap items-center gap-3">
-                <p class="text-sm text-error">
-                    {{ draftError || "We could not load or save your draft." }}
+            <div class="mt-4 min-h-11" aria-live="polite" aria-atomic="true">
+                <p v-if="draftStatus === 'loading'" class="text-sm text-muted">
+                    Loading your saved draft…
                 </p>
-                <UButton size="sm" variant="outline" class="min-h-11" @click="emit('retry')">
-                    Retry
-                </UButton>
+                <p v-else-if="draftStatus === 'saving'" class="text-sm text-muted">
+                    Saving your draft…
+                </p>
+                <p v-else-if="draftStatus === 'unsaved'" class="text-sm text-muted">
+                    Unsaved changes
+                </p>
+                <p v-else-if="draftStatus === 'saved'" class="text-sm text-success">
+                    {{ savedLabel }}
+                </p>
+                <div v-else-if="draftStatus === 'error'" class="flex flex-wrap items-center gap-3">
+                    <p class="text-sm text-error">
+                        {{ draftError || "We could not load or save your draft." }}
+                    </p>
+                    <UButton size="sm" variant="outline" class="min-h-11" @click="emit('retry')">
+                        Retry
+                    </UButton>
+                </div>
             </div>
-        </div>
 
-        <div v-if="readOnly" class="mt-4 rounded-xl bg-success/10 p-4 text-sm">
-            <p class="font-semibold">Evaluation submitted</p>
-            <p class="mt-1 text-muted">This project is complete and its score cannot be changed.</p>
-        </div>
-        <UButton
-            v-else
-            class="mt-3 min-h-12 w-full sm:w-auto"
-            icon="i-lucide-clipboard-check"
-            trailing-icon="i-lucide-arrow-right"
-            :disabled="!canReview || draftStatus === 'error' || draftStatus === 'saving'"
-            @click="emit('review')"
-        >
-            Review evaluation
-        </UButton>
-    </UCard>
+            <div v-if="readOnly" class="mt-4 rounded-xl bg-success/10 p-4 text-sm">
+                <p class="font-semibold">Evaluation submitted</p>
+                <p class="mt-1 text-muted">
+                    This project is complete and its score cannot be changed.
+                </p>
+            </div>
+            <UButton
+                v-else
+                class="mt-3 min-h-12 w-full sm:w-auto"
+                icon="i-lucide-clipboard-check"
+                trailing-icon="i-lucide-arrow-right"
+                :disabled="!canReview || draftStatus === 'error' || draftStatus === 'saving'"
+                @click="emit('review', $event)"
+            >
+                Review evaluation
+            </UButton>
+        </section>
+    </div>
 </template>
 
 <style scoped>
+.judging-split {
+    display: grid;
+}
+
+.judging-pane {
+    min-width: 0;
+    padding: clamp(1rem, 3vw, 2.5rem);
+    overflow-wrap: anywhere;
+}
+
+.project-pane {
+    border-block-end: 1px solid var(--ui-border);
+}
+
+.judging-pane:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: -2px;
+}
+
+@media (min-width: 48rem) {
+    .judging-split {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        height: calc(100dvh - var(--ui-header-height));
+        min-height: 16rem;
+    }
+
+    .project-pane {
+        border-block-end: 0;
+        border-inline-end: 1px solid var(--ui-border);
+    }
+
+    .judging-pane {
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable;
+    }
+}
+
 .score-options {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(2.75rem, 1fr));

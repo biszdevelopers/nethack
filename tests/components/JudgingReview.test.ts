@@ -8,8 +8,9 @@ const source = readFileSync(
 );
 
 describe("JudgingReview.vue", () => {
-    it("shows configured minimum and maximum values for each criterion", () => {
-        expect(source).toContain("{{ criterion.minScore }}–{{ criterion.maxScore }}");
+    it("shows the selected score and configured maximum for each criterion", () => {
+        expect(source).toContain("{{ scores[criterion.id] }}");
+        expect(source).toContain("/{{ criterion.maxScore }}");
     });
 
     it("explains anonymous feedback publication and requires an explicit finalize action", () => {
