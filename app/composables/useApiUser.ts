@@ -12,17 +12,31 @@ export type UseApiUserResult = UseApiUserFetchResult & {
     clear: ReturnType<typeof useBasisAuthSession>["clear"];
 };
 
+export function normalizeApiUserResponse(response: unknown): ApiUser {
+    if (
+        response &&
+        typeof response === "object" &&
+        "status" in response &&
+        "code" in response &&
+        "data" in response
+    ) {
+        return response.data as ApiUser;
+    }
+
+    return response as ApiUser;
+}
+
 export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUserResult> {
     const { user: sessionUser, clear: clearSession } = useBasisAuthSession();
     const userID = computed(() => sessionUser.value?.id);
 
     const fetchResult = await useFetch<ApiUser>(() => `/api/users/${userID.value}`, {
-        $fetch: globalThis.$fetch,
+        $fetch: import.meta.server ? useRequestFetch() : globalThis.$fetch,
         lazy: options?.lazy ?? false,
-        server: false,
         immediate: !!userID.value,
         watch: [userID],
         default: () => null,
+        transform: normalizeApiUserResponse,
     });
 
     if (!options?.lazy && userID.value && !fetchResult.data.value) {
