@@ -23,6 +23,7 @@ export default defineEventHandler(
             voting_start_timestamp: hackathon.voting_start_timestamp,
             voting_end_timestamp: hackathon.voting_end_timestamp,
             results_open_timestamp: hackathon.results_open_timestamp,
+            judging_open: !!hackathon.judging_open,
             show_scores: !!hackathon.show_scores,
             show_ranking: !!hackathon.show_ranking,
             theme_name: showTheme ? hackathon.theme_name : null,
