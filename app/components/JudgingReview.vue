@@ -78,12 +78,12 @@ function focusReviewHeading(event: Event) {
                 </div>
 
                 <div class="my-5 rounded-xl bg-primary/10 p-4">
-                    <p class="text-sm text-muted">Weighted score preview</p>
+                    <p class="text-sm text-default">Weighted score preview</p>
                     <p class="mt-1 text-3xl font-bold text-primary">
                         {{ scorePreview }}
                         <span class="text-lg">/ 100</span>
                     </p>
-                    <p class="mt-1 text-sm text-muted">
+                    <p class="mt-1 text-sm text-default">
                         This is a normalized score. Final rankings combine judges' evaluations.
                     </p>
                 </div>
