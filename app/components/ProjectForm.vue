@@ -7,6 +7,7 @@ import {
     MAX_PROJECT_DESCRIPTION_LENGTH,
     MAX_URL_LENGTH,
 } from "~~/shared/schemas";
+import { unwrapApiResponseData } from "~~/app/utils/api-response";
 
 const { team: defaultTeam, disabled = false } = defineProps<{
     team: APITeam | null | undefined;
@@ -25,7 +26,9 @@ const {
 } = await useFetch<{
     version_id: number;
     tracks: Record<string, { name: string; criteria: unknown[] }>;
-}>("/api/seasons/active/rubric");
+}>("/api/seasons/active/rubric", {
+    transform: (response) => unwrapApiResponseData(response),
+});
 const pathwayOptions = computed(() =>
     Object.entries(activeRubric.value?.tracks ?? {}).map(([value, track]) => ({
         label: track.name,
