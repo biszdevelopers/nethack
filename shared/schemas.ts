@@ -257,7 +257,7 @@ export const AddTeamMemberRequest = z.object({
 export type AddTeamMemberRequest = z.infer<typeof AddTeamMemberRequest>;
 
 export const MAX_PROFILE_IMAGE_BYTES = 7 * 1024 * 1024; // Base64 JSON fits the app's 10 MiB profile body cap.
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 
 export const formatBytes = (bytes: number, decimals = 2) => {
     if (bytes === 0) return "0 Bytes";
@@ -280,7 +280,7 @@ export const UpdateUserRequest = z.object({
                 )
                 .refine(
                     (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-                    "Please upload a valid image file (JPEG, PNG, or WebP)",
+                    "Please upload a valid image file (JPEG, PNG, GIF, or WebP)",
                 ),
             z.string().startsWith("data"),
             z.null(),
@@ -296,7 +296,7 @@ export const UpdateUserRequest = z.object({
                 )
                 .refine(
                     (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-                    "Please upload a valid image file (JPEG, PNG, or WebP)",
+                    "Please upload a valid image file (JPEG, PNG, GIF, or WebP)",
                 ),
             z.string().startsWith("data"),
             z.null(),
