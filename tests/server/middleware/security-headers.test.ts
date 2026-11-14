@@ -16,6 +16,8 @@ describe("security headers middleware", () => {
     function createMockEvent(url: string) {
         const headers: Record<string, string> = {};
         return {
+            path: url.split("?", 1)[0],
+            context: {},
             node: {
                 req: { url },
                 res: {
@@ -31,6 +33,8 @@ describe("security headers middleware", () => {
     it("sets all required security headers on a sample API route", async () => {
         const event = createMockEvent("/api/seasons/active");
         await middleware(event);
+
+        expect(event.node.res.getHeader("cache-control")).toBe("private, no-store");
 
         expect(event.node.res.setHeader).toHaveBeenCalledWith(
             "Strict-Transport-Security",
@@ -53,7 +57,7 @@ describe("security headers middleware", () => {
         expect(cspCall).toBeDefined();
         const csp = cspCall![1] as string;
         expect(csp).toContain("default-src 'self'");
-        expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+        expect(csp).toContain(`script-src 'self' 'nonce-${event.context.cspNonce}'`);
         expect(csp).toContain("style-src 'self' 'unsafe-inline'");
         expect(csp).toContain("font-src 'self'");
         expect(csp).toContain("img-src 'self' blob: data:");
@@ -70,6 +74,7 @@ describe("security headers middleware", () => {
 
         expect(event.node.res.getHeader("x-frame-options")).toBe("DENY");
         expect(event.node.res.getHeader("x-content-type-options")).toBe("nosniff");
+        expect(event.node.res.getHeader("cache-control")).toBeUndefined();
 
         const csp = event.node.res.getHeader("content-security-policy") as string;
         expect(csp).toContain("default-src 'self'");
@@ -165,12 +170,12 @@ describe("security headers middleware", () => {
         expect(csp).toContain("default-src 'self'");
     });
 
-    it("CSP contains script-src 'self' 'unsafe-inline'", async () => {
+    it("CSP contains same-origin scripts and a response nonce", async () => {
         const event = createMockEvent("/api/test");
         await middleware(event);
 
         const csp = event.node.res.getHeader("content-security-policy") as string;
-        expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+        expect(csp).toContain(`script-src 'self' 'nonce-${event.context.cspNonce}'`);
     });
 
     it("CSP contains style-src 'self' 'unsafe-inline'", async () => {
@@ -247,6 +252,16 @@ describe("security headers middleware", () => {
 
         const csp = event.node.res.getHeader("content-security-policy") as string;
         expect(csp).not.toContain("unsafe-eval");
+    });
+
+    it("uses a per-response nonce instead of allowing inline scripts", async () => {
+        const event = createMockEvent("/");
+        await middleware(event);
+
+        const csp = event.node.res.getHeader("content-security-policy") as string;
+        expect(event.context.cspNonce).toMatch(/^[A-Za-z0-9+/]+={0,2}$/);
+        expect(csp).toContain(`script-src 'self' 'nonce-${event.context.cspNonce}'`);
+        expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     });
 
     it("CSP directives are separated by semicolons", async () => {
@@ -326,7 +341,7 @@ describe("security headers middleware", () => {
     });
 
     it("sets exactly 6 different security headers", async () => {
-        const event = createMockEvent("/api/test");
+        const event = createMockEvent("/dashboard");
         await middleware(event);
 
         // setHeader should have been called 6 times — once per header
@@ -341,30 +356,24 @@ describe("security headers middleware", () => {
             ([name]: [string]) => name,
         );
         const uniqueNames = new Set(callNames);
-        expect(uniqueNames.size).toBe(6);
+        expect(uniqueNames.size).toBe(7);
         expect(uniqueNames.size).toBe(callNames.length);
     });
 
-    it("sets headers deterministically on repeated invocations", async () => {
+    it("uses distinct CSP nonces for each response", async () => {
         const event1 = createMockEvent("/api/test");
         await middleware(event1);
 
         const event2 = createMockEvent("/api/test");
         await middleware(event2);
 
-        const h1 = [
-            event1.node.res.getHeader("x-frame-options"),
-            event1.node.res.getHeader("content-security-policy"),
-        ];
-        const h2 = [
-            event2.node.res.getHeader("x-frame-options"),
-            event2.node.res.getHeader("content-security-policy"),
-        ];
-        expect(h1).toEqual(h2);
+        expect(event1.node.res.getHeader("x-frame-options")).toBe("DENY");
+        expect(event2.node.res.getHeader("x-frame-options")).toBe("DENY");
+        expect(event1.context.cspNonce).not.toBe(event2.context.cspNonce);
     });
 
-    it("the six headers match the expected set", async () => {
-        const event = createMockEvent("/api/test");
+    it("the six baseline headers match the expected set", async () => {
+        const event = createMockEvent("/dashboard");
         await middleware(event);
 
         const callNames = (event.node.res.setHeader as any).mock.calls.map(
@@ -383,4 +392,24 @@ describe("security headers middleware", () => {
         }
         expect(callNames).toHaveLength(6);
     });
+
+    it.each(["/api", "/api/teams/42", "/api/auth/session?refresh=1"])(
+        "marks API response %s as private and non-cacheable",
+        async (path) => {
+            const event = createMockEvent(path);
+            await middleware(event);
+
+            expect(event.node.res.getHeader("cache-control")).toBe("private, no-store");
+        },
+    );
+
+    it.each(["/", "/dashboard", "/assets/logo.svg", "/_nuxt/app.js", "/fonts/site.woff2"])(
+        "does not set API cache policy on page or asset path %s",
+        async (path) => {
+            const event = createMockEvent(path);
+            await middleware(event);
+
+            expect(event.node.res.getHeader("cache-control")).toBeUndefined();
+        },
+    );
 });

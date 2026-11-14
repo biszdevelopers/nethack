@@ -4,6 +4,7 @@ import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 import { getActiveSeason, getSeasons } from "~~/server/utils/database/seasons";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
+import { hackathonUsesYaml } from "~~/server/utils/hackathon-config";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -34,30 +35,49 @@ export default defineEventHandler(
             });
         }
 
-        if (season_id !== undefined) {
+        if (hackathonUsesYaml()) {
+            if (season_id === undefined) {
+                throw createError({
+                    statusCode: 409,
+                    message: "Edit the configured HACKATHON.yml to change live settings.",
+                });
+            }
+            await event.context.drizzle.transaction(async (tx) => {
+                const [season] = await tx
+                    .select({ is_active: seasons.is_active })
+                    .from(seasons)
+                    .where(eq(seasons.id, season_id))
+                    .for("update");
+                if (!season) throw createError({ statusCode: 404, message: "Season not found" });
+                if (season.is_active === 1) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "Edit the configured HACKATHON.yml to change live settings.",
+                    });
+                }
+                await tx.update(seasons).set(configFields).where(eq(seasons.id, season_id));
+            });
+        } else if (season_id !== undefined) {
             // Per-season save: write to the specified season,
             // and also to the global row if this is the active season
-            event.context.drizzle
+            await event.context.drizzle
                 .update(seasons)
                 .set(configFields)
-                .where(eq(seasons.id, season_id))
-                .run();
+                .where(eq(seasons.id, season_id));
 
             const active = await getActiveSeason(event);
             if (active && active.id === season_id) {
-                event.context.drizzle
+                await event.context.drizzle
                     .update(hackathon)
                     .set(configFields)
-                    .where(eq(hackathon.id, 1))
-                    .run();
+                    .where(eq(hackathon.id, 1));
             }
         } else {
             // No season — write only to the global hackathon row
-            event.context.drizzle
+            await event.context.drizzle
                 .update(hackathon)
                 .set(configFields)
-                .where(eq(hackathon.id, 1))
-                .run();
+                .where(eq(hackathon.id, 1));
         }
 
         const updated = await getHackathon(event);

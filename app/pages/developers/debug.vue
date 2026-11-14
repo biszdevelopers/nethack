@@ -5,76 +5,72 @@ definePageMeta({
     layout: "developers-dashboard",
 });
 
-// File upload state
-const file = ref<File | null>(null);
-const uploading = ref(false);
-const permalink = ref("");
-const safePermalink = computed(() => safeUrl(permalink.value));
-const uploadError = ref("");
+const fileListError = ref("");
 const loadingFiles = ref(false);
+const loadingReferences = ref(false);
+const references = ref<AssetReference[]>([]);
+const referencePage = ref(1);
+const referencePageSize = 20;
+const referencePagination = ref({ total: 0, total_pages: 0 });
 const fileLists = ref({
     assets: [] as Array<{ name: string; url: string }>,
     userast: [] as Array<{ name: string; url: string }>,
 });
 
-const items = ref(["static", "user"]);
-const value = ref("static");
-const keepOriginalName = ref(false);
+interface AssetReference {
+    id: string;
+    collection: "assets" | "userassets";
+    permalink: string;
+    created_at: string;
+}
 
 const loadFiles = async () => {
     loadingFiles.value = true;
     try {
         const response = await $fetch<{ assets: string[]; userast: string[] }>("/api/debug/files");
-        fileLists.value.assets = response.assets.map((name) => ({ name, url: `/assets/${name}` }));
+        fileLists.value.assets = response.assets.map((name) => ({
+            name,
+            url: `/assets/uploads/${name}`,
+        }));
         fileLists.value.userast = response.userast.map((name) => ({
             name,
             url: `/userast/${name}`,
         }));
     } catch (err: any) {
-        uploadError.value = err.message || "Unable to load file list";
+        fileListError.value = err.message || "Unable to load file list";
     } finally {
         loadingFiles.value = false;
     }
 };
 
-const handleFileChange = (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    file.value = target.files?.[0] || null;
-};
-
-const uploadFile = async () => {
-    if (!file.value) return;
-
-    uploading.value = true;
-    uploadError.value = "";
-    permalink.value = "";
-
+const loadReferences = async (page = referencePage.value) => {
+    loadingReferences.value = true;
     try {
-        const formData = new FormData();
-        formData.append("file", file.value);
-
-        const params = new URLSearchParams({
-            mode: value.value,
-            keepName: keepOriginalName.value ? "true" : "false",
+        const response = await $fetch<{
+            items: AssetReference[];
+            page: number;
+            page_size: number;
+            total: number;
+            total_pages: number;
+        }>("/api/assets/references", {
+            query: { page, page_size: referencePageSize },
         });
-        const response = await $fetch<{ permalink: string }>(
-            `/api/debug/upload?${params.toString()}`,
-            {
-                method: "POST",
-                body: formData,
-            },
-        );
-
-        permalink.value = response.permalink;
-        await loadFiles();
+        references.value = response.items;
+        referencePage.value = response.page;
+        referencePagination.value = {
+            total: response.total,
+            total_pages: response.total_pages,
+        };
     } catch (err: any) {
-        uploadError.value = err.message || "Upload failed";
+        fileListError.value = err.message || "Unable to load permalink references";
     } finally {
-        uploading.value = false;
+        loadingReferences.value = false;
     }
 };
 
-onMounted(loadFiles);
+const refreshFiles = () => Promise.all([loadFiles(), loadReferences()]);
+
+onMounted(refreshFiles);
 </script>
 
 <template>
@@ -89,14 +85,14 @@ onMounted(loadFiles);
 
         <template #body>
             <UAlert
-                v-if="uploadError"
+                v-if="fileListError"
                 color="error"
                 variant="soft"
                 class="mb-4"
-                :title="uploadError"
+                :title="fileListError"
                 :close="{
                     onClick: () => {
-                        uploadError = '';
+                        fileListError = '';
                     },
                 }"
             />
@@ -104,63 +100,14 @@ onMounted(loadFiles);
             <div class="space-y-6">
                 <UCard>
                     <template #header>
-                        <h2 class="text-lg font-semibold">Upload File</h2>
-                    </template>
-
-                    <form class="space-y-4" @submit.prevent="uploadFile">
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Select File</label>
-                            <input
-                                type="file"
-                                class="block w-full text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white hover:file:bg-primary/90"
-                                required
-                                @change="handleFileChange"
-                            />
-                        </div>
-
-                        <USelectMenu v-model="value" :items="items" />
-
-                        <div class="flex items-center gap-2">
-                            <UCheckbox v-model="keepOriginalName" label="Keep original file name" />
-                        </div>
-
-                        <UButton
-                            type="submit"
-                            label="Upload"
-                            :loading="uploading"
-                            :disabled="!file || uploading"
-                        />
-                    </form>
-
-                    <div v-if="permalink" class="mt-4">
-                        <p class="text-sm">
-                            Permalink:
-                            <a
-                                v-if="safePermalink"
-                                :href="safePermalink"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="text-primary hover:underline"
-                            >
-                                {{ permalink }}
-                            </a>
-                            <span v-else class="text-muted">
-                                {{ permalink }} (blocked unsafe URL)
-                            </span>
-                        </p>
-                    </div>
-                </UCard>
-
-                <UCard>
-                    <template #header>
                         <div class="flex items-center justify-between">
-                            <h2 class="text-lg font-semibold">Uploaded Asset Files</h2>
+                            <h2 class="text-lg font-semibold">Existing Asset Files</h2>
                             <UButton
                                 icon="i-lucide-refresh-cw"
                                 color="neutral"
                                 variant="ghost"
                                 size="sm"
-                                @click="loadFiles"
+                                @click="refreshFiles()"
                             />
                         </div>
                     </template>
@@ -176,7 +123,7 @@ onMounted(loadFiles);
                                     v-else-if="fileLists.assets.length === 0"
                                     class="text-sm text-muted"
                                 >
-                                    No file uploads found.
+                                    No files found.
                                 </li>
                                 <li v-for="f in fileLists.assets" :key="f.name">
                                     <a
@@ -200,7 +147,7 @@ onMounted(loadFiles);
                                     v-else-if="fileLists.userast.length === 0"
                                     class="text-sm text-muted"
                                 >
-                                    No user asset uploads found.
+                                    No user assets found.
                                 </li>
                                 <li v-for="f in fileLists.userast" :key="f.name">
                                     <a
@@ -213,6 +160,91 @@ onMounted(loadFiles);
                                 </li>
                             </ul>
                         </div>
+                    </div>
+                </UCard>
+
+                <UCard>
+                    <template #header>
+                        <div
+                            class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div>
+                                <h2 class="text-lg font-semibold">Active Permalink References</h2>
+                                <p class="mt-1 text-sm text-muted">
+                                    Links recorded for existing files.
+                                </p>
+                            </div>
+                            <UButton
+                                icon="i-lucide-refresh-cw"
+                                color="neutral"
+                                variant="ghost"
+                                size="sm"
+                                label="Refresh references"
+                                :loading="loadingReferences"
+                                @click="loadReferences()"
+                            />
+                        </div>
+                    </template>
+
+                    <ul class="space-y-3">
+                        <li v-if="loadingReferences" class="text-sm text-muted">
+                            Loading references...
+                        </li>
+                        <li v-else-if="references.length === 0" class="text-sm text-muted">
+                            No active permalink references.
+                        </li>
+                        <li
+                            v-for="reference in references"
+                            :key="reference.id"
+                            class="flex flex-col gap-2 rounded border border-default p-3 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div class="min-w-0">
+                                <a
+                                    :href="reference.permalink"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="break-all text-primary hover:underline"
+                                >
+                                    {{ reference.permalink }}
+                                </a>
+                                <p class="text-xs text-muted">
+                                    {{
+                                        reference.collection === "assets"
+                                            ? "Static upload"
+                                            : "User asset"
+                                    }}
+                                    · {{ reference.created_at }}
+                                </p>
+                            </div>
+                        </li>
+                    </ul>
+                    <div
+                        v-if="referencePagination.total_pages > 1"
+                        class="mt-4 flex items-center justify-between gap-3"
+                        aria-label="Permalink reference pages"
+                    >
+                        <UButton
+                            class="min-h-11 min-w-11"
+                            color="neutral"
+                            variant="outline"
+                            label="Previous"
+                            :disabled="loadingReferences || referencePage <= 1"
+                            @click="loadReferences(referencePage - 1)"
+                        />
+                        <span class="text-sm text-muted">
+                            Page {{ referencePage }} of {{ referencePagination.total_pages }}
+                        </span>
+                        <UButton
+                            class="min-h-11 min-w-11"
+                            color="neutral"
+                            variant="outline"
+                            label="Next"
+                            :disabled="
+                                loadingReferences ||
+                                referencePage >= referencePagination.total_pages
+                            "
+                            @click="loadReferences(referencePage + 1)"
+                        />
                     </div>
                 </UCard>
             </div>

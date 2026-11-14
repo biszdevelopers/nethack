@@ -16,15 +16,23 @@ process.stdin.on("end", () => {
         const lastLine = lines[lines.length - 1];
         if (!lastLine) throw new Error("No JSON output found");
         const result = JSON.parse(lastLine);
+        const failedTests = (result.testResults ?? []).flatMap((file) =>
+            (file.assertionResults ?? [])
+                .filter((assertion) => assertion.status === "failed")
+                .map((assertion) => `${file.name} › ${assertion.fullName}`),
+        );
         const meta = {
             total: result.numTotalTests ?? 0,
-            files: result.numTotalTestSuites ?? 0,
+            files: Array.isArray(result.testResults) ? result.testResults.length : 0,
             failed: result.numFailedTests ?? 0,
             generatedAt: new Date().toISOString(),
         };
         writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
         if (meta.failed > 0) {
             console.error(`Tests failed: ${meta.failed} failures`);
+            for (const failure of failedTests) {
+                console.error(`Failed test: ${failure}`);
+            }
             process.exit(1);
         }
         console.log(`Test meta written: ${meta.total} tests, ${meta.files} files`);

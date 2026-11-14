@@ -9,7 +9,7 @@ export default defineEventHandler(
 
         const body = await readValidatedBody(event, CreateSeasonRequest.parse);
 
-        event.context.drizzle.insert(seasons).values(body).run();
+        await event.context.drizzle.insert(seasons).values(body);
         const allSeasons = await getSeasons(event);
         return { seasons: allSeasons };
     }, DEFAULT_RATE_LIMIT_CONFIG),

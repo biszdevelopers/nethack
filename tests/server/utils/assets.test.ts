@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
     createAsset,
@@ -14,22 +14,26 @@ describe("asset helpers", () => {
     let tempDir: string;
     let assetsDir: string;
     let userAssetsDir: string;
+    let storageDir: string;
     let cwdSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(async () => {
         tempDir = await mkdtemp(join(tmpdir(), "assets-test-"));
-        assetsDir = join(tempDir, "public", "assets");
-        userAssetsDir = join(tempDir, "public", "userassets");
+        storageDir = join(tempDir, "persistent-assets");
+        assetsDir = join(storageDir, "assets");
+        userAssetsDir = join(storageDir, "userassets");
+        vi.stubEnv("ASSET_STORAGE_DIR", storageDir);
         cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(tempDir);
     });
 
     afterEach(async () => {
         cwdSpy?.mockRestore();
+        vi.unstubAllEnvs();
         await rm(tempDir, { recursive: true, force: true });
     });
 
     describe("createAsset", () => {
-        it("writes a safe file to public/assets", async () => {
+        it("writes a safe file under the configured persistent directory", async () => {
             const result = await createAsset("hello.txt", Buffer.from("hello"));
             expect(result).toBe("hello.txt");
 
@@ -89,6 +93,91 @@ describe("asset helpers", () => {
         it("rejects names containing backslashes", async () => {
             await expect(createAsset("foo\\bar.txt", Buffer.from("x"))).rejects.toThrow(
                 "Invalid asset name",
+            );
+        });
+
+        it("rejects an absolute storage directory override", async () => {
+            vi.stubEnv("ASSET_STORAGE_DIR", "relative/uploads");
+            await expect(createAsset("safe.txt", Buffer.from("x"))).rejects.toThrow(
+                "ASSET_STORAGE_DIR must be an absolute path",
+            );
+        });
+
+        it("keeps production storage inside the checkout and ignores legacy overrides", async () => {
+            vi.stubEnv("NODE_ENV", "production");
+            vi.stubEnv("ASSET_STORAGE_DIR", join(tempDir, "public", "userassets"));
+            await createAsset("safe.txt", Buffer.from("x"));
+            await expect(readdir(join(tempDir, "assets", "assets"))).resolves.toContain("safe.txt");
+        });
+
+        it("does not follow legacy production overrides through a symlink", async ({ skip }) => {
+            const storageAlias = join(tempDir, "storage-alias");
+            try {
+                await symlink(tempDir, storageAlias, "junction");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
+            vi.stubEnv("NODE_ENV", "production");
+            vi.stubEnv("ASSET_STORAGE_DIR", join(storageAlias, "public", "userassets"));
+
+            await createAsset("safe.txt", Buffer.from("x"));
+            await expect(readdir(join(tempDir, "assets", "assets"))).resolves.toContain("safe.txt");
+            await expect(readdir(join(tempDir, "public"))).rejects.toMatchObject({
+                code: "ENOENT",
+            });
+        });
+
+        it("stores beneath the canonical symlinked checkout", async ({ skip }) => {
+            const releaseRoot = join(tempDir, "release");
+            const releaseAlias = join(tempDir, "current");
+            await mkdir(releaseRoot);
+            try {
+                await symlink(releaseRoot, releaseAlias, "junction");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
+            cwdSpy.mockReturnValue(releaseAlias);
+            vi.stubEnv("NODE_ENV", "production");
+            vi.stubEnv("ASSET_STORAGE_DIR", join(releaseRoot, "public", "uploads"));
+
+            await createAsset("safe.txt", Buffer.from("x"));
+            await expect(readdir(join(releaseRoot, "assets", "assets"))).resolves.toContain(
+                "safe.txt",
+            );
+        });
+
+        it("rejects writes through a symlinked directory", async ({ skip }) => {
+            const outside = join(tempDir, "outside");
+            await mkdir(outside);
+            await mkdir(assetsDir, { recursive: true });
+            try {
+                await symlink(outside, join(assetsDir, "linked"), "junction");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
+            await expect(createAsset("linked/escape.txt", Buffer.from("x"))).rejects.toThrow(
+                "Invalid asset path",
             );
         });
     });
@@ -180,6 +269,26 @@ describe("asset helpers", () => {
             await expect(getUserAsset("nonexistent.txt")).rejects.toThrow();
         });
 
+        it("refuses to read through a symlink", async ({ skip }) => {
+            const outsideFile = join(tempDir, "outside.txt");
+            await writeFile(outsideFile, "outside storage");
+            await mkdir(userAssetsDir, { recursive: true });
+            try {
+                await symlink(outsideFile, join(userAssetsDir, "linked.txt"), "file");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
+
+            await expect(getUserAsset("linked.txt")).rejects.toThrow("Asset not found");
+        });
+
         it("throws on null name", async () => {
             await expect(getUserAsset(null as any)).rejects.toThrow("Invalid asset name");
         });
@@ -251,15 +360,15 @@ describe("asset helpers", () => {
             await expect(createAsset("/", Buffer.from("x"))).rejects.toThrow("Invalid asset name");
         });
 
-        it("allows names starting with double dots (..name is a valid filename)", async () => {
-            const result = await createAsset("..name", Buffer.from("x"));
-            expect(result).toBe("..name");
+        it("rejects hidden names so private staging paths cannot be exposed", async () => {
+            await expect(createAsset("..name", Buffer.from("x"))).rejects.toThrow(
+                "Invalid asset name",
+            );
         });
 
         it("writes and reads back the correct binary content", async () => {
             const content = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
             await createAsset("magic.bin", content);
-            const assetsDir = join(process.cwd(), "public", "assets");
             const files = await readdir(assetsDir);
             expect(files).toContain("magic.bin");
         });
@@ -317,9 +426,8 @@ describe("asset helpers", () => {
             await expect(removeUserAsset("ghost-file.png")).resolves.toBeUndefined();
         });
 
-        it("handles null byte in name for removal (does not throw)", async () => {
-            // Node.js path.join on this version does not throw on null bytes
-            await expect(removeUserAsset("file.txt\0evil")).resolves.toBeUndefined();
+        it("rejects null bytes in names during removal", async () => {
+            await expect(removeUserAsset("file.txt\0evil")).rejects.toThrow("Invalid asset name");
         });
     });
 

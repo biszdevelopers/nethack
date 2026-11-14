@@ -1,14 +1,22 @@
 <template>
-    <UHeader>
+    <UHeader
+        :toggle="{ class: 'min-h-11 min-w-11' }"
+        :ui="{ title: 'min-h-11', toggle: 'min-h-11 min-w-11' }"
+    >
         <template #title>
-            <span class="text-primary">basishacks_2026</span>
+            <span class="text-base text-primary sm:text-xl">basishacks_2026</span>
         </template>
 
         <UNavigationMenu :items="navItems" />
 
         <template #right>
-            <UColorModeButton />
-            <UButton variant="ghost" :class="profileIconColor" href="/profile">
+            <UColorModeButton class="hidden min-h-11 min-w-11 sm:inline-flex" />
+            <UButton
+                variant="ghost"
+                :class="[profileIconColor, 'min-h-11 min-w-11']"
+                href="/profile"
+                :aria-label="userRef ? 'Open your profile' : 'Sign in'"
+            >
                 <template v-if="userRef">
                     <UserAvatar :user="user" size="sm" />
                 </template>
@@ -17,7 +25,15 @@
         </template>
 
         <template #body>
-            <UNavigationMenu :items="navItems" orientation="vertical" class="-mx-2.5" />
+            <UNavigationMenu
+                :items="navItems"
+                orientation="vertical"
+                class="-mx-2.5"
+                :ui="{ link: 'min-h-11' }"
+            />
+            <div class="mt-3 border-t border-default px-2.5 pt-3 sm:hidden">
+                <UColorModeButton class="min-h-11 min-w-11" />
+            </div>
         </template>
     </UHeader>
 </template>
@@ -28,7 +44,10 @@ import { NethackPermissions } from "~~/shared/permissions";
 
 const { user, sessionUser: userRef } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
-const { data: hackathon } = useFetch("/api/seasons/active", { lazy: true });
+const { data: hackathon } = useApiFetch("/api/seasons/active", {
+    lazy: true,
+    $fetch: globalThis.$fetch,
+});
 
 const profileIconColor = computed(() => {
     return userRef.value ? "text-primary" : "text-ui-muted";

@@ -17,4 +17,4 @@ basishacks authorizes protected actions from the verified basis-auth access-toke
 
 During migration, `expandLegacyNethackPermissions()` provides a compatibility bridge for existing basis-auth accounts. A legacy `participant` grant receives the self-service profile, team, project, voting, and chatbot leaves; `judge` receives those leaves plus assignment, assigned-score, and result-reading access; and `admin` receives `nethack.all`. Existing granular and unrelated application permissions are preserved. The expansion is applied both during server authorization and when returning display permissions to the frontend.
 
-The browser receives the current permission list with `/api/auth/token` only to hide unavailable UI. Every API request independently verifies the JWT and enforces its permission server-side.
+The browser receives the current permission list from `/api/auth/session` only to hide unavailable UI. Every protected API independently verifies the JWT and enforces its permission server-side.

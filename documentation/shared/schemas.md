@@ -134,7 +134,7 @@ Accepts the literal strings `'true'` or `'false'` and transforms them into a boo
 const ZeroToFive = z.number().int().min(0).max(5);
 ```
 
-An integer between 0 and 5 inclusive. Used for rubric criterion scores.
+An integer between 0 and 5 inclusive for the legacy built-in rubric schema. Versioned season rubrics validate scores against each criterion's configured `minScore` and `maxScore` through `DynamicRubricScores` and the server-side rubric definition.
 
 ### `ScoreValues`
 
@@ -147,7 +147,7 @@ const ScoreValues = z.object(
 );
 ```
 
-An object whose keys are the rubric criteria (`originality`, `presentation`, `technicality`, `theme`, `impact`) and whose values are each `ZeroToFive`. Dynamically generated from the rubric definitions in `shared/rubric.ts`.
+The legacy `CreateTeamScoresRequest` shape for the built-in rubric. Current judging submissions use `DynamicRubricScores`; the API verifies every criterion ID and score against the immutable rubric version attached to the season or saved draft.
 
 ### `PositiveIntParam` & Route Params
 
@@ -250,17 +250,17 @@ Coerces string route params to positive integers. Used by:
 | Field | Type | Constraints |
 | --- | --- | --- |
 | `name` | `string` | Optional, max 30 characters |
-| `profile_theme_image` | `File \| string \| null` | Optional. File must be ≤ 10 MB and JPEG/PNG/WebP. String must start with `'data'` (data URI). `null` clears the image. |
+| `profile_theme_image` | `File \| string \| null` | Optional. File must be ≤ 7 MiB and JPEG/JPG/PNG/GIF/WebP. String must be a valid base64 data URL for one of those types. `null` clears the image. |
 | `avatar` | `File \| string \| null` | Optional. Same constraints as `profile_theme_image`. |
 
 **Image validation details:**
 
-- Maximum file size: 10 MB (`10 * 1024 * 1024` bytes)
-- Accepted MIME types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`
+- Maximum decoded profile image size: 7 MiB (`7 * 1024 * 1024` bytes); its base64 JSON body stays below Nitro's 10 MiB request limit.
+- Accepted MIME types: `image/jpeg`, `image/jpg`, `image/png`, `image/gif`, `image/webp`
 - Data URIs are accepted (string starting with `'data'`)
 - Error messages use the `formatBytes()` helper exported from `shared/schemas.ts`:
     ```ts
-    formatBytes(10 * 1024 * 1024); // → "10 MB"
+    formatBytes(7 * 1024 * 1024); // → "7 MB"
     ```
 
 **`formatBytes(bytes, decimals = 2)`:** Converts byte counts to human-readable strings (Bytes, KB, MB, GB, etc.).
@@ -273,10 +273,10 @@ Coerces string route params to positive integers. Used by:
 
 ### `CreateTeamScoresRequest`
 
-| Field       | Type          | Constraints                                |
-| ----------- | ------------- | ------------------------------------------ |
-| `reasoning` | `string`      | 10–2000 characters                         |
-| `scores`    | `ScoreValues` | Object with rubric criteria keys, each 0–5 |
+| Field | Type | Constraints |
+| --- | --- | --- |
+| `reasoning` | `string` | 10–2000 characters |
+| `scores` | `ScoreValues` | Object with the active rubric criteria keys and configured integer ranges |
 
 **API endpoint:** `POST /api/teams/:id/scores`
 

@@ -1,0 +1,40 @@
+[Unit]
+Description=basishacks Nuxt server (Bun)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=basishacks
+Group=basishacks
+WorkingDirectory=/opt/basishacks/current
+EnvironmentFile=/etc/basishacks/basishacks.env
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/bun run start
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0027
+LimitNOFILE=4096
+TasksMax=128
+MemoryHigh=450000000
+MemoryMax=500000000
+# Runtime uploads are kept in the checked-out project and are ignored by git.
+ReadWritePaths=/opt/basishacks/current/assets
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,18 +1,13 @@
 import type { H3Event } from "h3";
 import { eq, asc } from "drizzle-orm";
-import type { ExtractTablesWithRelations } from "drizzle-orm";
-import type { SQLiteTransaction } from "drizzle-orm/sqlite-core";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { getHackathon } from "./hackathon";
-
-type Schema = typeof import("~~/server/database/schema");
-
-type DbTransaction = SQLiteTransaction<"sync", unknown, Schema, ExtractTablesWithRelations<Schema>>;
+import { firstRow } from "./query";
+import { hackathonUsesYaml } from "../hackathon-config";
 
 /**
- * Per-season tweakable settings. These columns exist on both the `seasons`
- * table (per-season storage) and the `hackathon` singleton (live state for
- * the currently active season).
+ * Per-season tweakable settings. In PostgreSQL rollback mode these fields
+ * also synchronize with the legacy live singleton.
  */
 export const SEASON_TWEAK_FIELDS = ["status", "show_scores", "show_ranking"] as const;
 
@@ -29,47 +24,64 @@ function pickTweaks(source: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function getSeasons(event: H3Event): Promise<Season[]> {
-    return event.context.drizzle.select().from(seasons).orderBy(asc(seasons.id)).all();
+    const rows = (await event.context.drizzle
+        .select()
+        .from(seasons)
+        .orderBy(asc(seasons.id))) as Season[];
+    const active = rows.findIndex((season) => season.is_active === 1);
+    if (active >= 0) rows[active] = await withLiveConfig(event, rows[active]!);
+    return rows;
+}
+
+async function withLiveConfig(event: H3Event, season: Season): Promise<Season> {
+    if (season.is_active !== 1 || !hackathonUsesYaml()) return season;
+    const config = await getHackathon(event);
+    return { ...season, ...config, id: season.id };
 }
 
 export async function getSeasonById(event: H3Event, seasonId: number): Promise<Season | null> {
-    const row = event.context.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+    const row = await firstRow(
+        event.context.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+    );
 
-    return row ?? null;
+    return row ? withLiveConfig(event, row as Season) : null;
 }
 
 export async function getActiveSeason(event: H3Event): Promise<Season | null> {
-    const row = event.context.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).get();
+    const row = await firstRow(
+        event.context.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1),
+    );
 
-    return row ?? null;
+    return row ? withLiveConfig(event, row as Season) : null;
 }
 
 export interface ScoreRankVisibility {
+    resultsPublished: boolean;
     showScores: boolean;
     showRanking: boolean;
 }
 
 /**
- * Builds a resolver that maps a season ID to its score/rank visibility
- * settings. Each season's own tweaks are authoritative for its teams;
- * teams whose season no longer exists fall back to the live hackathon
- * singleton row.
+ * Resolve score/rank visibility from live YAML for the active season and
+ * from stored settings for past seasons. Keep unknown seasons private in YAML mode.
  */
 export async function getScoreRankVisibilityResolver(
     event: H3Event,
 ): Promise<(seasonId: number | null | undefined) => ScoreRankVisibility> {
     const allSeasons = await getSeasons(event);
-    const hackathonRow = await getHackathon(event);
+    const hackathonRow = hackathonUsesYaml() ? null : await getHackathon(event);
 
     const bySeason = new Map<number, ScoreRankVisibility>();
     for (const season of allSeasons) {
         bySeason.set(season.id, {
+            resultsPublished: !!season.results_published,
             showScores: !!season.show_scores,
             showRanking: !!season.show_ranking,
         });
     }
 
     const fallback: ScoreRankVisibility = {
+        resultsPublished: !!hackathonRow?.results_published,
         showScores: !!hackathonRow?.show_scores,
         showRanking: !!hackathonRow?.show_ranking,
     };
@@ -78,9 +90,7 @@ export async function getScoreRankVisibilityResolver(
 }
 
 /**
- * Updates the tweakable settings of a single season. When the season is the
- * currently active (live) season, the hackathon singleton row is updated as
- * well so the changes take effect immediately.
+ * Update a season's stored tweaks. Live YAML settings are edited at their source.
  *
  * Returns the updated season, or null when the season does not exist.
  */
@@ -91,27 +101,42 @@ export async function updateSeasonTweaks(
 ): Promise<Season | null> {
     const tweaks = pickTweaks(data as Record<string, unknown>);
 
-    return event.context.drizzle.transaction((tx: DbTransaction) => {
-        const season = tx.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+    return event.context.drizzle.transaction(async (tx) => {
+        const season = await firstRow(
+            tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+        );
         if (!season) return null;
 
         if (Object.keys(tweaks).length > 0) {
-            tx.update(seasons).set(tweaks).where(eq(seasons.id, seasonId)).run();
+            if (season.is_active === 1 && hackathonUsesYaml()) {
+                throw createError({
+                    statusCode: 409,
+                    message: "Edit the configured HACKATHON.yml to change live settings.",
+                });
+            }
+            await tx.update(seasons).set(tweaks).where(eq(seasons.id, seasonId));
 
             if (season.is_active === 1) {
-                tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1)).run();
+                await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
             }
         }
 
-        return tx.select().from(seasons).where(eq(seasons.id, seasonId)).get() ?? null;
+        return (
+            ((await firstRow(
+                tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+            )) as Season | undefined) ?? null
+        );
     });
 }
 
 export async function setActiveSeason(event: H3Event, seasonId: number | null) {
-    event.context.drizzle.transaction((tx: DbTransaction) => {
+    const liveConfig = hackathonUsesYaml() ? await getHackathon(event) : null;
+    await event.context.drizzle.transaction(async (tx) => {
         let season: Season | undefined;
         if (seasonId !== null) {
-            season = tx.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+            season = (await firstRow(
+                tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+            )) as Season | undefined;
 
             if (!season) {
                 throw createError({
@@ -121,15 +146,18 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
             }
         }
 
-        tx.update(seasons).set({ is_active: 0 }).run();
+        if (liveConfig && season?.is_active !== 1) {
+            const { id, submitted_count, ...settings } = liveConfig;
+            await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));
+        }
+        await tx.update(seasons).set({ is_active: 0 });
 
         if (seasonId !== null && season) {
-            tx.update(seasons).set({ is_active: 1 }).where(eq(seasons.id, seasonId)).run();
+            await tx.update(seasons).set({ is_active: 1 }).where(eq(seasons.id, seasonId));
 
-            // Copy the newly active season's tweaks into the live hackathon row
-            const tweaks = pickTweaks(season as unknown as Record<string, unknown>);
-            if (Object.keys(tweaks).length > 0) {
-                tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1)).run();
+            if (!hackathonUsesYaml()) {
+                const tweaks = pickTweaks(season as unknown as Record<string, unknown>);
+                await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
             }
         }
     });

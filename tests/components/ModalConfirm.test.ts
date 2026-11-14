@@ -69,4 +69,8 @@ describe("ModalConfirm.vue", () => {
     it("the cancel button closes the modal", () => {
         expect(source).toContain('@click="close"');
     });
+
+    it("gives both modal actions enough height for a 44px touch target", () => {
+        expect(source.match(/class="min-h-12"/g)).toHaveLength(2);
+    });
 });

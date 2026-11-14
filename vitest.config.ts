@@ -29,7 +29,9 @@ export default defineConfig({
         },
     },
     resolve: {
+        dedupe: ["zod"],
         alias: {
+            zod: resolve(rootDir, "node_modules/zod/index.js"),
             "@basis/schema/api": resolve(rootDir, "../basis-schema/src/api.ts"),
             "@basis/schema/auth": resolve(rootDir, "../basis-schema/src/auth.ts"),
             "@basis/schema/client": resolve(rootDir, "../basis-schema/src/client.ts"),
@@ -41,5 +43,11 @@ export default defineConfig({
             "~/": `${rootDir}/`,
             "~": rootDir,
         },
+    },
+    ssr: {
+        // The sibling @basis/schema workspace has its own Zod install. Bundle
+        // both packages for tests so Bun/Vitest does not externalize a second
+        // copy with incompatible named-export interop.
+        noExternal: ["zod", "@basis/schema"],
     },
 });

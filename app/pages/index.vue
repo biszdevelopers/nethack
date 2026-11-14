@@ -3,7 +3,7 @@ useHead({
     title: `${WEBSITE_NAME}`,
 });
 
-const { data, error } = await useFetch("/api/seasons/active");
+const { data, error } = await useApiFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
 if (error.value) {
     throw error.value;
 }
@@ -119,14 +119,20 @@ const themeDescription = computed(() => hackathon.value.theme_description || "")
         <ul class="mb-4">
             <li>
                 * Check out the projects made in
-                <ULink href="https://nethack.biszweb.club/showcase" target="_blank">
+                <ULink
+                    href="https://nethack.biszweb.club/showcase"
+                    target="_blank"
+                    class="inline-flex min-h-11 items-center"
+                >
                     last year's network hackathon!
                 </ULink>
                 Maybe you'll find inspiration there.
             </li>
             <li>
                 * Check out
-                <ULink href="/rules">the rules for the hackathon</ULink>
+                <ULink href="/rules" class="inline-flex min-h-11 items-center">
+                    the rules for the hackathon
+                </ULink>
                 and start planning your project accordingly.
             </li>
         </ul>

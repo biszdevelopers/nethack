@@ -4,7 +4,7 @@ const props = defineProps<{
     team?: GetTeamResponse;
 }>();
 
-const { data: fetchedTeam } = await useFetch<GetTeamResponse>(() => "/api/teams/" + props.id, {
+const { data: fetchedTeam } = await useApiFetch<GetTeamResponse>(() => "/api/teams/" + props.id, {
     immediate: !props.team,
 });
 const team = computed(() => props.team ?? fetchedTeam.value);

@@ -12,10 +12,18 @@ import {
     seedSeason,
     seedUser,
     seedTeam,
+    seedTeamEvaluations,
     type TestContext,
 } from "./helpers";
 import { eq } from "drizzle-orm";
-import { teams, users, hackathon, userPastTeams, seasons } from "~~/server/database/schema";
+import {
+    teams,
+    users,
+    hackathon,
+    userPastTeams,
+    seasons,
+    teamScores,
+} from "~~/server/database/schema";
 
 vi.mock("~~/server/utils/auth", () => ({
     requireUser: vi.fn((...args: any[]) => (globalThis as any).requireUser(...args)),
@@ -141,6 +149,7 @@ describe("GET /api/teams", () => {
         seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
 
         // Enable judging for this test
+        ctx.drizzle.update(hackathon).set({ status: "voting" }).where(eq(hackathon.id, 1)).run();
         ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
 
         mockQueryState.value = { judging: "true" };
@@ -149,6 +158,105 @@ describe("GET /api/teams", () => {
 
         expect(Array.isArray(result)).toBe(true);
         expect(result).toHaveLength(1);
+    });
+
+    it("returns stable, paginated judging teams with only the current judge's evaluation", async () => {
+        const judge = seedUser(ctx, { email: "judge@basischina.com", role: "judge" });
+        const otherJudge = seedUser(ctx, { email: "other-judge@basischina.com", role: "judge" });
+        const firstTeam = seedTeam(ctx, { name: "First", project_submitted: 1 });
+        const secondTeam = seedTeam(ctx, { name: "Second", project_submitted: 1 });
+        const thirdTeam = seedTeam(ctx, { name: "Third", project_submitted: 1 });
+        ctx.drizzle.update(hackathon).set({ status: "voting" }).where(eq(hackathon.id, 1)).run();
+        ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: firstTeam.id,
+                judge_user_id: judge.id,
+                scores: JSON.stringify({ idea: 4 }),
+                reasoning: "My private evaluation",
+            } as any)
+            .run();
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: secondTeam.id,
+                judge_user_id: otherJudge.id,
+                scores: JSON.stringify({ idea: 5 }),
+                reasoning: "Another judge's evaluation",
+            } as any)
+            .run();
+
+        mockSession.value = { user: { id: judge.id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 2 };
+
+        const firstPage = await listHandler(createEvent());
+
+        expect(firstPage).toMatchObject({ page: 1, page_size: 2, total: 3, total_pages: 2 });
+        expect(firstPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual([
+            "First",
+            "Second",
+        ]);
+        expect(firstPage.items[0]).toMatchObject({
+            evaluated: true,
+            evaluation: { scores: { idea: 4 }, reasoning: "My private evaluation" },
+        });
+        expect(firstPage.items[1]).toMatchObject({ evaluated: false, evaluation: null });
+        expect(JSON.stringify(firstPage)).not.toMatch(/judge_user_id|judge@basischina\.com/);
+
+        mockQueryState.value = { judging: "true", page: 2, page_size: 2 };
+        const secondPage = await listHandler(createEvent());
+        expect(secondPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual(["Third"]);
+    });
+
+    it("keeps malformed, array, and nonnumeric historical evaluations visible without leaking payloads", async () => {
+        const judge = seedUser(ctx, { email: "history-judge@basischina.com", role: "judge" });
+        const invalidJsonTeam = seedTeam(ctx, { name: "Invalid JSON", project_submitted: 1 });
+        const arrayTeam = seedTeam(ctx, { name: "Array JSON", project_submitted: 1 });
+        const invalidValueTeam = seedTeam(ctx, {
+            name: "Nonnumeric JSON",
+            project_submitted: 1,
+        });
+        ctx.drizzle
+            .update(hackathon)
+            .set({ status: "voting", judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+        for (const [team, scores] of [
+            [invalidJsonTeam, "not-json"],
+            [arrayTeam, "[]"],
+            [invalidValueTeam, '{"idea":"not-a-score"}'],
+        ] as const) {
+            ctx.drizzle
+                .insert(teamScores)
+                .values({
+                    team_id: team.id,
+                    judge_user_id: judge.id,
+                    scores,
+                    reasoning: "saved",
+                } as any)
+                .run();
+        }
+        mockSession.value = { user: { id: judge.id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 3 };
+
+        const result = await listHandler(createEvent());
+        expect(result.items).toHaveLength(3);
+        expect(result.items.map((item: JudgeQueueItem) => item.evaluation.scores)).toEqual([
+            {},
+            {},
+            {},
+        ]);
+        expect(result.items.every((item: JudgeQueueItem) => item.evaluated)).toBe(true);
+    });
+
+    it("does not expose the judging queue outside the voting phase", async () => {
+        seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
+        ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
+        mockSession.value = { user: { id: seedUser(ctx, { role: "judge" }).id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 20 };
+
+        await expect(listHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 });
 
@@ -292,9 +400,14 @@ describe("GET /api/teams/:id", () => {
     it("shows score and rank for a member when the season toggles are on", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx);
-        const season = seedSeason(ctx, { show_scores: 1, show_ranking: 1 });
+        const season = seedSeason(ctx, {
+            results_published: 1,
+            show_scores: 1,
+            show_ranking: 1,
+        });
 
         const team = seedTeam(ctx, { name: "My Team", season_id: season.id });
+        seedTeamEvaluations(ctx, team, 3);
         ctx.drizzle.update(teams).set({ score: 95, rank: 1 }).where(eq(teams.id, team.id)).run();
         (globalThis as any).optionalUser.mockResolvedValue({
             id: 1,
@@ -308,6 +421,54 @@ describe("GET /api/teams/:id", () => {
 
         expect(result.score).toBe(95);
         expect(result.rank).toBe(1);
+    });
+
+    it("withholds published scores and rank from a member until three evaluations exist", async () => {
+        const season = seedSeason(ctx, {
+            name: "Low review detail season",
+            is_active: 0,
+            results_published: 1,
+            show_scores: 1,
+            show_ranking: 1,
+        });
+        const team = seedTeam(ctx, { name: "My Team", season_id: season.id });
+        seedTeamEvaluations(ctx, team, 2);
+        ctx.drizzle.update(teams).set({ score: 95, rank: 1 }).where(eq(teams.id, team.id)).run();
+        (globalThis as any).optionalUser.mockResolvedValue({
+            id: 1,
+            team_id: team.id,
+            role: "participant",
+        });
+        mockParams.values["id"] = String(team.id);
+
+        const result = await getHandler(createEvent());
+
+        expect(result.score).toBeNull();
+        expect(result.rank).toBeNull();
+    });
+
+    it("withholds scores and rank until this team season publishes results", async () => {
+        const season = seedSeason(ctx, {
+            name: "Unpublished member season",
+            is_active: 0,
+            results_published: 0,
+            show_scores: 1,
+            show_ranking: 1,
+        });
+        const team = seedTeam(ctx, { name: "Unpublished Team", season_id: season.id });
+        seedTeamEvaluations(ctx, team, 3);
+        ctx.drizzle.update(teams).set({ score: 95, rank: 1 }).where(eq(teams.id, team.id)).run();
+        (globalThis as any).optionalUser.mockResolvedValue({
+            id: 1,
+            team_id: team.id,
+            role: "participant",
+        });
+        mockParams.values["id"] = String(team.id);
+
+        const result = await getHandler(createEvent());
+
+        expect(result.score).toBeNull();
+        expect(result.rank).toBeNull();
     });
 
     it("shows score and rank for privileged roles regardless of toggles", async () => {
@@ -346,9 +507,13 @@ describe("GET /api/teams/:id", () => {
     it("shows rank in the public team listing when the season toggle is on", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx);
-        const season = seedSeason(ctx, { show_ranking: 1 });
+        const season = seedSeason(ctx, {
+            results_published: 1,
+            show_ranking: 1,
+        });
 
         const team = seedTeam(ctx, { name: "Team Alpha", season_id: season.id });
+        seedTeamEvaluations(ctx, team, 3);
         ctx.drizzle.update(teams).set({ rank: 3 }).where(eq(teams.id, team.id)).run();
 
         const result = await listHandler(createEvent());
@@ -356,14 +521,50 @@ describe("GET /api/teams/:id", () => {
         expect(result[0].rank).toBe(3);
     });
 
+    it("withholds a published team rank until three evaluations exist", async () => {
+        const season = seedSeason(ctx, {
+            name: "Low review listing season",
+            is_active: 0,
+            results_published: 1,
+            show_ranking: 1,
+        });
+        const team = seedTeam(ctx, { name: "Team Alpha", season_id: season.id });
+        seedTeamEvaluations(ctx, team, 2);
+        ctx.drizzle.update(teams).set({ rank: 3 }).where(eq(teams.id, team.id)).run();
+        mockQueryState.value = { season_id: String(season.id) };
+
+        const result = await listHandler(createEvent());
+
+        expect(result[0].rank).toBeNull();
+    });
+
+    it("withholds a team rank before its season publishes results", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx);
+        const season = seedSeason(ctx, { results_published: 0, show_ranking: 1 });
+        const team = seedTeam(ctx, { name: "Unpublished Team", season_id: season.id });
+        seedTeamEvaluations(ctx, team, 3);
+        ctx.drizzle.update(teams).set({ rank: 1 }).where(eq(teams.id, team.id)).run();
+        mockQueryState.value = { season_id: String(season.id) };
+
+        const result = await listHandler(createEvent());
+
+        expect(result[0].rank).toBeNull();
+    });
+
     it("binds listing rank visibility to each team's own season, not the live season", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { show_ranking: 1 });
-        const liveSeason = seedSeason(ctx, { name: "Live Season", show_ranking: 1 });
+        const liveSeason = seedSeason(ctx, {
+            name: "Live Season",
+            results_published: 1,
+            show_ranking: 1,
+        });
         const oldSeason = seedSeason(ctx, { name: "Old Season", is_active: 0, show_ranking: 0 });
 
         const liveTeam = seedTeam(ctx, { name: "Live Team", season_id: liveSeason.id });
         const oldTeam = seedTeam(ctx, { name: "Old Team", season_id: oldSeason.id });
+        seedTeamEvaluations(ctx, liveTeam, 3);
         ctx.drizzle.update(teams).set({ rank: 1 }).where(eq(teams.id, liveTeam.id)).run();
         ctx.drizzle.update(teams).set({ rank: 2 }).where(eq(teams.id, oldTeam.id)).run();
 
@@ -556,7 +757,7 @@ describe("POST /api/teams/:id/submit", () => {
 });
 
 describe("GET /api/teams/:id/users", () => {
-    it("allows anonymous public member reads", async () => {
+    it("requires authentication to read a team roster", async () => {
         (globalThis as any).requireUser.mockRejectedValue({
             statusCode: 401,
             message: "Unauthorized",
@@ -565,7 +766,7 @@ describe("GET /api/teams/:id/users", () => {
         const team = seedTeam(ctx, { name: "Team" });
         mockParams.values["id"] = String(team.id);
 
-        await expect(membersHandler(createEvent())).resolves.toEqual([]);
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({ statusCode: 401 });
     });
 
     it("returns team members", async () => {
@@ -573,6 +774,7 @@ describe("GET /api/teams/:id/users", () => {
         seedUser(ctx, { email: "alice@basischina.com", name: "Alice", team_id: team.id });
         seedUser(ctx, { email: "bob@basischina.com", name: "Bob", team_id: team.id });
 
+        mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
 
         const result = await membersHandler(createEvent());
@@ -581,6 +783,32 @@ describe("GET /api/teams/:id/users", () => {
         expect(result).toHaveLength(2);
         expect(result[0]).toHaveProperty("name", "Alice");
         expect(result[1]).toHaveProperty("name", "Bob");
+    });
+
+    it("returns 404 when the requested team does not exist", async () => {
+        seedUser(ctx, { email: "roster-requester@basischina.com" });
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values.id = "99999";
+
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("allows an authorized administrator to read another team's roster", async () => {
+        const team = seedTeam(ctx, { name: "Private Team" });
+        seedUser(ctx, { email: "roster-owner@basischina.com", team_id: team.id });
+        const outsider = seedUser(ctx, { email: "roster-outsider@basischina.com" });
+        mockSession.value = { user: { id: outsider.id } };
+        mockParams.values.id = String(team.id);
+        (globalThis as any).requireUser.mockImplementation(
+            async (_event: unknown, permission?: string) => {
+                if (permission) return { id: outsider.id, role: "admin" };
+                return ctx.drizzle.select().from(users).where(eq(users.id, outsider.id)).get();
+            },
+        );
+
+        await expect(membersHandler(createEvent())).resolves.toMatchObject([
+            { id: 1, name: "Test User", team_id: team.id },
+        ]);
     });
 
     it("only exposes id, email, name, and team_id", async () => {
@@ -594,6 +822,7 @@ describe("GET /api/teams/:id/users", () => {
             profile_picture: "https://example.com/avatar.png",
         });
 
+        mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
 
         const result = await membersHandler(createEvent());
@@ -605,6 +834,23 @@ describe("GET /api/teams/:id/users", () => {
             name: "Alice",
             team_id: team.id,
         });
+    });
+
+    it("does not let an unrelated participant read another team's roster", async () => {
+        const team = seedTeam(ctx, { name: "Private Team" });
+        seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+        const outsiderTeam = seedTeam(ctx, { name: "Outsider Team" });
+        seedUser(ctx, { email: "outsider@basischina.com", team_id: outsiderTeam.id });
+        mockSession.value = { user: { id: 2 } };
+        mockParams.values["id"] = String(team.id);
+        (globalThis as any).requireUser.mockImplementation(
+            async (_event: unknown, permission?: string) => {
+                if (permission) throw { statusCode: 403, message: "Forbidden" };
+                return ctx.drizzle.select().from(users).where(eq(users.id, 2)).get();
+            },
+        );
+
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 
     it("returns all current and past members for an old team", async () => {
@@ -628,6 +874,7 @@ describe("GET /api/teams/:id/users", () => {
         // Record Bob as a past member of the legacy team
         ctx.drizzle.insert(userPastTeams).values({ user_id: bob.id, team_id: team.id }).run();
 
+        mockSession.value = { user: { id: alice.id } };
         mockParams.values["id"] = String(team.id);
 
         const result = await membersHandler(createEvent());
@@ -635,6 +882,47 @@ describe("GET /api/teams/:id/users", () => {
         expect(result).toHaveLength(2);
         const ids = result.map((u: any) => u.id).sort((a: number, b: number) => a - b);
         expect(ids).toEqual([alice.id, bob.id].sort((a, b) => a - b));
+    });
+
+    it("recognizes a past member through their history and includes the legacy roster", async () => {
+        ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
+        seedSeason(ctx, { name: "Current Season", is_active: 1 });
+        const legacyTeam = seedTeam(ctx, { name: "Legacy Team", season_id: 1 });
+        const currentMember = seedUser(ctx, {
+            email: "legacy-current@basischina.com",
+            name: "Current Member",
+            team_id: legacyTeam.id,
+        });
+        const pastMember = seedUser(ctx, {
+            email: "legacy-past@basischina.com",
+            name: "Past Member",
+        });
+        ctx.drizzle
+            .insert(userPastTeams)
+            .values({ user_id: pastMember.id, team_id: legacyTeam.id })
+            .run();
+        mockSession.value = { user: { id: pastMember.id } };
+        mockParams.values.id = String(legacyTeam.id);
+
+        const result = await membersHandler(createEvent());
+        expect(result.map((member: any) => member.id).sort()).toEqual(
+            [currentMember.id, pastMember.id].sort(),
+        );
+    });
+
+    it("uses current members when there is no active season", async () => {
+        ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
+        const team = seedTeam(ctx, { name: "No active season team" });
+        const member = seedUser(ctx, {
+            email: "no-active-season@basischina.com",
+            team_id: team.id,
+        });
+        mockSession.value = { user: { id: member.id } };
+        mockParams.values.id = String(team.id);
+
+        await expect(membersHandler(createEvent())).resolves.toMatchObject([
+            { id: member.id, team_id: team.id },
+        ]);
     });
 });
 

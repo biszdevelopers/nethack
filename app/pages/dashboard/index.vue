@@ -8,7 +8,9 @@ useHead({
     title: `Dashboard | ${WEBSITE_NAME}`,
 });
 
-const { data: hackathon, error: hackathonError } = await useFetch("/api/seasons/active");
+const { data: hackathon, error: hackathonError } = await useApiFetch("/api/seasons/active", {
+    $fetch: globalThis.$fetch,
+});
 if (hackathonError.value) {
     throw hackathonError.value;
 }

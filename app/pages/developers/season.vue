@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { NethackPermissions } from "~~/shared/permissions";
+import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
+import AdminRubricManager from "~/components/admin/RubricManager.vue";
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -22,11 +24,20 @@ if (status.value !== "pending" && status.value !== "idle") {
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
-const { data: adminData, refresh: refreshAdmin } = await useFetch("/api/admin/hackathon", {
+const { data: adminData, refresh: refreshAdmin } = await useApiFetch("/api/admin/hackathon", {
     server: false,
+    $fetch: globalThis.$fetch,
 });
 const hackathon = computed(() => adminData.value?.hackathon ?? null);
 const seasons = computed(() => adminData.value?.seasons ?? []);
+const liveConfigReadOnly = computed(
+    () =>
+        adminData.value?.configSource !== "database" &&
+        (activeSeasonId.value === null ||
+            seasons.value.some(
+                (season: Season) => season.id === activeSeasonId.value && season.is_active === 1,
+            )),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers: ms epoch <-> datetime-local
@@ -44,14 +55,14 @@ function datetimeToTs(s: string): number {
     return new Date(s).getTime();
 }
 
-async function downloadDatabase(format: "sqlite" | "csv") {
+async function downloadDatabase(format: "json" | "csv") {
     const blob = await $fetch<Blob>(`/api/admin/database/export?format=${format}`, {
         responseType: "blob",
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `basishacks-export.${format === "sqlite" ? "db" : "csv"}`;
+    link.download = `basishacks-export.${format}`;
     link.click();
     URL.revokeObjectURL(url);
 }
@@ -98,6 +109,12 @@ const boolKeys = new Set([
 const hackathonForm = reactive<Record<string, any>>({});
 const formInitialized = ref(false);
 const saving = ref(false);
+const scoreCurvePreset = ref<ScoreCurvePreset>("original");
+const scoreCurveSaving = ref(false);
+const scoreCurveItems = Object.entries(SCORE_CURVE_PRESETS).map(([value, preset]) => ({
+    label: preset.label,
+    value,
+}));
 
 /** Populate form from a season row, skipping DB defaults so the global value shines through. */
 function restoreSeasonConfig(season: any) {
@@ -138,7 +155,7 @@ function applyConfig(seasonId: number | null) {
     }
     Object.assign(hackathonForm, raw);
 
-    if (seasonId !== null) {
+    if (seasonId !== null && !liveConfigReadOnly.value) {
         const s = seasons.value?.find((s: any) => s.id === seasonId);
         if (s) restoreSeasonConfig(s);
     }
@@ -171,6 +188,7 @@ function hasChanged(key: string, normalized: any): boolean {
 let patchChain = Promise.resolve();
 
 function onFieldChange() {
+    if (liveConfigReadOnly.value) return;
     const body: Record<string, any> = {};
     for (const key of allFieldKeys) {
         const raw = hackathonForm[key];
@@ -226,10 +244,40 @@ const seasonNameForm = ref("");
 watch(activeSeasonId, (id) => {
     // Update season name
     seasonNameForm.value = seasons.value?.find((s: any) => s.id === id)?.name ?? "";
+    scoreCurvePreset.value =
+        (seasons.value?.find((s: any) => s.id === id)?.score_curve_preset as
+            | ScoreCurvePreset
+            | undefined) ?? "original";
     // Re-apply the full config (global + season overrides). When id is null,
     // applyConfig skips the overlay, showing only the global hackathon values.
     applyConfig(id);
 });
+
+async function saveScoreCurvePreset(value: ScoreCurvePreset) {
+    const seasonId = activeSeasonId.value;
+    if (seasonId === null) return;
+    scoreCurveSaving.value = true;
+    try {
+        await $fetch(`/api/admin/seasons/${seasonId}/score-curve`, {
+            method: "PATCH",
+            body: { preset: value },
+        });
+        await refreshAdmin();
+        toast.add({ title: "Score display curve updated.", color: "success" });
+    } catch (error) {
+        scoreCurvePreset.value =
+            (seasons.value?.find((season: any) => season.id === seasonId)?.score_curve_preset as
+                | ScoreCurvePreset
+                | undefined) ?? "original";
+        toast.add({
+            title: "Could not update score curve",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        scoreCurveSaving.value = false;
+    }
+}
 
 const seasonNameSaving = ref(false);
 
@@ -295,13 +343,20 @@ async function addSeason() {
             <section class="bg-ui-bg p-6">
                 <h2 class="text-xl font-semibold mb-3">Season</h2>
                 <div class="flex flex-wrap items-center gap-3">
-                    <USelect
-                        v-model="activeSeasonId"
-                        :items="activeSeasonItems"
-                        class="w-full sm:w-auto sm:max-w-xs"
-                    />
-                    <UButton @click="setActiveSeason" color="primary">Set Active</UButton>
-                    <UButton @click="addSeason" variant="outline">+ New Season</UButton>
+                    <UFormField label="Select season" class="w-full sm:w-auto sm:max-w-xs">
+                        <USelect
+                            v-model="activeSeasonId"
+                            :items="activeSeasonItems"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                        />
+                    </UFormField>
+                    <UButton class="min-h-11" @click="setActiveSeason" color="primary">
+                        Set Active
+                    </UButton>
+                    <UButton class="min-h-11" @click="addSeason" variant="outline">
+                        + New Season
+                    </UButton>
                 </div>
             </section>
             <USeparator />
@@ -310,15 +365,55 @@ async function addSeason() {
             <section class="bg-ui-bg p-6">
                 <h2 class="text-xl font-semibold mb-3">Season Name</h2>
                 <div class="flex flex-wrap items-center gap-3">
-                    <UInput v-model="seasonNameForm" class="flex-1 min-w-0" />
-                    <UButton @click="renameSeason" :loading="seasonNameSaving" color="primary">
+                    <UFormField label="Season name" class="min-w-0 flex-1">
+                        <UInput
+                            v-model="seasonNameForm"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                        />
+                    </UFormField>
+                    <UButton
+                        class="min-h-11"
+                        @click="renameSeason"
+                        :loading="seasonNameSaving"
+                        color="primary"
+                    >
                         Rename Season
                     </UButton>
                 </div>
             </section>
             <USeparator />
 
-            <!-- Hackathon Configuration (all fields per-season, auto-save on change) -->
+            <section v-if="activeSeasonId !== null" class="bg-ui-bg p-6 space-y-3">
+                <h2 class="text-xl font-semibold">Score display curve</h2>
+                <p class="max-w-3xl text-sm text-ui-text-muted">
+                    This changes the displayed score only. The original judge average stays saved,
+                    and published ranking always uses that original score.
+                </p>
+                <div class="flex flex-wrap items-center gap-3">
+                    <UFormField label="Display curve" class="w-full max-w-xs">
+                        <USelect
+                            v-model="scoreCurvePreset"
+                            :items="scoreCurveItems"
+                            :disabled="scoreCurveSaving"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                            @update:model-value="saveScoreCurvePreset"
+                        />
+                    </UFormField>
+                    <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
+                </div>
+            </section>
+            <USeparator />
+
+            <AdminRubricManager
+                v-if="activeSeasonId !== null"
+                :key="activeSeasonId"
+                :season-id="activeSeasonId"
+                :seasons="seasons"
+            />
+            <USeparator />
+
             <section v-if="hackathon && formInitialized" class="bg-ui-bg p-6 space-y-4">
                 <h2 class="text-xl font-semibold">
                     Hackathon Configuration
@@ -326,13 +421,18 @@ async function addSeason() {
                         Saving...
                     </span>
                 </h2>
-                <p class="text-sm text-ui-text-muted">
-                    All fields are per-season. Changes auto-save with the selected season.
+                <p v-if="liveConfigReadOnly" class="text-sm text-ui-text-muted">
+                    Edit HACKATHON.yml to change live settings.
+                </p>
+                <p v-else class="text-sm text-ui-text-muted">
+                    Changes auto-save with the selected season.
                 </p>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Status</label>
+                <fieldset
+                    :disabled="liveConfigReadOnly"
+                    class="grid grid-cols-1 md:grid-cols-2 gap-4"
+                >
+                    <UFormField label="Status" name="status" class="w-full">
                         <USelect
                             :items="[
                                 { label: 'Not Started', value: 'not_started' },
@@ -342,161 +442,188 @@ async function addSeason() {
                                 { label: 'Paused', value: 'paused' },
                             ]"
                             v-model="hackathonForm.status"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Max Votes Per User</label>
+                    <UFormField label="Max Votes Per User" name="max_votes_per_user" class="w-full">
                         <UInput
                             type="number"
+                            name="max_votes_per_user"
                             v-model="hackathonForm.max_votes_per_user"
                             min="0"
                             max="100"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.voting_enabled"
+                            label="Voting Enabled"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Voting Enabled</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.judging_open"
+                            label="Judging Open"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Judging Open</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.results_published"
+                            label="Results Published"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Results Published</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.show_scores"
+                            label="Show Scores"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Show Scores</span>
                     </div>
 
                     <div class="flex items-center gap-3">
                         <UCheckbox
                             v-model="hackathonForm.show_ranking"
+                            label="Show Ranking"
+                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
-                        <span class="text-sm">Show Ranking</span>
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Theme Name</label>
+                    <UFormField label="Theme Name" name="theme_name" class="w-full">
                         <UInput
+                            name="theme_name"
                             v-model="hackathonForm.theme_name"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div class="md:col-span-2">
-                        <label class="block text-sm font-medium mb-1">Theme Description</label>
+                    <UFormField
+                        label="Theme Description"
+                        name="theme_description"
+                        class="w-full md:col-span-2"
+                    >
                         <UTextarea
+                            name="theme_description"
                             v-model="hackathonForm.theme_description"
                             :rows="2"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Schedule Start</label>
+                    <UFormField label="Schedule Start" name="schedule_start" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="schedule_start"
                             v-model="hackathonForm.schedule_start"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Schedule End</label>
+                    <UFormField label="Schedule End" name="schedule_end" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="schedule_end"
                             v-model="hackathonForm.schedule_end"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Start</label>
+                    <UFormField label="Start" name="start_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="start_timestamp"
                             v-model="hackathonForm.start_timestamp"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">End</label>
+                    <UFormField label="End" name="end_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="end_timestamp"
                             v-model="hackathonForm.end_timestamp"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Voting Start</label>
+                    <UFormField label="Voting Start" name="voting_start_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="voting_start_timestamp"
                             v-model="hackathonForm.voting_start_timestamp"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Voting End</label>
+                    <UFormField label="Voting End" name="voting_end_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="voting_end_timestamp"
                             v-model="hackathonForm.voting_end_timestamp"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
+                    </UFormField>
 
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Results Open</label>
+                    <UFormField label="Results Open" name="results_open_timestamp" class="w-full">
                         <UInput
                             type="datetime-local"
+                            name="results_open_timestamp"
                             v-model="hackathonForm.results_open_timestamp"
                             @change="onFieldChange()"
+                            :ui="{ base: 'min-h-11' }"
                             class="w-full"
                         />
-                    </div>
-                </div>
+                    </UFormField>
+                </fieldset>
             </section>
             <USeparator />
 
@@ -505,10 +632,20 @@ async function addSeason() {
                 <h2 class="text-xl font-semibold">Database Export</h2>
                 <p class="text-sm text-ui-text-muted">Download a full snapshot of the database.</p>
                 <div class="flex flex-wrap items-center gap-3">
-                    <UButton color="primary" variant="solid" @click="downloadDatabase('sqlite')">
-                        Download SQLite
+                    <UButton
+                        class="min-h-11"
+                        color="primary"
+                        variant="solid"
+                        @click="downloadDatabase('json')"
+                    >
+                        Download JSON
                     </UButton>
-                    <UButton color="neutral" variant="outline" @click="downloadDatabase('csv')">
+                    <UButton
+                        class="min-h-11"
+                        color="neutral"
+                        variant="outline"
+                        @click="downloadDatabase('csv')"
+                    >
                         Download CSV
                     </UButton>
                 </div>

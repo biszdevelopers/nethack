@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const files = [
@@ -31,21 +31,19 @@ const allApiFiles = [
     "server/api/seasons/active.get.ts",
     "server/api/seasons/active.patch.ts",
     "server/api/seasons/index.get.ts",
-    "server/api/scores/compute.get.ts",
     "server/api/admin/scores.get.ts",
     "server/api/admin/teams.get.ts",
     "server/api/admin/teams.delete.ts",
     "server/api/auth/basis/callback.get.ts",
     "server/api/debug/upload.post.ts",
     "server/api/debug/files.get.ts",
+    "server/api/assets/references/index.get.ts",
     "server/api/debug/deepseek/sessions/index.post.ts",
     "server/api/debug/deepseek/sessions/[id]/index.get.ts",
     "server/api/debug/deepseek/sessions/[id]/index.delete.ts",
     "server/api/debug/deepseek/sessions/[id]/message.post.ts",
     "server/api/_webhooks/lifecycle.post.ts",
     "server/api/_webhooks/update.post.ts",
-    "server/api/chatbot/index.get.ts",
-    "server/api/chatbot/message.get.ts",
 ];
 
 describe("API error messages do not leak internal details", () => {
@@ -127,14 +125,20 @@ describe("Failed request error responses", () => {
         expect(source).not.toMatch(/statusMessage:.+\+.*error/);
     });
 
-    it("scores/compute.get.ts uses createError with proper status", () => {
-        const source = readFileSync(
-            resolve(import.meta.dirname, "..", "..", "server", "api", "scores", "compute.get.ts"),
-            "utf-8",
-        );
-        if (source.includes("createError")) {
-            expect(source).not.toMatch(/return createError\(/);
-        }
+    it("does not expose the unauthenticated score-compute endpoint", () => {
+        expect(
+            existsSync(
+                resolve(
+                    import.meta.dirname,
+                    "..",
+                    "..",
+                    "server",
+                    "api",
+                    "scores",
+                    "compute.get.ts",
+                ),
+            ),
+        ).toBe(false);
     });
 
     it("teams/index.post.ts uses throw createError consistently", () => {
@@ -187,13 +191,12 @@ describe("Failed request error responses", () => {
         expect(source).not.toMatch(/return createError/);
     });
 
-    it("debug/upload.post.ts validates all file upload scenarios with 400/413", () => {
+    it("debug/upload.post.ts returns 410 for the retired endpoint", () => {
         const source = readFileSync(
             resolve(import.meta.dirname, "..", "..", "server", "api", "debug", "upload.post.ts"),
             "utf-8",
         );
-        expect(source).toContain("400");
-        expect(source).toContain("413");
+        expect(source).toContain("statusCode: 410");
         expect(source).not.toMatch(/return createError/);
     });
 });

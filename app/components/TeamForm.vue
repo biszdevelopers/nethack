@@ -20,7 +20,7 @@ const {
     data: users,
     error,
     refresh,
-} = await useFetch<GetTeamMembersResponse>(`/api/teams/${id}/users`);
+} = await useApiFetch<GetTeamMembersResponse>(`/api/teams/${id}/users`);
 if (error.value) {
     throw error.value;
 }
@@ -134,6 +134,8 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                     :disabled="disabled"
                     variant="soft"
                     icon="i-material-symbols-drive-file-rename-outline"
+                    aria-label="Rename team"
+                    class="min-h-11 min-w-11"
                 />
 
                 <template #body="{ close }">
@@ -144,7 +146,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         @submit="onNameSubmit($event, close)"
                     >
                         <UFormField name="name" label="New name">
-                            <UInput v-model="nameState.name" class="w-full" />
+                            <UInput v-model="nameState.name" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
@@ -155,7 +157,13 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
             </UModal>
 
             <UModal title="Add team member">
-                <UButton :disabled="disabled" variant="soft" icon="i-material-symbols-person-add" />
+                <UButton
+                    :disabled="disabled"
+                    variant="soft"
+                    icon="i-material-symbols-person-add"
+                    aria-label="Add team member"
+                    class="min-h-11 min-w-11"
+                />
 
                 <template #body="{ close }">
                     <UForm
@@ -165,7 +173,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         @submit="onSubmit($event, close)"
                     >
                         <UFormField name="email" label="New member email">
-                            <UInput v-model="state.email" type="email" class="w-full" />
+                            <UInput v-model="state.email" type="email" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
@@ -196,6 +204,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                                 icon="i-material-symbols-delete"
                                 color="warning"
                                 variant="soft"
+                                :aria-label="
+                                    user.id === currentUser?.id
+                                        ? 'Leave team'
+                                        : `Remove ${user.name || user.email} from team`
+                                "
+                                class="min-h-11 min-w-11"
                             />
 
                             <template #content>

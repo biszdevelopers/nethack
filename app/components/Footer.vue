@@ -8,14 +8,29 @@
                     <UIcon name="i-lucide-copyright"></UIcon>
                     {{ new Date().getFullYear() }} BISZ Developers' Club, BINJ Hack Club
                 </p>
-                <ULink class="text-xs" to="/contributing" target="_blank">
+                <ULink
+                    class="text-xs inline-flex min-h-11 items-center"
+                    to="/contributing"
+                    target="_blank"
+                >
                     Contribute to basishacks
                 </ULink>
-                <ULink v-if="isAdmin" class="text-xs" to="/developers">Mod Portal</ULink>
+                <ULink
+                    v-if="isAdmin"
+                    class="text-xs inline-flex min-h-11 items-center"
+                    to="/developers"
+                >
+                    Mod Portal
+                </ULink>
             </div>
         </template>
 
-        <UNavigationMenu :items="items" variant="link" class="w-full justify-center" />
+        <UNavigationMenu
+            :items="items"
+            variant="link"
+            class="w-full justify-center"
+            :ui="{ link: 'min-h-11' }"
+        />
 
         <template #right>
             <UButton
@@ -23,7 +38,7 @@
                 variant="ghost"
                 to="https://teams.microsoft.com/l/channel/19%3AS3B3lM0EUkIeBixZSQN6dZanoQv5GfVFr6kiVuf_P3U1%40thread.tacv2/General?groupId=b207a655-d801-4200-8345-5dcc50d6d957&tenantId=cbc6e1e2-a6bb-4002-bbdc-6da892a051a7"
                 target="_blank"
-                class="p-1"
+                class="min-h-11 min-w-11"
                 aria-label="Teams"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="4 4 36 38" class="w-6 h-6">
@@ -233,6 +248,7 @@
                 variant="ghost"
                 to="https://github.com/basishacks/basishacks-r2"
                 target="_blank"
+                class="min-h-11 min-w-11"
                 aria-label="GitHub"
             />
         </template>

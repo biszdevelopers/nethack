@@ -18,6 +18,12 @@ describe("RoleHeader.vue", () => {
         expect(source).toContain("basishacks_2026");
     });
 
+    it("keeps the brand and mobile header controls usable on narrow touch screens", () => {
+        expect(source).toContain("text-base text-primary sm:text-xl");
+        expect(source).toContain("min-h-11 min-w-11");
+        expect(source).toContain(":ui=\"{ link: 'min-h-11' }\"");
+    });
+
     it("includes a Home navigation item", () => {
         expect(source).toContain("Home");
         expect(source).toContain('to: "/"');

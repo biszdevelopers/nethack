@@ -85,7 +85,7 @@ const WINNERS: readonly WinnerConfig[] = [
     },
 ] as const;
 
-const { data: teams, error } = await useFetch<GetTeamResponse[]>("/api/teams?season_id=1");
+const { data: teams, error } = await useApiFetch<GetTeamResponse[]>("/api/teams?season_id=1");
 
 const winners = computed(() => {
     const byId = new Map((teams.value ?? []).map((team) => [team.id, team]));
@@ -359,9 +359,10 @@ onUnmounted(() => {
                             </template>
                         </UModal>
                         <UButton
-                            v-if="winner.team.project.repo_url"
-                            :href="winner.team.project.repo_url"
+                            v-if="safeUrl(winner.team.project.repo_url)"
+                            :href="safeUrl(winner.team.project.repo_url)"
                             target="_blank"
+                            rel="noopener noreferrer"
                             external
                             color="neutral"
                             variant="outline"
@@ -514,7 +515,6 @@ onUnmounted(() => {
                 <i />
                 <i />
             </div>
-            <p>Expedition complete · Six signals recovered</p>
             <h2>The surface looks different once you know what lies beneath.</h2>
             <UButton
                 to="/showcase"

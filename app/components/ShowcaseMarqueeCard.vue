@@ -6,10 +6,6 @@ const props = defineProps<{
 const emit = defineEmits<{
     click: [];
 }>();
-
-const { data: members } = await useFetch<GetTeamMembersResponse>(
-    () => `/api/teams/${props.team.id}/users`,
-);
 </script>
 
 <template>
@@ -53,14 +49,7 @@ const { data: members } = await useFetch<GetTeamMembersResponse>(
         <p class="text-sm truncate mt-1">
             {{ team.project?.description || "(No Project Description)" }}
         </p>
-        <UserAvatarGroup
-            v-if="members && members.length > 0"
-            :users="members"
-            :max="5"
-            size="sm"
-            class="mt-3"
-        />
-        <p v-else class="text-muted text-sm mt-3">(No members)</p>
+        <p class="mt-3 text-sm text-muted">{{ team.name }}</p>
     </div>
 </template>
 

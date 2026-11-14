@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { WEBSITE_NAME } from "~/utils/consts";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { SubmitVoteRequest, MAX_REASONING_LENGTH } from "~~/shared/schemas";
 
@@ -7,8 +8,9 @@ definePageMeta({
 });
 
 const toast = useToast();
+useHead({ title: `Peer voting | ${WEBSITE_NAME}` });
 
-const { data, error, refresh } = await useFetch<GetBallotResponse>("/api/ballot", {
+const { data, error, refresh } = await useApiFetch<GetBallotResponse>("/api/ballot", {
     server: false,
 });
 
@@ -18,18 +20,28 @@ const projects = computed(() => data.value?.projects ?? []);
 const submitted = computed(() => data.value?.submitted ?? false);
 
 const state = reactive<SubmitVoteRequest>({
-    scores: data.value?.scores ?? projects.value.map(() => 0 as 0 | 1 | 2 | 3 | 4 | 5),
-    reasoning: data.value?.reasoning ?? "",
+    scores: [],
+    reasoning: "",
 });
 
 const totalStars = computed(() => state.scores.reduce((a, b) => a + b, 0));
 
+watch(
+    data,
+    (ballot) => {
+        if (!ballot) return;
+        state.scores = [...ballot.scores];
+        state.reasoning = ballot.reasoning ?? "";
+    },
+    { immediate: true, flush: "sync" },
+);
+
 function decrement(index: number) {
-    state.scores[index]!--;
+    state.scores[index] = Math.max(0, (state.scores[index] ?? 0) - 1);
 }
 
 function increment(index: number) {
-    state.scores[index]!++;
+    state.scores[index] = Math.min(5, (state.scores[index] ?? 0) + 1);
 }
 
 async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
@@ -146,7 +158,11 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                 </UFormField>
 
                 <UFormField v-if="!submitted">
-                    <UButton :disabled="totalStars !== 10 || projects.length === 0" type="submit">
+                    <UButton
+                        :disabled="totalStars !== 10 || projects.length === 0"
+                        class="min-h-11"
+                        type="submit"
+                    >
                         Submit
                     </UButton>
                 </UFormField>

@@ -1,8 +1,25 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const basisSchemaRoot = resolve(projectRoot, "../basis-schema/src");
+const iconManifest = JSON.parse(
+    readFileSync(resolve(projectRoot, "shared/icon-bundle-manifest.json"), "utf8"),
+);
+const iconServerBundlePath = resolve(
+    projectRoot,
+    "node_modules/.cache/basishacks-icon-server-bundle.json",
+);
+let iconServerCollections: unknown[];
+try {
+    iconServerCollections = JSON.parse(readFileSync(iconServerBundlePath, "utf8"));
+} catch (error) {
+    throw new Error(
+        "The generated server icon bundle is missing. Run `bun run postinstall` or `bun run build` to regenerate it.",
+        { cause: error },
+    );
+}
 // Nitro interpolates custom handler paths into a virtual ES module. Windows
 // backslashes must be normalized so username segments such as `\34648` are not
 // parsed as legacy octal escapes by Rollup.
@@ -32,8 +49,12 @@ export default defineNuxtConfig({
         port: 24598,
     },
     icon: {
+        serverBundle: {
+            collections: iconServerCollections,
+        },
         clientBundle: {
-            scan: true,
+            icons: iconManifest.icons,
+            scan: iconManifest.scan,
         },
     },
     fonts: {
@@ -59,10 +80,10 @@ export default defineNuxtConfig({
     },
     routeRules: {
         "/api/login": {
-            headers: { "Cache-Control": "no-store" },
+            headers: { "Cache-Control": "private, no-store" },
         },
         "/api/auth/**": {
-            headers: { "Cache-Control": "no-store" },
+            headers: { "Cache-Control": "private, no-store" },
         },
         "/_nuxt/**": {
             headers: { "Cache-Control": "public, max-age=31536000, immutable" },
@@ -101,18 +122,16 @@ export default defineNuxtConfig({
     },
     nitro: {
         errorHandler: nitroErrorHandler,
-        // Bun dev uses the bun preset implicitly; production defaults to node-server
-        // so the same build runs under Node.js (better-sqlite3) or Bun (bun:sqlite).
+        // Use the portable Node server output for both Node.js and Bun production starts.
         preset: process.env.NITRO_PRESET ?? "node-server",
         compressPublicAssets: true,
-        // Reject request bodies larger than 10 MiB before buffering into memory.
-        maxRequestSize: 10 * 1024 * 1024,
         externals: {
             // Node's production export condition needs Vue's production CJS
             // files, which Nitro's tracer currently omits in dev bundles.
             trace: false,
         },
         rollupConfig: {
+            maxParallelFileOps: 1,
             onwarn(warning, warn) {
                 if (warning.code === "UNRESOLVED_IMPORT") return;
                 if (warning.code === "CIRCULAR_DEPENDENCY") return;

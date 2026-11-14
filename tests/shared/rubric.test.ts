@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
 import rubrics from "~~/shared/rubric";
+import {
+    calculateWeightedRubricScore,
+    DEFAULT_RUBRIC_DEFINITION,
+    type RubricTrack,
+} from "~~/shared/rubric";
 
 describe("rubrics", () => {
     it("has both junior and senior rubrics", () => {
@@ -133,5 +138,77 @@ describe("rubrics", () => {
             expect(senior.originality.abbr).toBe("ORG");
             expect(senior.originality.weight).toBe(10);
         });
+    });
+});
+
+describe("weighted rubric scoring", () => {
+    it("keeps the default Junior scale normalized to 0 through 100", () => {
+        const track = DEFAULT_RUBRIC_DEFINITION.tracks.junior!;
+        const maximumScores = Object.fromEntries(
+            track.criteria.map((criterion) => [criterion.id, criterion.maxScore]),
+        );
+
+        expect(calculateWeightedRubricScore(track, maximumScores)).toBe(100);
+        expect(
+            calculateWeightedRubricScore(
+                track,
+                Object.fromEntries(track.criteria.map((criterion) => [criterion.id, 0])),
+            ),
+        ).toBe(0);
+    });
+
+    it("normalizes each criterion's integer scale before applying weights", () => {
+        const track: RubricTrack = {
+            name: "Prototype",
+            criteria: [
+                {
+                    id: "clarity",
+                    name: "Clarity",
+                    description: "How clearly the project solves a problem.",
+                    weight: 60,
+                    minScore: 1,
+                    maxScore: 10,
+                },
+                {
+                    id: "craft",
+                    name: "Craft",
+                    description: "How carefully the team built the project.",
+                    weight: 40,
+                    minScore: 1,
+                    maxScore: 5,
+                },
+            ],
+        };
+
+        expect(calculateWeightedRubricScore(track, { clarity: 6, craft: 1 })).toBeCloseTo(100 / 3);
+    });
+
+    it("preserves judge precision until the final team average", () => {
+        const track: RubricTrack = {
+            name: "Precision check",
+            criteria: [
+                {
+                    id: "score",
+                    name: "Score",
+                    description: "A wide integer range used to expose rounding behavior.",
+                    weight: 100,
+                    minScore: 0,
+                    maxScore: 10_000,
+                },
+            ],
+        };
+        const judgeScores = [51, 51, 10].map((score) =>
+            calculateWeightedRubricScore(track, { score }),
+        );
+
+        expect(
+            Math.round(judgeScores.reduce((sum, score) => sum + score, 0) / judgeScores.length),
+        ).toBe(0);
+        expect(
+            Math.round(
+                judgeScores.map(Math.round).reduce((sum, score) => sum + score, 0) /
+                    judgeScores.length,
+            ),
+        ).toBe(1);
     });
 });

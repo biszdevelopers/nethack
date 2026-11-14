@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import { eq } from "drizzle-orm";
 import * as schema from "~~/server/database/schema";
+import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 
 const schemaPath = resolve(import.meta.dirname, "..", "..", "sql", "archive", "init.sql");
 const initSQL = readFileSync(schemaPath, "utf-8");
@@ -31,6 +32,8 @@ const migrationSQL = `
   ALTER TABLE seasons ADD COLUMN results_open_timestamp INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE seasons ADD COLUMN theme_name TEXT;
   ALTER TABLE seasons ADD COLUMN theme_description TEXT;
+  ALTER TABLE seasons ADD COLUMN score_curve_preset TEXT NOT NULL DEFAULT 'original';
+  ALTER TABLE seasons ADD COLUMN rubric_version_id INTEGER;
 
   ALTER TABLE teams ADD COLUMN season_id INTEGER NOT NULL DEFAULT 1;
   CREATE INDEX IF NOT EXISTS teams_season ON teams (season_id);
@@ -50,6 +53,7 @@ const migrationSQL = `
   CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
 
   ALTER TABLE team_scores ADD COLUMN season_id INTEGER;
+  ALTER TABLE team_scores ADD COLUMN rubric_version_id INTEGER;
 
   CREATE UNIQUE INDEX IF NOT EXISTS sc_votes_user_id_unique ON sc_votes(user_id);
 
@@ -74,6 +78,38 @@ const migrationSQL = `
     description TEXT NOT NULL,
     icon TEXT NOT NULL,
     color TEXT NOT NULL DEFAULT 'gold'
+  );
+
+  CREATE TABLE IF NOT EXISTS rubric_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    definition TEXT NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS rubric_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    definition TEXT NOT NULL,
+    source_template_id INTEGER,
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (season_id, version)
+  );
+
+  CREATE TABLE IF NOT EXISTS judging_drafts (
+    team_id INTEGER NOT NULL,
+    judge_user_id INTEGER NOT NULL,
+    rubric_version_id INTEGER NOT NULL,
+    scores TEXT NOT NULL,
+    reasoning TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (team_id, judge_user_id)
   );
 
   ALTER TABLE hackathon ADD COLUMN voting_enabled INTEGER NOT NULL DEFAULT 0;
@@ -117,17 +153,44 @@ export async function createTestContext(): Promise<TestContext> {
     sqlite.exec(initSQL);
     sqlite.exec(migrationSQL);
     const drizzleDb = await createDrizzle(sqlite);
-    return { drizzle: drizzleDb, sqlite };
+    let testDb: any;
+
+    // PostgreSQL transactions are asynchronous. Preserve the production
+    // callback shape in the legacy SQLite unit-test harness while keeping the
+    // underlying in-memory database transaction open until the callback ends.
+    testDb = new Proxy(drizzleDb as any, {
+        get(target, property) {
+            if (property === "transaction") {
+                return async (callback: (tx: unknown) => unknown) => {
+                    sqlite.exec("BEGIN");
+                    try {
+                        const result = await callback(testDb);
+                        sqlite.exec("COMMIT");
+                        return result;
+                    } catch (error) {
+                        sqlite.exec("ROLLBACK");
+                        throw error;
+                    }
+                };
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+        },
+    });
+    return { drizzle: testDb, sqlite };
 }
 
 export function resetTestContext(ctx: TestContext): void {
     ctx.sqlite.exec(`
+    DELETE FROM judging_drafts;
     DELETE FROM sc_votes;
     DELETE FROM ballot_scores;
     DELETE FROM ballots;
     DELETE FROM team_scores;
     DELETE FROM team_awards;
     DELETE FROM awards;
+    DELETE FROM rubric_versions;
+    DELETE FROM rubric_templates;
     DELETE FROM peer_voting_scores;
     DELETE FROM user_past_teams;
     DELETE FROM oauth2_applications;
@@ -167,11 +230,24 @@ export function seedSeason(
     overrides: { name?: string; is_active?: number } & Record<string, unknown> = {},
 ) {
     const { name, is_active, ...rest } = overrides;
-    return ctx.drizzle
+    const season = ctx.drizzle
         .insert(schema.seasons)
         .values({ name: name ?? "Season 1", is_active: is_active ?? 1, ...rest } as any)
         .returning()
         .get();
+    const rubric = ctx.sqlite
+        .prepare(
+            "INSERT INTO rubric_versions (season_id, version, name, definition) VALUES (?, ?, ?, ?)",
+        )
+        .run(season.id, 1, "Test rubric", JSON.stringify(DEFAULT_RUBRIC_DEFINITION));
+    return (
+        ctx.drizzle
+            .update(schema.seasons)
+            .set({ rubric_version_id: Number(rubric.lastInsertRowid) })
+            .where(eq(schema.seasons.id, season.id))
+            .returning()
+            .get() ?? season
+    );
 }
 
 export function seedUser(
@@ -224,6 +300,38 @@ export function seedTeam(
         } as any)
         .returning()
         .get();
+}
+
+export function seedTeamEvaluations(
+    ctx: TestContext,
+    team: { id: number; season_id: number },
+    count: number,
+) {
+    const season = ctx.drizzle
+        .select()
+        .from(schema.seasons)
+        .where(eq(schema.seasons.id, team.season_id))
+        .get();
+    if (!season?.rubric_version_id) throw new Error("The test team needs a rubric version.");
+
+    return Array.from({ length: count }, (_, index) => {
+        const judge = seedUser(ctx, {
+            email: `judge-${team.id}-${index}@basischina.com`,
+            role: "judge",
+        });
+        ctx.drizzle
+            .insert(schema.teamScores)
+            .values({
+                team_id: team.id,
+                judge_user_id: judge.id,
+                season_id: team.season_id,
+                rubric_version_id: season.rubric_version_id,
+                scores: "{}",
+                reasoning: `Evaluation ${index + 1}`,
+            } as any)
+            .run();
+        return judge;
+    });
 }
 
 // ---------------------------------------------------------------------------

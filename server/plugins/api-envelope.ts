@@ -9,12 +9,14 @@ const isJsonApiResponse = (event: any, body: unknown) => {
 export default defineNitroPlugin((nitroApp) => {
     nitroApp.hooks.hook("beforeResponse", (event, response) => {
         if (!isJsonApiResponse(event, response.body)) return;
+        const body = response.body;
         if (
-            response.body &&
-            !Array.isArray(response.body) &&
-            "status" in response.body &&
-            "code" in response.body &&
-            ("data" in response.body || "error" in response.body)
+            body &&
+            typeof body === "object" &&
+            !Array.isArray(body) &&
+            "status" in body &&
+            "code" in body &&
+            ("data" in body || "error" in body)
         ) {
             return;
         }

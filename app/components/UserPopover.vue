@@ -17,13 +17,10 @@
 
                 <template v-else-if="hoveredUser">
                     <div
-                        v-if="
-                            hoveredUser.profile_theme?.mode === 'url' &&
-                            hoveredUser.profile_theme.value
-                        "
+                        v-if="backgroundUrl"
                         class="h-24 w-full bg-cover bg-center rounded-t"
                         :style="{
-                            backgroundImage: `url(${hoveredUser.profile_theme.value.startsWith('http') ? hoveredUser.profile_theme.value : `/api/users/${hoveredUser.id}/profile_picture`})`,
+                            backgroundImage: `url(${backgroundUrl})`,
                         }"
                     />
                     <div class="flex items-center gap-3 p-3">
@@ -102,6 +99,7 @@ const props = defineProps<{
 
 const hasHovered = ref(false);
 const hoveredUser = ref<APIUser | null>(null);
+const backgroundUrl = computed(() => getProfileThemeUrl(hoveredUser.value?.profile_theme));
 const pending = ref(false);
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;

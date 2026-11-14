@@ -5,7 +5,7 @@ description: File-based routes in the basishacks frontend — home, dashboard, v
 
 # Pages
 
-The basishacks frontend contains **27 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
+The basishacks frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
 
 ## Public Pages
 
@@ -37,17 +37,27 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 // No auth required
 ```
 
+### `/seasons/:id`
+
+**File:** `app/pages/seasons/[id].vue`
+
+Public season details page linked from team score cards. It shows the selected season's event dates, theme when it is available, current-season status, and navigation to other seasons. Invalid or unknown season IDs return a not-found page.
+
+**Layout:** `default`
+
 ### `/profile`
 
 **File:** `app/pages/profile.vue`
 
 User profile editing page. Protected by `auth` middleware.
 
+The page loads the signed-in user's API record through `useApiUser()`. This waits for the client-side session request and watches the session user ID so profile data loads after the cookie session becomes available during hydration.
+
 **Features:**
 
 - Displays greeting with user name or email
 - **Name editing** — text input validated by `UpdateUserRequest`
-- **Avatar upload** — `UFileUpload` with live preview via `UserAvatar`. Supports removing the current avatar. Converts uploaded files to base64 before sending.
+- **Avatar** — displays the basis-auth picture through `UserAvatar`. The image URL is synchronized at login.
 - **Profile theme image** — `UFileUpload` for background image. Displays the current theme as a CSS background. Affects the user's profile page (`/user/{id}`) and `UserPopover` card.
 - **Logout button** — clears the session and navigates to `/`
 
@@ -163,19 +173,20 @@ Contributing guidelines and security disclosure policy. Contains commit guidelin
 
 **File:** `app/pages/judging/index.vue`
 
-Judge landing page. Protected by `auth` middleware. Accessible only by judges or admins during the `voting` status.
+Judge landing page. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled.
 
 **Guards:**
 
-- Redirects to `/` if hackathon status is not `voting`
+- Redirects to `/` if hackathon status is not `voting` or `judging_open` is disabled
 - Redirects to `/` if user lacks judge or admin permissions
 
 **Content:**
 
-- Static summary of participation statistics
-- **Current Evaluations** section — shows `JudgeProgressCard` for the active season
-- **Past Evaluations** section — shows `JudgeProgressCard` entries for past seasons with at least one scored team
-- **Continue** button — navigates to `/judging/continue`
+- **Current evaluations** — shows judge-specific progress for submitted projects in the active season, with an accessible progress bar
+- **Continue judging** — opens the active queue when projects remain
+- **Past evaluations** — shows the judge's completed progress for prior seasons
+
+The page omits unrelated event participation figures so judges can focus on their own workload.
 
 **Layout:** `default`
 
@@ -183,13 +194,17 @@ Judge landing page. Protected by `auth` middleware. Accessible only by judges or
 
 **File:** `app/pages/judging/continue.vue`
 
-Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins during the `voting` status.
+Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled. Draft saves and final score submissions enforce the same gate on the server.
 
 **Flow:**
 
-1. Fetches teams for judging from `/api/teams?judging=1`
-2. Renders a `JudgingCard` for each team (project descriptions rendered via `SafeComark`)
-3. After scoring, refreshes the list
+1. Loads the judge's pending projects from `/api/teams?judging=true`, their personal progress from `/api/ballot/summary`, and the active rubric from `/api/judging/rubric`.
+2. Shows one project at a time with repository/demo links, project details, AI-use statement, and the criteria for that project's track.
+3. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
+4. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores, and the page blocks leaving when unsaved changes cannot be saved.
+5. Requires a review step before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
+
+Previous/next controls let a judge move through the current queue while retaining recoverable drafts. The interface is mobile-first, uses keyboard-operable score controls, and provides explicit progress, saving, validation, and submission states.
 
 **Layout:** `default`
 
@@ -308,7 +323,7 @@ DeepSeek AI chat interface.
 
 **File:** `app/pages/developers/debug.vue`
 
-File upload and debug utilities. Permission-gated.
+Permission-gated, read-only listings of existing files and active permalink references.
 
 **Layout:** `developers-dashboard`
 
@@ -320,8 +335,10 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). Contains:
 
 - **Season** — pick the season to manage and activate it (`PATCH /api/seasons/active`); "New Season" creates one via `POST /api/admin/seasons`.
 - **Season Name** — rename the selected season via `PATCH /api/admin/seasons`.
-- **Hackathon Configuration** — all settings are per-season (including score and rank visibility) and auto-save through `/api/admin/hackathon` with `season_id`. Editing the active season also syncs to the global `hackathon` row. No "Save" button; every field change is persisted via a serialized PATCH chain carrying all form fields, so no field is ever dropped and no two PATCHes race.
-- **Database Export** — download the SQLite database or a CSV snapshot via `GET /api/admin/database/export`.
+- **Judging rubric** — publish the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured. For database-managed seasons, edit track keys and labels, criteria, integer score ranges, and weights. Weights are checked to total 100% for each track. Saving creates a new immutable version; the version history shows which rubric is active. Organizers can copy a prior season directly or load its rubric to customize, apply or copy reusable named templates, and save, update, or delete templates. A track used by a submitted project must be reassigned before it can be removed.
+- **Score display curve** — choose a season-level presentation curve while preserving original judge averages and rankings.
+- **Hackathon Configuration** — live settings are read-only with a YAML source. Other seasons retain editable stored settings, auto-saved through `/api/admin/hackathon`.
+- **Database Export** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
 
 **Layout:** `developers-dashboard`
 
@@ -359,7 +376,7 @@ Redirects an authenticated user to their own profile page (`/user/{id}`). If the
 
 Admin-only debug page with two tabs:
 
-- **File Upload** — upload files to `/assets` or `/userast`, list uploaded files, and copy permalinks
+- **Existing Files** — browse existing files and active permalink references
 - **DeepSeek Chat** — create chat sessions, send messages, and delete sessions via `/api/debug/deepseek/sessions`
 
 Protected by `auth` middleware and an admin permission check.

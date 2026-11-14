@@ -3,7 +3,7 @@ import { hasNethackPermission } from "~~/shared/permissions";
 
 /** Client-only permission state for display decisions; APIs enforce it server-side. */
 export function useNethackPermissions() {
-    const permissions = useState<string[]>("basis-permissions", () => []);
+    const { permissions } = useBasisAuthSession();
 
     return {
         permissions,

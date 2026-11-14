@@ -14,7 +14,7 @@ This file contains project-specific context for AI coding agents. The reader is 
 - Peer voting and judge scoring
 - basis-auth login and resource-token integration
 
-The stack is Vue 3 (frontend) + Nitro (backend) + SQLite via Drizzle ORM (`bun:sqlite` under Bun, `better-sqlite3` under Node.js).
+The stack is Vue 3 (frontend) + Nitro (backend) + PostgreSQL via Drizzle ORM and the `postgres` driver. Bun 1.3.14 and Node.js use the same database implementation.
 
 ---
 
@@ -22,17 +22,17 @@ The stack is Vue 3 (frontend) + Nitro (backend) + SQLite via Drizzle ORM (`bun:s
 
 | Layer | Technology |
 | --- | --- |
-| Framework | Nuxt 4 (^4.4.8) |
-| UI | `@nuxt/ui` ^4.9.0 (Tailwind CSS v4 based) |
-| Language | TypeScript (^5.9.3) |
-| Runtime | Node.js >= v24 or Bun (dual-runtime support) |
-| Package Manager | Bun (preferred); npm works |
-| Database | SQLite via Drizzle ORM (`bun:sqlite` under Bun, `better-sqlite3` under Node.js) |
-| Auth | `nuxt-auth-utils` 0.5.25 (session-based) |
-| Validation | Zod 4.x (^4.4.3) |
+| Framework | Nuxt 4 (^4.6.4) |
+| UI | `@nuxt/ui` ^4.12.0 (Tailwind CSS v4 based) |
+| Language | TypeScript (^6.0.3) |
+| Runtime | Node.js >= v24 or Bun 1.3.14 (dual-runtime support) |
+| Package Manager | Bun 1.3.14 or npm |
+| Database | PostgreSQL via Drizzle ORM and `postgres` |
+| Auth | basis-auth OpenID Connect with encrypted HTTP-only token cookies |
+| Validation | Zod 4.x (^4.6.7) |
 | Fonts | `@nuxt/fonts` ^0.14.0 (local provider) |
-| Icons | `@iconify-json/lucide`, `@iconify-json/material-symbols` |
-| Linting | `@nuxt/eslint` 1.10.0 + Prettier ^3.9.4 |
+| Icons | `@nuxt/icon` with `@iconify-json` (fluent, heroicons, lucide, material-symbols, simple-icons) |
+| Linting | `@nuxt/eslint` + Oxfmt ^0.78.0 |
 | Deployment | Node.js server (VPS; Bun also supported) |
 
 ---
@@ -52,10 +52,10 @@ server/             # Nitro backend
   api/              # API route handlers (file-based)
   middleware/       # Server middleware (OAuth2 authorize)
   plugins/          # Nitro plugins (DB init, Graph integration, environment validation)
-  database/         # Drizzle ORM schema, migrations, and runtime-agnostic init
+  database/         # Drizzle ORM schema, PostgreSQL connection, and migrations
     schema.ts       # Canonical Drizzle schema
-    migrate.ts      # Custom migration runner + legacy schema repair
-    index.ts        # createDrizzleDatabase() selects bun:sqlite or better-sqlite3
+    migrate.ts      # Advisory-locked PostgreSQL migration and seed runner
+    index.ts        # Bounded PostgreSQL pool shared by Bun and Node.js
   types/            # Type augmentations (H3EventContext)
   utils/            # Server utilities
     database/       # Per-table Drizzle helpers
@@ -71,7 +71,7 @@ shared/             # Code shared between client and server
   schemas.ts        # Zod schemas for API input validation
   database.d.ts     # TypeScript types matching DB schema exactly
   responses.d.ts    # API response interface definitions
-  auth.d.ts         # nuxt-auth-utils session type augmentation
+  auth.d.ts         # basis-auth session type augmentation
   permissions.ts    # Fine-grained permission constants and helpers
   oauth2-scopes.ts  # OAuth2 scope definitions
   rubric.ts         # Judging rubric definitions
@@ -92,7 +92,7 @@ tests/              # Vitest test suite
 bun-shim/           # Compatibility shim for `bun test`
   shim.test.ts      # Prints guidance to use `bun run test`
 
-database/           # SQLite database file (basishacks.sqlite, WAL mode)
+drizzle/postgres/   # PostgreSQL migrations and Drizzle Kit metadata
 ```
 
 ---
@@ -103,7 +103,7 @@ database/           # SQLite database file (basishacks.sqlite, WAL mode)
 # Install dependencies
 bun i
 
-# Database auto-migrates on server startup; manual Drizzle Kit command
+# PostgreSQL auto-migrates on server startup; manual Drizzle Kit command
 bun run db:migrate
 
 # Dev server (HTTPS, port 24598)
@@ -125,19 +125,15 @@ bun run test
 
 ## Runtime Architecture
 
-### Local Development
+### Local Development and Production (VPS)
 
-- Nitro preset: `node-server`
-- SQLite driver is selected at runtime: `bun:sqlite` under Bun, `better-sqlite3` under Node.js
-- Database file: `./database/basishacks.sqlite` with WAL mode and foreign keys enabled
-- `server/plugins/init-database.ts` initializes the DB on startup via Drizzle ORM and attaches it to `event.context.drizzle`
-
-### Production (VPS)
-
-- Nitro preset: `node-server`
-- Same runtime-agnostic SQLite driver selection as local development
-- Database file: `./database/basishacks.sqlite` with WAL mode and foreign keys enabled
-- The same `event.context.drizzle` is used as in local development
+- Nitro preset: `node-server`.
+- Both runtimes require `DATABASE_URL` and use the same PostgreSQL driver.
+- `DATABASE_POOL_MAX` defaults to 10 and accepts validated values from 2 through 64.
+- `server/plugins/init-database.ts` creates the pool, applies advisory-locked migrations, seeds initial rows, and closes the pool during shutdown.
+- `server/middleware/02.database.ts` attaches the shared Drizzle instance to each request as `event.context.drizzle`.
+- Runtime uploads live under the project-root `/assets` directory. Git ignores this directory so it survives an in-place pull/build/start; back it up separately, and preserve or restore it before serving after a re-clone. The static showcase at `public/assets` is separate.
+- Profile image objects use SHA-256 content-addressed names under `/assets/userassets/profiles/`, deduplicated by image bytes and canonical extension. Cleanup only considers those managed profile objects after at least seven days and a locked database check confirms zero references. The application does not schedule cleanup of existing debug permalink files.
 
 ---
 
@@ -147,7 +143,7 @@ Authentication is delegated to the separately deployed **basis-auth** OpenID Con
 
 Graph integration is independent from login and must never create or authenticate a basishacks session.
 
-Session storage is handled by `nuxt-auth-utils`. The session cookie stores only `{ user: { id: number } }`.
+The encrypted HTTP-only cookie stores the validated basis-auth tokens and user identity. Session and role checks are enforced server-side through the helpers below.
 
 Roles:
 
@@ -168,7 +164,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 - All DB access goes through `event.context.drizzle` (Drizzle ORM).
 - Per-table helpers live in `server/utils/database/*.ts` (e.g., `users.ts`, `teams.ts`).
 - The canonical TypeScript types are in `shared/database.d.ts` (inferred from Drizzle schema).
-- Migration files are generated by Drizzle Kit and stored in `drizzle/`; they are applied automatically on server startup by the runtime-agnostic runner in `server/database/migrate.ts`.
+- PostgreSQL migration files are generated by Drizzle Kit and stored in `drizzle/postgres/`; startup applies them under an advisory lock through `server/database/migrate.ts`.
 - Profile themes are stored as `"mode|value"` strings in the DB and parsed into `{ mode, value }` objects in the API layer (`server/utils/convert.ts`).
 
 ---
@@ -180,7 +176,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 - Shared Zod schemas are in `shared/schemas.ts`.
 - API responses should match the interfaces in `shared/responses.d.ts`.
 - Use `convertUserToPublic` and `convertTeamToPublic` to strip internal fields before returning data.
-- Rate limiting is applied with `applyRateLimit(handler)` from `server/utils/rateLimit.ts` (default: 60 requests/minute). See `RATE_LIMITING.md` for usage.
+- Rate limiting is applied with `applyRateLimit(handler)` from `server/utils/rateLimit.ts` (default: 120 requests/minute). See `documentation/deployment/rate-limiting.md` for usage.
 
 ---
 
@@ -198,7 +194,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 
 ## Code Style
 
-- Prettier config (`.prettierrc`): **semicolons enabled**, **double quotes**, `tabWidth: 4`, `trailingComma: all`, `printWidth: 100`.
+- Oxfmt config (`.oxfmtrc.json`): **semicolons enabled**, **double quotes**, `tabWidth: 4`, `trailingComma: all`, `printWidth: 100`.
 - ESLint is configured via `@nuxt/eslint` (`eslint.config.mjs`).
 - Prefer `const` and arrow functions where appropriate.
 - Use `~~/` for imports from the project root (especially in server code).
@@ -215,7 +211,7 @@ bun run test:watch      # watch mode
 bun run test:coverage   # with coverage
 ```
 
-The suite currently contains **647 passing tests** covering API endpoints, server utilities, database helpers, shared schemas, frontend components, pages, composables, and middleware.
+The authoritative test count is recorded in `tests/.test-meta.json`, which `bun run test` refreshes. Tests cover API endpoints, server utilities, database helpers, shared schemas, frontend components, pages, composables, and middleware. Most isolated API and database-helper tests still use in-memory SQLite fixtures; the PostgreSQL integration test separately validates migrations, JSON storage, and database constraints against a configured PostgreSQL service.
 
 Do **not** use `bun test`. Bun's native test runner cannot resolve Nuxt's `~~/` and `~/` path aliases. `bunfig.toml` redirects `bun test` to `bun-shim/shim.test.ts`, which prints guidance pointing to `bun run test`.
 
@@ -226,8 +222,8 @@ Legacy files such as `tests/index.js`, `tests/test.oauth2.js`, and `tests/test.d
 ## Security Considerations
 
 - **Rate limiting** is in-memory and per-process. Under high concurrency or with multiple server instances, consider using a shared store (e.g., Redis).
-- **Session password** (`NUXT_SESSION_PASSWORD`) must be at least 32 bytes.
-- **Foreign keys** are enforced (`PRAGMA foreign_keys = ON`).
+- **Cookie encryption secret** (`BASIS_AUTH_COOKIE_SECRET`) must be at least 32 bytes.
+- **Foreign keys** are enforced by PostgreSQL constraints.
 - **Input validation** is performed with Zod on every API endpoint.
 - **RBAC** is enforced server-side; never trust the frontend for permission checks.
 - **Graph API** calls are centralized in `server/plugins/microsoft.ts` for auditability and are not used for login.
@@ -242,8 +238,11 @@ The application is deployed as a Node.js server on a VPS:
 # Build for production
 bun run build
 
-# Start the server
-node .output/server/index.mjs
+# Start the server with Bun 1.3.14
+bun run start
+
+# Or use the supported Node.js production launcher
+node start-fix.mjs
 ```
 
 ---
@@ -254,13 +253,16 @@ Copy `.env.example` to `.env` and fill in at least the required values:
 
 ### Required
 
-| Variable                   | Purpose                                                 |
-| -------------------------- | ------------------------------------------------------- |
-| `NUXT_SESSION_PASSWORD`    | Session encryption key (>= 32 bytes)                    |
-| `BASIS_AUTH_ISSUER`        | Exact basis-auth issuer URL                             |
-| `BASIS_AUTH_CLIENT_ID`     | Confidential basis-auth client ID for basishacks        |
-| `BASIS_AUTH_CLIENT_SECRET` | Confidential basis-auth client secret                   |
-| `BASIS_AUTH_RESOURCE`      | Required resource audience for basishacks access tokens |
+| Variable                   | Purpose                                                  |
+| -------------------------- | -------------------------------------------------------- |
+| `BASIS_AUTH_COOKIE_SECRET` | Cookie encryption key (>= 32 bytes)                      |
+| `DATABASE_URL`             | PostgreSQL connection URL for development and production |
+| `BASIS_AUTH_ISSUER`        | Exact basis-auth issuer URL                              |
+| `BASIS_AUTH_CLIENT_ID`     | Confidential basis-auth client ID for basishacks         |
+| `BASIS_AUTH_CLIENT_SECRET` | Confidential basis-auth client secret                    |
+| `BASIS_AUTH_RESOURCE`      | Required resource audience for basishacks access tokens  |
+
+`DATABASE_POOL_MAX` (default 10, range 2–64) is an optional deployment setting. Upload storage always uses the project-root `/assets` directory; it is not configured through an environment variable.
 
 ### Optional (for Graph features)
 
@@ -284,12 +286,13 @@ In production, these are configured in the server environment.
 
 ## Useful Notes
 
-- The `hackathon` table has a single row (`id = 1`) that controls the global event state (`not_started`, `in_progress`, `voting`, `finished`, `paused`).
-- Each `seasons` row stores its own copy of the tweakable settings (`status`, `show_scores`, `show_ranking` — see `SEASON_TWEAK_FIELDS` in `server/utils/database/seasons.ts`). Editing tweaks via `PATCH /api/seasons/:id/tweaks` also updates the `hackathon` row when the season is live; `setActiveSeason` copies the newly active season's tweaks into the `hackathon` row.
+- `HACKATHON.yml` controls live event settings. `YAML_SOURCE_HACKATHON` selects a local file, remote assets URL, or PostgreSQL rollback mode.
+- The active season ID and historical settings remain in PostgreSQL. YAML settings are applied to the active season's reads, and switching seasons snapshots the outgoing live settings. Edit the manifest to change live settings in YAML mode.
 - Team project submissions are only accepted while the hackathon status is `not_started` or `in_progress`.
 - Peer voting scores must sum to exactly 10.
-- Judge scoring uses rubric criteria defined in `shared/rubric.ts` with scores 0–5 per criterion.
-- The `/api/debug/*` routes expose DeepSeek chat sessions and file upload utilities; these are intended for development only.
+- Judge scoring uses the season's immutable rubric version, integer criteria ranges, and weights totaling 100 per track. Weighted normalized criteria are averaged to 0–100; the original score is retained when a display curve is applied.
+- Judge drafts can be resumed before finalization. Competitor comments are anonymous and become visible after results are published.
+- The `/api/debug/*` routes expose DeepSeek chat sessions and existing file listings; these are intended for development only.
 
 ---
 

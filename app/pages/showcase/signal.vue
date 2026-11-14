@@ -8,7 +8,7 @@
             class="fixed bottom-4 left-1/2 transform -translate-x-1/2 text-white text-center flex flex-col items-center gap-4 z-30"
         >
             <h3 class="text-2xl text-gray-200">Scroll for more</h3>
-            <UIcon name="i-mdi-chevron-double-down" size="2em" class="text-gray-200" />
+            <UIcon name="i-heroicons-chevron-double-down" size="2em" class="text-gray-200" />
         </div>
     </Transition>
 
@@ -320,7 +320,7 @@ useHead({
     ],
 });
 
-const { data: teams } = await useFetch("/api/teams?season_id=2");
+const { data: teams } = await useApiFetch("/api/teams?season_id=2", { $fetch: globalThis.$fetch });
 const modalOpen = ref(false);
 const selectedTeam = ref(null);
 

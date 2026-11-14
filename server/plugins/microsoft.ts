@@ -1,12 +1,11 @@
-import { randomBytes } from "node:crypto";
 import { env } from "node:process";
 
 const metadata = {
     access_token: null as string | null,
     user_access_token: null as string | null | undefined,
     user_refresh_token: null as string | null | undefined,
-    webhook_state: null as string | null,
-    webhook_id: null as string | null,
+    webhook_state: process.env.MICROSOFT_WEBHOOK_STATE ?? null,
+    webhook_id: process.env.MICROSOFT_WEBHOOK_ID ?? null,
 };
 
 let initPromise: Promise<string | null> | null = null;
@@ -26,21 +25,31 @@ export default async function initializeMSAccessToken() {
         return metadata.access_token;
     }
 
-    const req = await fetch(
-        `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
-        {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
+    let req: Response;
+    try {
+        req = await fetch(
+            `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: new URLSearchParams({
+                    client_id: process.env.MICROSOFT_CLIENT_ID || "",
+                    scope: "https://graph.microsoft.com/.default",
+                    client_secret: env.MICROSOFT_CLIENT_SECRET ?? "",
+                    grant_type: "client_credentials",
+                }).toString(),
             },
-            body: new URLSearchParams({
-                client_id: process.env.MICROSOFT_CLIENT_ID || "",
-                scope: "https://graph.microsoft.com/.default",
-                client_secret: env.MICROSOFT_CLIENT_SECRET ?? "",
-                grant_type: "client_credentials",
-            }).toString(),
-        },
-    );
+        );
+    } catch {
+        // Graph is an optional integration. A token endpoint outage must not
+        // reject Nitro's startup and prevent core hackathon flows from serving.
+        console.warn(
+            "[MS Graph] Token endpoint is unavailable - Microsoft Graph features will be unavailable",
+        );
+        return null;
+    }
 
     const code = req.status;
     if (code !== 200) {
@@ -52,7 +61,17 @@ export default async function initializeMSAccessToken() {
         console.log("[MSGraph] API Endpoint response: " + code);
     }
     const data: any = await req.json();
-    return (metadata.access_token = data.access_token);
+    metadata.access_token = data.access_token;
+
+    if (process.env.MICROSOFT_WEBHOOK_STATE && process.env.CURRENT_URL_ORIGIN) {
+        try {
+            await initializeChatbotWebhook();
+        } catch (error) {
+            console.warn("[MS Graph] Webhook subscription initialization failed", error);
+        }
+    }
+
+    return metadata.access_token;
 }
 
 export async function getMSAccessToken() {
@@ -304,7 +323,13 @@ export function getMicrosoftWebhookState() {
 }
 
 export async function refreshChatbotWebhook() {
-    console.log("[MS Graph] Refreshing chatbot webhook subscription... " + getChatbotWebhookId());
+    const webhookId = getChatbotWebhookId();
+    if (!webhookId || !getMicrosoftWebhookState()) {
+        console.warn("[MS Graph] Webhook ID or persistent webhook state is not configured.");
+        return;
+    }
+
+    console.log("[MS Graph] Refreshing chatbot webhook subscription...");
 
     if (
         process.env.CURRENT_URL_ORIGIN == null ||
@@ -314,7 +339,7 @@ export async function refreshChatbotWebhook() {
         return;
     }
 
-    const res = await requestMicrosoft("/subscriptions/" + getChatbotWebhookId(), "PATCH", {
+    const res = await requestMicrosoft("/subscriptions/" + webhookId, "PATCH", {
         expirationDateTime: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 days from now
     });
 
@@ -330,9 +355,24 @@ export async function initializeChatbotWebhook() {
         return;
     }
 
+    const webhookState = process.env.MICROSOFT_WEBHOOK_STATE;
+    if (!webhookState || new TextEncoder().encode(webhookState).byteLength < 32) {
+        metadata.webhook_state = null;
+        console.warn(
+            "[MS Graph] Set MICROSOFT_WEBHOOK_STATE to a persistent secret of at least 32 bytes before registering webhooks.",
+        );
+        return;
+    }
+
+    metadata.webhook_state = webhookState;
+    metadata.webhook_id = process.env.MICROSOFT_WEBHOOK_ID ?? null;
+
     console.log("[MS Graph] Initializing chatbot webhook subscription...");
 
-    metadata.webhook_state = randomBytes(89).toString("base64url");
+    if (metadata.webhook_id) {
+        await refreshChatbotWebhook();
+        return;
+    }
 
     const res = await requestMicrosoft("/subscriptions", "POST", {
         changeType: "created,updated",

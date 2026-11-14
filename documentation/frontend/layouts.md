@@ -32,6 +32,7 @@ The standard page layout used by most public pages.
 - `RoleHeader` — sticky navigation header with role-based menu items
 - Content wrapper — centered `div` with `max-w-7xl` (1280px). Fills full viewport width on screens under 1280px; centered above that.
 - `Footer` — site-wide footer with links and copyright
+- A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
 
 **Used by:** `/`, `/profile`, `/rules`, `/voting`, `/judging`, `/judging/continue`
 
@@ -123,6 +124,7 @@ Participant dashboard layout with a visible left sidebar containing the active p
 
 - On large screens, the sidebar is rendered as a fixed-width aside on the left and the main content fills the remaining width
 - On small screens, the sidebar stacks above the main content
+- A keyboard-visible skip link focuses the main landmark; mobile navigation links have 44px minimum touch height and visible keyboard focus.
 - A `UBanner` notification can appear on small screens with guidance about dashboard navigation
 
 **CSS:** Includes `metallic-gold`, `metallic-silver`, and `metallic-bronze` shimmer animations for season info display.

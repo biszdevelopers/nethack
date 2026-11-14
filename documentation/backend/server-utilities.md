@@ -34,20 +34,20 @@ Requires `Authorization: Bearer …`, validates the basis-auth access token, opt
 
 ## Database layer
 
-The database layer uses Drizzle ORM. The canonical schema lives in `server/database/schema.ts`, and initialization/migration logic lives in `server/database/migrate.ts`. The runtime-agnostic driver selector is in `server/database/index.ts`.
+The database layer uses Drizzle ORM. The canonical schema lives in `server/database/schema.ts`, initialization and migrations live in `server/database/migrate.ts`, and the validated bounded PostgreSQL pool is created in `server/database/index.ts`.
 
 ### `createDrizzleDatabase`
 
 ```ts
-export async function createDrizzleDatabase(dbPath?: string): Promise<DrizzleDatabase>;
+export async function createDrizzleDatabase(): Promise<DrizzleDatabase>;
 ```
 
-Creates a new Drizzle ORM instance backed by `bun:sqlite` under Bun or `better-sqlite3` under Node.js. Configures WAL journal mode, enables foreign keys, runs legacy schema repair, applies pending migrations, seeds the hackathon row, and seeds the onsite-login redirect URI.
+Creates the process-wide Drizzle ORM instance backed by a bounded `postgres` connection pool. It validates the PostgreSQL URL and pool size before connecting.
 
 ### `getDb`
 
 ```ts
-export async function getDb(dbPath?: string): Promise<DrizzleDatabase>;
+export async function getDb(): Promise<DrizzleDatabase>;
 ```
 
 Alias for `createDrizzleDatabase`.
@@ -120,22 +120,23 @@ The `project` object also includes `submitted` (boolean) and `sourcing`.
 
 ## rateLimit.ts
 
-In-memory rate limiting middleware with four pre-configured tiers.
+In-memory rate limiting middleware with five pre-configured tiers.
 
 ### Built-in tier configurations
 
 | Config Constant | Default Limit | Environment Variable | Prefix | Used By |
 | --- | --- | --- | --- | --- |
-| `DEFAULT_RATE_LIMIT_CONFIG` | 6,000 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
-| `AUTH_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | `/api/login`, `/api/auth/basis/callback` |
-| `VOTE_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
-| `UPLOAD_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | `/api/debug/upload` |
+| `DEFAULT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
+| `JUDGING_DRAFT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | `judging-draft` | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId`; isolated per-user bucket for autosave |
+| `AUTH_RATE_LIMIT_CONFIG` | 20 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | Authentication routes |
+| `VOTE_RATE_LIMIT_CONFIG` | 30 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
+| `UPLOAD_RATE_LIMIT_CONFIG` | 10 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | Upload routes |
 
 ### Configuration interface
 
 ```ts
 interface RateLimitConfig {
-    maxRequests: number; // Default: 6000 (from RATE_LIMIT_GENERAL_MAX)
+    maxRequests: number; // Default: 120 (from RATE_LIMIT_GENERAL_MAX)
     windowMs: number; // Default: 60000 (1 minute, from RATE_LIMIT_WINDOW_MS)
     keyPrefix?: string; // Optional prefix for the client identifier
     keyGenerator?: (event: H3Event) => Promise<string | null> | string | null;
@@ -150,8 +151,8 @@ export async function getClientIdentifier(event: H3Event): Promise<string>;
 
 Returns a unique identifier for the client using a two-tier strategy:
 
-1. **Authenticated requests**: `user:{id}` — extracted from the session cookie via `getUserSession(event)`.
-2. **Unauthenticated requests**: `ip:{address}` — prefers the direct socket peer address (`event.node.req.socket.remoteAddress`), falling back to `x-real-ip` header, or `unknown`. When `TRUST_PROXY` is set, the rightmost untrusted hop from `x-forwarded-for` is used.
+1. **Authenticated requests**: `user:{id}` — extracted from the basis-auth session via `readBasisAuthUserSession(event)`.
+2. **Unauthenticated requests**: `ip:{address}` — uses the direct socket peer by default, or `unknown`. Set `TRUSTED_PROXY_HOPS` to the exact 0–10 proxy count to select the first untrusted address from a valid `x-forwarded-for` chain.
 
 This ensures authenticated users are not rate-limited by other users' activity behind a shared NAT, while unauthenticated users are still protected at the IP level.
 
@@ -186,7 +187,7 @@ Clears the in-memory rate limit history. Exposed primarily for tests.
 
 ## basis-auth.ts and oauth2.ts
 
-`basis-auth.ts` owns OIDC discovery, confidential-client configuration, the encrypted transaction session, S256 PKCE requests, callback validation, UserInfo loading, token refresh rotation, and revocation. `database/basis-auth-sessions.ts` encrypts token bundles with AES-256-GCM and persists them by Nuxt session ID, keeping large access JWTs out of browser cookies. `oauth2.ts` now contains only the public-origin helper.
+`basis-auth.ts` owns OIDC discovery, confidential-client configuration, S256 PKCE requests, callback validation, UserInfo loading, token refresh rotation, and revocation. `basis-auth-session.ts` seals token sets into a compressed AES-256-GCM HTTP-only cookie. `oauth2.ts` contains the public-origin helper.
 
 ### Public origin / issuer
 
@@ -259,47 +260,39 @@ Generates a deterministic identicon PNG from a name string and saves it as a use
 
 - Default size: 100px.
 - The name is sanitized to filesystem-safe characters.
-- Saved to `public/assets/users/{safeName}.png`.
+- The returned PNG is stored by the calling code under project-root `/assets`; runtime uploads are gitignored and separate from `public/assets`.
 
 ---
 
 ## assets.ts
 
-File system helpers for managing static and user assets with path traversal prevention.
+File system helpers for managing persistent static and user assets with path traversal and symlink protection.
 
-### Path traversal protection
+### Storage location and path protection
 
-All asset functions implement two layers of path traversal prevention:
+All runtime collections are rooted at `<project-root>/assets`: public uploads are in `assets/`, while user uploads are in `userassets/`. This path is fixed rather than configured through an environment variable. Keep it through in-place pull/build/start deployments, back it up separately from PostgreSQL, and restore it before serving from a fresh clone. The committed static showcase under `public/assets` is unrelated runtime storage.
 
-1. **Name sanitization** (`sanitizeAssetName`): Extracts `basename()` from the input and rejects names containing `/` or `\\`, `.`, or `..`.
-2. **Resolve validation** (`resolveAssetPath`): Resolves the full path and verifies it still starts with the expected `assets/` or `userassets/` directory prefix.
-
-```ts
-function sanitizeAssetName(name: string) {
-    const safeName = basename(name);
-    if (!safeName || safeName === "." || safeName === "..") throw ...;
-    if (safeName.includes("/") || safeName.includes("\\")) throw ...;
-}
-
-function resolveAssetPath(assetsDir: string, name: string) {
-    const filePath = join(assetsDir, name);
-    const prefix = assetsDir + sep;
-    if (!filePath.startsWith(prefix)) throw ...;
-    return filePath;
-}
-```
+Asset names may include safe nested path segments, but empty, `.` and `..` segments, backslashes, NUL bytes, and names over 512 characters are rejected. Resolved paths are checked to stay inside their collection. Parent directories and final files are checked against symlinks; reads use `O_NOFOLLOW` where available.
 
 ### Asset Functions
 
-| Function                      | Description                                                     |
-| ----------------------------- | --------------------------------------------------------------- |
-| `createAsset(name, data)`     | Writes a Buffer to `public/assets/{name}`; returns basename     |
-| `createUserAsset(name, data)` | Writes a Buffer to `public/userassets/{name}`; returns basename |
-| `removeAsset(name)`           | Deletes a file from `public/assets/`                            |
-| `removeUserAsset(name)`       | Deletes a file from `public/userassets/`                        |
-| `getUserAsset(name)`          | Reads a file from `public/userassets/` as a Buffer              |
+| Function | Description |
+| --- | --- |
+| `createAsset(name, data)` | Writes a Buffer to the checked project-root `assets/` collection; returns the stored name |
+| `createUserAsset(name, data)` | Writes a Buffer to the checked project-root `userassets/` collection; returns the stored name |
+| `createAssetFromStream(...)` | Streams a size-limited upload to a temporary file and atomically publishes its content-addressed object |
+| `getUserAssetContentAddress(data, extension)` | Derives `profiles/<sha256>.<canonical-extension>` for a profile image |
+| `createUserAssetContentAddressed(...)` | Verifies and publishes a profile image object without overwriting an existing object; identical content deduplicates |
+| `withAssetLifecycleLocks(...)` | Serializes a database reference update with collection of the same asset paths using PostgreSQL advisory locks |
+| `collectOrphanProfileAssets(...)` | Bounded cleanup of old managed profile objects after checking every supported database reference under the lifecycle lock |
+| `releaseAssetReference(...)` | Releases an owned permalink reference, or an admin-managed reference, without revealing whether another user's reference exists |
+| `listAssetReferences(...)` | Returns paginated references for one owner, or every owner for an administrator |
+| `collectOrphanPermalinkAssets(...)` | Legacy helper for collecting registered permalink objects. Application startup no longer schedules this collector. |
+| `removeAsset(name)` / `removeUserAsset(name)` | Explicit low-level deletion helpers; do not use them for lifecycle cleanup of potentially referenced content |
+| `getUserAsset(name)` | Reads a file from the checked project-root `userassets/` collection as a Buffer |
+| `openStoredAsset(collection, name)` | Opens a checked file as a stream and returns its size |
 
-All functions validate the asset name to prevent path traversal, create parent directories recursively, and remove functions silently catch missing-file errors. Invalid names throw a 400 error.
+Existing files are served from `/assets/uploads/*` and `/userast/*` by explicit Nitro routes that set a fixed content type, `nosniff`, a restrictive CSP, and attachment disposition for non-image/video formats. Debug upload creation has been retired. The scheduled cleanup starts one minute after database startup, then runs daily with bounded scan and deletion counts for managed profile assets and stale temporary files. Profile cleanup checks profile pictures, URL profile themes, and legacy OAuth application pictures. Published debug files remain available at their original URLs.
 
 ---
 
@@ -400,7 +393,7 @@ Computes weighted judge scores and rankings for a season.
 export async function computeScores(event: H3Event, seasonID: number): Promise<void>;
 ```
 
-Fetches all judge scores for the season, calculates a weighted average per team using the rubric defined in `shared/rubric.ts`, scales the result by 1.6, and writes the rounded score and pathway-specific rank back to each team.
+`calculateSeasonScores` reads each saved evaluation with its pinned rubric version, normalizes the configured criterion ranges, applies the per-track weights, and calculates the arithmetic mean across judges. Tied teams share a rank. A judge finalization reads only that project's saved evaluations plus the current track's cached score/rank values, then writes the project score and ranks that changed. This avoids reloading and recomputing every evaluation in the season for each submitted ballot. The authorized admin recompute action still uses `computeScores` to rebuild the full season and persists results in batches.
 
 ---
 
@@ -461,8 +454,8 @@ Per-table database helper modules in `server/utils/database/`.
 
 | Function                       | Description                                                    |
 | ------------------------------ | -------------------------------------------------------------- |
-| `getHackathon(event)`          | Get the hackathon status row (single row, id=1)                |
-| `updateHackathon(event, data)` | Update hackathon settings (partial) and return the updated row |
+| `getHackathon(event)`          | Read live settings from YAML or the PostgreSQL rollback source |
+| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode               |
 
 ### ballots.ts
 
@@ -483,9 +476,9 @@ Per-table database helper modules in `server/utils/database/`.
 | `getSeasons(event)` | List all seasons ordered by ID |
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
-| `setActiveSeason(event, seasonId)` | Set the active season (pass `null` to clear); copies the newly active season's tweaks into the `hackathon` row |
-| `updateSeasonTweaks(event, seasonId, data)` | Update a season's tweakable settings; also updates the `hackathon` row when the season is live |
-| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, falling back to the `hackathon` row when the season is missing. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
+| `setActiveSeason(event, seasonId)` | Set or clear the active season and snapshot the outgoing live YAML settings |
+| `updateSeasonTweaks(event, seasonId, data)` | Update a season's stored settings. Live edits are rejected in YAML mode. |
+| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, using live YAML for the active season. Unknown seasons keep results private in YAML mode. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
 
 `SEASON_TWEAK_FIELDS` lists the tweakable columns shared by the `seasons` and `hackathon` tables.
 
@@ -510,7 +503,7 @@ Per-table database helper modules in `server/utils/database/`.
 | `deleteTeamAwards(event, teamId)`         | Delete all awards for a team           |
 | `deleteAward(event, teamId, award)`       | Delete a specific award for a team     |
 
-Award definitions live in the `awards` SQLite table.
+Award definitions live in the PostgreSQL `awards` table.
 
 ### oauth2_applications.ts
 

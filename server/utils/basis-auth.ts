@@ -10,6 +10,8 @@ import {
     type BasisAuthUserSession,
     type StoredBasisAuthTokens,
 } from "~~/server/utils/basis-auth-session";
+import { isValidE2ELoopbackOrigin } from "~~/server/utils/environment-validation";
+import { getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
@@ -49,6 +51,42 @@ export function getBasisAuthConfig(): BasisAuthConfig {
         issuer = new URL(config.issuer);
     } catch {
         throw createError({ statusCode: 500, message: "BASIS_AUTH_ISSUER must be a valid URL" });
+    }
+    if (!["http:", "https:"].includes(issuer.protocol)) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER must use HTTP or HTTPS",
+        });
+    }
+    if (issuer.username || issuer.password) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER cannot contain credentials",
+        });
+    }
+    const isolatedE2EIssuer =
+        process.env.BASISHACKS_E2E === "1" &&
+        issuer.protocol === "http:" &&
+        issuer.hostname === "127.0.0.1" &&
+        Boolean(issuer.port) &&
+        issuer.pathname === "/" &&
+        !issuer.search &&
+        !issuer.hash &&
+        isValidE2ELoopbackOrigin(
+            process.env.CURRENT_URL_ORIGIN,
+            process.env.NITRO_HOST || process.env.HOST,
+            process.env.NITRO_PORT || process.env.PORT,
+            process.env.NITRO_UNIX_SOCKET,
+        );
+    if (
+        process.env.NODE_ENV === "production" &&
+        issuer.protocol !== "https:" &&
+        !isolatedE2EIssuer
+    ) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER must use HTTPS in production",
+        });
     }
     if (issuer.search || issuer.hash) {
         throw createError({
@@ -169,7 +207,7 @@ export async function completeBasisAuthFlow(
     }
 
     const userInfo = await oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub);
-    if (typeof userInfo.email !== "string" || !userInfo.email) {
+    if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
     }
 
@@ -178,8 +216,10 @@ export async function completeBasisAuthFlow(
             issuer: config.issuer,
             subject: claims.sub,
             email: userInfo.email,
-            emailVerified: userInfo.email_verified === true,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
+            picture:
+                getBasisAuthPictureUrl(claims.picture, config.issuer) ??
+                getBasisAuthPictureUrl(userInfo.picture, config.issuer),
         },
         tokens: normalizeTokenSet(tokens),
     };

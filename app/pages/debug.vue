@@ -4,11 +4,11 @@
             <button
                 :class="[
                     'px-4 py-2 rounded font-medium',
-                    activeTab === 'upload' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-800',
+                    activeTab === 'files' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-800',
                 ]"
-                @click="activeTab = 'upload'"
+                @click="activeTab = 'files'"
             >
-                File Upload
+                Existing Files
             </button>
             <button
                 :class="[
@@ -23,64 +23,17 @@
             </button>
         </div>
 
-        <!-- File Upload Tab -->
-        <div v-if="activeTab === 'upload'">
-            <h1 class="text-2xl font-bold mb-4">Debug File Upload</h1>
-            <form class="space-y-4" @submit.prevent="uploadFile">
-                <div>
-                    <label for="file" class="block text-sm font-medium">Select File</label>
-                    <input
-                        id="file"
-                        type="file"
-                        class="mt-1 block w-full"
-                        required
-                        @change="handleFileChange"
-                    />
-                </div>
-                <USelectMenu v-model="value" :items="items" />
-                <div class="flex items-center">
-                    <input
-                        id="keepName"
-                        v-model="keepOriginalName"
-                        type="checkbox"
-                        class="w-4 h-4"
-                    />
-                    <label for="keepName" class="ml-2 text-sm font-medium">
-                        Keep original file name
-                    </label>
-                </div>
-                <button
-                    type="submit"
-                    :disabled="!file || uploading"
-                    class="bg-primary text-white px-4 py-2 rounded disabled:opacity-50"
-                >
-                    {{ uploading ? "Uploading..." : "Upload" }}
-                </button>
-            </form>
-            <div v-if="permalink" class="mt-4">
-                <p>
-                    Permalink:
-                    <a
-                        v-if="safePermalink"
-                        :href="safePermalink"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-blue-500"
-                    >
-                        {{ permalink }}
-                    </a>
-                    <span v-else class="text-muted">{{ permalink }} (blocked unsafe URL)</span>
-                </p>
-            </div>
+        <!-- Existing Files Tab -->
+        <div v-if="activeTab === 'files'">
             <div v-if="error" class="mt-4 text-red-500">Error: {{ error }}</div>
 
             <section class="mt-8">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-2xl font-bold">Uploaded Asset Files</h2>
+                    <h2 class="text-2xl font-bold">Existing Asset Files</h2>
                     <button
                         type="button"
                         class="bg-secondary text-white px-3 py-2 rounded"
-                        @click="loadFiles"
+                        @click="refreshFiles()"
                     >
                         Refresh
                     </button>
@@ -97,7 +50,7 @@
                                 v-else-if="fileLists.assets.length === 0"
                                 class="text-sm text-slate-500"
                             >
-                                No file uploads found.
+                                No files found.
                             </li>
                             <li v-for="file in fileLists.assets" :key="file.name">
                                 <a
@@ -121,7 +74,7 @@
                                 v-else-if="fileLists.userast.length === 0"
                                 class="text-sm text-slate-500"
                             >
-                                No user asset uploads found.
+                                No user assets found.
                             </li>
                             <li v-for="file in fileLists.userast" :key="file.name">
                                 <a
@@ -134,6 +87,84 @@
                             </li>
                         </ul>
                     </div>
+                </div>
+            </section>
+
+            <section class="mt-8 rounded border border-slate-200 p-4">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-xl font-bold">Active Permalink References</h2>
+                        <p class="mt-1 text-sm text-slate-600">
+                            Links recorded for existing files.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="min-h-11 rounded bg-secondary px-3 py-2 text-white"
+                        :disabled="loadingReferences"
+                        @click="loadReferences()"
+                    >
+                        Refresh references
+                    </button>
+                </div>
+                <ul class="space-y-3">
+                    <li v-if="loadingReferences" class="text-sm text-slate-500">
+                        Loading references...
+                    </li>
+                    <li v-else-if="references.length === 0" class="text-sm text-slate-500">
+                        No active permalink references.
+                    </li>
+                    <li
+                        v-for="reference in references"
+                        :key="reference.id"
+                        class="flex flex-col gap-2 rounded border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                        <div class="min-w-0">
+                            <a
+                                :href="reference.permalink"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="break-all text-blue-600 hover:underline"
+                            >
+                                {{ reference.permalink }}
+                            </a>
+                            <p class="text-xs text-slate-500">
+                                {{
+                                    reference.collection === "assets"
+                                        ? "Static upload"
+                                        : "User asset"
+                                }}
+                                · {{ reference.created_at }}
+                            </p>
+                        </div>
+                    </li>
+                </ul>
+                <div
+                    v-if="referencePagination.total_pages > 1"
+                    class="mt-4 flex items-center justify-between gap-3"
+                    aria-label="Permalink reference pages"
+                >
+                    <button
+                        type="button"
+                        class="min-h-11 min-w-11 rounded border px-3"
+                        :disabled="loadingReferences || referencePage <= 1"
+                        @click="loadReferences(referencePage - 1)"
+                    >
+                        Previous
+                    </button>
+                    <span class="text-sm text-slate-600">
+                        Page {{ referencePage }} of {{ referencePagination.total_pages }}
+                    </span>
+                    <button
+                        type="button"
+                        class="min-h-11 min-w-11 rounded border px-3"
+                        :disabled="
+                            loadingReferences || referencePage >= referencePagination.total_pages
+                        "
+                        @click="loadReferences(referencePage + 1)"
+                    >
+                        Next
+                    </button>
                 </div>
             </section>
         </div>
@@ -249,23 +280,26 @@ if (!can(NethackPermissions.all)) {
 }
 
 // Tab management
-const activeTab = ref<"upload" | "deepseek">("upload");
+const activeTab = ref<"files" | "deepseek">("files");
 
-// File upload state
-const file = ref<File | null>(null);
-const uploading = ref(false);
-const permalink = ref("");
-const safePermalink = computed(() => safeUrl(permalink.value));
 const error = ref("");
 const loadingFiles = ref(false);
+const loadingReferences = ref(false);
+const references = ref<AssetReference[]>([]);
+const referencePage = ref(1);
+const referencePageSize = 20;
+const referencePagination = ref({ total: 0, total_pages: 0 });
 const fileLists = ref({
     assets: [] as Array<{ name: string; url: string }>,
     userast: [] as Array<{ name: string; url: string }>,
 });
 
-const items = ref(["static", "user"]);
-const value = ref("static");
-const keepOriginalName = ref(false);
+interface AssetReference {
+    id: string;
+    collection: "assets" | "userassets";
+    permalink: string;
+    created_at: string;
+}
 
 // DeepSeek state
 const newSessionName = ref("");
@@ -286,12 +320,15 @@ const deletingSessionId = ref<number | null>(null);
 const roleValue = ref("user");
 const roleValues = ref(["user", "tool"]);
 
-// File upload functions
+// Existing file listings
 const loadFiles = async () => {
     loadingFiles.value = true;
     try {
         const response = await $fetch<{ assets: string[]; userast: string[] }>("/api/debug/files");
-        fileLists.value.assets = response.assets.map((name) => ({ name, url: `/assets/${name}` }));
+        fileLists.value.assets = response.assets.map((name) => ({
+            name,
+            url: `/assets/uploads/${name}`,
+        }));
         fileLists.value.userast = response.userast.map((name) => ({
             name,
             url: `/userast/${name}`,
@@ -303,42 +340,34 @@ const loadFiles = async () => {
     }
 };
 
-const handleFileChange = (event: Event) => {
-    const target = event.target as HTMLInputElement;
-    file.value = target.files?.[0] || null;
-};
-
-const uploadFile = async () => {
-    if (!file.value) return;
-
-    uploading.value = true;
-    error.value = "";
-    permalink.value = "";
-
+const loadReferences = async (page = referencePage.value) => {
+    loadingReferences.value = true;
     try {
-        const formData = new FormData();
-        formData.append("file", file.value);
-
-        const params = new URLSearchParams({
-            mode: value.value,
-            keepName: keepOriginalName.value ? "true" : "false",
+        const response = await $fetch<{
+            items: AssetReference[];
+            page: number;
+            page_size: number;
+            total: number;
+            total_pages: number;
+        }>("/api/assets/references", {
+            query: { page, page_size: referencePageSize },
         });
-        const response = await $fetch<{ permalink: string }>(
-            `/api/debug/upload?${params.toString()}`,
-            {
-                method: "POST",
-                body: formData,
-            },
-        );
-
-        permalink.value = response.permalink;
-        await loadFiles();
+        references.value = response.items;
+        referencePage.value = response.page;
+        referencePagination.value = {
+            total: response.total,
+            total_pages: response.total_pages,
+        };
     } catch (err: any) {
-        error.value = err.message || "Upload failed";
+        error.value = err.message || "Unable to load permalink references";
     } finally {
-        uploading.value = false;
+        loadingReferences.value = false;
     }
 };
+
+const refreshFiles = () => Promise.all([loadFiles(), loadReferences()]);
+
+onMounted(refreshFiles);
 
 // DeepSeek functions
 const createSession = async () => {
@@ -419,6 +448,4 @@ const deleteSession = async (sessionId: number) => {
         deletingSessionId.value = null;
     }
 };
-
-onMounted(loadFiles);
 </script>

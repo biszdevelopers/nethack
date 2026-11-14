@@ -11,20 +11,21 @@ All API endpoints are protected by an in-memory rate limiter that prevents abuse
 
 ## Default Configuration
 
-The rate limiter defines **4 independent tiers**, each with its own request counter per client:
+The rate limiter defines **5 independent tiers**, each with its own request counter per client:
 
 | Tier | Env Variable | Default Limit | Routes Protected |
 | --- | --- | :-: | --- |
-| **General** | `RATE_LIMIT_GENERAL_MAX` | 6000/min | All non-sensitive API routes |
-| **Authentication** | `RATE_LIMIT_AUTH_MAX` | 600/min | `/api/login`, `/api/auth/basis/callback` |
-| **Vote / Score** | `RATE_LIMIT_VOTE_MAX` | 600/min | `/api/ballot`, `/api/teams/:id/scores` |
-| **File Upload** | `RATE_LIMIT_UPLOAD_MAX` | 600/min | `/api/debug/upload` |
+| **General** | `RATE_LIMIT_GENERAL_MAX` | 120/min | All non-sensitive API routes |
+| **Authentication** | `RATE_LIMIT_AUTH_MAX` | 20/min | `/api/login`, `/api/auth/basis/callback` |
+| **Vote / Score** | `RATE_LIMIT_VOTE_MAX` | 30/min | `/api/ballot`, `/api/teams/:id/scores` |
+| **Judging drafts** | `RATE_LIMIT_GENERAL_MAX` | 120/min | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId` |
+| **File Upload** | `RATE_LIMIT_UPLOAD_MAX` | 10/min | Upload routes |
 
-All tiers share the same window duration, configurable via `RATE_LIMIT_WINDOW_MS` (default: `60000` ms / 1 minute).
+All tiers share the same window duration, configurable via `RATE_LIMIT_WINDOW_MS` (default: `60000` ms / 1 minute). Judging draft routes use the general limit with a dedicated per-user bucket, leaving room for the judge editor's 650 ms autosave debounce without sharing capacity with other general API requests.
 
 ```ts
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
-    maxRequests: 6000, // overridden by RATE_LIMIT_GENERAL_MAX
+    maxRequests: 120, // overridden by RATE_LIMIT_GENERAL_MAX
     windowMs: 60 * 1000, // overridden by RATE_LIMIT_WINDOW_MS
 };
 ```
@@ -35,16 +36,16 @@ The following environment variables override the default limits:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `RATE_LIMIT_GENERAL_MAX` | `6000` | General API rate limit, requests per window |
-| `RATE_LIMIT_AUTH_MAX` | `600` | Authentication endpoint rate limit, attempts per window |
-| `RATE_LIMIT_VOTE_MAX` | `600` | Voting/scoring endpoint rate limit, submissions per window |
-| `RATE_LIMIT_UPLOAD_MAX` | `600` | File upload endpoint rate limit, uploads per window |
+| `RATE_LIMIT_GENERAL_MAX` | `120` | General API rate limit, requests per window |
+| `RATE_LIMIT_AUTH_MAX` | `20` | Authentication endpoint rate limit, attempts per window |
+| `RATE_LIMIT_VOTE_MAX` | `30` | Voting/scoring endpoint rate limit, submissions per window |
+| `RATE_LIMIT_UPLOAD_MAX` | `10` | File upload endpoint rate limit, uploads per window |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window in milliseconds |
-| `TRUST_PROXY` | unset | Set to any truthy value when behind a trusted reverse proxy so `x-forwarded-for` is used for client IP resolution |
+| `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10); requires proxies to append the actual peer to `X-Forwarded-For` |
 
 These values are read at process startup via `parseEnvInt()` in `server/utils/rateLimit.ts`. If an environment variable is unset or contains a non-numeric value, the default is used instead.
 
-::: tip `TRUST_PROXY` must be explicitly set. Without it, the rate limiter uses only the direct socket peer address and the `x-real-ip` header, ignoring `x-forwarded-for` entirely. Set it to any truthy value (e.g. `1` or `true`) when the app is behind a trusted reverse proxy like nginx or Cloudflare. :::
+::: tip Keep `TRUSTED_PROXY_HOPS=0` when users connect directly. Behind a proxy, set the exact number of trusted hops only after configuring every proxy to append the actual peer address to `X-Forwarded-For`. Invalid or incomplete chains fall back to the socket peer. :::
 
 ## Configuration Interface
 
@@ -82,7 +83,7 @@ export default applyRateLimit(
 );
 ```
 
-If `config` is omitted, the default configuration (6000 req/min) is used.
+If `config` is omitted, the default configuration (120 req/min) is used.
 
 ## Client Identification
 
@@ -106,36 +107,27 @@ If no session is found, the request is identified by IP address:
 ip:{ip}
 ```
 
-The IP address is resolved in the following priority order:
+The IP address is resolved from the direct socket peer unless an exact proxy hop count is configured. When enabled, the limiter selects the first untrusted address walking back from the app through the proxy chain and accepts it only if it is a valid IP address.
 
 | Priority | Source | Notes |
 | :-: | --- | --- |
-| 1 | Direct socket peer address | `event.node.req.socket.remoteAddress`; used when available |
-| 2 | `x-real-ip` header | Fallback when no socket address is present |
-| 3 | `x-forwarded-for` header | Used only when `TRUST_PROXY` is set; the rightmost value is used to avoid spoofed leftmost hops |
-| 4 | `unknown` | Fallback when no address can be determined |
+| 1 | Configured `X-Forwarded-For` chain | Used only when the socket peer exists, the chain includes the configured number of hops, and the selected item is a valid IP |
+| 2 | Direct socket peer address | Fallback when proxy trust is disabled or the forwarded chain is invalid |
+| 3 | `unknown` | Fallback when no socket address is available |
 
 ```ts
 const socketAddress = event.node.req.socket?.remoteAddress;
-let ip = socketAddress || getHeader(event, "x-real-ip") || "unknown";
-
-if (!socketAddress && process.env.TRUST_PROXY) {
-    const forwarded = getHeader(event, "x-forwarded-for");
-    if (forwarded) {
-        const parts = forwarded
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean);
-        if (parts.length > 0) {
-            ip = parts[parts.length - 1];
-        }
-    }
-}
+const trustedHops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
+const forwarded = getHeader(event, "x-forwarded-for")
+    ?.split(",")
+    .map((part) => part.trim());
+const selected = forwarded?.[forwarded.length - trustedHops];
+const ip = trustedHops > 0 && isIP(selected) ? selected : socketAddress || "unknown";
 
 return `ip:${ip}`;
 ```
 
-::: tip Set `TRUST_PROXY` only when the application runs behind a trusted reverse proxy. Without this variable, the rate limiter ignores `x-forwarded-for` entirely. :::
+::: tip The proxy chain is part of the rate-limit security boundary. Never trust forwarded headers from untrusted proxy hops. :::
 
 ## Rate Limit Response
 
@@ -146,7 +138,7 @@ When the rate limit is exceeded, the handler throws a **429 Too Many Requests** 
     "statusCode": 429,
     "statusMessage": "Too Many Requests",
     "data": {
-        "message": "Rate limit exceeded. Max 6000 requests per 60s.",
+        "message": "Rate limit exceeded. Max 120 requests per 60s.",
         "retryAfter": 42,
         "resetTime": "2026-06-03T14:30:00.000Z"
     }
@@ -230,7 +222,7 @@ if (requestHistory.size > MAX_TRACKED_KEYS) {
 
 ::: warning Single Process Rate limiting is **in-memory and per-process**. Each server process maintains its own `requestHistory` Map. This means:
 
-- A client making 6000 requests to process A and 6000 requests to process B within the same minute would not be rate-limited
+- A client making 120 requests to process A and 120 requests to process B within the same minute could exceed a shared per-process limit
 - The effective rate limit is per-process, not globally distributed
 - For global rate limiting, consider using a distributed store (e.g., Redis) :::
 
@@ -244,4 +236,4 @@ Since the rate limit state is in-memory:
 
 ### IP Spoofing
 
-The rate limiter prioritizes the direct socket peer address, which cannot be spoofed by the client. When a reverse proxy is in use, set `TRUST_PROXY` so the limiter consults `x-forwarded-for`. In that mode, the rightmost value is used because the leftmost values can be spoofed by the client. The `x-real-ip` header is used only as a fallback when no socket address is present.
+The rate limiter uses the direct socket peer by default. Behind a reverse proxy, set `TRUSTED_PROXY_HOPS` to the exact number of trusted proxies and configure each proxy to append the actual peer address to `X-Forwarded-For`. The limiter selects the first untrusted address from the right side of the chain and falls back to the socket peer when the chain is incomplete or malformed. It never trusts `X-Real-IP`.

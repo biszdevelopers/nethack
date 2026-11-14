@@ -15,8 +15,8 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    prettier:
-        name: Prettier Format Check
+    formatting:
+        name: Oxfmt Format Check
         runs-on: ubuntu-latest
         timeout-minutes: 10
 
@@ -27,13 +27,11 @@ jobs:
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: latest
+                  bun-version: 1.3.14
 
-            - name: Link @basis/schema
+            - name: Checkout @basis/schema source
               run: |
                   git clone --depth 1 https://github.com/biszdevelopers/basis-schema.git ../basis-schema
-                  cd ../basis-schema
-                  bun link
 
             - name: Cache Bun dependencies
               uses: actions/cache@v4

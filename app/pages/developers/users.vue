@@ -27,7 +27,7 @@ const rowSelection = ref<Record<string, boolean>>({});
 
 type AdminUser = User & { past_team_ids: string | null };
 
-const { data, status, refresh } = await useFetch<AdminUser[]>("/api/users", {
+const { data, status, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
     server: false,
     lazy: true,
     default: () => [],

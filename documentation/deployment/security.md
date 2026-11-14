@@ -18,11 +18,13 @@ Every response from the Nitro server includes a baseline set of **6 security hea
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), autoplay=(), encrypted-media=(), picture-in-picture=()` |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'nonce-<per-response-value>'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'` |
 
-The `Content-Security-Policy` header includes **10 directives** that restrict resource loading to same-origin sources by default, with allowances for Nuxt SSR hydration scripts, Vue inline styles, font files, image blobs, and data URIs.
+The `Content-Security-Policy` header includes **10 directives** that restrict resource loading to same-origin sources by default, with allowances for nonce-bound Nuxt SSR scripts, Vue inline styles, font files, image blobs, and data URIs.
 
-The middleware runs for API routes, rendered HTML pages, and static assets. The `'unsafe-inline'` source expression is required for `script-src` because Nuxt SSR hydration injects `window.__NUXT__` as an inline script, and for `style-src` because Vue and Nuxt UI components apply inline style bindings. The `'unsafe-eval'` source expression is intentionally omitted.
+The middleware runs for API routes, rendered HTML pages, and static assets. It generates a fresh cryptographic nonce for each response and the Nuxt server hooks apply it to renderer-owned hydration scripts. `script-src` does not allow `'unsafe-inline'`; inline styles remain allowed for Vue and Nuxt UI bindings. The `'unsafe-eval'` source expression is intentionally omitted.
+
+Every `/api` response also sets `Cache-Control: private, no-store`, including responses that may vary by authenticated user. This policy applies only to API paths; page and asset cache behavior is configured separately.
 
 ## HTML Error Diagnostics
 
@@ -34,25 +36,28 @@ The following environment variables directly affect platform security and must b
 
 | Variable | Requirement | Purpose |
 | --- | --- | --- |
-| `NUXT_SESSION_PASSWORD` | At least 32 bytes | Encryption key for session cookies managed by `nuxt-auth-utils` |
+| `BASIS_AUTH_COOKIE_SECRET` | At least 32 bytes | Encryption key for sessions and server-side token records |
 | `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates basishacks at the basis-auth token endpoint |
-| `BASIS_AUTH_ISSUER` | Exact trusted issuer | Discovery and issuer validation |
+| `BASIS_AUTH_ISSUER` | Exact trusted issuer; HTTPS required in production | Discovery and issuer validation |
 | `BASIS_AUTH_RESOURCE` | Exact registered audience | Resource-token audience validation |
-| `TRUST_PROXY` | Set only when behind a trusted reverse proxy | Enables use of the `x-forwarded-for` header for client IP identification in rate limiting |
+| `CURRENT_URL_ORIGIN` | Public HTTPS origin, without a path | Callback URL and same-origin validation for cookie-authenticated mutations |
+| `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10). Forwarded client addresses are used only when the socket peer exists and the forwarded chain is valid. |
 | `MICROSOFT_TENANT_ID` | Valid Microsoft Entra ID tenant | Required for Microsoft Graph API integration |
 | `MICROSOFT_CLIENT_ID` | Valid Microsoft Entra ID application ID | Required for Microsoft Graph API integration |
 | `MICROSOFT_CLIENT_SECRET` | Valid client secret | Used for the client credentials token flow in `server/plugins/microsoft.ts` |
+| `MICROSOFT_WEBHOOK_STATE` | At least 32 bytes when configured; keep it stable across restarts | Validates every notification in a Microsoft Graph webhook batch |
+| `MICROSOFT_WEBHOOK_ID` | Graph subscription ID returned on initial setup | Allows the server to refresh its existing subscription after restart |
 
 ## Rate Limiting
 
 All API endpoints are protected by an in-memory rate limiter. Sensitive routes consume requests from dedicated buckets:
 
-| Bucket           | Default                | Routes                                   |
-| ---------------- | ---------------------- | ---------------------------------------- |
-| General API      | 6000 requests / minute | All non-sensitive API routes             |
-| Authentication   | 600 requests / minute  | `/api/login`, `/api/auth/basis/callback` |
-| Voting / scoring | 600 requests / minute  | `/api/ballot`, `/api/teams/:id/scores`   |
-| File upload      | 600 requests / minute  | `/api/debug/upload`                      |
+| Bucket           | Default               | Routes                                 |
+| ---------------- | --------------------- | -------------------------------------- |
+| General API      | 120 requests / minute | All non-sensitive API routes           |
+| Authentication   | 20 requests / minute  | Authentication routes                  |
+| Voting / scoring | 30 requests / minute  | `/api/ballot`, `/api/teams/:id/scores` |
+| File upload      | 10 requests / minute  | Upload routes                          |
 
 - **Client identification:** Authenticated users are identified by `user:{id}`; unauthenticated requests by `ip:{ip}`
 - **Response:** 429 status with `Retry-After` header
@@ -63,23 +68,45 @@ All API endpoints are protected by an in-memory rate limiter. Sensitive routes c
 
 See [Rate Limiting](./rate-limiting.md) for full details.
 
+## Cross-Site Request Forgery (CSRF)
+
+`server/middleware/00.request-security.ts` checks every `POST`, `PUT`, `PATCH`, and `DELETE` request. Cookie-authenticated browser requests must send a matching `Origin` or `Referer`; requests marked `Sec-Fetch-Site: cross-site` are rejected. Production startup requires `CURRENT_URL_ORIGIN` to be an HTTPS origin with no path, query, fragment, or credentials. Requests authenticated with an explicit `Authorization` header bypass this browser-cookie check and remain protected by token validation and route permissions.
+
+The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its per-process upload slot and reading its separate 10 MiB allowance for base64-encoded images. Only one profile update per app process may buffer, parse, decode, and persist at a time; excess concurrent requests are rejected with `503 Service Unavailable` and `Retry-After: 2`, before the request body is read. This bounds concurrent decoded-image buffers while keeping the existing 7 MiB per-image validation. Microsoft Graph webhook payloads have a stricter 64 KiB streaming cap before JSON parsing. The webhook handlers fail closed if `MICROSOFT_WEBHOOK_STATE` is missing and validate the state on every notification in a batch. The same persistent value is sent to Graph when the subscription is created; set `MICROSOFT_WEBHOOK_ID` from the initial startup log so subsequent starts refresh that subscription instead of creating duplicates. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/basishacks-request-limits.conf` inside the site configuration. Do not proxy compressed request bodies to the webhook endpoints.
+
+```nginx
+client_max_body_size 10m;
+client_body_timeout 30s;
+```
+
 ## Debug Route Lockdown
 
-All `/api/debug/*` routes and both `/debug` pages require an administrator or an appropriately scoped developer permission. In production, debug utilities can be disabled entirely by setting:
+Debug API routes require their corresponding `nethack.Debug.*` permission or `nethack.all`. The `/debug` and `/developers/*` dashboard pages are admin-only. Debug API routes and `/debug*` pages are automatically disabled in production and return `404 Not Found`, even when `DISABLE_DEBUG_ROUTES` is unset. In development and test environments, set this variable to disable them as well:
 
 ```bash
 DISABLE_DEBUG_ROUTES=true
 ```
 
-When this variable is truthy, requests to `/api/debug/*` or `/debug*` return `404 Not Found` before any route handler executes. This guard is enforced by `server/middleware/debug-lockdown.ts` and operates independently of route-level permission checks.
+When this variable is truthy (`1`, `true`, `yes`, or `on`), requests to `/api/debug/*` or `/debug*` return `404 Not Found` before any route handler executes. This guard is enforced by `server/middleware/debug-lockdown.ts` and operates independently of route-level permission checks.
+
+## Persistent Upload Storage
+
+Runtime uploads live in the project-root `/assets` directory, which is gitignored and must be writable by the application service account. It remains through an in-place pull/build/start deployment. Back it up separately from PostgreSQL, and preserve or restore it before serving after a re-clone or checkout replacement. Under systemd `ProtectSystem=strict`, grant write access to this directory with `ReadWritePaths`. The committed static showcase at `public/assets` is separate and is not runtime storage.
+
+New profile images use SHA-256 content-addressed names under `/assets/userassets/profiles/`. Identical image bytes with the same canonical extension reuse one object. The scheduled profile collector waits at least seven days, takes the PostgreSQL advisory lock used by profile updates, then checks profile pictures, URL profile themes, and legacy OAuth application pictures before unlinking an unreferenced image. Debug uploads have been retired. Existing files remain accessible at their original `/assets/uploads/*` and `/userast/*` URLs. The application no longer schedules cleanup of debug permalink files.
+
+Asset download routes set `nosniff` and a restrictive content policy.
+
+When upgrading from a deployment with existing uploads, preserve the old `assets/` and `userassets/` collection contents in the new checkout's `/assets` directory before switching traffic. If the old deployment stored profile images in `public/userassets`, copy those files into the new `/assets/userassets/` collection with their original names. Review same-name conflicts before copying; do not overwrite files silently. Verify ownership/read access as the service account and keep a separate backup until profile images and permalink uploads have been checked after cutover.
+
+Profile theme uploads accept JPEG, PNG, GIF, and WebP images up to 7 MiB decoded. Their base64 JSON body is bounded by the 10 MiB profile-update limit; decoding validates the content size, base64 structure, and file signature before persisting the image. The avatar endpoint fetches provider images only from the configured basis-auth issuer origin, rejects redirects, and caps the response at 5 MiB with a five-second timeout.
 
 ## Session Security
 
-- **Session password** (`NUXT_SESSION_PASSWORD`) must be at least 32 bytes.
-- Sessions are managed by `nuxt-auth-utils` with encrypted cookies.
-- Session cookies are issued with `httpOnly: true`, `sameSite: "lax"`, and `secure: true` in production.
+- **Cookie and token encryption key** (`BASIS_AUTH_COOKIE_SECRET`) must be at least 32 bytes.
+- Basis-auth token cookies use AES-256-GCM encryption, `httpOnly: true`, `sameSite: "lax"`, and `secure: true` in production.
 - The separate basis-auth transaction session contains state, nonce, PKCE verifier, and a safe relative redirect. It is HTTP-only, encrypted, SameSite=Lax, secure in production, and limited to **10 minutes**.
-- The session cookie stores only `{ user: { id: number } }`; no sensitive data is stored client-side.
+- The browser cannot read access or refresh tokens. `/api/auth/session` exposes only the user ID, expiry, and permissions.
 - The full user record is fetched from the database on every authenticated request.
 
 ### Startup Validation
@@ -88,7 +115,7 @@ Critical authentication configuration is validated at server startup in `server/
 
 | Variable | Validation | Production Behavior | Non-Production Behavior |
 | --- | --- | --- | --- |
-| `NUXT_SESSION_PASSWORD` | Must be set and at least 32 bytes (UTF-8 encoded) | `process.exit(1)` with fatal error message | Stderr warning, continues |
+| `BASIS_AUTH_COOKIE_SECRET` | Must be set and at least 32 bytes (UTF-8 encoded) | `process.exit(1)` with fatal error message | Stderr warning, continues |
 | `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE` | All must be set | Fatal startup error when any is missing | Warning; login unavailable until configured |
 | `MICROSOFT_*` env vars | All three must be set for Graph features | Warning if partially configured | Warning if partially configured |
 
@@ -96,12 +123,12 @@ Resource access tokens are verified against basis-auth JWKS and are never signed
 
 ## Database Security
 
-- **Foreign keys** are enforced with `PRAGMA foreign_keys = ON`.
+- **Foreign keys** are declared and enforced by PostgreSQL.
 - All database access goes through Drizzle ORM (`event.context.drizzle.select()/insert()/update()/delete()`); no raw string interpolation is used.
 - User input is bound as query parameters; SQL metacharacters such as `' OR 1=1 --` or `'; DROP TABLE users; --` are treated as literal values and cannot alter query logic.
-- Raw SQL exists only in `server/database/migrate.ts` and `server/database/index.ts` for schema setup, migrations, and PRAGMAs; these statements use hardcoded identifiers and constants, never user input.
+- Raw SQL is limited to migrations and operational tooling such as the one-time SQLite importer; identifiers are fixed or allow-listed and user input is bound as a parameter.
 - Regression tests in `tests/api/sql-injection.test.ts` exercise endpoints and database helpers with SQL metacharacters to verify they are stored and matched as literals.
-- The database layer uses Drizzle ORM with `bun:sqlite` under Bun and `better-sqlite3` under Node.js, ensuring consistent behavior between local and production environments.
+- The database layer uses Drizzle ORM with the `postgres` driver under both Bun and Node.js.
 
 ## Input Validation
 
@@ -153,7 +180,7 @@ if (!app || !isSecretValid) {
 
 ## Token custody
 
-Refresh tokens remain server-side in the encrypted `basis_auth_sessions` SQLite payload; the HTTP-only Nuxt cookie contains only the local user ID and its session identifier. Browser JavaScript receives short-lived access tokens and their display-only permission list through `POST /api/auth/token`. Protected APIs reject cookie-only requests and validate signature, issuer, audience, expiry, token type, and the JWT permissions array. Admin impersonation is not supported.
+Access and refresh tokens are sealed with AES-256-GCM into the HTTP-only `basis-auth-tokens` cookie; browser JavaScript cannot read it. `GET /api/auth/session` returns only the user ID, expiry, and permission list for display. Protected APIs validate the token from the cookie or an explicit bearer header, including signature, issuer, audience, expiry, token type, and permissions. Admin impersonation is not supported.
 
 ## Role-Based Access Control (RBAC)
 
@@ -230,7 +257,7 @@ A comprehensive XSS audit has been performed across all frontend components (`ap
 - **No `innerHTML`** or `dangerouslySetInnerHTML`: zero instances.
 - **SafeLink component**: validates all `href` attributes via `isSafeUrl()` before rendering; unsafe URLs render as inert `<span>` elements.
 - **SafeComark component**: renders user project descriptions with HTML escaping before Markdown processing.
-- **URL safety**: all project demo/repo URLs use `safeUrl()` computed properties; file upload URLs use sanitized UUID-based filenames.
+- **URL safety**: all project demo/repo URLs use `safeUrl()` computed properties; new uploaded objects use server-generated SHA-256 content-addressed filenames.
 - **Form maxlength attributes**: all key form inputs (`ProjectForm.vue`, `JudgingCard.vue`, `voting.vue`) now have `:maxlength` bound to the `MAX_*` constants from `shared/schemas.ts`, preventing users from exceeding validation limits before submission.
 
 **Result: Zero XSS vectors found.** The frontend is fully hardened against cross-site scripting attacks.

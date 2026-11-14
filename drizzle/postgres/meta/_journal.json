@@ -1,0 +1,48 @@
+{
+    "version": "7",
+    "dialect": "postgresql",
+    "entries": [
+        {
+            "idx": 0,
+            "version": "7",
+            "when": 1794305874021,
+            "tag": "0000_pg_initial",
+            "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1794305956989,
+            "tag": "0001_query_indexes",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1794310577216,
+            "tag": "0002_schema_constraints_and_score_curves",
+            "breakpoints": true
+        },
+        {
+            "when": 1794486417650,
+            "breakpoints": true,
+            "version": "7",
+            "idx": 3,
+            "tag": "0003_event_timestamps_bigint"
+        },
+        {
+            "idx": 4,
+            "version": "7",
+            "when": 1794488498657,
+            "tag": "0004_season_rubric_fk_and_sequence",
+            "breakpoints": true
+        },
+        {
+            "idx": 5,
+            "version": "7",
+            "when": 1794651146736,
+            "tag": "0005_blushing_george_stacy",
+            "breakpoints": true
+        }
+    ]
+}

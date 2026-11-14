@@ -1,151 +1,430 @@
 <script setup lang="ts">
-import type { FormSubmitEvent } from "@nuxt/ui";
-import rubrics from "~~/shared/rubric";
-import { CreateTeamScoresRequest, MAX_REASONING_LENGTH } from "~~/shared/schemas";
+import { computed, nextTick, onMounted, useTemplateRef } from "vue";
+import type { JudgingDraftStatus } from "~/composables/useJudgingDraft";
+import {
+    DEFAULT_JUDGE_COMMENT_GUIDANCE,
+    isJudgeCommentReady,
+    MIN_JUDGE_COMMENT_LENGTH,
+    type JudgeCommentGuidance,
+} from "~~/shared/judge-comments";
+import type { RubricTrack } from "~~/shared/rubric";
 
-const { team } = defineProps<{
+const props = defineProps<{
     team: APITeam;
+    track: RubricTrack;
+    commentGuidance?: JudgeCommentGuidance;
+    commentIdentityError?: string | null;
+    scores: Record<string, number>;
+    reasoning: string;
+    draftStatus: JudgingDraftStatus;
+    draftError: string | null;
+    draftReady: boolean;
+    readOnly?: boolean;
+    draftSavedAt?: number | null;
 }>();
+
 const emit = defineEmits<{
-    scored: [];
+    score: [criterionId: string, value: number];
+    reasoning: [value: string];
+    review: [];
+    retry: [];
 }>();
 
-const toast = useToast();
-
-const safeRepoUrl = computed(() => safeUrl(team.project.repo_url));
-const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
-
-const state = reactive<CreateTeamScoresRequest>({
-    reasoning: "",
-    scores: Object.keys(rubrics[team.pathway!]).reduce(
-        (obj, key) => ({ ...obj, [key]: 0 }),
-        {} as Record<keyof (typeof rubrics)["junior"], 0 | 1 | 2 | 3 | 4 | 5>,
+const projectHeading = useTemplateRef<HTMLHeadingElement>("projectHeading");
+const reasoningInput = useTemplateRef<HTMLTextAreaElement>("reasoningInput");
+const commentGuidance = computed(() => props.commentGuidance ?? DEFAULT_JUDGE_COMMENT_GUIDANCE);
+const safeRepoUrl = computed(() => safeUrl(props.team.project.repo_url));
+const safeDemoUrl = computed(() => safeUrl(props.team.project.demo_url));
+const criterionControls = computed(() =>
+    Object.fromEntries(
+        props.track.criteria.map((criterion) => {
+            const range = criterion.maxScore - criterion.minScore;
+            return [
+                criterion.id,
+                range <= 10
+                    ? Array.from({ length: range + 1 }, (_, index) => criterion.minScore + index)
+                    : null,
+            ];
+        }),
     ),
+);
+const criteriaComplete = computed(() =>
+    props.track.criteria.every((criterion) => {
+        const value = props.scores[criterion.id];
+        return (
+            Number.isInteger(value) && value >= criterion.minScore && value <= criterion.maxScore
+        );
+    }),
+);
+const reasoningComplete = computed(() => isJudgeCommentReady(props.reasoning));
+const canReview = computed(
+    () =>
+        criteriaComplete.value &&
+        reasoningComplete.value &&
+        !props.commentIdentityError &&
+        props.draftReady &&
+        props.draftStatus !== "loading",
+);
+const savedLabel = computed(() => {
+    if (!props.draftSavedAt) return "Draft saved";
+    return `Draft saved at ${new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+    }).format(props.draftSavedAt)}`;
 });
 
-async function onSubmit(event: FormSubmitEvent<CreateTeamScoresRequest>) {
-    if (
-        !confirm(
-            "Are you sure you want to submit these scores? You cannot edit them after submission.",
-        )
-    )
-        return;
-
-    try {
-        await withLoadingIndicator(async () => {
-            const res = await $fetch(`/api/teams/${team.id}/scores`, {
-                method: "POST",
-                body: event.data,
-            });
-            toast.add({
-                color: "success",
-                title: res.message,
-            });
-        });
-        emit("scored");
-    } catch (e) {
-        toast.add({
-            color: "error",
-            title: "Failed to score project",
-            description: getErrorMessage(e),
-        });
-    }
+function setScore(criterionId: string, value: number) {
+    if (!props.readOnly) emit("score", criterionId, value);
 }
+
+function updateRangeScore(criterionId: string, event: Event) {
+    setScore(criterionId, Number((event.target as HTMLInputElement).value));
+}
+
+function updateReasoning(event: Event) {
+    emit("reasoning", (event.target as HTMLTextAreaElement).value);
+}
+
+async function appendCommentPrompt(prompt: string) {
+    const existing = props.reasoning.trimEnd();
+    const nextValue = existing ? `${existing}\n\n${prompt}` : prompt;
+    emit("reasoning", nextValue);
+    await nextTick();
+    reasoningInput.value?.focus();
+    reasoningInput.value?.setSelectionRange(nextValue.length, nextValue.length);
+}
+
+onMounted(() => nextTick(() => projectHeading.value?.focus()));
 </script>
 
 <template>
-    <UCard variant="subtle" class="mb-4">
-        <h2 class="bold text-2xl mb-2">{{ team.project.name }}</h2>
-        <div class="flex flex-row items-baseline gap-4">
-            <p class="mb-2">Team: {{ team.name }}</p>
-            <UBadge variant="outline" :color="team.pathway == 'junior' ? 'primary' : 'warning'">
-                {{ team.pathway == "junior" ? "Junior" : "Senior" }}
+    <UCard variant="subtle" class="judging-card">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+                <p class="text-sm text-muted">{{ team.name }}</p>
+                <h2
+                    ref="projectHeading"
+                    tabindex="-1"
+                    class="mt-1 break-words text-2xl font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary sm:text-3xl"
+                >
+                    {{ team.project.name }}
+                </h2>
+            </div>
+            <UBadge
+                variant="outline"
+                :color="team.pathway === 'junior' ? 'primary' : 'warning'"
+                class="shrink-0"
+            >
+                {{ track.name }}
             </UBadge>
         </div>
-        <SafeComark class="my-4 mx-[2ch] text-wrap">{{ team.project.description }}</SafeComark>
+
+        <SafeComark class="my-5 max-w-prose text-wrap leading-relaxed">
+            {{ team.project.description }}
+        </SafeComark>
+
         <UAlert
             v-if="team.project.sourcing"
             icon="i-lucide-book-open"
             color="info"
             variant="subtle"
-            title="AI Statement"
-            class="mb-4"
+            title="Team's AI-use statement"
+            class="mb-5"
         >
             <template #description>
                 <SafeComark>{{ team.project.sourcing }}</SafeComark>
             </template>
         </UAlert>
+
         <div class="flex flex-wrap gap-2">
-            <UTooltip :text="safeRepoUrl ?? 'Repo link not available'">
-                <UButton
-                    variant="subtle"
-                    icon="i-material-symbols-merge"
-                    :href="safeRepoUrl"
-                    external
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    :disabled="!safeRepoUrl"
-                >
-                    Repo
-                </UButton>
-            </UTooltip>
-            <UTooltip :text="safeDemoUrl ?? 'Demo link not available'">
-                <UButton
-                    variant="subtle"
-                    icon="i-material-symbols-play-arrow"
-                    :href="safeDemoUrl"
-                    external
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    :disabled="!safeDemoUrl"
-                >
-                    Demo
-                </UButton>
-            </UTooltip>
+            <UButton
+                v-if="safeRepoUrl"
+                :href="safeRepoUrl"
+                external
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="subtle"
+                icon="i-material-symbols-merge"
+                class="min-h-11"
+            >
+                Open repository
+            </UButton>
+            <UButton
+                v-if="safeDemoUrl"
+                :href="safeDemoUrl"
+                external
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="subtle"
+                icon="i-material-symbols-play-arrow"
+                class="min-h-11"
+            >
+                Open demo
+            </UButton>
+            <p v-if="!safeRepoUrl && !safeDemoUrl" class="text-sm text-muted">
+                This project has no available repository or demo links.
+            </p>
         </div>
 
-        <hr class="text-neutral-500 my-4" />
+        <USeparator class="my-6" />
 
-        <h3 class="bold text-xl mb-2">Your scores</h3>
+        <section aria-labelledby="rubric-heading">
+            <div class="mb-4">
+                <p class="text-sm text-muted">Step 1</p>
+                <h3 id="rubric-heading" class="text-xl font-bold sm:text-2xl">
+                    {{ readOnly ? "Your submitted evaluation" : "Score this project" }}
+                </h3>
+                <p class="mt-1 text-sm text-muted">
+                    {{
+                        readOnly
+                            ? "This evaluation is finalized and read-only."
+                            : "Choose one score for every criterion. Your draft saves as you work."
+                    }}
+                </p>
+            </div>
 
-        <UForm :schema="CreateTeamScoresRequest" :state="state" @submit="onSubmit">
-            <ul class="mb-4">
-                <li
-                    v-for="[key, rubric] in Object.entries(rubrics[team.pathway!])"
-                    :key="key"
-                    class="flex items-center gap-4 mb-2"
+            <div class="space-y-4">
+                <fieldset
+                    v-for="criterion in track.criteria"
+                    :key="criterion.id"
+                    class="criterion-fieldset rounded-xl border border-default p-4"
+                    :disabled="readOnly || !draftReady || draftStatus === 'loading'"
                 >
-                    <span class="bold">{{ rubric.abbr }} ({{ rubric.weight }}%)</span>
-                    <UTooltip :text="rubric.description">
-                        <UIcon name="i-material-symbols-info-outline" />
-                    </UTooltip>
-                    <URadioGroup
-                        v-model="state.scores[key as keyof typeof state.scores]"
-                        :items="
-                            [0, 1, 2, 3, 4, 5].map((v) => ({
-                                label: `${v}`,
-                                value: v as 0 | 1 | 2 | 3 | 4 | 5,
-                            }))
-                        "
-                        variant="table"
-                        orientation="horizontal"
-                    />
-                </li>
-            </ul>
+                    <legend class="max-w-full px-1 text-base font-semibold">
+                        {{ criterion.name }}
+                        <span class="ml-1 text-sm font-normal text-muted">
+                            {{ criterion.weight }}%
+                        </span>
+                    </legend>
+                    <p
+                        :id="`criterion-${team.id}-${criterion.id}-hint`"
+                        class="mb-3 text-sm text-muted"
+                    >
+                        {{ criterion.description }}
+                    </p>
+                    <div
+                        v-if="criterionControls[criterion.id]"
+                        class="score-options"
+                        role="radiogroup"
+                        :aria-label="`${criterion.name} score`"
+                        :aria-describedby="`criterion-${team.id}-${criterion.id}-hint`"
+                    >
+                        <label
+                            v-for="score in criterionControls[criterion.id]"
+                            :key="score"
+                            class="score-option"
+                            :class="{
+                                'score-option-selected': scores[criterion.id] === score,
+                                'score-option-disabled':
+                                    readOnly || !draftReady || draftStatus === 'loading',
+                            }"
+                        >
+                            <!-- prettier-ignore -->
+                            <input
+                                type="radio"
+                                class="sr-only"
+                                :name="`team-${team.id}-${criterion.id}`"
+                                :value="score"
+                                :checked="scores[criterion.id] === score"
+                                :aria-label="`${score} of ${criterion.maxScore} for ${criterion.name}`"
+                                @change="setScore(criterion.id, score)"
+                            >
+                            <span aria-hidden="true">{{ score }}</span>
+                        </label>
+                    </div>
+                    <div v-else class="flex min-h-11 items-center gap-3">
+                        <label class="sr-only" :for="`score-${team.id}-${criterion.id}`">
+                            {{ criterion.name }} score from {{ criterion.minScore }} to
+                            {{ criterion.maxScore }}
+                        </label>
+                        <!-- prettier-ignore -->
+                        <input
+                            :id="`score-${team.id}-${criterion.id}`"
+                            type="range"
+                            class="score-range min-h-11 min-w-0 flex-1"
+                            :min="criterion.minScore"
+                            :max="criterion.maxScore"
+                            step="1"
+                            :value="scores[criterion.id] ?? criterion.minScore"
+                            :aria-valuetext="
+                                scores[criterion.id] === undefined
+                                    ? 'No score selected'
+                                    : `${scores[criterion.id]} of ${criterion.maxScore}`
+                            "
+                            :disabled="readOnly || !draftReady || draftStatus === 'loading'"
+                            @input="updateRangeScore(criterion.id, $event)"
+                        >
+                        <output
+                            class="min-w-14 rounded-lg border border-default px-3 py-2 text-center font-semibold tabular-nums"
+                            :for="`score-${team.id}-${criterion.id}`"
+                            aria-live="polite"
+                        >
+                            {{ scores[criterion.id] ?? "Choose" }}
+                        </output>
+                    </div>
+                </fieldset>
+            </div>
 
-            <UFormField name="reasoning" label="Score reasoning">
-                <UTextarea
-                    v-model="state.reasoning"
-                    class="w-full"
-                    placeholder="Please briefly share your reasoning on this score."
-                    :rows="5"
-                    :maxlength="MAX_REASONING_LENGTH"
+            <div class="mt-5">
+                <UAlert
+                    icon="i-lucide-message-square-heart"
+                    color="info"
+                    variant="subtle"
+                    title="Write useful, anonymous feedback"
+                    class="mb-4"
+                >
+                    <template #description>
+                        <p>{{ commentGuidance.introduction }}</p>
+                        <ul class="mt-2 list-disc space-y-1 pl-5">
+                            <li
+                                v-for="(guideline, index) in commentGuidance.guidelines"
+                                :key="index"
+                            >
+                                {{ guideline }}
+                            </li>
+                        </ul>
+                        <p class="mt-2 font-medium">
+                            Teams can read this comment anonymously after results are published.
+                        </p>
+                    </template>
+                </UAlert>
+                <label :for="`reasoning-${team.id}`" class="mb-1 block text-sm font-medium">
+                    Anonymous feedback and score rationale
+                </label>
+                <p :id="`reasoning-${team.id}-hint`" class="mb-2 text-sm text-muted">
+                    Needs at least {{ MIN_JUDGE_COMMENT_LENGTH }} characters
+                </p>
+                <div
+                    class="mb-2 flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Editable comment prompts"
+                >
+                    <UButton
+                        v-for="template in commentGuidance.templates"
+                        :key="template.label"
+                        variant="outline"
+                        size="sm"
+                        class="min-h-11"
+                        :disabled="readOnly || !draftReady || draftStatus === 'loading'"
+                        @click="appendCommentPrompt(template.body)"
+                    >
+                        {{ template.label }}
+                    </UButton>
+                </div>
+                <textarea
+                    :id="`reasoning-${team.id}`"
+                    ref="reasoningInput"
+                    :value="reasoning"
+                    class="reasoning-input min-h-32 w-full resize-y rounded-xl border border-default bg-default px-3 py-3 text-base leading-relaxed"
+                    placeholder="Describe the strengths and trade-offs behind your scores."
+                    :aria-describedby="
+                        commentIdentityError
+                            ? `reasoning-${team.id}-hint reasoning-${team.id}-identity-error`
+                            : `reasoning-${team.id}-hint`
+                    "
+                    :aria-invalid="
+                        (reasoning.length > 0 && !reasoningComplete) ||
+                        Boolean(commentIdentityError)
+                    "
+                    maxlength="10000"
+                    :disabled="readOnly || !draftReady || draftStatus === 'loading'"
+                    @input="updateReasoning"
                 />
-            </UFormField>
+                <p
+                    v-if="commentIdentityError"
+                    :id="`reasoning-${team.id}-identity-error`"
+                    class="mt-2 text-sm text-error"
+                    role="alert"
+                >
+                    {{ commentIdentityError }}
+                </p>
+            </div>
+        </section>
 
-            <UFormField>
-                <UButton class="mt-4" type="submit">Submit scores</UButton>
-            </UFormField>
-        </UForm>
+        <div class="mt-4 min-h-11" aria-live="polite" aria-atomic="true">
+            <p v-if="draftStatus === 'loading'" class="text-sm text-muted">
+                Loading your saved draft…
+            </p>
+            <p v-else-if="draftStatus === 'saving'" class="text-sm text-muted">
+                Saving your draft…
+            </p>
+            <p v-else-if="draftStatus === 'unsaved'" class="text-sm text-muted">Unsaved changes</p>
+            <p v-else-if="draftStatus === 'saved'" class="text-sm text-success">
+                {{ savedLabel }}
+            </p>
+            <div v-else-if="draftStatus === 'error'" class="flex flex-wrap items-center gap-3">
+                <p class="text-sm text-error">
+                    {{ draftError || "We could not load or save your draft." }}
+                </p>
+                <UButton size="sm" variant="outline" class="min-h-11" @click="emit('retry')">
+                    Retry
+                </UButton>
+            </div>
+        </div>
+
+        <div v-if="readOnly" class="mt-4 rounded-xl bg-success/10 p-4 text-sm">
+            <p class="font-semibold">Evaluation submitted</p>
+            <p class="mt-1 text-muted">This project is complete and its score cannot be changed.</p>
+        </div>
+        <UButton
+            v-else
+            class="mt-3 min-h-12 w-full sm:w-auto"
+            icon="i-lucide-clipboard-check"
+            trailing-icon="i-lucide-arrow-right"
+            :disabled="!canReview || draftStatus === 'error' || draftStatus === 'saving'"
+            @click="emit('review')"
+        >
+            Review evaluation
+        </UButton>
     </UCard>
 </template>
+
+<style scoped>
+.score-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(2.75rem, 1fr));
+    gap: 0.5rem;
+}
+
+.score-option {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--ui-border);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition:
+        background-color 120ms ease,
+        border-color 120ms ease,
+        color 120ms ease;
+}
+
+.score-option:focus-within {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: 2px;
+}
+
+.score-option-selected {
+    border-color: var(--ui-primary);
+    background: color-mix(in srgb, var(--ui-primary) 14%, transparent);
+    color: var(--ui-primary);
+}
+
+.score-option-disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.reasoning-input:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .score-option {
+        transition: none;
+    }
+}
+</style>

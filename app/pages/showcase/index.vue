@@ -24,18 +24,9 @@ useHead({
                 class="relative z-10 mx-auto flex min-h-[82vh] max-w-7xl flex-col justify-end px-6 py-16 sm:px-10 lg:px-16 lg:py-24"
             >
                 <div class="mb-auto flex items-center justify-between gap-4 pt-4">
-                    <p class="font-mono text-xs tracking-[0.28em] text-cyan-200 uppercase">
-                        Featured showcase
-                    </p>
-                    <p class="font-mono text-xs tracking-[0.2em] text-white/50 uppercase">
-                        Current season
-                    </p>
                 </div>
 
                 <div class="max-w-4xl">
-                    <p class="mb-5 text-sm tracking-[0.24em] text-cyan-100/70 uppercase">
-                        Six winning projects · Two pathways
-                    </p>
                     <h1
                         class="featured-title text-5xl leading-[0.92] font-black tracking-[-0.055em] sm:text-7xl lg:text-[7.5rem]"
                     >

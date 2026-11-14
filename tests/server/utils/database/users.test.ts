@@ -58,11 +58,10 @@ describe("users database helpers", () => {
             issuer: "https://auth.example.test",
             subject: "subject-1",
             email: "USER@EXAMPLE.COM",
-            emailVerified: true,
             name: "Updated Name",
         };
 
-        it("links the first verified login by normalized email without changing local ownership", async () => {
+        it("links the first login by normalized email without changing local ownership", async () => {
             event.context.drizzle
                 .prepare(
                     "INSERT INTO users(id, email, name) VALUES(17, 'user@example.com', 'Old Name')",
@@ -86,7 +85,7 @@ describe("users database helpers", () => {
             });
         });
 
-        it("uses issuer and subject on repeat login and permits a verified email update", async () => {
+        it("uses issuer and subject on repeat login and permits an email update", async () => {
             const linked = await findOrLinkBasisAuthUser(event, identity);
             const repeated = await findOrLinkBasisAuthUser(event, {
                 ...identity,
@@ -100,13 +99,7 @@ describe("users database helpers", () => {
             ).resolves.toMatchObject({ id: linked.id });
         });
 
-        it("rejects unverified email linking", async () => {
-            await expect(
-                findOrLinkBasisAuthUser(event, { ...identity, emailVerified: false }),
-            ).rejects.toMatchObject({ statusCode: 403 });
-        });
-
-        it("rejects identities or verified emails already linked to another account", async () => {
+        it("rejects identities or emails already linked to another account", async () => {
             await findOrLinkBasisAuthUser(event, identity);
             event.context.drizzle
                 .prepare("INSERT INTO users(email) VALUES('other@example.com')")

@@ -1,5 +1,6 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { SubmitTeamRequest, TeamIdParams } from "~~/shared/schemas";
+import { getRubricVersionForSeason } from "~~/server/utils/database/rubrics";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 export default defineEventHandler(
@@ -37,6 +38,14 @@ export default defineEventHandler(
             throw createError({
                 status: 403,
                 message: "Project is already submitted",
+            });
+        }
+
+        const rubric = await getRubricVersionForSeason(event, team.season_id);
+        if (!rubric || !Object.hasOwn(rubric.definition.tracks, payload.pathway)) {
+            throw createError({
+                statusCode: 400,
+                message: "Choose a track that is available for this season.",
             });
         }
 

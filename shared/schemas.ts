@@ -1,10 +1,11 @@
 import z from "zod";
-import rubrics from "./rubric";
+import rubrics, { type RubricDefinition } from "./rubric";
+import { hasUnfilledCommentTemplate, MIN_JUDGE_COMMENT_LENGTH } from "./judge-comments";
 
 export const MAX_EMAIL_LENGTH = 254;
 export const MAX_PROJECT_NAME_LENGTH = 100;
-export const MAX_PROJECT_DESCRIPTION_LENGTH = 2147483647;
-export const MAX_PROJECT_SOURCE_LENGTH = 2147483647;
+export const MAX_PROJECT_DESCRIPTION_LENGTH = 10_000;
+export const MAX_PROJECT_SOURCE_LENGTH = 2_000;
 export const MAX_URL_LENGTH = 2048;
 export const MAX_USER_NAME_LENGTH = 50;
 export const MAX_OAUTH2_CODE_LENGTH = 1024;
@@ -14,7 +15,7 @@ export const MAX_CODE_VERIFIER_LENGTH = 128;
 export const MAX_REDIRECT_URI_LENGTH = 2048;
 export const MAX_SCOPE_LENGTH = 128;
 export const MAX_SECRET_ABBREVIATED_LENGTH = 16;
-export const MAX_REASONING_LENGTH = 2147483647;
+export const MAX_REASONING_LENGTH = 10_000;
 export const MAX_VOTE_SCORES = 50;
 export const MAX_ELECTION_POSITIONS = 20;
 export const MAX_ELECTION_CANDIDATES = 50;
@@ -48,15 +49,42 @@ export const ProjectDescription = z
 export const ProjectUrl = z
     .union([z.url(), z.literal("")])
     .refine(
+        (value) => value === "" || isSafeExternalProjectUrl(value),
+        "URL must use http or https and must not contain credentials",
+    )
+    .refine(
         (v) => v === "" || v.length <= MAX_URL_LENGTH,
         "URL cannot be longer than 2048 characters",
     );
 
 const RequiredProjectUrl = z
     .url("Invalid URL format")
+    .refine(isSafeExternalProjectUrl, "URL must use http or https and must not contain credentials")
     .max(MAX_URL_LENGTH, "URL cannot be longer than 2048 characters");
 
-const TeamPathway = z.enum(["junior", "senior"]);
+function isSafeExternalProjectUrl(value: string): boolean {
+    try {
+        const url = new URL(value);
+        return (
+            (url.protocol === "http:" || url.protocol === "https:") &&
+            Boolean(url.hostname) &&
+            !url.username &&
+            !url.password
+        );
+    } catch {
+        return false;
+    }
+}
+
+const TeamPathway = z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(
+        /^[a-z0-9][a-z0-9_-]*$/,
+        "Track must use lowercase letters, numbers, dashes, or underscores",
+    );
 
 export const BooleanString = z.enum(["true", "false"]).transform((s) => s === "true");
 
@@ -70,6 +98,119 @@ export const ScoreValues = z.object(
         {} as Record<keyof (typeof rubrics)["junior"], typeof ZeroToFive>,
     ),
 );
+
+export const RubricCriterionSchema = z
+    .object({
+        id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+        name: z.string().trim().min(1).max(100),
+        description: z.string().max(500),
+        weight: z.number().int().min(1).max(100),
+        minScore: z.number().int().min(0).max(99),
+        maxScore: z.number().int().min(1).max(100),
+    })
+    .refine((criterion) => criterion.maxScore > criterion.minScore, {
+        message: "Maximum score must be higher than minimum score",
+        path: ["maxScore"],
+    });
+
+export const RubricTrackSchema = z
+    .object({
+        name: z.string().trim().min(1).max(80),
+        criteria: z.array(RubricCriterionSchema).min(1).max(20),
+    })
+    .refine(
+        (track) =>
+            new Set(track.criteria.map((criterion) => criterion.id)).size === track.criteria.length,
+        {
+            message: "Criterion IDs must be unique within a track",
+            path: ["criteria"],
+        },
+    )
+    .refine(
+        (track) => track.criteria.reduce((sum, criterion) => sum + criterion.weight, 0) === 100,
+        {
+            message: "Criterion weights must total 100 for each track",
+            path: ["criteria"],
+        },
+    );
+
+export const JudgeCommentGuidanceSchema = z.object({
+    introduction: z.string().trim().min(1).max(300),
+    guidelines: z.array(z.string().trim().min(1).max(240)).min(1).max(10),
+    templates: z
+        .array(
+            z.object({
+                label: z.string().trim().min(1).max(60),
+                body: z.string().trim().min(1).max(1_000),
+            }),
+        )
+        .min(1)
+        .max(8)
+        .refine(
+            (templates) =>
+                new Set(templates.map((template) => template.label.toLocaleLowerCase())).size ===
+                templates.length,
+            { message: "Comment template labels must be unique" },
+        ),
+});
+
+export const RubricDefinitionSchema: z.ZodType<RubricDefinition> = z.object({
+    tracks: z
+        .record(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/), RubricTrackSchema)
+        .refine((tracks) => Object.keys(tracks).length >= 1 && Object.keys(tracks).length <= 8, {
+            message: "A rubric must contain between 1 and 8 tracks",
+        }),
+    commentGuidance: JudgeCommentGuidanceSchema.optional(),
+});
+
+const DynamicRubricScores = z.record(
+    z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+    z.number().int().min(0).max(100),
+);
+
+export const SaveJudgingDraftRequest = z.object({
+    scores: DynamicRubricScores,
+    reasoning: z.string().max(MAX_REASONING_LENGTH).default(""),
+    rubric_version_id: z.number().int().positive(),
+});
+
+export const SubmitTeamScoresRequest = z.object({
+    scores: DynamicRubricScores,
+    reasoning: z
+        .string()
+        .trim()
+        .min(
+            MIN_JUDGE_COMMENT_LENGTH,
+            `Write at least ${MIN_JUDGE_COMMENT_LENGTH} characters of feedback.`,
+        )
+        .max(MAX_REASONING_LENGTH)
+        .refine((value) => !hasUnfilledCommentTemplate(value), {
+            message: "Replace the example text in the comment template before submitting.",
+        }),
+    rubric_version_id: z.number().int().positive(),
+});
+
+export const CreateRubricVersionRequest = z
+    .object({
+        name: z.string().trim().min(1).max(100),
+        definition: RubricDefinitionSchema.optional(),
+        copyFromSeasonId: z.coerce.number().int().positive().optional(),
+        sourceTemplateId: z.coerce.number().int().positive().optional(),
+    })
+    .refine(
+        (request) =>
+            Number(request.definition !== undefined) +
+                Number(request.copyFromSeasonId !== undefined) +
+                Number(request.sourceTemplateId !== undefined) ===
+            1,
+        { message: "Provide a rubric definition, prior season, or template" },
+    );
+
+export const CreateRubricTemplateRequest = z.object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().max(500).optional(),
+    definition: RubricDefinitionSchema,
+});
 
 export const PositiveIntParam = z.coerce.number().int().positive().finite();
 export const TeamIdParams = z.object({ id: PositiveIntParam });
@@ -88,6 +229,8 @@ export type CreateTeamQuery = z.infer<typeof CreateTeamQuery>;
 export const GetTeamsQuery = z.object({
     judging: BooleanString.optional(),
     season_id: z.coerce.number().int().positive().finite().optional(),
+    page: z.coerce.number().int().min(1).max(100_000).finite().optional(),
+    page_size: z.coerce.number().int().min(1).max(50).finite().optional(),
 });
 export type GetTeamsQuery = z.infer<typeof GetTeamsQuery>;
 
@@ -134,8 +277,8 @@ export const AddTeamMemberRequest = z.object({
 });
 export type AddTeamMemberRequest = z.infer<typeof AddTeamMemberRequest>;
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+export const MAX_PROFILE_IMAGE_BYTES = 7 * 1024 * 1024; // Base64 JSON fits the app's 10 MiB profile body cap.
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 
 export const formatBytes = (bytes: number, decimals = 2) => {
     if (bytes === 0) return "0 Bytes";
@@ -153,28 +296,12 @@ export const UpdateUserRequest = z.object({
             z
                 .instanceof(File)
                 .refine(
-                    (file) => file.size <= MAX_FILE_SIZE,
-                    `The image is too large. Please choose an image smaller than ${formatBytes(MAX_FILE_SIZE)}.`,
+                    (file) => file.size <= MAX_PROFILE_IMAGE_BYTES,
+                    `The image is too large. Please choose an image smaller than ${formatBytes(MAX_PROFILE_IMAGE_BYTES)}.`,
                 )
                 .refine(
                     (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-                    "Please upload a valid image file (JPEG, PNG, or WebP)",
-                ),
-            z.string().startsWith("data"),
-            z.null(),
-        ])
-        .optional(),
-    avatar: z
-        .union([
-            z
-                .instanceof(File)
-                .refine(
-                    (file) => file.size <= MAX_FILE_SIZE,
-                    `The image is too large. Please choose an image smaller than ${formatBytes(MAX_FILE_SIZE)}.`,
-                )
-                .refine(
-                    (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-                    "Please upload a valid image file (JPEG, PNG, or WebP)",
+                    "Please upload a valid image file (JPEG, PNG, GIF, or WebP)",
                 ),
             z.string().startsWith("data"),
             z.null(),
@@ -323,27 +450,32 @@ export const AdminUpdateHackathonRequest = z.object({
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     end_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     voting_start_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     voting_end_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     results_open_timestamp: z
         .number()
         .int()
         .nullish()
-        .transform((v) => v ?? 0),
+        .transform((v) => v ?? 0)
+        .optional(),
     theme_name: z.string().max(200).nullable().optional(),
     theme_description: z.string().max(2000).nullable().optional(),
 });

@@ -32,6 +32,8 @@ public/userast
 
 # database
 /database
+# Runtime uploads are stored in this project-local directory and must not enter git history.
+/assets/
 # Logs
 logs
 *.log
@@ -55,6 +57,9 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 *.lcov
+.tmp-vitest/
+.tmp-playwright-results/
+.tmp-playwright-report/
 
 # nyc test coverage
 .nyc_output
@@ -180,6 +185,8 @@ docs
 .trae
 .agents
 basishacks.sqlite
+*.sqlite-shm
+*.sqlite-wal
 # Agent/skill working artifacts
 skills-*.json
 test-agent-file.txt

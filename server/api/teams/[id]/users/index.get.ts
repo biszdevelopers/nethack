@@ -1,23 +1,40 @@
+import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { getTeamById } from "~~/server/utils/database/teams";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
-import { getAllTeamMembers, getTeamMembers } from "~~/server/utils/database/members";
+import {
+    getAllTeamMembers,
+    getTeamMembers,
+    getUserPastTeams,
+} from "~~/server/utils/database/members";
+import { NethackPermissions } from "~~/shared/permissions";
 import { TeamIdParams } from "~~/shared/schemas";
 
-export default defineEventHandler(async (event) => {
-    const { id: teamID } = await getValidatedRouterParams(event, TeamIdParams.parse);
+export default defineEventHandler(
+    applyRateLimit(async (event) => {
+        const { id: teamID } = await getValidatedRouterParams(event, TeamIdParams.parse);
+        const requester = await requireUser(event);
 
-    const team = await getTeamById(event, teamID);
-    const activeSeason = await getActiveSeason(event);
-    const isOldTeam = !team || (activeSeason && team.season_id !== activeSeason.id);
+        const team = await getTeamById(event, teamID);
+        if (!team) throw createError({ statusCode: 404, message: "Team not found" });
 
-    const members = isOldTeam
-        ? await getAllTeamMembers(event, teamID)
-        : await getTeamMembers(event, teamID);
+        const requesterPastTeams = await getUserPastTeams(event, requester.id);
+        const isMember =
+            requester.team_id === teamID ||
+            requesterPastTeams.some((pastTeam) => pastTeam.id === teamID);
+        if (!isMember) await requireUser(event, NethackPermissions.all);
 
-    return members.map((user) => ({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        team_id: user.team_id,
-    })) satisfies GetTeamMembersResponse;
-});
+        const activeSeason = await getActiveSeason(event);
+        const isOldTeam = activeSeason && team.season_id !== activeSeason.id;
+
+        const members = isOldTeam
+            ? await getAllTeamMembers(event, teamID)
+            : await getTeamMembers(event, teamID);
+
+        return members.map((user) => ({
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            team_id: user.team_id,
+        })) satisfies GetTeamMembersResponse;
+    }, DEFAULT_RATE_LIMIT_CONFIG),
+);

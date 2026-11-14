@@ -2,6 +2,8 @@
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
+useHead({ title: `Teams | ${WEBSITE_NAME}` });
+
 definePageMeta({
     layout: "developers-dashboard",
 });
@@ -14,6 +16,8 @@ const UserAvatarGroup = resolveComponent("UserAvatarGroup");
 const toast = useToast();
 const table = useTemplateRef<any>("table");
 const modalOpen = ref(false);
+const feedbackModalOpen = ref(false);
+const selectedFeedbackTeam = ref<AdminTeam | null>(null);
 
 const columnFilters = ref([
     {
@@ -33,7 +37,7 @@ type AdminTeamMember = {
 
 type AdminTeam = Team & { season_name: string | null; members: AdminTeamMember[] };
 
-const { data, status, refresh } = await useFetch<AdminTeam[]>("/api/admin/teams", {
+const { data, status, refresh } = await useApiFetch<AdminTeam[]>("/api/admin/teams", {
     server: false,
     lazy: true,
     default: () => [],
@@ -140,8 +144,24 @@ const columns: TableColumn<AdminTeam>[] = [
     },
     {
         accessorKey: "score",
-        header: "Score (/800)",
+        header: "Score (/100)",
         cell: ({ row }) => row.original.score ?? "-",
+    },
+    {
+        id: "score_feedback",
+        header: "Judge feedback",
+        cell: ({ row }) =>
+            h(UButton, {
+                label: "View",
+                icon: "i-lucide-message-square-text",
+                color: "neutral",
+                variant: "subtle",
+                class: "min-h-11",
+                onClick: () => {
+                    selectedFeedbackTeam.value = row.original;
+                    feedbackModalOpen.value = true;
+                },
+            }),
     },
     {
         accessorKey: "rank",
@@ -332,6 +352,31 @@ const paginationOptions = {
                         <UButton color="error" @click="onDelete">Delete</UButton>
                     </div>
                 </template>
+            </UCard>
+        </template>
+    </UModal>
+
+    <UModal v-model:open="feedbackModalOpen">
+        <template #content>
+            <UCard
+                tabindex="0"
+                role="region"
+                aria-label="Judge feedback details"
+                class="max-h-[85dvh] w-full max-w-3xl overflow-y-auto"
+            >
+                <template #header>
+                    <h3 class="text-base font-semibold">
+                        Judge feedback
+                        <span v-if="selectedFeedbackTeam">
+                            · {{ selectedFeedbackTeam.project_name || selectedFeedbackTeam.name }}
+                        </span>
+                    </h3>
+                </template>
+                <ScoreFeedbackPanel
+                    v-if="selectedFeedbackTeam"
+                    :team-id="selectedFeedbackTeam.id"
+                    admin
+                />
             </UCard>
         </template>
     </UModal>

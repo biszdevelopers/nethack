@@ -5,13 +5,13 @@ description: Database schema, access patterns, per-table helpers, type conventio
 
 # Database
 
-basishacks uses SQLite with a runtime-agnostic driver layer for both local development and production: `bun:sqlite` under Bun and `better-sqlite3` under Node.js. The database file uses WAL mode. All database access goes through Drizzle ORM, which provides type-safe queries.
+basishacks uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
 
 ## Tables
 
 ### `hackathon` (singleton)
 
-The hackathon table always has exactly one row (`id = 1`) that controls the global event state.
+The legacy singleton (`id = 1`) is retained for export, import compatibility, and rollback. The app reads live event settings from the selected `HACKATHON.yml` by default.
 
 | Column | Type | Description |
 | --- | --- | --- |
@@ -26,13 +26,15 @@ The hackathon table always has exactly one row (`id = 1`) that controls the glob
 | `judging_open` | `INTEGER` | Whether judge scoring is open |
 | `schedule_start` | `TEXT` | ISO timestamp for event start |
 | `schedule_end` | `TEXT` | ISO timestamp for event end |
-| `start_timestamp` | `INTEGER` | Event start timestamp |
-| `end_timestamp` | `INTEGER` | Event end timestamp |
-| `voting_start_timestamp` | `INTEGER` | Voting period start |
-| `voting_end_timestamp` | `INTEGER` | Voting period end |
-| `results_open_timestamp` | `INTEGER` | Results visibility timestamp |
+| `start_timestamp` | `BIGINT` | Event start timestamp in epoch milliseconds |
+| `end_timestamp` | `BIGINT` | Event end timestamp in epoch milliseconds |
+| `voting_start_timestamp` | `BIGINT` | Voting period start in epoch milliseconds |
+| `voting_end_timestamp` | `BIGINT` | Voting period end in epoch milliseconds |
+| `results_open_timestamp` | `BIGINT` | Results visibility timestamp in epoch milliseconds |
 | `theme_name` | `TEXT` | Hackathon theme name |
 | `theme_description` | `TEXT` | Hackathon theme description |
+
+Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 
 ### `teams`
 
@@ -67,15 +69,15 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 
 ### `users`
 
-| Column            | Type                                  | Description                       |
-| ----------------- | ------------------------------------- | --------------------------------- |
-| `id`              | `INTEGER PRIMARY KEY AUTOINCREMENT`   | User ID                           |
-| `email`           | `TEXT NOT NULL UNIQUE`                | User email                        |
-| `role`            | `TEXT NOT NULL DEFAULT 'participant'` | Space-separated permission string |
-| `name`            | `TEXT`                                | Display name                      |
-| `team_id`         | `INTEGER`                             | FK to `teams.id`                  |
-| `profile_theme`   | `TEXT`                                | Profile theme as `"mode\|value"`  |
-| `profile_picture` | `TEXT`                                | Profile picture URL or identifier |
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | User ID |
+| `email` | `TEXT NOT NULL UNIQUE` | User email |
+| `role` | `TEXT NOT NULL DEFAULT 'participant'` | Space-separated permission string |
+| `name` | `TEXT` | Display name |
+| `team_id` | `INTEGER` | FK to `teams.id` |
+| `profile_theme` | `TEXT` | Profile theme as `"mode\|value"` |
+| `profile_picture` | `TEXT` | Basis-auth picture URL or legacy local asset path |
 
 ::: warning The `role` column originally had a `CHECK` constraint limiting it to `participant`, `judge`, or `admin`. This was removed via `migration-permissions.sql` to support space-separated permission strings such as `"participant portal.users.view portal.teams.view"`. :::
 
@@ -103,16 +105,7 @@ Individual project scores within a ballot. Scores must be 1–5 or null.
 
 **Unique constraint**: `(ballot_id, project_id)`
 
-### `basis_auth_sessions`
-
-Stores OAuth token state on the server so the browser-facing Nuxt session stays below browser cookie-size limits. Token payloads are encrypted with a key derived from `NUXT_SESSION_PASSWORD` before being written to SQLite.
-
-| Column             | Type               | Description                                       |
-| ------------------ | ------------------ | ------------------------------------------------- |
-| `session_id`       | `TEXT PRIMARY KEY` | Nuxt session identifier                           |
-| `user_id`          | `INTEGER NOT NULL` | FK to `users.id` (ON DELETE CASCADE)              |
-| `encrypted_tokens` | `TEXT NOT NULL`    | AES-256-GCM encrypted access/refresh token bundle |
-| `expires_at`       | `INTEGER NOT NULL` | Absolute token-session expiry in milliseconds     |
+Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they are not stored in PostgreSQL. The database contains application users and event data, not browser token sessions.
 
 ### `oauth2_applications`
 
@@ -136,9 +129,11 @@ Stores OAuth token state on the server so the browser-facing Nuxt session stays 
 | `name`      | `TEXT NOT NULL UNIQUE`              | Season name                                  |
 | `is_active` | `INTEGER NOT NULL DEFAULT 0`        | Only one season can be active (CHECK 0 or 1) |
 
-Each season also stores its own copy of the tweakable settings (`status`, `show_scores`, `show_ranking`), which also exist on the `hackathon` singleton. Editing the tweaks of the currently active season also updates the `hackathon` row so changes take effect immediately, and activating a season copies its tweaks into the `hackathon` row. The remaining hackathon-state columns (`voting_enabled`, `results_published`, `judging_open`, timestamps, theme, etc.) still exist on both tables but are not part of the season tweaks system.
+Each season stores a snapshot of its event settings. With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
 
-When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from the team's **own** season (via `getScoreRankVisibilityResolver` in `server/utils/database/seasons.ts`), falling back to the `hackathon` singleton only when the season no longer exists. This keeps past-season results governed by their own season's settings rather than the live season's.
+The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
+
+When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from the team's **own** season (via `getScoreRankVisibilityResolver` in `server/utils/database/seasons.ts`), using live YAML for the active season. Unknown seasons keep scores and ranks private in YAML mode. This keeps past-season results governed by their own season's settings rather than the live season's.
 
 A partial unique index ensures at most one active season:
 
@@ -159,7 +154,7 @@ Junction table tracking which teams a user has belonged to historically.
 
 ### `awards`
 
-Stores the award catalog. The namespace, display name, description, and icon are data managed in SQLite rather than hard-coded in the application.
+Stores the award catalog. The namespace, display name, description, and icon are data managed in PostgreSQL rather than hard-coded in the application.
 
 | Column        | Type                        | Description                              |
 | ------------- | --------------------------- | ---------------------------------------- |
@@ -221,7 +216,6 @@ Each table has a dedicated helper module in `server/utils/database/`:
 | `members.ts` | Team member management |
 | `scores.ts` | Judge score CRUD |
 | `ballots.ts` | Ballot and ballot score management |
-| `basis-auth-sessions.ts` | Encrypted basis-auth token persistence by Nuxt session ID |
 | `hackathon.ts` | Hackathon state queries and updates |
 | `oauth2_applications.ts` | Application CRUD, secret management, redirect URI management |
 | `seasons.ts` | `getSeasons`, `getSeasonById`, `getActiveSeason`, `setActiveSeason`, `getScoreRankVisibilityResolver` |
@@ -272,94 +266,22 @@ Allowed modes: `url`, `emoji`, `gradient`. If the mode is unrecognized, it defau
 
 ## Migrations
 
-Migrations are stored as SQL files in the `drizzle/` directory. On server startup, `server/database/migrate.ts` reads these files in lexicographic order and applies any that have not yet been recorded in the `_drizzle_migrations` tracking table.
-
-This runtime-agnostic custom runner works with both `bun:sqlite` and `better-sqlite3`, so the server can migrate the database regardless of which runtime is used. `bun run db:migrate` is also available as a Drizzle Kit command for manual migration management.
-
-```ts
-// server/database/index.ts
-import { createAndMigrateDatabase } from "./migrate";
-// ...
-createAndMigrateDatabase(sqlite);
-```
-
-### Migration file format
-
-Files must end in `.sql` and may contain multiple statements separated by:
-
-```sql
---> statement-breakpoint
-```
-
-`CREATE TABLE`, `CREATE INDEX`, and `CREATE UNIQUE INDEX` statements are automatically made idempotent (`IF NOT EXISTS`) so they can safely re-run against databases created before migration tracking existed.
-
-### Generating migrations
-
-The `db:generate` script still uses Drizzle Kit to produce migration SQL from `server/database/schema.ts`:
+Drizzle Kit generates PostgreSQL migration files from `server/database/schema.ts` into `drizzle/postgres/`:
 
 ```bash
-# Generate a migration after schema changes
 bun run db:generate
 ```
 
-### Applying migrations
+Apply pending migrations explicitly during release workflows with `bun run db:migrate`. Nitro also applies them at startup before it serves requests. `server/database/migrate.ts` takes a PostgreSQL advisory lock while applying migrations, so concurrent starts do not race the migration ledger. Keep schema changes and generated migration SQL in the same change.
 
-```bash
-# Apply pending migrations manually (uses Drizzle Kit; Bun users may prefer startup auto-migration)
-bun run db:migrate
-```
+## SQLite import
 
-In practice, the dev/prod server applies migrations automatically when `createDrizzleDatabase()` runs during `init-database.ts` plugin initialization.
+SQLite is a source format for the one-time VPS cutover only. The importer is read-only against its SQLite backup, accepts an empty PostgreSQL target or the complete exact seed created by fresh migrations, and executes the import in one transaction. Partial or modified seed state and other target data are rejected. It preserves IDs and relationships, sets PostgreSQL identity sequences, checks row counts and foreign-key references, and writes the legacy-only columns and old score migration artifact to `sqlite_legacy_data`.
 
-### Legacy schema repair
+Run a source-only check with `bun run db:import-sqlite:check`, then apply with `bun run db:import-sqlite -- --confirm`. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for backup, maintenance-window, and rollback steps.
 
-`migrateLegacySchema()` in `server/database/migrate.ts` brings databases created from older `sql/archive/init.sql` schemas up to date without dropping data. It adds missing tables and columns:
+## Foreign keys and transactions
 
-| Missing Table / Column | Action |
-| --- | --- |
-| `seasons` table | Creates table + unique name index |
-| `team_awards` table | Creates table |
-| `peer_voting_scores` table | Creates table |
-| `user_past_teams` table | Creates table with composite PK |
-| Legacy `awards` table | Rebuilds the catalog with namespace keys, preserving rows |
-| `hackathon.*` timestamp/status columns | `ALTER TABLE ... ADD COLUMN INTEGER DEFAULT 0/NULL` |
-| `teams.season_id` | `ALTER TABLE ... ADD COLUMN INTEGER DEFAULT 1 NOT NULL` |
-| `teams.sourcing` | `ALTER TABLE ... ADD COLUMN TEXT DEFAULT '' NOT NULL` |
-| `team_scores.season_id` | `ALTER TABLE ... ADD COLUMN INTEGER` |
-| `oauth2_applications.owner_id` | `ALTER TABLE ... ADD COLUMN INTEGER` |
-| `users.auth_issuer`, `users.auth_subject` | Adds stable basis-auth identity columns and their unique composite index |
+PostgreSQL enforces relationships declared in the Drizzle schema. Use transactions for operations that update related rows, and preserve the configured `ON DELETE` behavior when changing relationship constraints. The importer checks both the source's references and the target's referential integrity before committing.
 
-### Seeding
-
-After migrations, `seedHackathon()` ensures the `hackathon` singleton row exists. basis-auth client and resource registration is operational configuration in basis-auth itself; basishacks does not seed or modify provider clients.
-
-### Notable migrations
-
-| Migration | Description |
-| --- | --- |
-| `migration-permissions.sql` | Drops the `CHECK` constraint on `users.role` to allow space-separated permission strings |
-| `migration-2026-05-20-owner-id.sql` | Adds `owner_id` column to `oauth2_applications` |
-| `migration-2026-06-02-18-13Z.sql` | Adds `sourcing` column to `teams` |
-| `migration-2026-06-02-21-29Z.sql` | Creates `seasons` table |
-| `migration-2026-06-02-21-35Z.sql` | Adds `season_id` to `teams`, seeds default season |
-| `migration-2026-06-02-22-00Z.sql` | Adds FK constraint on `teams.season_id` (table recreation) |
-| `migration-2026-06-02-22-15Z.sql` | Creates `user_past_teams` junction table |
-| `migration-2026-06-27-06-01Z.sql` | Creates the `team_awards` table (legacy archived migration) |
-| `0005_dynamic_awards.sql` | Creates and seeds the namespace-keyed award catalog |
-| `0006_normal_master_mold.sql` | Adds `users.auth_issuer`, `users.auth_subject`, and the unique stable-identity index |
-
-## Foreign Keys
-
-Foreign keys are enforced at the SQLite level:
-
-```sql
-PRAGMA foreign_keys = ON;
-```
-
-This is set in `createDrizzleDatabase()` (via `server/database/index.ts`) and in the `init-database.ts` plugin. Cascade deletes are configured on:
-
-- `ballot_scores.ballot_id` → `ballots.id` (ON DELETE CASCADE)
-- `basis_auth_sessions.user_id` → `users.id` (ON DELETE CASCADE)
-- `user_past_teams.user_id` → `users.id` (ON DELETE CASCADE)
-- `user_past_teams.team_id` → `teams.id` (ON DELETE CASCADE)
-- `team_awards.team_id` → `teams.id` (ON DELETE CASCADE)
+All ordinary application reads and writes should use Drizzle's parameterized query builders. Use the documented migration runner for schema changes; do not issue ad hoc production schema changes outside a reviewed migration.

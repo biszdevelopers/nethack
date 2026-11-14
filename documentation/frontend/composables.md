@@ -5,7 +5,7 @@ description: Shared composables, middleware, constants, error handling, and cros
 
 # Composables & Utilities
 
-The basishacks frontend organizes shared logic into composables (`app/composables/`), route middleware (`app/middleware/`), utility functions (`app/utils/`), and app configuration (`app/app.config.ts`). `app/plugins/api.client.ts` bootstraps the basis-auth access token into memory, injects bearer headers, unwraps `APIResponse.data`, parses `APIError` envelopes, and performs one single-flight refresh-and-retry after an expired-token response. A failed refresh clears local authentication and restarts login.
+The basishacks frontend organizes shared logic into composables (`app/composables/`), route middleware (`app/middleware/`), utility functions (`app/utils/`), and app configuration (`app/app.config.ts`). The encrypted HTTP-only cookie holds basis-auth tokens on the server. `useBasisAuthSession()` exposes a browser-safe session summary. The server API fetch wrapper and `app/plugins/api.client.ts` unwrap `APIResponse.data`; the client plugin converts error envelopes to `APIError` and restarts login after an unauthorized protected request. Pass `$fetch: globalThis.$fetch` to `useFetch` for API routes so server-rendered requests use the same envelope handling as direct `$fetch` calls.
 
 ## Composables
 
@@ -13,14 +13,15 @@ The basishacks frontend organizes shared logic into composables (`app/composable
 
 **File:** `app/composables/useApiUser.ts`
 
-Fetches the current authenticated user from the API and returns reactive state. Internally calls `useUserSession()` and guards against a missing user id so it never requests `/api/users/undefined`.
+Fetches the current authenticated user from the API and returns reactive state. It reads the identity from `useBasisAuthSession()` and guards against a missing user id so it never requests `/api/users/undefined`.
 
 ```ts
 export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUserResult> {
-    const { user: sessionUser, clear: clearSession } = useUserSession();
+    const { user: sessionUser, clear: clearSession } = useBasisAuthSession();
     const userID = computed(() => sessionUser.value?.id);
 
     const fetchResult = await useFetch<ApiUser>(() => `/api/users/${userID.value}`, {
+        $fetch: globalThis.$fetch,
         lazy: options?.lazy ?? false,
         immediate: !!userID.value,
         watch: [userID],
@@ -59,12 +60,12 @@ export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUs
 | Property | Type | Description |
 | --- | --- | --- |
 | `user` | `Ref<GetUserResponse \| null>` | Reactive user data from `/api/users/{id}` (alias for `data`) |
-| `sessionUser` | `Ref<SessionUser \| undefined>` | Session user from `useUserSession()` |
+| `sessionUser` | `Ref<{ id: number } \| null>` | Browser-safe identity from `useBasisAuthSession()` |
 | `status` | `Ref<AsyncDataRequestStatus>` | Request status (`idle`, `pending`, `success`, `error`) |
 | `error` | `Ref<FetchError \| null>` | Fetch error, if any |
 | `pending` | `Ref<boolean>` | Whether the request is in flight |
 | `refresh` | `() => Promise<void>` | Re-fetch the user data |
-| `clear` | `() => Promise<void>` | Clear the session (from `useUserSession`) |
+| `clear` | `() => Promise<void>` | Call `/api/auth/logout` and clear local session state |
 
 **Usage:**
 
@@ -78,7 +79,7 @@ const { user, sessionUser, refresh, clear } = await useApiUser({ lazy: true });
 </template>
 ```
 
-::: tip This composable combines `useUserSession()` (which only stores `{ id }`) with a full user fetch, giving pages and components access to the complete user object including role, team, and profile data. Pass `{ lazy: true }` to avoid blocking navigation. :::
+::: tip The browser session summary contains only the user ID, permissions, and expiry. Tokens remain inside the encrypted HTTP-only cookie. `useApiUser()` combines that summary with the full user fetch, giving pages and components access to role, team, and profile data. Pass `{ lazy: true }` to avoid blocking navigation. :::
 
 ## Route Middleware
 
@@ -86,11 +87,13 @@ const { user, sessionUser, refresh, clear } = await useApiUser({ lazy: true });
 
 **File:** `app/middleware/auth.ts`
 
-Global route middleware that verifies the server session before redirecting unauthenticated users to the login endpoint, preserving the originally requested URL and avoiding a post-OIDC hydration redirect loop.
+Global route middleware that refreshes the browser-safe basis-auth session summary before redirecting unauthenticated users to the login endpoint, preserving the originally requested URL.
 
 ```ts
-export default defineNuxtRouteMiddleware((to) => {
-    const { loggedIn } = useUserSession();
+export default defineNuxtRouteMiddleware(async (to) => {
+    const { ready, loggedIn, refresh } = useBasisAuthSession();
+
+    if (!ready.value || !loggedIn.value) await refresh();
 
     if (!loggedIn.value) {
         return navigateTo(`/api/login?redirect=${encodeURIComponent(to.fullPath)}`, {
@@ -102,7 +105,8 @@ export default defineNuxtRouteMiddleware((to) => {
 
 **Behavior:**
 
-- Checks `loggedIn` from `useUserSession()`
+- Refreshes the browser-safe session summary from `/api/auth/session` when needed
+- Checks `loggedIn` from `useBasisAuthSession()`
 - If not logged in, redirects to `/api/login` with a `redirect` query parameter (external navigation)
 - Applied per-page via `definePageMeta({ middleware: 'auth' })` or `middleware: ['auth']`
 

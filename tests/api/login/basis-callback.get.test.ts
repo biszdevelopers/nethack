@@ -52,7 +52,6 @@ beforeEach(() => {
             issuer: "https://auth.example.test",
             subject: "subject-1",
             email: "user@example.com",
-            emailVerified: true,
         },
         tokens: {
             accessToken: "access-token",

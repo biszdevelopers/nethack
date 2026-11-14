@@ -1,33 +1,30 @@
 <template>
-    <UCard class="min-w-[600px]">
+    <UCard class="w-full min-w-0">
         <template #default>
             <div class="flex flex-col gap-4">
                 <div class="flex flex-col">
                     <span class="text-sm font-bold text-muted">{{ seasonDate }}</span>
                     <div class="flex flex-row gap-2">
                         <span class="">{{ seasonName }}</span>
-                        <UBadge
-                            variant="outline"
-                            :color="team.pathway == 'junior' ? 'primary' : 'warning'"
-                        >
-                            {{ team.pathway == "junior" ? "Junior" : "Senior" }}
+                        <UBadge v-if="team.pathway" variant="outline" color="primary">
+                            {{ pathwayLabel }}
                         </UBadge>
                     </div>
                 </div>
                 <div
-                    v-if="team.score || team.rank"
+                    v-if="(team.score !== null && team.score !== undefined) || team.rank"
                     class="w-full flex flex-row justify-between items-center"
                 >
-                    <div v-if="team.score" class="w-1/2">
-                        <span class="uppercase text-sm text-muted">score</span>
+                    <div v-if="team.score !== null && team.score !== undefined" class="w-1/2">
+                        <span class="uppercase text-sm text-muted">original score</span>
                         <div class="w-1/2 flex items-baseline-last gap-1">
                             <span
                                 class="text-5xl font-bold"
-                                :class="{ 'rainbow-once': loaded && team.score == 800 }"
+                                :class="{ 'rainbow-once': loaded && team.score == 100 }"
                             >
                                 {{ team.score }}
                             </span>
-                            <span class="text-muted">/800</span>
+                            <span class="text-muted">/100</span>
                         </div>
                     </div>
                     <div v-if="team.rank" class="w-1/2">
@@ -59,7 +56,7 @@
                         <span class="uppercase text-sm text-muted">score</span>
                         <div class="w-1/2 flex items-baseline-last gap-1">
                             <span class="text-5xl font-bold">---</span>
-                            <span class="text-muted">/800</span>
+                            <span class="text-muted">/100</span>
                         </div>
                     </div>
                     <div class="w-1/2 blur-md select-none">
@@ -74,15 +71,14 @@
                         <span class="text-sm text-muted">Team</span>
                         <span class="text-sm">{{ team.name }}</span>
                     </div>
-                    <UserAvatarGroup
-                        v-if="members && members.length > 0"
-                        :users="members"
-                        :max="5"
-                        size="md"
-                        class="mt-2"
-                    />
-                    <p v-else class="text-muted text-sm">(No members...? For some reason)</p>
+                    <p class="mt-1 text-xs text-muted">Member details are private to the team.</p>
                 </div>
+                <ScoreFeedbackPanel
+                    v-if="seasonMeta.resultsPublished"
+                    :team-id="team.id"
+                    :show-original-score="false"
+                    :show-rank="false"
+                />
                 <div class="flex flex-row gap-2">
                     <div v-for="award in team.awards">
                         <AwardButton :award="award" size="md"></AwardButton>
@@ -93,7 +89,7 @@
         <template #footer>
             <div class="flex flex-col gap-2">
                 <UModal :title="team.name">
-                    <UButton variant="link" class="p-0 h-auto text-xs">
+                    <UButton variant="link" class="min-h-11 text-xs">
                         <UIcon name="i-lucide-file" class="text-xs"></UIcon>
                         See Project Details
                     </UButton>
@@ -101,7 +97,11 @@
                         <ProjectCard :id="team.id" />
                     </template>
                 </UModal>
-                <ULink class="text-xs" href="#" target="_blank" external>
+                <ULink
+                    v-if="team.season_id"
+                    :to="`/seasons/${team.season_id}`"
+                    class="inline-flex min-h-11 items-center gap-1 text-xs"
+                >
                     <UIcon name="i-lucide-calendar" class="text-xs"></UIcon>
                     See Season Details
                     <UIcon name="i-lucide-arrow-right" class="text-xs"></UIcon>
@@ -116,19 +116,26 @@ const props = defineProps<{
     team: GetTeamResponse;
 }>();
 
-const { data: seasons } = await useFetch<Season[]>("/api/seasons", { lazy: true });
+const { data: seasons } = await useApiFetch<PublicSeason[]>("/api/seasons", { lazy: true });
 
 const seasonMeta = computed(() => {
-    if (!props.team.season_id) return { name: "Unknown", date: null };
+    if (!props.team.season_id) return { name: "Unknown", date: null, resultsPublished: false };
     const s = seasons.value?.find((s: any) => s.id === props.team.season_id);
-    return { name: s?.name ?? `Season ${props.team.season_id}`, date: null };
+    return {
+        name: s?.name ?? `Season ${props.team.season_id}`,
+        date: null,
+        resultsPublished: s?.results_published === 1 || s?.results_published === true,
+    };
 });
 
 const seasonDate = computed(() => seasonMeta.value.date);
 const seasonName = computed(() => seasonMeta.value.name);
-
-const { data: members } = await useFetch<GetTeamMembersResponse>(
-    () => `/api/teams/${props.team.id}/users`,
+const pathwayLabel = computed(() =>
+    (props.team.pathway ?? "")
+        .split(/[-_]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
+        .join(" "),
 );
 
 const loaded = ref(false);
@@ -231,6 +238,19 @@ onMounted(() => {
         background-position: 0% center;
     }
     100% {
+        background-position: 100% center;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .metallic-gold,
+    .metallic-silver,
+    .metallic-bronze,
+    .rainbow-once {
+        animation: none;
+    }
+
+    .rainbow-once {
         background-position: 100% center;
     }
 }
