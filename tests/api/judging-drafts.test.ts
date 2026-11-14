@@ -85,6 +85,22 @@ function createEvent() {
 }
 
 describe("judging draft rubric recovery", () => {
+    it("returns comment guidance saved with the rubric version", async () => {
+        const commentGuidance = {
+            introduction: "Write a concise, respectful note about the project.",
+            guidelines: ["Name one strength and one useful next step."],
+            templates: [{ label: "Project feedback", body: "A strength is {{specific detail}}." }],
+        };
+        const definition = { ...DEFAULT_RUBRIC_DEFINITION, commentGuidance };
+        ctx.sqlite
+            .prepare("UPDATE rubric_versions SET definition = ? WHERE id = ?")
+            .run(JSON.stringify(definition), originalRubricId);
+
+        const response = await getDraftHandler(createEvent());
+
+        expect(response.rubric.commentGuidance).toEqual(commentGuidance);
+    });
+
     it("rate limits draft reads, writes, and deletes per judge with a retry header", async () => {
         for (
             let request = 0;
