@@ -256,7 +256,7 @@ Coerces string route params to positive integers. Used by:
 **Image validation details:**
 
 - Maximum decoded profile image size: 7 MiB (`7 * 1024 * 1024` bytes); its base64 JSON body stays below Nitro's 10 MiB request limit.
-- Accepted MIME types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`
+- Accepted MIME types: `image/jpeg`, `image/jpg`, `image/png`, `image/gif`, `image/webp`
 - Data URIs are accepted (string starting with `'data'`)
 - Error messages use the `formatBytes()` helper exported from `shared/schemas.ts`:
     ```ts
