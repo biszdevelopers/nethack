@@ -2,24 +2,6 @@
 import { useId } from "vue";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
 
-type ScoreFeedback = {
-    rubric_name: string;
-    rubric_version: number;
-    track_name: string;
-    normalized_score: number | null;
-    scores: Record<string, number> | null;
-    criteria: { id: string; name: string; minScore: number; maxScore: number }[] | null;
-    reasoning: string;
-};
-
-type ScoreFeedbackResponse = {
-    original_score: number | null;
-    displayed_score: number | null;
-    curve_preset: ScoreCurvePreset | null;
-    rank: number | null;
-    feedback: ScoreFeedback[];
-};
-
 const props = withDefaults(
     defineProps<{
         teamId: number;
@@ -35,7 +17,7 @@ const headingId = useId();
 const endpoint = computed(() =>
     props.admin ? `/api/admin/teams/${props.teamId}/scores` : `/api/teams/${props.teamId}/scores`,
 );
-const { data, pending, error } = await useApiFetch<ScoreFeedbackResponse>(endpoint);
+const { data, pending, error } = await useApiFetch<TeamScoreFeedbackResponse>(endpoint);
 const curve = computed(() =>
     data.value?.curve_preset ? SCORE_CURVE_PRESETS[data.value.curve_preset] : null,
 );
@@ -54,9 +36,13 @@ const hasSummary = computed(() =>
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h3 :id="headingId" class="font-semibold">Judge feedback</h3>
-                <p class="mt-1 text-sm text-muted">
-                    Judge names and account IDs are hidden. Comments focus on the project and its
-                    rubric scores.
+                <p v-if="admin" class="mt-1 text-sm text-muted">
+                    Judge names and account IDs are visible only in this admin view.
+                </p>
+                <p v-else class="mt-1 text-sm text-muted">
+                    Judge names, account IDs, rubric metadata, and individual scores are hidden.
+                    Comments appear only after publication when at least three judges have submitted
+                    evaluations.
                 </p>
             </div>
             <div v-if="showSummary && hasSummary" class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -89,19 +75,36 @@ const hasSummary = computed(() =>
             title="Feedback could not be loaded"
             description="Try again in a moment."
         />
+        <p
+            v-else-if="data?.feedback_withheld_for_anonymity"
+            class="mt-4 rounded-lg bg-elevated p-4 text-sm text-muted"
+            role="status"
+        >
+            Written feedback is hidden until at least three judges have evaluated this project so no
+            single judge can be identified from a one-person review.
+        </p>
         <div v-else-if="data?.feedback.length" class="mt-4 space-y-3">
             <article
                 v-for="(evaluation, index) in data.feedback"
-                :key="`${evaluation.rubric_version}-${index}`"
+                :key="index"
                 class="min-w-0 rounded-lg bg-elevated p-4"
             >
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <h4 class="font-medium">Anonymous evaluation</h4>
-                    <span v-if="evaluation.normalized_score !== null" class="text-sm font-semibold">
+                    <h4 class="font-medium">
+                        {{
+                            admin
+                                ? (evaluation.judge_name ?? `Judge #${evaluation.judge_id}`)
+                                : "Anonymous evaluation"
+                        }}
+                    </h4>
+                    <span
+                        v-if="admin && evaluation.normalized_score != null"
+                        class="text-sm font-semibold"
+                    >
                         {{ evaluation.normalized_score }}/100
                     </span>
                 </div>
-                <p class="mt-1 text-xs text-muted">
+                <p v-if="admin" class="mt-1 text-xs text-muted">
                     {{ evaluation.track_name }} · {{ evaluation.rubric_name }} v{{
                         evaluation.rubric_version
                     }}
