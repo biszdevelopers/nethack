@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     createAndMigrateDatabase: vi.fn(),
     setDatabaseInitialization: vi.fn(),
     collectOrphanProfileAssets: vi.fn(),
+    collectOrphanPermalinkAssets: vi.fn(),
 }));
 
 vi.mock("~~/server/database", () => ({
@@ -18,6 +19,7 @@ vi.mock("~~/server/database/migrate", () => ({
 }));
 vi.mock("~~/server/utils/assets", () => ({
     collectOrphanProfileAssets: mocks.collectOrphanProfileAssets,
+    collectOrphanPermalinkAssets: mocks.collectOrphanPermalinkAssets,
 }));
 vi.stubGlobal("defineNitroPlugin", (plugin: (nitroApp: unknown) => Promise<void>) => plugin);
 
@@ -37,6 +39,13 @@ describe("init-database plugin", () => {
             tooRecent: 0,
             staleTemporaryFilesDeleted: 0,
         });
+        mocks.collectOrphanPermalinkAssets.mockResolvedValue({
+            scanned: 0,
+            deleted: 0,
+            missing: 0,
+            referenced: 0,
+            unsafe: 0,
+        });
     });
 
     afterEach(() => {
@@ -46,6 +55,7 @@ describe("init-database plugin", () => {
         mocks.createAndMigrateDatabase.mockResolvedValue(undefined);
         mocks.setDatabaseInitialization.mockReset();
         mocks.collectOrphanProfileAssets.mockReset();
+        mocks.collectOrphanPermalinkAssets.mockReset();
         vi.useRealTimers();
     });
 
@@ -59,6 +69,7 @@ describe("init-database plugin", () => {
         await hook.mock.calls[0]![1]();
         expect(mocks.closeDatabase).toHaveBeenCalledTimes(1);
         expect(mocks.collectOrphanProfileAssets).not.toHaveBeenCalled();
+        expect(mocks.collectOrphanPermalinkAssets).not.toHaveBeenCalled();
     });
 
     it("publishes readiness before Nitro can dispatch requests while migrations are pending", async () => {
@@ -114,15 +125,22 @@ describe("init-database plugin", () => {
         await initDatabase({ hooks: { hook } });
 
         expect(mocks.collectOrphanProfileAssets).not.toHaveBeenCalled();
+        expect(mocks.collectOrphanPermalinkAssets).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(60 * 1000);
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledOnce();
+        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledOnce();
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledWith(database, {
+            maxScanned: 250,
+            maxDeletions: 25,
+        });
+        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledWith(database, {
             maxScanned: 250,
             maxDeletions: 25,
         });
 
         await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledTimes(2);
+        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledTimes(2);
 
         await hook.mock.calls[0]![1]();
         expect(vi.getTimerCount()).toBe(0);
@@ -155,6 +173,7 @@ describe("init-database plugin", () => {
         await vi.advanceTimersByTimeAsync(60 * 1000);
         await vi.advanceTimersByTimeAsync(48 * 60 * 60 * 1000);
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledOnce();
+        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledOnce();
 
         finishFirst({
             entriesVisited: 1,
@@ -167,6 +186,7 @@ describe("init-database plugin", () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
         expect(mocks.collectOrphanProfileAssets).toHaveBeenCalledTimes(2);
+        expect(mocks.collectOrphanPermalinkAssets).toHaveBeenCalledTimes(2);
 
         mocks.collectOrphanProfileAssets.mockRejectedValueOnce(new Error("postgres://secret"));
         const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
