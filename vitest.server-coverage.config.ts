@@ -14,7 +14,7 @@ export default defineConfig({
         testTimeout: 15_000,
         coverage: {
             ...baseConfig.test.coverage,
-            include: ["app/composables/useBasisAuthSession.ts"],
+            include: ["app/composables/useBasisAuthSession.ts", "app/composables/useApiUser.ts"],
             reportsDirectory: ".tmp-vitest/server-mode-coverage",
             reporter: ["json"],
         },
