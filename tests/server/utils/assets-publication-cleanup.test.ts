@@ -31,7 +31,7 @@ describe("atomic asset publication cleanup", () => {
         await actualFsPromises.rm(tempDir, { recursive: true, force: true });
     });
 
-    it("removes a linked destination and temporary file if temporary unlink fails", async () => {
+    it("retains safely published bytes if temporary cleanup fails", async () => {
         let calls = 0;
         rmMock.mockImplementation(async (...args: Parameters<typeof actualFsPromises.rm>) => {
             calls += 1;
@@ -50,7 +50,7 @@ describe("atomic asset publication cleanup", () => {
             ),
         ).rejects.toThrow("temporary unlink failed");
 
-        expect(calls).toBe(3);
+        expect(calls).toBe(2);
         await expect(actualFsPromises.readdir(join(storageDir, "assets"))).resolves.toEqual(
             expect.arrayContaining(["exclusive.txt"]),
         );
