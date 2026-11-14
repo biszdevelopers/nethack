@@ -260,7 +260,7 @@ Generates a deterministic identicon PNG from a name string and saves it as a use
 
 - Default size: 100px.
 - The name is sanitized to filesystem-safe characters.
-- Saved to `{ASSET_STORAGE_DIR}/assets/users/{safeName}.png` outside the release directory.
+- The returned PNG is stored by the calling code under project-root `/assets`; runtime uploads are gitignored and separate from `public/assets`.
 
 ---
 
@@ -270,7 +270,7 @@ File system helpers for managing persistent static and user assets with path tra
 
 ### Storage location and path protection
 
-Set `ASSET_STORAGE_DIR` to an absolute directory on persistent storage outside the application release. The default is `${XDG_DATA_HOME}/basishacks/assets`, or `~/.local/share/basishacks/assets` when `XDG_DATA_HOME` is unset. Production rejects a storage root located inside `process.cwd()`.
+All runtime collections are rooted at `<project-root>/assets`: public uploads are in `assets/`, while user uploads are in `userassets/`. This path is fixed rather than configured through an environment variable. Keep it through in-place pull/build/start deployments, back it up separately from PostgreSQL, and restore it before serving from a fresh clone. The committed static showcase under `public/assets` is unrelated runtime storage.
 
 Asset names may include safe nested path segments, but empty, `.` and `..` segments, backslashes, NUL bytes, and names over 512 characters are rejected. Resolved paths are checked to stay inside their collection. Parent directories and final files are checked against symlinks; reads use `O_NOFOLLOW` where available.
 
@@ -278,15 +278,18 @@ Asset names may include safe nested path segments, but empty, `.` and `..` segme
 
 | Function | Description |
 | --- | --- |
-| `createAsset(name, data)` | Writes a Buffer to `{ASSET_STORAGE_DIR}/assets/{name}`; returns basename |
-| `createUserAsset(name, data)` | Writes a Buffer to `{ASSET_STORAGE_DIR}/userassets/{name}`; returns basename |
-| `createAssetFromStream(...)` | Streams a size-limited upload to a temporary file and atomically publishes it |
-| `removeAsset(name)` | Deletes a file from the persistent `assets/` collection |
-| `removeUserAsset(name)` | Deletes a file from the persistent `userassets/` collection |
-| `getUserAsset(name)` | Reads a file from persistent `userassets/` as a Buffer |
+| `createAsset(name, data)` | Writes a Buffer to the checked project-root `assets/` collection; returns the stored name |
+| `createUserAsset(name, data)` | Writes a Buffer to the checked project-root `userassets/` collection; returns the stored name |
+| `createAssetFromStream(...)` | Streams a size-limited upload to a temporary file and atomically publishes its content-addressed object |
+| `getUserAssetContentAddress(data, extension)` | Derives `profiles/<sha256>.<canonical-extension>` for a profile image |
+| `createUserAssetContentAddressed(...)` | Verifies and publishes a profile image object without overwriting an existing object; identical content deduplicates |
+| `withAssetLifecycleLocks(...)` | Serializes a database reference update with collection of the same asset paths using PostgreSQL advisory locks |
+| `collectOrphanProfileAssets(...)` | Bounded cleanup of old managed profile objects after checking every supported database reference under the lifecycle lock |
+| `removeAsset(name)` / `removeUserAsset(name)` | Explicit low-level deletion helpers; do not use them for lifecycle cleanup of potentially referenced content |
+| `getUserAsset(name)` | Reads a file from the checked project-root `userassets/` collection as a Buffer |
 | `openStoredAsset(collection, name)` | Opens a checked file as a stream and returns its size |
 
-Collection files are served from `/assets/uploads/*` and `/userast/*` by explicit Nitro routes that set a fixed content type, `nosniff`, a restrictive CSP, and attachment disposition for non-image/video formats. Missing assets return a not-found response. Upload parsing and limits are documented in [Debug & AI](./debug-and-ai).
+New multipart uploads use content-addressed SHA-256 names and deduplicate within their collection. Collection files are served from `/assets/uploads/*` and `/userast/*` by explicit Nitro routes that set a fixed content type, `nosniff`, a restrictive CSP, and attachment disposition for non-image/video formats. Public permalink/debug uploads are pinned and excluded from garbage collection. Only managed profile objects below `userassets/profiles/` are eligible for cleanup, after a seven-day grace period and a locked zero-reference check across profile pictures, URL profile themes, and legacy OAuth application pictures. Existing non-hashed objects are preserved. Missing assets return a not-found response. Upload parsing and limits are documented in [Debug & AI](./debug-and-ai).
 
 ---
 
