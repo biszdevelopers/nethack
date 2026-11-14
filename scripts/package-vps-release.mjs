@@ -37,6 +37,8 @@ await cp(resolve(projectRoot, "drizzle/postgres"), resolve(releaseRoot, "drizzle
     recursive: true,
 });
 await cp(resolve(projectRoot, "start-fix.mjs"), resolve(releaseRoot, "start-fix.mjs"));
+await mkdir(resolve(releaseRoot, "scripts"), { recursive: true });
+await cp(resolve(projectRoot, "scripts/start.sh"), resolve(releaseRoot, "scripts/start.sh"));
 await cp(resolve(projectRoot, ".env.example"), resolve(releaseRoot, ".env.example"));
 await cp(resolve(projectRoot, "bun.lock"), resolve(releaseRoot, "bun.lock"));
 for (const directory of ["patches", "vendor"]) {
@@ -96,7 +98,7 @@ const releaseManifest = {
     type: "module",
     engines: { ...sourceManifest.engines, node: ">=24" },
     scripts: {
-        start: "bun start-fix.mjs",
+        start: "sh scripts/start.sh",
         "start:node": "node start-fix.mjs",
         "db:migrate": "bun .output/tools/db-migrate.mjs",
         "db:migrate:node": "node .output/tools/db-migrate.mjs",
@@ -133,6 +135,7 @@ for (const requiredPath of [
     ".output/tools/import-sqlite-to-postgres.mjs",
     "drizzle/postgres/meta/_journal.json",
     "start-fix.mjs",
+    "scripts/start.sh",
     "package.json",
     ...(includeProductionDependencies
         ? [
