@@ -14,7 +14,6 @@ Set `DATABASE_URL` in the process environment or protected environment file. It 
 ```dotenv
 DATABASE_URL=postgresql://basishacks:replace_me@127.0.0.1:5432/basishacks
 DATABASE_POOL_MAX=10
-ASSET_STORAGE_DIR=/var/lib/basishacks/assets
 ```
 
 Use a dedicated PostgreSQL role with only the privileges needed by the application. Keep the URL and authentication secrets in a root-readable environment file, such as `/etc/basishacks/basishacks.env`, and never commit production credentials.
@@ -45,22 +44,22 @@ sqlite3 /srv/basishacks/database/basishacks.sqlite \
 sqlite3 /srv/backups/basishacks-pre-postgres.sqlite 'PRAGMA integrity_check;'
 ```
 
-The integrity check must return `ok`. Keep the original database and a separate backup until the new release has been verified. Back up user-uploaded files separately; the importer moves database rows only. The importer opens SQLite read-only and enables `query_only`; source orphan references, missing relationships, or unknown non-metadata tables stop the import without changing the source. In particular, each `team_scores.team_id` and `team_scores.judge_user_id` must resolve to an existing team and user.
+The integrity check must return `ok`. Keep the original database and a separate backup until the new release has been verified. Back up user-uploaded files separately; the importer moves database rows only. The importer opens SQLite read-only and enables `query_only`; missing required relationships outside `team_scores`, unknown non-metadata tables, or a broken schema stop the import without changing the source. `team_scores` rows whose team or judge references are invalid are preserved with their complete source payload in `sqlite_legacy_data` and excluded from active scores. Only linked score rows are imported into the foreign-key-constrained PostgreSQL table. Review the import report's `archivedOrphanRows` counts before cutover.
 
 CI fixtures and local SQLite files without confirmed production provenance are rehearsal samples only. They verify importer behavior but do not qualify as the production backup or prove that production history is complete.
 
-### Copy existing uploads to persistent storage
+### Preserve existing uploads in the checkout
 
-Before switching releases, copy existing user uploads from the old release's `public/userassets` directory into `$ASSET_STORAGE_DIR/userassets`. For the default storage root:
+Runtime uploads now live in the project-root `/assets` directory. It is gitignored, so an in-place pull/build/start deployment preserves it. Before a re-clone, checkout replacement, or first deployment with existing uploads, copy the prior runtime storage into the new checkout's `/assets`, preserving the `assets/` and `userassets/` collection layout and existing names. For example, adapt the source and destination to the actual old and new project paths:
 
 ```bash
-sudo install -d -o basishacks -g basishacks -m 0750 /var/lib/basishacks/assets/userassets
-sudo rsync -a /opt/basishacks/old/public/userassets/ /var/lib/basishacks/assets/userassets/
-sudo chown -R basishacks:basishacks /var/lib/basishacks/assets/userassets
-sudo chmod -R u+rwX,go-rwx /var/lib/basishacks/assets/userassets
+sudo install -d -o basishacks -g basishacks -m 0750 /opt/basishacks/current/assets
+sudo rsync -a /path/to/previous/runtime-assets/ /opt/basishacks/current/assets/
+sudo chown -R basishacks:basishacks /opt/basishacks/current/assets
+sudo chmod -R u+rwX,go-rwx /opt/basishacks/current/assets
 ```
 
-If you configure another absolute `ASSET_STORAGE_DIR`, use that path instead and ensure the service account can read and write it. Keep the source directory until uploaded assets have been checked after cutover.
+If the previous checkout stored legacy profile images in `public/userassets`, copy them into the new checkout's `/assets/userassets/` collection with their existing filenames too. Review same-name conflicts before copying and do not overwrite files silently. Keep a separate backup until representative profile images and permalink uploads have been checked after cutover. Preserve legacy non-hashed filenames unchanged: automatic collection deliberately ignores them. The committed static showcase under `public/assets` is not runtime storage and must not be copied over `/assets`.
 
 ### 2. Provision and migrate an empty PostgreSQL database
 
@@ -75,7 +74,7 @@ export SQLITE_IMPORT_PATH=/srv/backups/basishacks-pre-postgres.sqlite
 bun run db:import-sqlite:check
 ```
 
-It reports per-table source counts and fails if required source tables are missing, an unrecognized non-metadata table exists, or existing relationships contain orphan rows. Resolve any reported source issue or restore a clean backup; do not bypass the checks. For example, a `team_scores` row referring to a missing team or judge is not imported and does not get dropped or repaired automatically. The read-only source remains untouched.
+It reports per-table source counts and fails if required source tables are missing, an unrecognized non-metadata table exists, or relationships outside `team_scores` contain orphan rows. A `team_scores` row that refers to a missing team or judge is preserved in `sqlite_legacy_data` with its original values and reported for review; it is not imported as a live score or repaired automatically. Review those archived rows before cutover. The read-only source remains untouched.
 
 ### 4. Import and verify
 
@@ -99,29 +98,28 @@ Before cutover, compare the reported row counts with a read-only query against P
 
 ### 5. Start the release
 
-Build the artifact and start either runtime:
+For the direct Git checkout deployment, keep using the same project directory, install dependencies, build, apply migrations, and start the server:
 
 ```bash
+cd /opt/basishacks/current
+bun install --frozen-lockfile
 bun run build
-bun install --production --frozen-lockfile
-VPS_RELEASE_INCLUDE_NODE_MODULES=1 bun run release:package
-cd release-package
 bun run db:migrate
 bun run start
 
-# Or, using Node.js with the same release package:
+# Or use Node.js with the same built checkout:
 node start-fix.mjs
 ```
 
-GitHub tag archives already contain the production dependencies. PowerShell users can set the packaging flag with `$env:VPS_RELEASE_INCLUDE_NODE_MODULES = "1"` before running `bun run release:package`.
+The app also applies migrations under an advisory lock on startup. GitHub tag archives remain an optional deployment format and already contain production dependencies; if using one, preserve or restore the project's `/assets` directory in the working checkout before serving.
 
-Keep uploads in persistent storage outside the versioned release directory. `ASSET_STORAGE_DIR` defaults to `/var/lib/basishacks/assets`. The service account needs write access to that directory. Put a TLS reverse proxy in front of the app and bind Nitro to the loopback interface when the proxy runs on the same host.
+Keep the gitignored project-root `/assets` directory in the checked-out project and make it writable by the service account. An in-place pull/build/start preserves it; a re-clone or fresh checkout must restore it before serving. Back it up separately from PostgreSQL. The committed showcase at `public/assets` is separate. Put a TLS reverse proxy in front of the app and bind Nitro to the loopback interface when the proxy runs on the same host.
 
 ## systemd service
 
-Ready-to-copy unit files are in `deploy/systemd/basishacks-bun.service` and `deploy/systemd/basishacks-node.service`. Both set a 450,000,000-byte soft memory threshold and a 500,000,000-byte hard limit, use a separate persistent state directory, and run with systemd filesystem protections.
+Ready-to-copy unit files are in `deploy/systemd/basishacks-bun.service` and `deploy/systemd/basishacks-node.service`. Both set a 450,000,000-byte soft memory threshold and a 500,000,000-byte hard limit, grant write access only to the project's `/assets` upload directory, and run with systemd filesystem protections.
 
-Create a dedicated `basishacks` system user, install the release under `/opt/basishacks/current`, and create `/etc/basishacks/basishacks.env` with mode `0600`. Then install one of the service units:
+Create a dedicated `basishacks` system user, install the project under `/opt/basishacks/current`, ensure `/opt/basishacks/current/assets` exists and is owned by that user, and create `/etc/basishacks/basishacks.env` with mode `0600`. The service unit's `ReadWritePaths` must point at that checkout's `/assets` directory. Then install one of the service units:
 
 ```bash
 sudo install -m 0644 deploy/systemd/basishacks-bun.service /etc/systemd/system/basishacks.service
