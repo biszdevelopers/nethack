@@ -33,6 +33,7 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
+const api = useNuxtApp().$api ?? globalThis.$fetch;
 const rubricData = shallowRef<RubricResponse | null>(null);
 const definition = ref<RubricDefinition>(copyDefinition(DEFAULT_RUBRIC_DEFINITION));
 const versionName = ref("");
@@ -139,9 +140,7 @@ async function loadRubric() {
     loading.value = true;
     loadError.value = "";
     try {
-        const response = await $fetch<RubricResponse>(
-            `/api/admin/seasons/${props.seasonId}/rubric`,
-        );
+        const response = await api<RubricResponse>(`/api/admin/seasons/${props.seasonId}/rubric`);
         rubricData.value = response;
         definition.value = copyDefinition(response.active?.definition ?? DEFAULT_RUBRIC_DEFINITION);
         versionName.value = response.active?.name ?? "Season rubric";
@@ -182,7 +181,7 @@ async function saveVersion() {
 
     savingVersion.value = true;
     try {
-        const response = await $fetch<{ active: RubricVersionSummary }>(
+        const response = await api<{ active: RubricVersionSummary }>(
             `/api/admin/seasons/${props.seasonId}/rubric`,
             {
                 method: "POST",
@@ -223,9 +222,7 @@ async function copyFromSeason(customize: boolean) {
 
     loading.value = true;
     try {
-        const response = await $fetch<RubricResponse>(
-            `/api/admin/seasons/${sourceSeason.id}/rubric`,
-        );
+        const response = await api<RubricResponse>(`/api/admin/seasons/${sourceSeason.id}/rubric`);
         if (!response.active) {
             throw new Error("That season does not have an active rubric to copy.");
         }
@@ -255,7 +252,7 @@ async function createVersion(
 ) {
     savingVersion.value = true;
     try {
-        await $fetch(`/api/admin/seasons/${props.seasonId}/rubric`, {
+        await api(`/api/admin/seasons/${props.seasonId}/rubric`, {
             method: "POST",
             body: { name: name.trim() || "Copied rubric", ...source },
         });
@@ -305,13 +302,13 @@ async function saveTemplate(updateExisting = false) {
             definition: copyDefinition(definition.value),
         };
         if (updateExisting && selectedTemplateId.value !== null) {
-            await $fetch(`/api/admin/rubric-templates/${selectedTemplateId.value}`, {
+            await api(`/api/admin/rubric-templates/${selectedTemplateId.value}`, {
                 method: "PUT",
                 body,
             });
             toast.add({ title: "Template updated.", color: "success" });
         } else {
-            const response = await $fetch<{ template: RubricTemplateSummary }>(
+            const response = await api<{ template: RubricTemplateSummary }>(
                 "/api/admin/rubric-templates",
                 { method: "POST", body },
             );
@@ -340,7 +337,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
     }
     deletingTemplateId.value = template.id;
     try {
-        await $fetch(`/api/admin/rubric-templates/${template.id}`, { method: "DELETE" });
+        await api(`/api/admin/rubric-templates/${template.id}`, { method: "DELETE" });
         if (selectedTemplateId.value === template.id) {
             selectedTemplateId.value = null;
             templateName.value = "";
