@@ -116,7 +116,7 @@ const props = defineProps<{
     team: GetTeamResponse;
 }>();
 
-const { data: seasons } = await useFetch<PublicSeason[]>("/api/seasons", { lazy: true });
+const { data: seasons } = await useApiFetch<PublicSeason[]>("/api/seasons", { lazy: true });
 
 const seasonMeta = computed(() => {
     if (!props.team.season_id) return { name: "Unknown", date: null, resultsPublished: false };
