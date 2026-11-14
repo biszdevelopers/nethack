@@ -308,20 +308,33 @@ describe("session, permission, and API user composables", () => {
             status.value = "success";
         });
         const fetchResult = { data, status, refresh, error: ref(null) };
-        const useFetch = vi.fn(async (_url: unknown, options: { default: () => null }) => {
-            expect(options.default()).toBeNull();
-            return fetchResult;
-        });
+        const useFetch = vi.fn(
+            async (
+                _url: unknown,
+                options: {
+                    default: () => null;
+                    lazy?: boolean;
+                    immediate?: boolean;
+                    watch?: { value: unknown }[];
+                    transform?: (response: unknown) => unknown;
+                },
+            ) => {
+                expect(options.default()).toBeNull();
+                return fetchResult;
+            },
+        );
         vi.stubGlobal("useFetch", useFetch);
         const { useApiUser } = await import("~~/app/composables/useApiUser");
 
         const result = await useApiUser({ lazy: false });
-        expect(useFetch).toHaveBeenCalledWith(expect.any(Function), {
-            lazy: false,
-            server: false,
-            immediate: true,
-            watch: [expect.objectContaining({ value: 42 })],
-            default: expect.any(Function),
+        expect(useFetch).toHaveBeenCalledOnce();
+        const options = useFetch.mock.calls[0]?.[1];
+        expect(options.lazy).toBe(false);
+        expect(options.immediate).toBe(true);
+        expect(options.watch?.[0]?.value).toBe(42);
+        expect(options.default()).toBeNull();
+        expect(options.transform({ status: 200, code: "ok", data: { id: 42 } })).toEqual({
+            id: 42,
         });
         expect(useFetch.mock.calls[0]?.[0]()).toBe("/api/users/42");
         expect(refresh).toHaveBeenCalledOnce();
@@ -339,10 +352,21 @@ describe("session, permission, and API user composables", () => {
             refresh: vi.fn(),
             error: ref(null),
         };
-        const useFetch = vi.fn(async (_url: unknown, options: { default: () => null }) => {
-            expect(options.default()).toBeNull();
-            return fetchResult;
-        });
+        const useFetch = vi.fn(
+            async (
+                _url: unknown,
+                options: {
+                    default: () => null;
+                    lazy?: boolean;
+                    immediate?: boolean;
+                    watch?: { value: unknown }[];
+                    transform?: (response: unknown) => unknown;
+                },
+            ) => {
+                expect(options.default()).toBeNull();
+                return fetchResult;
+            },
+        );
         vi.stubGlobal("useFetch", useFetch);
         const { useApiUser } = await import("~~/app/composables/useApiUser");
 
