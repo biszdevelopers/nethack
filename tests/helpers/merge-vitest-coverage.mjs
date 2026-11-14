@@ -13,6 +13,9 @@ const COLUMN_VARIANCE_ALLOWLIST = {
         statementMap: new Set(["15"]),
         branchMap: new Set(["2"]),
     },
+    "app/composables/useapiuser.ts": {
+        branchMap: new Set(["2"]),
+    },
 };
 
 function sortedKeys(value) {
