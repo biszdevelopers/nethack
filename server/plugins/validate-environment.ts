@@ -1,4 +1,6 @@
 import {
+    isLoopbackHost,
+    isLoopbackHttpOrigin,
     isValidE2ELoopbackOrigin,
     isValidProductionOrigin,
     isValidTrustedProxyHops,
@@ -53,17 +55,24 @@ export default defineNitroPlugin(() => {
     }
 
     if (isProduction) {
+        const origin = process.env.CURRENT_URL_ORIGIN;
+        const effectiveHost = process.env.NITRO_HOST || process.env.HOST;
         const isIsolatedE2EOrigin =
             process.env.BASISHACKS_E2E === "1" &&
             isValidE2ELoopbackOrigin(
-                process.env.CURRENT_URL_ORIGIN,
+                origin,
                 process.env.NITRO_HOST || process.env.HOST,
                 process.env.NITRO_PORT || process.env.PORT,
                 process.env.NITRO_UNIX_SOCKET,
             );
-        if (!isValidProductionOrigin(process.env.CURRENT_URL_ORIGIN) && !isIsolatedE2EOrigin) {
+        const allowedOrigin =
+            (isValidProductionOrigin(origin) &&
+                (!isLoopbackHttpOrigin(origin) ||
+                    (isLoopbackHost(effectiveHost) && !process.env.NITRO_UNIX_SOCKET))) ||
+            isIsolatedE2EOrigin;
+        if (!allowedOrigin) {
             console.error(
-                "[FATAL] CURRENT_URL_ORIGIN must be the public HTTPS origin without a path, query, or credentials.",
+                "[FATAL] CURRENT_URL_ORIGIN must be a public HTTPS origin, or a loopback HTTP origin while the server binds to loopback, without a path, query, or credentials.",
             );
             process.exit(1);
         }

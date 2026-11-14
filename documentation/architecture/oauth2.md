@@ -16,7 +16,7 @@ http://localhost:24598/api/auth/basis/callback
 https://nethack.biszweb.club/api/auth/basis/callback
 ```
 
-Register `devconnect://nethack.bisz.dev` as a resource and use the same value for `BASIS_AUTH_RESOURCE`. The login request is `openid profile email offline_access nethack.access`; basis-auth supplies feature authorization in the access-token `permissions` array.
+Register `devconnect://nethack.bisz.dev` as a resource and use the same value for `BASIS_AUTH_RESOURCE`. The login request is `openid profile email offline_access`; basis-auth supplies feature authorization in the access-token `permissions` array, so application permissions are not requested as OAuth scopes.
 
 ## Client configuration
 
@@ -28,7 +28,7 @@ Register `devconnect://nethack.bisz.dev` as a resource and use the same value fo
 | `BASIS_AUTH_RESOURCE`      | Expected resource audience                     |
 | `CURRENT_URL_ORIGIN`       | Origin from which the callback URL is derived  |
 
-In production, `CURRENT_URL_ORIGIN` must be a public HTTPS origin without a path, query, fragment, or credentials. The client uses discovery, authorization code, S256 PKCE, state, nonce, `client_secret_basic`, ID-token validation, and UserInfo. Failed discovery is retryable instead of being cached for the process lifetime. Access and refresh tokens are compressed and sealed with AES-256-GCM into an HTTP-only cookie; they are not stored in PostgreSQL or exposed to browser JavaScript. `GET /api/auth/session` returns only the local user ID, expiry, and permission list for display decisions.
+In production, `CURRENT_URL_ORIGIN` must be a public HTTPS origin without a path, query, fragment, or credentials. Loopback HTTP origins (`http://localhost`, `http://127.0.0.1`, or `http://[::1]`) are accepted for local production only while the server binds to loopback; the launcher sets that bind and the matching port when no explicit values are configured, and auth cookies omit the Secure flag so browsers retain them. The exact callback must be registered for the confidential basis-auth client; basis-auth does not accept arbitrary localhost redirects for confidential clients. The client uses discovery, authorization code, S256 PKCE, state, nonce, `client_secret_basic`, ID-token validation, and UserInfo. Failed discovery is retryable instead of being cached for the process lifetime. Access and refresh tokens are compressed and sealed with AES-256-GCM into an HTTP-only cookie; they are not stored in PostgreSQL or exposed to browser JavaScript. `GET /api/auth/session` returns only the local user ID, expiry, and permission list for display decisions.
 
 ## Protected API validation
 

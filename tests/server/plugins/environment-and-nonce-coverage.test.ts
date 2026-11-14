@@ -100,7 +100,26 @@ describe("environment validation plugin", () => {
         expect(error).toHaveBeenCalledWith(expect.stringContaining("CURRENT_URL_ORIGIN"));
     });
 
-    it("allows the production build to use only its exact isolated E2E loopback origin", async () => {
+    it("allows a production build to use a loopback HTTP origin while bound to loopback", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("HOST", "127.0.0.1");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+
+        await runPlugin();
+    });
+
+    it("rejects a loopback HTTP origin that is exposed on a public interface", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("HOST", "0.0.0.0");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await expectExit();
+
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("CURRENT_URL_ORIGIN"));
+    });
+
+    it("keeps the isolated E2E loopback exception path", async () => {
         vi.stubEnv("NODE_ENV", "production");
         vi.stubEnv("BASISHACKS_E2E", "1");
         vi.stubEnv("HOST", "127.0.0.1");
@@ -110,17 +129,33 @@ describe("environment validation plugin", () => {
         await runPlugin();
     });
 
+    it("accepts a loopback HTTP origin with an explicit loopback port", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("HOST", "127.0.0.1");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+        vi.stubEnv("NITRO_PORT", "3006");
+
+        await runPlugin();
+    });
+
     it.each([
         ["NITRO_HOST", "0.0.0.0"],
-        ["NITRO_PORT", "3006"],
         ["NITRO_UNIX_SOCKET", "/tmp/basishacks.sock"],
-    ])("rejects the E2E origin exception with unsafe %s", async (name, value) => {
+    ])("rejects a loopback HTTP origin through an unsafe %s", async (name, value) => {
         vi.stubEnv("NODE_ENV", "production");
-        vi.stubEnv("BASISHACKS_E2E", "1");
         vi.stubEnv("HOST", "127.0.0.1");
-        vi.stubEnv("PORT", "3005");
         vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
         vi.stubEnv(name, value);
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await expectExit();
+
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("CURRENT_URL_ORIGIN"));
+    });
+
+    it("rejects a public HTTP production origin", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://site.example.test");
         const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
         await expectExit();

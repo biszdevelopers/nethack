@@ -82,16 +82,20 @@ describe("basis-auth encrypted cookies", () => {
         );
     });
 
-    it("marks auth cookies Secure in production", () => {
+    it("marks auth cookies Secure for a public HTTPS production origin", () => {
         const event = { context: {} } as any;
         const originalNodeEnv = process.env.NODE_ENV;
+        const originalOrigin = process.env.CURRENT_URL_ORIGIN;
         process.env.NODE_ENV = "production";
+        process.env.CURRENT_URL_ORIGIN = "https://basishacks.example";
 
         try {
             sessionUtils.establishBasisAuthUserSession(event, 7, tokens);
         } finally {
             if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
             else process.env.NODE_ENV = originalNodeEnv;
+            if (originalOrigin === undefined) delete process.env.CURRENT_URL_ORIGIN;
+            else process.env.CURRENT_URL_ORIGIN = originalOrigin;
         }
 
         expect(setCookieMock).toHaveBeenCalledWith(
@@ -99,6 +103,30 @@ describe("basis-auth encrypted cookies", () => {
             sessionUtils.BASIS_AUTH_TOKEN_COOKIE,
             expect.any(String),
             expect.objectContaining({ secure: true }),
+        );
+    });
+
+    it("keeps auth cookies non-Secure for a loopback HTTP production origin", () => {
+        const event = { context: {} } as any;
+        const originalNodeEnv = process.env.NODE_ENV;
+        const originalOrigin = process.env.CURRENT_URL_ORIGIN;
+        process.env.NODE_ENV = "production";
+        process.env.CURRENT_URL_ORIGIN = "http://localhost:24598";
+
+        try {
+            sessionUtils.establishBasisAuthUserSession(event, 7, tokens);
+        } finally {
+            if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+            else process.env.NODE_ENV = originalNodeEnv;
+            if (originalOrigin === undefined) delete process.env.CURRENT_URL_ORIGIN;
+            else process.env.CURRENT_URL_ORIGIN = originalOrigin;
+        }
+
+        expect(setCookieMock).toHaveBeenCalledWith(
+            event,
+            sessionUtils.BASIS_AUTH_TOKEN_COOKIE,
+            expect.any(String),
+            expect.objectContaining({ secure: false }),
         );
     });
 

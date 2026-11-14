@@ -318,7 +318,7 @@ try {
 
 Role-based access control is enforced at two levels:
 
-1. **Server-side** — `requireUser`, `requireJudge`, `requireAdmin` in `server/utils/auth.ts`
+1. **Server-side** — `requireUser` with granular `NethackPermissions` requirements in `server/utils/auth.ts`
 2. **Client-side** — `useNethackPermissions()` for display-only UI conditionals
 
 ```vue

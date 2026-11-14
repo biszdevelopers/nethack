@@ -3,6 +3,7 @@ import { onMounted } from "vue";
 
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 // File upload state

@@ -45,7 +45,7 @@ basishacks-r2/
 │   ├── types/              # Type augmentations (H3EventContext)
 │   └── utils/              # Server utilities
 │       ├── database/       # Per-table DB helpers (users, teams, scores, etc.)
-│       ├── auth.ts         # requireUser / requireJudge / requireAdmin / requirePermission
+│       ├── auth.ts         # requireUser / optionalUser permission helpers
 │       ├── convert.ts      # DB row -> public API object transformers
 │       ├── rateLimit.ts    # In-memory rate limiter (4 tiers)
 │       ├── oauth2.ts       # Public origin and callback URL helpers
@@ -98,8 +98,8 @@ Nitro Server Middleware
   ▼
 Nitro API Handler (server/api/**/*.ts)
   │  ├── Input validation via Zod schemas (length-bounded inputs)
-  │  ├── Role/permission checks via requireUser/requireAdmin/requirePermission
-  │  ├── OAuth2 JWT verification via withOAuth2JWT() wrapper
+  │  ├── Permission checks via requireUser and NethackPermissions
+  │  ├── basis-auth access-token verification via verifyOAuth2JWT()
   │  └── Database access via event.context.drizzle
   │
   ▼
@@ -116,7 +116,7 @@ Every incoming request has the following context attached by plugins and middlew
 | Context Key | Type | Set By | Purpose |
 | --- | --- | --- | --- |
 | `event.context.drizzle` | `DrizzleDatabase` | `02.database.ts` middleware | Database access |
-| `event.context.oauth2` | `OAuth2JWTContext` | `withOAuth2JWT()` wrapper | OAuth2 JWT payload, scopes, user |
+| `event.context.oauth2` | `OAuth2JWTContext` | `requireUser()` | basis-auth JWT payload, permissions, and local user |
 
 ## Key Architectural Decisions
 

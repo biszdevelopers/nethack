@@ -1,6 +1,7 @@
 <script setup lang="ts">
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 const toast = useToast();

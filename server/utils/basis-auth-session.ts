@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import type { H3Event } from "h3";
+import { isLoopbackHttpOrigin } from "~~/server/utils/environment-validation";
 
 export const BASIS_AUTH_TOKEN_COOKIE = "basis-auth-tokens";
 export const BASIS_AUTH_FLOW_COOKIE = "basis-auth-flow";
@@ -89,7 +90,11 @@ function unseal(value: string, purpose: "tokens" | "flow"): unknown {
 function cookieOptions(maxAge: number) {
     return {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        // Secure cookies are discarded by browsers over plain HTTP, so keep them
+        // available for loopback production instances while public origins stay secure.
+        secure:
+            process.env.NODE_ENV === "production" &&
+            !isLoopbackHttpOrigin(process.env.CURRENT_URL_ORIGIN),
         sameSite: "lax" as const,
         path: "/",
         maxAge,

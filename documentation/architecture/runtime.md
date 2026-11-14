@@ -114,7 +114,7 @@ declare module "h3" {
 | Key | Type | Always present? | Set by |
 | --- | --- | --- | --- |
 | `event.context.drizzle` | `DrizzleDatabase` | Yes | `02.database.ts` request middleware |
-| `event.context.oauth2` | `OAuth2JWTContext` | Only in OAuth2-protected endpoints | `withOAuth2JWT()` wrapper |
+| `event.context.oauth2` | `OAuth2JWTContext` | Only in basis-auth-protected endpoints | `requireUser()` | basis-auth JWT payload, permissions, local user |
 
 ## Request Lifecycle
 

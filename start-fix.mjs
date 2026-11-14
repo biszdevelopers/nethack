@@ -11,12 +11,47 @@ export function createRuntime(overrides = {}) {
     };
 }
 
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** Keep local production on the same port as the configured loopback callback origin. */
+export function loopbackOriginPort(origin) {
+    try {
+        const url = new URL(origin);
+        return url.protocol === "http:" &&
+            LOOPBACK_HOSTNAMES.has(url.hostname) &&
+            /^\d+$/.test(url.port) &&
+            Number(url.port) > 0
+            ? url.port
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+export function isLoopbackHttpOrigin(origin) {
+    try {
+        const url = new URL(origin);
+        return url.protocol === "http:" && LOOPBACK_HOSTNAMES.has(url.hostname);
+    } catch {
+        return false;
+    }
+}
+
 export async function importProductionServer(specifier) {
     return await import(specifier);
 }
 
 export async function startProduction(runtime) {
     runtime.environment.NODE_ENV ??= "production";
+    const environment = runtime.environment;
+    const loopbackOrigin = isLoopbackHttpOrigin(environment.CURRENT_URL_ORIGIN);
+    if (loopbackOrigin && !environment.NITRO_HOST && !environment.HOST) {
+        environment.HOST = "127.0.0.1";
+    }
+    if (!environment.NITRO_PORT && !environment.PORT) {
+        const originPort = loopbackOriginPort(environment.CURRENT_URL_ORIGIN);
+        if (originPort) environment.NITRO_PORT = originPort;
+    }
     const entryPath = runtime.resolvePath(".output/server/index.mjs");
     runtime.globalObject._importMeta_ = { url: `file:///${entryPath.replaceAll("\\", "/")}` };
     await runtime.importServer("./.output/server/index.mjs");

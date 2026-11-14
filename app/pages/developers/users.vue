@@ -4,6 +4,7 @@ import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 const UserAvatar = resolveComponent("UserAvatar");

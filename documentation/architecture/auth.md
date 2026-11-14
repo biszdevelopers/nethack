@@ -13,7 +13,7 @@ basishacks delegates user authentication to the separately deployed **basis-auth
 
 - S256 PKCE
 - unpredictable `state` and `nonce`
-- OAuth scopes `openid profile email offline_access nethack.access`; feature access comes from JWT permissions
+- OAuth scopes `openid profile email offline_access`; feature access comes from JWT permissions
 - resource `devconnect://nethack.bisz.dev`
 - confidential-client authentication with `client_secret_basic`
 
@@ -25,7 +25,7 @@ ${CURRENT_URL_ORIGIN}/api/auth/basis/callback
 
 The PKCE verifier, state, nonce, start time, and optional safe relative redirect are kept for at most ten minutes in a dedicated encrypted, HTTP-only, SameSite=Lax transaction cookie. The callback consumes that transaction before exchanging the single-use code, validates the ID token, loads UserInfo, and links the local user.
 
-The callback seals the access and refresh tokens with AES-256-GCM and writes them to the `basis-auth-tokens` cookie. The cookie is HTTP-only, SameSite=Lax, secure in production, and limited to 3,800 characters after compression. Its plaintext is never exposed to browser JavaScript. A separate short-lived `basis-auth-flow` cookie stores the PKCE transaction and is deleted when the callback consumes it.
+The callback seals the access and refresh tokens with AES-256-GCM and writes them to the `basis-auth-tokens` cookie. The cookie is HTTP-only, SameSite=Lax, secure for public HTTPS origins (relaxed for loopback HTTP local production), and limited to 3,800 characters after compression. Its plaintext is never exposed to browser JavaScript. A separate short-lived `basis-auth-flow` cookie stores the PKCE transaction and is deleted when the callback consumes it.
 
 `GET /api/auth/session` validates the cookie-held access token and returns only the local user ID, expiry, and effective permissions. It never returns access or refresh tokens. When the access token nears expiry, the server rotates tokens and reseals the cookie. `POST /api/auth/logout` attempts refresh-token revocation and clears the browser credential even if revocation fails. API routes independently verify tokens from either the HTTP-only cookie or a bearer header.
 
@@ -36,7 +36,7 @@ After an external redirect, route middleware first reconciles `/api/auth/session
 The `users` table contains nullable `auth_issuer` and `auth_subject` columns with a unique composite index.
 
 1. A returning identity is resolved by exact issuer and subject.
-2. On the first basis-auth login only, a verified email may link to an existing unlinked local user using normalized lowercase comparison.
+2. On the first basis-auth login only, a verified email may link to an existing unlinked local user using normalized lowercase comparison. basis-auth omits `email_verified`, so a matching email in the validated ID token and UserInfo is treated as verified; an explicit `false` in either response is respected.
 3. Linking preserves the local integer user ID and all records that reference it.
 4. An unverified email cannot create or link an account. A returning issuer-and-subject link remains usable if the provider temporarily omits verification, but the unverified email is not applied to the local account.
 5. An identity already linked to another account, or a verified email owned by another linked user, is rejected.
@@ -45,9 +45,8 @@ The `users` table contains nullable `auth_issuer` and `auth_subject` columns wit
 
 The encrypted `basis-auth-tokens` cookie carries the basis-auth access token and refresh token; the browser cannot read it. Protected routes verify the access token from that cookie or an explicit bearer header before applying local authorization:
 
-- `requireUser(event)` loads the local user.
-- `requireJudge(event)` permits judges and admins.
-- `requireAdmin(event)` permits admins only.
+- `requireUser(event, permission?)` loads the local user and optionally enforces a permission requirement.
+- Judge and administrator surfaces require the corresponding granular `nethack.Judging.*` or `nethack.all` permission through `requireUser`.
 
 The frontend middleware is a convenience redirect and is never the only authorization check.
 
@@ -57,7 +56,7 @@ Protected APIs trust basis-auth access tokens only. Validation requires the basi
 
 For accounts carrying the former `participant`, `judge`, or `admin` permission, basishacks expands that legacy value into the corresponding granular permission bundle before server checks and frontend display gating. This compatibility bridge does not discard granular permissions already present in the token.
 
-The client keeps access tokens only in memory, adds the bearer header to protected requests, unwraps `APIResponse.data`, converts failed envelopes with `APIError.from`, and performs one single-flight refresh-and-retry on an expired-token response.
+The browser never receives the access or refresh token. Protected browser requests rely on the encrypted HTTP-only cookie; explicit bearer clients can still call the same APIs. The frontend unwraps `APIResponse.data`, converts failed envelopes with `APIError.from`, and redirects to `/api/login` once on a 401 without looping through auth endpoints. Token rotation and refresh happen server-side.
 
 ## Retired provider surface
 

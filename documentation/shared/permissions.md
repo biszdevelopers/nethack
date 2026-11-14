@@ -1,6 +1,6 @@
 # Nethack JWT Permissions
 
-basishacks authorizes protected actions from the verified basis-auth access-token `permissions` array. OAuth is used only to obtain the resource token: login requests `openid profile email offline_access nethack.access`; feature permissions are never requested as OAuth scopes.
+basishacks authorizes protected actions from the verified basis-auth access-token `permissions` array. OAuth is used only to obtain the resource token: login requests `openid profile email offline_access`; feature permissions are never requested as OAuth scopes.
 
 `shared/permissions.ts` defines the canonical `NethackPermissions` values. Protected routes require the least-privilege leaf for their action, while ownership and event-state rules remain route-specific.
 

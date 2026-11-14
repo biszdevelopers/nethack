@@ -140,7 +140,7 @@ describe("basis-auth authorization-code flow", () => {
         }
     });
 
-    it("allows HTTP only for the isolated numeric loopback E2E issuer in production", () => {
+    it("allows HTTP loopback issuers in production and rejects public HTTP issuers", () => {
         const environmentKeys = [
             "NODE_ENV",
             "BASISHACKS_E2E",
@@ -156,12 +156,30 @@ describe("basis-auth authorization-code flow", () => {
         );
         try {
             process.env.NODE_ENV = "production";
+            delete process.env.BASISHACKS_E2E;
+            process.env.CURRENT_URL_ORIGIN = "http://localhost:3005";
+            process.env.HOST = "127.0.0.1";
+
+            for (const issuer of [
+                "http://localhost:45123",
+                "http://127.0.0.1:45123",
+                "http://[::1]:45123",
+            ]) {
+                process.env.BASIS_AUTH_ISSUER = issuer;
+                expect(getBasisAuthConfig().issuer).toBe(issuer);
+            }
+
+            process.env.BASIS_AUTH_ISSUER = "http://auth.example.test";
+            expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
+
+            process.env.BASIS_AUTH_ISSUER = "http://127.0.0.1:45123/path";
+            expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
+
             process.env.BASISHACKS_E2E = "1";
             process.env.CURRENT_URL_ORIGIN = "http://127.0.0.1:3005";
             process.env.NITRO_HOST = "127.0.0.1";
             process.env.NITRO_PORT = "3005";
             process.env.BASIS_AUTH_ISSUER = "http://127.0.0.1:45123";
-
             expect(getBasisAuthConfig().issuer).toBe("http://127.0.0.1:45123");
 
             delete process.env.NITRO_HOST;
@@ -170,13 +188,8 @@ describe("basis-auth authorization-code flow", () => {
             process.env.PORT = "3005";
             expect(getBasisAuthConfig().issuer).toBe("http://127.0.0.1:45123");
 
-            process.env.NITRO_HOST = "127.0.0.1";
-            process.env.NITRO_PORT = "3005";
-            process.env.BASIS_AUTH_ISSUER = "http://localhost:45123";
-            expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
-
-            process.env.BASIS_AUTH_ISSUER = "http://127.0.0.1:45123";
-            process.env.NITRO_HOST = "0.0.0.0";
+            delete process.env.BASISHACKS_E2E;
+            process.env.HOST = "0.0.0.0";
             expect(() => getBasisAuthConfig()).toThrow("must use HTTPS in production");
         } finally {
             for (const key of environmentKeys) {
@@ -264,7 +277,7 @@ describe("basis-auth authorization-code flow", () => {
         expect(oidc.buildAuthorizationUrl).toHaveBeenCalledWith("configuration", {
             redirect_uri: "https://hacks.example.test/api/auth/basis/callback",
             response_type: "code",
-            scope: "openid profile email offline_access nethack.access",
+            scope: "openid profile email offline_access",
             resource: "devconnect://nethack.bisz.dev",
             state: "state",
             nonce: "nonce",
@@ -386,6 +399,42 @@ describe("basis-auth authorization-code flow", () => {
         expect(result.identity.emailVerified).toBe(false);
     });
 
+    it("treats a matching signed ID token email as verified when both responses omit the claim", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValue({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            claims: () => ({ sub: "subject-1", email: " User@Example.com " }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: "User" });
+
+        const result = await completeBasisAuthFlow(new URL("https://hacks.example.test/callback"), {
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: Date.now(),
+        });
+
+        expect(result.identity.emailVerified).toBe(true);
+    });
+
+    it("respects an explicit false email verification claim even when addresses match", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValue({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            claims: () => ({ sub: "subject-1", email: "user@example.com", email_verified: false }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", name: "User" });
+
+        const result = await completeBasisAuthFlow(new URL("https://hacks.example.test/callback"), {
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: Date.now(),
+        });
+
+        expect(result.identity.emailVerified).toBe(false);
+    });
+
     it("keeps email verification false when neither trusted identity response confirms it", async () => {
         oidc.authorizationCodeGrant.mockResolvedValue({
             access_token: "access-token",
@@ -430,7 +479,7 @@ describe("basis-auth authorization-code flow", () => {
         );
     });
 
-    it("rejects a redirect value that fails URL parsing", () => {
+    it("rejects non-string redirect values such as repeated query parameters", () => {
         const uncoercibleValue = {
             startsWith: (prefix: string) => prefix === "/",
             toString: () => {
@@ -439,6 +488,7 @@ describe("basis-auth authorization-code flow", () => {
         };
 
         expect(sanitizePostLoginRedirect(uncoercibleValue as any)).toBeUndefined();
+        expect(sanitizePostLoginRedirect(["/dashboard", "/profile"] as any)).toBeUndefined();
     });
 
     it("uses a case-insensitive ID token email match and omits a non-string display name", async () => {

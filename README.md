@@ -66,7 +66,7 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `MICROSOFT_CLIENT_SECRET` | Optional | Application secret used only by Graph features |
 | `MICROSOFT_WEBHOOK_STATE` | Optional | Persistent secret (at least 32 bytes) used to validate Graph webhook notifications |
 | `MICROSOFT_WEBHOOK_ID` | Optional | Existing Graph webhook subscription ID; set after the first subscription is created so restarts refresh it |
-| `CURRENT_URL_ORIGIN` | Required in production | Public HTTPS origin used to derive `/api/auth/basis/callback` and validate cookie-authenticated mutations. Use `http://localhost:3000` for local development |
+| `CURRENT_URL_ORIGIN` | Required in production | Public HTTPS origin used to derive `/api/auth/basis/callback` and validate cookie-authenticated mutations. Loopback HTTP origins are accepted only while the server binds to loopback; `bun run start` does this and uses the matching port when `PORT` / `NITRO_PORT` is unset. The callback must be registered in basis-auth |
 | `DEEPSEEK_API_KEY` | Optional | DeepSeek API key for AI chat features (debug routes only) |
 | `PORT` / `HOST` | Optional | Server port/host override (defaults: `3000` / `0.0.0.0`) |
 | `SQLITE_IMPORT_PATH` | Optional | SQLite backup path used only for the one-time SQLite-to-PostgreSQL import |
@@ -82,7 +82,7 @@ The canonical list of variables lives in `.env.example`. The table below summari
 
 The only login method is the separately deployed **basis-auth** service. `/api/login` discovers the issuer and starts an authorization-code flow with S256 PKCE, state, and nonce. The callback URL is always `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`; it must be registered exactly for each environment. Resource-token claims and delegated permissions use the shared `@basis/schema` package; hackathon participant, judge, and administrator roles remain local.
 
-The authorization request targets `devconnect://nethack.bisz.dev` and requests `openid profile email offline_access nethack.access`. Feature authorization is not represented by OAuth scopes: basis-auth supplies a JWT `permissions` array, and basishacks checks the least-privilege `nethack.*` permission required by each protected route. `nethack.all` is the explicit administrative grant. During the role-to-permission migration, legacy `participant`, `judge`, and `admin` grants are expanded into their equivalent granular permissions at the authorization boundary. After validating the ID token and UserInfo, basishacks links the identity and seals the access and refresh tokens into a compressed AES-256-GCM HTTP-only cookie. Browser JavaScript cannot read the token cookie. `GET /api/auth/session` validates the access token and returns only the user ID, expiry, and permissions for display-only UI gating; protected APIs independently validate either the cookie-held token or an explicit bearer token. When the access token nears expiry, the server rotates tokens and reseals the cookie. `POST /api/auth/logout` attempts refresh-token revocation and always clears the browser credential.
+The authorization request targets the configured `BASIS_AUTH_RESOURCE` and requests `openid profile email offline_access`. Feature authorization is not represented by OAuth scopes: basis-auth supplies a JWT `permissions` array, and basishacks checks the least-privilege `nethack.*` permission required by each protected route. `nethack.all` is the explicit administrative grant. During the role-to-permission migration, legacy `participant`, `judge`, and `admin` grants are expanded into their equivalent granular permissions at the authorization boundary. After validating the ID token and UserInfo, basishacks links the identity and seals the access and refresh tokens into a compressed AES-256-GCM HTTP-only cookie. Browser JavaScript cannot read the token cookie. `GET /api/auth/session` validates the access token and returns only the user ID, expiry, and permissions for display-only UI gating; protected APIs independently validate either the cookie-held token or an explicit bearer token. When the access token nears expiry, the server rotates tokens and reseals the cookie. `POST /api/auth/logout` attempts refresh-token revocation and always clears the browser credential.
 
 Protected application APIs validate basis-auth RS256 access tokens from the encrypted HTTP-only token cookie or an explicit `Authorization: Bearer …` header. The separate browser session cookie alone is insufficient. Tokens must match the configured issuer and resource audience; JWT permissions are the authorization source. Failed requests use `Accept` negotiation: clients accepting `text/html` receive the shared Barry error page showing only the canonical error code, while other clients receive the `@basis/schema` JSON envelope `{ status, code, error, error_description }` with matching HTTP and envelope status values.
 
@@ -161,6 +161,8 @@ bun install --frozen-lockfile
 bun run build
 bun run db:migrate
 bun run start
+# `bun run start` uses the configured `CURRENT_URL_ORIGIN` port and binds to
+# 127.0.0.1 when it is a loopback HTTP origin and no explicit values are set.
 # On Linux VPS hosts, `npm run start` uses the same POSIX runtime selector.
 # It prefers Bun 1.3.14 and falls back to Node.js 24 or newer.
 # To explicitly use Node.js after building the same checkout:

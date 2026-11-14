@@ -6,6 +6,7 @@ useHead({ title: `Teams | ${WEBSITE_NAME}` });
 
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 const UButton = resolveComponent("UButton");

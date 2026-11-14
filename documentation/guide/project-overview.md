@@ -166,7 +166,7 @@ basishacks-r2/
 │       │   ├── seasons.ts
 │       │   ├── teams.ts
 │       │   └── users.ts
-│       ├── auth.ts             # requireUser, requireJudge, requireAdmin, requirePermission
+│       ├── auth.ts             # requireUser / optionalUser permission helpers
 │       ├── convert.ts          # DB row to public API object transformers
 │       ├── rateLimit.ts        # In-memory rate limiter (4 tiers: general/auth/vote/upload)
 │       ├── basis-auth.ts       # OIDC discovery, PKCE login, callback and UserInfo

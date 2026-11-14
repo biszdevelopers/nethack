@@ -1,5 +1,33 @@
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** Nitro may listen on either a numeric loopback address or a loopback hostname. */
+export function isLoopbackHost(host: string | undefined): boolean {
+    const normalized = host?.trim().toLowerCase();
+    return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+/** HTTP is acceptable only for a loopback host and a bare origin. */
+export function isLoopbackHttpOrigin(value: string | undefined): boolean {
+    if (!value?.trim()) return false;
+    try {
+        const origin = new URL(value.trim());
+        return (
+            origin.protocol === "http:" &&
+            LOOPBACK_HOSTNAMES.has(origin.hostname) &&
+            !origin.username &&
+            !origin.password &&
+            origin.pathname === "/" &&
+            !origin.search &&
+            !origin.hash
+        );
+    } catch {
+        return false;
+    }
+}
+
 export function isValidProductionOrigin(value: string | undefined): boolean {
     if (!value?.trim()) return false;
+    if (isLoopbackHttpOrigin(value)) return true;
     try {
         const origin = new URL(value.trim());
         return (

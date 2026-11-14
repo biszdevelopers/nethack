@@ -10,7 +10,11 @@ import {
     type BasisAuthUserSession,
     type StoredBasisAuthTokens,
 } from "~~/server/utils/basis-auth-session";
-import { isValidE2ELoopbackOrigin } from "~~/server/utils/environment-validation";
+import {
+    isLoopbackHost,
+    isLoopbackHttpOrigin,
+    isValidE2ELoopbackOrigin,
+} from "~~/server/utils/environment-validation";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
@@ -19,7 +23,6 @@ export const BASIS_AUTH_REQUESTED_SCOPES = [
     "profile",
     "email",
     "offline_access",
-    "nethack.access",
 ] as const;
 
 export interface BasisAuthConfig {
@@ -80,6 +83,10 @@ export function getBasisAuthConfig(): BasisAuthConfig {
     if (
         process.env.NODE_ENV === "production" &&
         issuer.protocol !== "https:" &&
+        !(
+            isLoopbackHttpOrigin(config.issuer) &&
+            isLoopbackHost(process.env.NITRO_HOST || process.env.HOST)
+        ) &&
         !isolatedE2EIssuer
     ) {
         throw createError({
@@ -100,16 +107,13 @@ export function getBasisAuthCallbackUrl(): string {
     return new URL(BASIS_AUTH_CALLBACK_PATH, getPublicOrigin()).href;
 }
 
-export function sanitizePostLoginRedirect(value?: string): string | undefined {
-    if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
-    try {
-        const parsed = new URL(value, "https://basishacks.invalid");
-        return parsed.origin === "https://basishacks.invalid"
-            ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-            : undefined;
-    } catch {
+export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
+    if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//"))
         return undefined;
-    }
+    const parsed = new URL(value, "https://basishacks.invalid");
+    return parsed.origin === "https://basishacks.invalid"
+        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+        : undefined;
 }
 
 const discoveredConfigurations = new Map<string, Promise<oidc.Configuration>>();
@@ -210,15 +214,18 @@ export async function completeBasisAuthFlow(
         throw new Error("basis-auth did not return an email address");
     }
 
-    // Some basis-auth deployments return email_verified only in the validated
-    // ID token. Trust that claim only when it names the same address returned
-    // by UserInfo; otherwise verification applies only to the UserInfo email.
+    // Some basis-auth deployments return email only in the validated ID token
+    // and UserInfo without an email_verified claim. A matching email from both
+    // signed responses is treated as verified; an explicit false is respected.
     const tokenEmail = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+    const userInfoEmail = userInfo.email.trim().toLowerCase();
     const emailVerified =
         userInfo.email_verified === true ||
-        (claims.email_verified === true &&
+        (claims.email_verified === true && tokenEmail !== "" && tokenEmail === userInfoEmail) ||
+        (userInfo.email_verified === undefined &&
+            claims.email_verified === undefined &&
             tokenEmail !== "" &&
-            tokenEmail === userInfo.email.trim().toLowerCase());
+            tokenEmail === userInfoEmail);
 
     return {
         identity: {

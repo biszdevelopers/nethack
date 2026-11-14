@@ -1,22 +1,56 @@
 import { describe, expect, it } from "vitest";
 import {
+    isLoopbackHttpOrigin,
     isValidE2ELoopbackOrigin,
     isValidProductionOrigin,
     isValidTrustedProxyHops,
 } from "~~/server/utils/environment-validation";
 
 describe("production public origin validation", () => {
-    it.each(["https://basishacks.example", "https://basishacks.example:8443"])(
-        "accepts a public HTTPS origin: %s",
+    it.each([undefined, "", "  "])("rejects an empty loopback origin: %j", (origin) => {
+        expect(isLoopbackHttpOrigin(origin)).toBe(false);
+    });
+
+    it.each(["http://localhost:24598", "http://127.0.0.1:3000", "http://[::1]:3000"])(
+        "recognizes a loopback HTTP origin: %s",
         (origin) => {
-            expect(isValidProductionOrigin(origin)).toBe(true);
+            expect(isLoopbackHttpOrigin(origin)).toBe(true);
         },
     );
+
+    it.each([
+        "https://localhost:3000",
+        "http://basishacks.example",
+        "http://localhost:3000/path",
+        "http://localhost:3000?next=/",
+        "http://localhost:3000#top",
+        "http://user@localhost:3000",
+        "http://:secret@localhost:3000",
+        "not a URL",
+    ])("rejects a non-loopback HTTP origin: %s", (origin) => {
+        expect(isLoopbackHttpOrigin(origin)).toBe(false);
+    });
+
+    it.each([
+        "https://basishacks.example",
+        "https://basishacks.example:8443",
+        "http://localhost:24598",
+        "http://127.0.0.1:3000",
+        "http://[::1]:3000",
+    ])("accepts a valid production or loopback origin: %s", (origin) => {
+        expect(isValidProductionOrigin(origin)).toBe(true);
+    });
 
     it.each([
         undefined,
         "",
         "http://basishacks.example",
+        "http://localhost:3000/path",
+        "http://localhost:3000?next=/",
+        "http://localhost:3000#top",
+        "http://user:secret@localhost:3000",
+        "http://user@localhost:3000",
+        "http://:secret@localhost:3000",
         "https://basishacks.example/path",
         "https://user:secret@basishacks.example",
         "https://basishacks.example?next=/",

@@ -138,7 +138,7 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CURRENT_URL_ORIGIN` | Public HTTPS origin used for the callback and same-origin request checks. Required in production; local development defaults to `http://localhost:3000`. | `http://localhost:3000` |
+| `CURRENT_URL_ORIGIN` | Public HTTPS origin used for the callback and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. Required in production; local development defaults to `http://localhost:3000`. | `http://localhost:3000` |
 
 #### Integrations & Server
 
@@ -194,7 +194,8 @@ MICROSOFT_CLIENT_ID=your_microsoft_client_id_here
 # OPTIONAL - Microsoft Entra ID client secret for MS Graph API integration
 MICROSOFT_CLIENT_SECRET=your_microsoft_client_secret_here
 
-# REQUIRED in production - public HTTPS origin; callback is /api/auth/basis/callback
+# REQUIRED in production - public HTTPS origin; loopback HTTP is allowed for local production
+# The callback is /api/auth/basis/callback
 CURRENT_URL_ORIGIN=http://localhost:3000
 
 

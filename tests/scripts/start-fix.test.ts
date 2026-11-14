@@ -3,6 +3,8 @@ import {
     createRuntime,
     importProductionServer,
     isDirectExecution,
+    isLoopbackHttpOrigin,
+    loopbackOriginPort,
     runIfDirect,
     startProduction,
 } from "../../start-fix.mjs";
@@ -70,6 +72,68 @@ describe("production startup launcher", () => {
         await expect(runIfDirect(moduleUrl, executablePath, runtime)).resolves.toBe(true);
         expect(runtime.environment.NODE_ENV).toBe("staging");
         expect(imported).toEqual(["./.output/server/index.mjs"]);
+    });
+
+    it("derives the listener port and loopback bind from a loopback HTTP origin", async () => {
+        expect(loopbackOriginPort("http://localhost:24598")).toBe("24598");
+        expect(loopbackOriginPort("http://127.0.0.1:3000")).toBe("3000");
+        expect(loopbackOriginPort("http://[::1]:8080")).toBe("8080");
+        expect(loopbackOriginPort("http://localhost")).toBeUndefined();
+        expect(loopbackOriginPort("http://localhost:0")).toBeUndefined();
+        expect(loopbackOriginPort("https://basishacks.example")).toBeUndefined();
+        expect(loopbackOriginPort("http://basishacks.example:3000")).toBeUndefined();
+        expect(loopbackOriginPort("not a URL")).toBeUndefined();
+        expect(isLoopbackHttpOrigin("http://localhost:24598")).toBe(true);
+        expect(isLoopbackHttpOrigin("https://localhost:24598")).toBe(false);
+        expect(isLoopbackHttpOrigin("not a URL")).toBe(false);
+
+        const environment = {
+            CURRENT_URL_ORIGIN: "http://localhost:24598",
+        } as NodeJS.ProcessEnv;
+        const runtime = createRuntime({
+            environment,
+            globalObject: {},
+            resolvePath: () => "/srv/app/.output/server/index.mjs",
+            importServer: async () => undefined,
+        });
+
+        await startProduction(runtime);
+        expect(environment.NITRO_PORT).toBe("24598");
+        expect(environment.HOST).toBe("127.0.0.1");
+
+        const explicit = {
+            CURRENT_URL_ORIGIN: "http://localhost:24598",
+            PORT: "3000",
+            HOST: "0.0.0.0",
+        } as NodeJS.ProcessEnv;
+        await startProduction(
+            createRuntime({
+                environment: explicit,
+                globalObject: {},
+                resolvePath: () => "/srv/app/.output/server/index.mjs",
+                importServer: async () => undefined,
+            }),
+        );
+        expect(explicit.NITRO_PORT).toBeUndefined();
+        expect(explicit.PORT).toBe("3000");
+        expect(explicit.HOST).toBe("0.0.0.0");
+
+        const nitroExplicit = {
+            CURRENT_URL_ORIGIN: "http://localhost:24598",
+            NITRO_PORT: "4000",
+            NITRO_HOST: "127.0.0.1",
+        } as NodeJS.ProcessEnv;
+        await startProduction(
+            createRuntime({
+                environment: nitroExplicit,
+                globalObject: {},
+                resolvePath: () => "/srv/app/.output/server/index.mjs",
+                importServer: async () => undefined,
+            }),
+        );
+        expect(nitroExplicit.NITRO_PORT).toBe("4000");
+        expect(nitroExplicit.PORT).toBeUndefined();
+        expect(nitroExplicit.HOST).toBeUndefined();
     });
 
     it("uses the native module loader for the requested production module", async () => {
