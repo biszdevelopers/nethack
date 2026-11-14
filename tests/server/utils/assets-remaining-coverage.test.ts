@@ -1351,6 +1351,9 @@ describe("remaining asset utility behavior", () => {
             makeOld(uploadPath, now),
             makeOld(leasePath, now),
         ]);
+        filesystemFaults.opendirOrders.set(staging, [
+            [`.lease-${UUID_A}.tmp`, `${UUID_A}.tmp`, `.upload-${UUID_B}.tmp`],
+        ]);
         const { database } = fakeDatabase();
 
         const result = await collectOrphanProfileAssets(database, { now });
