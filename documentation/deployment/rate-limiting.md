@@ -15,17 +15,17 @@ The rate limiter defines **5 independent tiers**, each with its own request coun
 
 | Tier | Env Variable | Default Limit | Routes Protected |
 | --- | --- | :-: | --- |
-| **General** | `RATE_LIMIT_GENERAL_MAX` | 120/min | All non-sensitive API routes |
-| **Authentication** | `RATE_LIMIT_AUTH_MAX` | 20/min | `/api/login`, `/api/auth/basis/callback` |
-| **Vote / Score** | `RATE_LIMIT_VOTE_MAX` | 30/min | `/api/ballot`, `/api/teams/:id/scores` |
-| **Judging drafts** | `RATE_LIMIT_GENERAL_MAX` | 120/min | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId` |
-| **File Upload** | `RATE_LIMIT_UPLOAD_MAX` | 10/min | Upload routes |
+| **General** | `RATE_LIMIT_GENERAL_MAX` | 1200/min | All non-sensitive API routes |
+| **Authentication** | `RATE_LIMIT_AUTH_MAX` | 200/min | `/api/login`, `/api/auth/basis/callback` |
+| **Vote / Score** | `RATE_LIMIT_VOTE_MAX` | 300/min | `/api/ballot`, `/api/teams/:id/scores` |
+| **Judging drafts** | `RATE_LIMIT_GENERAL_MAX` | 1200/min | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId` |
+| **File Upload** | `RATE_LIMIT_UPLOAD_MAX` | 100/min | Upload routes |
 
 All tiers share the same window duration, configurable via `RATE_LIMIT_WINDOW_MS` (default: `60000` ms / 1 minute). Judging draft routes use the general limit with a dedicated per-user bucket, leaving room for the judge editor's 650 ms autosave debounce without sharing capacity with other general API requests.
 
 ```ts
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
-    maxRequests: 120, // overridden by RATE_LIMIT_GENERAL_MAX
+    maxRequests: 1200, // overridden by RATE_LIMIT_GENERAL_MAX
     windowMs: 60 * 1000, // overridden by RATE_LIMIT_WINDOW_MS
 };
 ```
@@ -36,10 +36,10 @@ The following environment variables override the default limits:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `RATE_LIMIT_GENERAL_MAX` | `120` | General API rate limit, requests per window |
-| `RATE_LIMIT_AUTH_MAX` | `20` | Authentication endpoint rate limit, attempts per window |
-| `RATE_LIMIT_VOTE_MAX` | `30` | Voting/scoring endpoint rate limit, submissions per window |
-| `RATE_LIMIT_UPLOAD_MAX` | `10` | File upload endpoint rate limit, uploads per window |
+| `RATE_LIMIT_GENERAL_MAX` | `1200` | General API rate limit, requests per window |
+| `RATE_LIMIT_AUTH_MAX` | `200` | Authentication endpoint rate limit, attempts per window |
+| `RATE_LIMIT_VOTE_MAX` | `300` | Voting/scoring endpoint rate limit, submissions per window |
+| `RATE_LIMIT_UPLOAD_MAX` | `100` | File upload endpoint rate limit, uploads per window |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window in milliseconds |
 | `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10); requires proxies to append the actual peer to `X-Forwarded-For` |
 
@@ -138,7 +138,7 @@ When the rate limit is exceeded, the handler throws a **429 Too Many Requests** 
     "statusCode": 429,
     "statusMessage": "Too Many Requests",
     "data": {
-        "message": "Rate limit exceeded. Max 120 requests per 60s.",
+        "message": "Rate limit exceeded. Max 1200 requests per 60s.",
         "retryAfter": 42,
         "resetTime": "2026-06-03T14:30:00.000Z"
     }
@@ -222,7 +222,7 @@ if (requestHistory.size > MAX_TRACKED_KEYS) {
 
 ::: warning Single Process Rate limiting is **in-memory and per-process**. Each server process maintains its own `requestHistory` Map. This means:
 
-- A client making 120 requests to process A and 120 requests to process B within the same minute could exceed a shared per-process limit
+- A client making 1200 requests to process A and 1200 requests to process B within the same minute could exceed a shared per-process limit
 - The effective rate limit is per-process, not globally distributed
 - For global rate limiting, consider using a distributed store (e.g., Redis) :::
 

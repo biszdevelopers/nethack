@@ -68,13 +68,14 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `MICROSOFT_WEBHOOK_STATE` | Optional | Persistent secret (at least 32 bytes) used to validate Graph webhook notifications |
 | `MICROSOFT_WEBHOOK_ID` | Optional | Existing Graph webhook subscription ID; set after the first subscription is created so restarts refresh it |
 | `CURRENT_URL_ORIGIN` | Required in production | Public HTTPS origin used to derive `/api/auth/basis/callback` and validate cookie-authenticated mutations. Loopback HTTP origins are accepted only while the server binds to loopback; `bun run start` does this and uses the matching port when `PORT` / `NITRO_PORT` is unset. The callback must be registered in basis-auth |
+| `BASIS_AUTH_PICTURE_CACHE_DIR` | Optional | Local cache directory for basis-auth avatars (default: `assets/basis-auth-pictures`) |
 | `DEEPSEEK_API_KEY` | Optional | DeepSeek API key for AI chat features (debug routes only) |
 | `PORT` / `HOST` | Optional | Server port/host override (defaults: `3000` / `0.0.0.0`) |
 | `SQLITE_IMPORT_PATH` | Optional | SQLite backup path used only for the one-time SQLite-to-PostgreSQL import |
-| `RATE_LIMIT_GENERAL_MAX` | Optional | General API rate limit, requests per minute (default: `120`) |
-| `RATE_LIMIT_AUTH_MAX` | Optional | Authentication endpoint rate limit, attempts per minute (default: `20`) |
-| `RATE_LIMIT_VOTE_MAX` | Optional | Voting/scoring endpoint rate limit, submissions per minute (default: `30`) |
-| `RATE_LIMIT_UPLOAD_MAX` | Optional | File upload endpoint rate limit, uploads per minute (default: `10`) |
+| `RATE_LIMIT_GENERAL_MAX` | Optional | General API rate limit, requests per minute (default: `1200`) |
+| `RATE_LIMIT_AUTH_MAX` | Optional | Authentication endpoint rate limit, attempts per minute (default: `200`) |
+| `RATE_LIMIT_VOTE_MAX` | Optional | Voting/scoring endpoint rate limit, submissions per minute (default: `300`) |
+| `RATE_LIMIT_UPLOAD_MAX` | Optional | File upload endpoint rate limit, uploads per minute (default: `100`) |
 | `RATE_LIMIT_WINDOW_MS` | Optional | Rate limit window in milliseconds (default: `60000`) |
 | `TRUSTED_PROXY_HOPS` | Optional | Exact trusted proxy count (0–10); configure only when each proxy appends the actual peer address to `X-Forwarded-For` |
 | `DISABLE_DEBUG_ROUTES` | Optional | Set to a truthy value to disable `/api/debug/*` and `/debug` outside production; production disables them automatically |
@@ -82,6 +83,8 @@ The canonical list of variables lives in `.env.example`. The table below summari
 ## Authentication
 
 The only login method is the separately deployed **basis-auth** service. `/api/login` discovers the issuer and starts an authorization-code flow with S256 PKCE, state, and nonce. The callback URL is always `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`; it must be registered exactly for each environment. Resource-token claims and delegated permissions use the shared `@basis/schema` package; hackathon participant, judge, and administrator roles remain local.
+
+The designated initial administrators are matched by email case-insensitively and can never be demoted. Existing administrators can promote or demote other users through `PATCH /api/users/:id/admin`; self-demotion is rejected. A token with no granular `nethack.*` grant receives the normal participant bundle, so identity-only basis-auth clients still work without granting judge or administrator access.
 
 The authorization request targets the configured `BASIS_AUTH_RESOURCE` and requests `openid profile email offline_access`. Feature authorization is not represented by OAuth scopes: basis-auth supplies a JWT `permissions` array, and basishacks checks the least-privilege `nethack.*` permission required by each protected route. `nethack.all` is the explicit administrative grant. During the role-to-permission migration, legacy `participant`, `judge`, and `admin` grants are expanded into their equivalent granular permissions at the authorization boundary. After validating the ID token and UserInfo, basishacks uses the issuer and subject for returning users and the basis-auth UserInfo email to match an unlinked account on first login. Avatars use the picture URL supplied by basis-auth at login, while profile theme images can still be uploaded locally. The callback then seals the access and refresh tokens into a compressed AES-256-GCM HTTP-only cookie. Browser JavaScript cannot read the token cookie. `GET /api/auth/session` validates the access token and returns only the user ID, expiry, and permissions for display-only UI gating; protected APIs independently validate either the cookie-held token or an explicit bearer token. When the access token nears expiry, the server rotates tokens and reseals the cookie. `POST /api/auth/logout` attempts refresh-token revocation and always clears the browser credential.
 
@@ -91,7 +94,7 @@ The former basishacks OAuth provider and application-management UI/API have been
 
 ## Live hackathon configuration
 
-The live event's status, schedule, theme, voting, judging, and results settings and its `rubric` definition come from `HACKATHON.yml`. Set `YAML_SOURCE_HACKATHON=local` in `.env` for development. On the VPS, set it to the assets server origin or the full HTTPS URL of the published manifest. PostgreSQL still stores the active season selection, historical seasons, and competition data.
+The live event's status, schedule, theme, voting, judging, and results settings and its `rubric` definition come from `HACKATHON.yml`. Set `YAML_SOURCE_HACKATHON=local` in `.env` for development. On the VPS, set it to the assets server origin or the full HTTPS URL of the published manifest. PostgreSQL still stores the active season selection, historical seasons, and competition data. A successfully fetched remote manifest is backed up to `assets/hackathon-config.yml`; if the assets server is unavailable, the app serves that backup, then the bundled `HACKATHON.yml`, so the assets server is not a hard dependency.
 
 For an existing deployment, run `bun run db:export-hackathon -- /path/to/HACKATHON.yml` once to export the legacy PostgreSQL row. The command requires `DATABASE_URL` and creates a new file. Use the repository's [configuration and cutover instructions](documentation/deployment/postgresql-migration.md#move-the-live-hackathon-configuration-to-yaml) to deploy it.
 
@@ -119,7 +122,7 @@ Judges score one project at a time against the season's versioned rubric while t
 
 Each immutable rubric version also stores its own judge-comment introduction, guidelines, and editable prompt templates. Organizers can configure these in the season rubric editor; copying a prior-season rubric or reusable template carries its guidance forward. Legacy rubric versions use the built-in defaults. Final submission rejects a comment containing the judge's exact email address or display name, with an inline correction message; this conservative check does not identify indirect clues or alternate spellings.
 
-Draft reads, autosaves, and deletes share a separate per-judge limit of 120 requests per minute by default. This uses `RATE_LIMIT_GENERAL_MAX` and `RATE_LIMIT_WINDOW_MS`, leaving headroom for the 650 ms autosave debounce.
+Draft reads, autosaves, and deletes share a separate per-judge limit of 1200 requests per minute by default. This uses `RATE_LIMIT_GENERAL_MAX` and `RATE_LIMIT_WINDOW_MS`, leaving headroom for the 650 ms autosave debounce.
 
 Organizers can choose a season-specific score display curve (`original`, `gentle`, `moderate`, or `strong`). A curve changes only the displayed score: persisted scores and rankings remain unchanged. The admin team view can inspect full score feedback with judge identities before or after results are published.
 
@@ -182,7 +185,7 @@ Place a reverse proxy (Nginx, Caddy) in front for TLS termination. Keep PostgreS
 
 For Nginx, include [`deploy/nginx/basishacks-request-limits.conf`](deploy/nginx/basishacks-request-limits.conf) inside the application site's `server {}` block. The app caps ordinary API request bodies at 1 MiB, lets the authorized profile handler read up to 10 MiB for profile updates, and processes at most one profile update at a time per app process before buffering or decoding images. Additional simultaneous profile updates receive `503 Service Unavailable` with `Retry-After: 2`. Graph webhook JSON is streamed through a 64 KiB limit, and webhook batches are rejected when the configured state is unset.
 
-Runtime files are stored in the project-root `/assets` directory. Profile images use SHA-256 content-addressed names under `/assets/userassets/profiles/`, so identical image bytes with the same canonical extension share one object. Daily bounded cleanup considers managed profile objects after at least seven days and removes one only after an advisory-locked PostgreSQL check confirms that it has no profile-picture, profile-theme, or legacy OAuth application picture references. Debug uploads have been retired. Existing files remain accessible at their original `/assets/uploads/*` and `/userast/*` URLs. The application no longer schedules cleanup of debug permalink files.
+Runtime files are stored in the project-root `/assets` directory. Profile images use SHA-256 content-addressed names under `/assets/userassets/profiles/`, so identical image bytes with the same canonical extension share one object. Basis-auth avatars are cached under `/assets/basis-auth-pictures/` and served from that local backup if the provider is unavailable. Daily bounded cleanup considers managed profile objects after at least seven days and removes one only after an advisory-locked PostgreSQL check confirms that it has no profile-picture, profile-theme, or legacy OAuth application picture references. Debug uploads have been retired. Existing files remain accessible at their original `/assets/uploads/*` and `/userast/*` URLs. The application no longer schedules cleanup of debug permalink files.
 
 ## Deployment
 

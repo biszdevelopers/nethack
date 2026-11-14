@@ -126,17 +126,17 @@ In-memory rate limiting middleware with five pre-configured tiers.
 
 | Config Constant | Default Limit | Environment Variable | Prefix | Used By |
 | --- | --- | --- | --- | --- |
-| `DEFAULT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
-| `JUDGING_DRAFT_RATE_LIMIT_CONFIG` | 120 req/min | `RATE_LIMIT_GENERAL_MAX` | `judging-draft` | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId`; isolated per-user bucket for autosave |
-| `AUTH_RATE_LIMIT_CONFIG` | 20 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | Authentication routes |
-| `VOTE_RATE_LIMIT_CONFIG` | 30 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
-| `UPLOAD_RATE_LIMIT_CONFIG` | 10 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | Upload routes |
+| `DEFAULT_RATE_LIMIT_CONFIG` | 1200 req/min | `RATE_LIMIT_GENERAL_MAX` | (none) | General API handlers |
+| `JUDGING_DRAFT_RATE_LIMIT_CONFIG` | 1200 req/min | `RATE_LIMIT_GENERAL_MAX` | `judging-draft` | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId`; isolated per-user bucket for autosave |
+| `AUTH_RATE_LIMIT_CONFIG` | 200 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | Authentication routes |
+| `VOTE_RATE_LIMIT_CONFIG` | 300 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
+| `UPLOAD_RATE_LIMIT_CONFIG` | 100 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | Upload routes |
 
 ### Configuration interface
 
 ```ts
 interface RateLimitConfig {
-    maxRequests: number; // Default: 120 (from RATE_LIMIT_GENERAL_MAX)
+    maxRequests: number; // Default: 1200 (from RATE_LIMIT_GENERAL_MAX)
     windowMs: number; // Default: 60000 (1 minute, from RATE_LIMIT_WINDOW_MS)
     keyPrefix?: string; // Optional prefix for the client identifier
     keyGenerator?: (event: H3Event) => Promise<string | null> | string | null;

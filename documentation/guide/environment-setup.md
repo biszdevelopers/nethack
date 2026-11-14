@@ -157,10 +157,10 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `RATE_LIMIT_GENERAL_MAX` | General API rate limit, requests per minute | `120` |
-| `RATE_LIMIT_AUTH_MAX` | Authentication endpoint rate limit, attempts per minute | `20` |
-| `RATE_LIMIT_VOTE_MAX` | Voting/scoring endpoint rate limit, submissions per minute | `30` |
-| `RATE_LIMIT_UPLOAD_MAX` | File upload endpoint rate limit, uploads per minute | `10` |
+| `RATE_LIMIT_GENERAL_MAX` | General API rate limit, requests per minute | `1200` |
+| `RATE_LIMIT_AUTH_MAX` | Authentication endpoint rate limit, attempts per minute | `200` |
+| `RATE_LIMIT_VOTE_MAX` | Voting/scoring endpoint rate limit, submissions per minute | `300` |
+| `RATE_LIMIT_UPLOAD_MAX` | File upload endpoint rate limit, uploads per minute | `100` |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window in milliseconds | `60000` |
 | `TRUSTED_PROXY_HOPS` | Exact number of trusted reverse proxies (0–10); forwarded addresses are used only when the chain contains enough valid IPs | `0` |
 
@@ -212,10 +212,10 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 
 # OPTIONAL - Rate limiting overrides (defaults shown)
-# RATE_LIMIT_GENERAL_MAX=120
-# RATE_LIMIT_AUTH_MAX=20
-# RATE_LIMIT_VOTE_MAX=30
-# RATE_LIMIT_UPLOAD_MAX=10
+# RATE_LIMIT_GENERAL_MAX=1200
+# RATE_LIMIT_AUTH_MAX=200
+# RATE_LIMIT_VOTE_MAX=300
+# RATE_LIMIT_UPLOAD_MAX=100
 # RATE_LIMIT_WINDOW_MS=60000
 
 
