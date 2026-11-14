@@ -22,6 +22,7 @@ describe("useJudgingDraft load races", () => {
     beforeEach(() => {
         fetchMock.mockReset();
         vi.stubGlobal("$fetch", fetchMock);
+        vi.stubGlobal("tryUseNuxtApp", () => null);
         vi.stubGlobal("getErrorMessage", (error: unknown) =>
             error instanceof Error ? error.message : "Request failed",
         );
