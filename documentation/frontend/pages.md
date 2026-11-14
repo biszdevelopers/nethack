@@ -200,7 +200,7 @@ Active judging interface. Protected by `auth` middleware. Accessible only by jud
 
 1. Loads the judge's pending projects from `/api/teams?judging=true`, their personal progress from `/api/ballot/summary`, and the active rubric from `/api/judging/rubric`.
 2. Shows one project at a time with repository/demo links, project details, AI-use statement, and the criteria for that project's track.
-3. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see comments only after results are published.
+3. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
 4. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores, and the page blocks leaving when unsaved changes cannot be saved.
 5. Requires a review step before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
 
@@ -376,7 +376,7 @@ Redirects an authenticated user to their own profile page (`/user/{id}`). If the
 
 Admin-only debug page with two tabs:
 
-- **File Upload** — upload files to `/assets` or `/userast`, list uploaded files, and copy permalinks
+- **File Upload** — upload files to `/assets` or `/userast`, list uploaded files and active permalink references, copy permalinks, and release references owned by the current user
 - **DeepSeek Chat** — create chat sessions, send messages, and delete sessions via `/api/debug/deepseek/sessions`
 
 Protected by `auth` middleware and an admin permission check.
