@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, toRaw, watch } from "vue";
 import { DEFAULT_RUBRIC_DEFINITION, type RubricDefinition } from "~~/shared/rubric";
 import RubricDefinitionEditor from "~/components/admin/RubricDefinitionEditor.vue";
 import RubricTemplateLibrary from "~/components/admin/RubricTemplateLibrary.vue";
@@ -54,7 +54,7 @@ const sourceSeasons = computed(() =>
 );
 
 function copyDefinition(source: RubricDefinition): RubricDefinition {
-    return structuredClone(source);
+    return structuredClone(toRaw(source));
 }
 
 function validationIssues(value: RubricDefinition): string[] {
