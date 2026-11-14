@@ -37,21 +37,20 @@ export default defineEventHandler(
         if (!season?.results_published) {
             throw createError({ statusCode: 403, message: "Judge feedback is not published yet." });
         }
-        const result = await getTeamScoreFeedback(event, team);
+        const result = await getTeamScoreFeedback(event, team, { publicView: true });
+        const scoresVisible = Boolean(
+            season.show_scores && !result.feedback_withheld_for_anonymity,
+        );
+        const rankVisible = Boolean(season.show_ranking && !result.feedback_withheld_for_anonymity);
 
-        return {
+        const response: TeamScoreFeedbackResponse = {
             ...result,
-            original_score: season.show_scores ? result.original_score : null,
-            displayed_score: season.show_scores ? result.displayed_score : null,
-            curve_preset: season.show_scores ? result.curve_preset : null,
-            curve_label: season.show_scores ? result.curve_label : null,
-            rank: season.show_ranking ? result.rank : null,
-            feedback: result.feedback.map(({ scores, normalized_score, criteria, ...entry }) => ({
-                ...entry,
-                scores: season.show_scores ? scores : null,
-                normalized_score: season.show_scores ? normalized_score : null,
-                criteria: season.show_scores ? criteria : null,
-            })),
+            original_score: scoresVisible ? result.original_score : null,
+            displayed_score: scoresVisible ? result.displayed_score : null,
+            curve_preset: scoresVisible ? result.curve_preset : null,
+            curve_label: scoresVisible ? result.curve_label : null,
+            rank: rankVisible ? result.rank : null,
         };
+        return response;
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );
