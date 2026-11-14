@@ -36,7 +36,6 @@ export default defineNitroPlugin((nitroApp) => {
         let closing = false;
 
         const scheduleGc = (delay: number) => {
-            if (closing) return;
             gcTimer = setTimeout(() => {
                 gcTimer = undefined;
                 void runGc();
