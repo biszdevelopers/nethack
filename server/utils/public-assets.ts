@@ -17,6 +17,9 @@ export async function sendPublicStoredAsset(
     if (!requestedPath) {
         throw createError({ statusCode: 404, statusMessage: "Asset not found" });
     }
+    if (requestedPath.split("/").some((segment) => segment.startsWith("."))) {
+        throw createError({ statusCode: 404, statusMessage: "Asset not found" });
+    }
 
     let asset: Awaited<ReturnType<typeof openStoredAsset>>;
     try {
