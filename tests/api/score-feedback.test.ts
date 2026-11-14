@@ -9,6 +9,7 @@ import {
     seedHackathon,
     seedSeason,
     seedTeam,
+    seedTeamEvaluations,
     seedUser,
     setupNitroGlobals,
     type TestContext,
@@ -104,6 +105,37 @@ async function seedPublishedEvaluation(
     return { season, team, member, judge };
 }
 
+async function addEvaluation(
+    teamId: number,
+    seasonId: number,
+    email: string,
+    reasoning: string,
+    score: number,
+) {
+    const season = await ctx.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).get();
+    const rubricVersion = await ctx.drizzle
+        .select()
+        .from(rubricVersions)
+        .where(eq(rubricVersions.id, season!.rubric_version_id!))
+        .get();
+    const judge = seedUser(ctx, { email, role: "judge", name: email });
+    const scores = Object.fromEntries(
+        DEFAULT_RUBRIC_DEFINITION.tracks.junior.criteria.map((criterion) => [criterion.id, score]),
+    );
+    ctx.drizzle
+        .insert(teamScores)
+        .values({
+            team_id: teamId,
+            judge_user_id: judge.id,
+            season_id: seasonId,
+            rubric_version_id: rubricVersion!.id,
+            scores: JSON.stringify(scores),
+            reasoning,
+        })
+        .run();
+    return judge;
+}
+
 describe("GET /api/teams/:id/scores", () => {
     it("returns not found for a missing team", async () => {
         const requester = seedUser(ctx, { email: "score-missing-team@example.test" });
@@ -115,6 +147,20 @@ describe("GET /api/teams/:id/scores", () => {
 
     it("allows a past team member to view published feedback", async () => {
         const { season, team, member } = await seedPublishedEvaluation();
+        await addEvaluation(
+            team.id,
+            season.id,
+            "judge-two@example.test",
+            "A second anonymous comment.",
+            4,
+        );
+        await addEvaluation(
+            team.id,
+            season.id,
+            "judge-three@example.test",
+            "A third anonymous comment.",
+            4,
+        );
         ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, season.id)).run();
         seedSeason(ctx, { name: "Current season", is_active: 1 });
         ctx.drizzle.update(users).set({ team_id: null }).where(eq(users.id, member.id)).run();
@@ -136,28 +182,73 @@ describe("GET /api/teams/:id/scores", () => {
             original_score: null,
             displayed_score: null,
             rank: null,
-            feedback: [
-                {
-                    reasoning: "A useful and anonymous comment.",
-                    scores: null,
-                    normalized_score: null,
-                    criteria: null,
-                },
-            ],
+            feedback: [],
+            feedback_withheld_for_anonymity: true,
         });
         expect(JSON.stringify(response)).not.toMatch(/judge_user_id|judge@example\.test/);
     });
 
     it("returns original and curved scores separately when score display is enabled", async () => {
-        const { team } = await seedPublishedEvaluation({ score_curve_preset: "gentle" });
+        const { team, season } = await seedPublishedEvaluation({ score_curve_preset: "gentle" });
+        await addEvaluation(team.id, season.id, "judge-two@example.test", "Second comment.", 4);
+        await addEvaluation(team.id, season.id, "judge-three@example.test", "Third comment.", 4);
 
         const response = await participantHandler(createEvent());
 
         expect(response.original_score).toBe(80);
         expect(response.displayed_score).toBeGreaterThanOrEqual(response.original_score);
-        expect(response.feedback[0].normalized_score).toBe(80);
+        expect(response.feedback).toHaveLength(3);
         expect(JSON.stringify(response)).not.toMatch(/judge_user_id|judge@example\.test/);
-        expect(response.feedback[0].reasoning).toBe("A useful and anonymous comment.");
+    });
+
+    it("withholds scores, rank, and comments below the anonymity threshold without exposing the count", async () => {
+        const { team } = await seedPublishedEvaluation();
+
+        const response = await participantHandler(createEvent());
+
+        expect(response).toMatchObject({
+            team_id: team.id,
+            original_score: null,
+            displayed_score: null,
+            rank: null,
+            feedback: [],
+            feedback_withheld_for_anonymity: true,
+        });
+        expect(JSON.stringify(response)).not.toMatch(
+            /judge@example\.test|evaluation_count|rubric_name/,
+        );
+    });
+
+    it("publishes comments only after three anonymous reviews and strips individual scores", async () => {
+        const { team, season } = await seedPublishedEvaluation();
+        await addEvaluation(
+            team.id,
+            season.id,
+            "judge-two@example.test",
+            "A second anonymous comment.",
+            4,
+        );
+        await addEvaluation(
+            team.id,
+            season.id,
+            "judge-three@example.test",
+            "A third anonymous comment.",
+            3,
+        );
+
+        const response = await participantHandler(createEvent());
+
+        expect(response.feedback).toHaveLength(3);
+        expect(response.feedback_withheld_for_anonymity).toBe(false);
+        expect(response.feedback.map((entry: any) => entry.reasoning)).toContain(
+            "A third anonymous comment.",
+        );
+        expect(
+            response.feedback.every((entry: any) => Object.keys(entry).join() === "reasoning"),
+        ).toBe(true);
+        expect(JSON.stringify(response)).not.toMatch(
+            /judge_user_id|judge-two@example|judge-three@example|rubric_name|rubric_version|track_name/,
+        );
     });
 
     it("does not reveal another team's feedback to a non-member", async () => {
@@ -191,8 +282,8 @@ describe("GET /api/admin/teams/:id/scores", () => {
         expect(requireUser).toHaveBeenCalledWith(expect.anything(), NethackPermissions.all);
     });
 
-    it("returns full anonymous feedback to an authorized administrator", async () => {
-        const { team } = await seedPublishedEvaluation();
+    it("returns judge identity and full feedback only to an authorized administrator", async () => {
+        const { team, judge } = await seedPublishedEvaluation();
         const requireUser = vi.mocked(globalThis.requireUser);
         requireUser.mockResolvedValue({ id: 99, role: "admin" } as any);
 
@@ -205,10 +296,22 @@ describe("GET /api/admin/teams/:id/scores", () => {
                 {
                     reasoning: "A useful and anonymous comment.",
                     scores: expect.any(Object),
+                    judge_id: judge.id,
+                    judge_name: "Test User",
                 },
             ],
         });
         expect(JSON.stringify(response)).not.toMatch(/judge_user_id|judge@example\.test/);
+    });
+
+    it("returns a null judge display name when the stored judge has no name", async () => {
+        const { team, judge } = await seedPublishedEvaluation();
+        ctx.drizzle.update(users).set({ name: null }).where(eq(users.id, judge.id)).run();
+        vi.mocked(globalThis.requireUser).mockResolvedValue({ id: 99, role: "admin" } as any);
+
+        const response = await adminHandler(createEvent());
+
+        expect(response.feedback).toMatchObject([{ judge_id: judge.id, judge_name: null }]);
     });
 
     it("returns not found when the requested team does not exist", async () => {
