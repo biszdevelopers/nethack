@@ -234,10 +234,50 @@ async function setJudgeScores(page: Page, value: string) {
 
     for (let index = 0; index < count; index += 1) {
         const group = groups.nth(index);
-        const option = group.getByText(value, { exact: true });
+        const option = group.getByRole("radio", {
+            name: new RegExp(`^${value} of \\d+ for`),
+        });
         if (index === 0) await expectTouchTarget(option.locator("xpath=.."));
-        await option.click();
+        await option.focus();
+        await page.keyboard.press("Space");
+        await expect(option).toBeChecked();
     }
+}
+
+async function pressWithKeyboard(page: Page, target: Locator, key = "Enter") {
+    await target.focus();
+    await expect(target).toBeFocused();
+    await page.keyboard.press(key);
+}
+
+async function replaceTextWithKeyboard(page: Page, target: Locator, value: string) {
+    await target.focus();
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.type(value);
+}
+
+async function beginKeyboardOnlyAudit(page: Page) {
+    await page.evaluate(() => {
+        const audit = { pointerEvents: 0, keyEvents: 0 };
+        (window as Window & { __keyboardOnlyAudit?: typeof audit }).__keyboardOnlyAudit = audit;
+        document.addEventListener("pointerdown", () => audit.pointerEvents++, true);
+        document.addEventListener("mousedown", () => audit.pointerEvents++, true);
+        document.addEventListener("keydown", () => audit.keyEvents++, true);
+    });
+}
+
+async function expectKeyboardOnlyAudit(page: Page) {
+    const audit = await page.evaluate(
+        () =>
+            (
+                window as Window & {
+                    __keyboardOnlyAudit?: { pointerEvents: number; keyEvents: number };
+                }
+            ).__keyboardOnlyAudit,
+    );
+    expect(audit?.pointerEvents).toBe(0);
+    expect(audit?.keyEvents).toBeGreaterThan(0);
 }
 
 async function getTeamIdByProject(page: Page, projectName: string): Promise<number> {
@@ -274,6 +314,79 @@ function scoreSubmission(page: Page, teamId: number) {
     );
 }
 
+async function fetchApiJson(page: Page, path: string) {
+    return page.evaluate(async (requestPath) => {
+        const response = await fetch(requestPath);
+        const value = (await response.json()) as unknown;
+        const body =
+            value && typeof value === "object" && "data" in value
+                ? (value as { data: unknown }).data
+                : value;
+        return { status: response.status, body };
+    }, path);
+}
+
+async function expectPublicResultsHidden(page: Page, teamId: number) {
+    const [feedback, team] = await Promise.all([
+        fetchApiJson(page, `/api/teams/${teamId}/scores`),
+        fetchApiJson(page, `/api/teams/${teamId}`),
+    ]);
+
+    expect(feedback.status).toBe(200);
+    expect(feedback.body).toMatchObject({
+        team_id: teamId,
+        original_score: null,
+        displayed_score: null,
+        rank: null,
+        feedback: [],
+        feedback_withheld_for_anonymity: true,
+    });
+    expect(team.status).toBe(200);
+    expect(team.body).toMatchObject({ id: teamId, score: null, rank: null });
+}
+
+async function recomputeSeasonScores(page: Page) {
+    const result = await page.evaluate(async () => {
+        const response = await fetch("/api/admin/scores/compute?season_id=1", {
+            method: "POST",
+        });
+        return { status: response.status, body: await response.json() };
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+        data: { message: "Scores and ranks were recomputed." },
+    });
+}
+
+async function evaluateProject(
+    page: Page,
+    projectName: string,
+    comment: string,
+    score: string,
+): Promise<void> {
+    await page.goto("/judging");
+    await expect(page.getByRole("heading", { name: "Judging", exact: true })).toBeVisible();
+    await pressWithKeyboard(page, page.getByRole("button", { name: /Continue judging/ }));
+    await expect(page).toHaveURL((url) => url.pathname === "/judging/continue");
+    await expect(page.getByRole("heading", { name: "Judge projects" })).toBeVisible();
+    await navigateToProject(page, projectName);
+
+    const commentInput = page.getByLabel("Anonymous feedback and score rationale");
+    await replaceTextWithKeyboard(page, commentInput, comment);
+    await setJudgeScores(page, score);
+    await pressWithKeyboard(page, page.getByRole("button", { name: "Review evaluation" }));
+    await expect(page.getByRole("heading", { name: "Review before you finalize" })).toBeVisible();
+
+    const teamId = await getTeamIdByProject(page, projectName);
+    const evaluation = scoreSubmission(page, teamId);
+    await pressWithKeyboard(page, page.getByRole("button", { name: "Finalize evaluation" }));
+    const response = await evaluation;
+    expect(
+        response.ok(),
+        `score submission failed with HTTP ${response.status()}: ${await response.text()}`,
+    ).toBeTruthy();
+}
+
 async function navigateToProject(page: Page, projectName: string) {
     const currentProject = page.getByRole("heading", { level: 2 });
     for (let visited = 0; visited < 100; visited += 1) {
@@ -281,10 +394,20 @@ async function navigateToProject(page: Page, projectName: string) {
 
         const nextProject = page.getByRole("button", { name: "Next project" });
         if (!(await nextProject.isEnabled())) {
-            throw new Error(`Could not navigate to the judging project ${projectName}.`);
+            const progress = await page
+                .getByText(/Project \d+ of \d+/)
+                .first()
+                .textContent()
+                .catch(() => "progress unavailable");
+            const currentName =
+                (await currentProject.textContent())?.trim() ?? "project unavailable";
+            throw new Error(
+                `Could not navigate to judging project ${projectName}; current=${currentName}; ` +
+                    `progress=${progress}`,
+            );
         }
         const previousName = (await currentProject.textContent())?.trim();
-        await nextProject.click();
+        await pressWithKeyboard(page, nextProject);
         await expect
             .poll(async () => (await currentProject.textContent())?.trim())
             .not.toBe(previousName);
@@ -293,7 +416,7 @@ async function navigateToProject(page: Page, projectName: string) {
     throw new Error(`Could not find ${projectName} in the first 100 judging projects.`);
 }
 
-test("participant, judge, and admin can complete the published scoring journey on mobile", async ({
+test("participant and admin complete mobile journeys while judging and review stay keyboard-only", async ({
     browser,
 }) => {
     test.setTimeout(240_000);
@@ -310,6 +433,8 @@ test("participant, judge, and admin can complete the published scoring journey o
     const admin = await newMobilePage(browser);
     const participant = await newMobilePage(browser);
     const judge = await newMobilePage(browser);
+    const judgeTwo = await newMobilePage(browser);
+    const judgeThree = await newMobilePage(browser);
     let progress = "opening the administrator session";
     const markProgress = (stage: string) => {
         progress = stage;
@@ -324,6 +449,38 @@ test("participant, judge, and admin can complete the published scoring journey o
         ).toBeVisible();
         markProgress("checking the administrator layout at all required widths");
         await expectResponsivePage(admin.page);
+
+        markProgress("configuring season-specific judge comment guidance and prompts");
+        const customGuideline =
+            "Describe observable project details so feedback stays specific and useful.";
+        await admin.page.getByRole("textbox", { name: "Guideline 1" }).fill(customGuideline);
+        await admin.page.getByLabel("Template 1 label").fill("Evidence + next step");
+        await admin.page
+            .getByLabel("Template 1 text")
+            .fill("Evidence I observed: {{specific detail}}\nNext step: {{action and reason}}");
+        await admin.page.getByLabel("New rubric version name").fill(`E2E season rubric ${suffix}`);
+        const rubricVersionResponse = apiResponse(
+            admin.page,
+            "/api/admin/seasons/1/rubric",
+            "POST",
+        );
+        await admin.page.getByRole("button", { name: "Save new version" }).click();
+        const savedRubricVersion = await rubricVersionResponse;
+        expect(savedRubricVersion.ok()).toBeTruthy();
+        expect(await savedRubricVersion.json()).toMatchObject({
+            data: {
+                active: {
+                    definition: {
+                        commentGuidance: {
+                            guidelines: expect.arrayContaining([customGuideline]),
+                            templates: expect.arrayContaining([
+                                expect.objectContaining({ label: "Evidence + next step" }),
+                            ]),
+                        },
+                    },
+                },
+            },
+        });
 
         markProgress("saving the reusable rubric template");
         const templateName = `E2E rubric template ${suffix}`;
@@ -412,7 +569,11 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(
             judge.page.getByRole("heading", { name: "Judging", exact: true }),
         ).toBeVisible();
-        await judge.page.getByRole("button", { name: /Continue judging/ }).click();
+        await beginKeyboardOnlyAudit(judge.page);
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: /Continue judging/ }),
+        );
         await expect(judge.page).toHaveURL((url) => url.pathname === "/judging/continue");
         await expect(judge.page.getByRole("heading", { name: "Judge projects" })).toBeVisible();
         markProgress("finding the administrator project in the judge queue");
@@ -420,20 +581,36 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(judge.page.getByRole("button", { name: "Next project" })).toBeEnabled();
         await expectResponsivePage(judge.page);
 
-        const firstPrompt = judge.page.getByRole("button", { name: "Strength + next step" });
+        await expect(judge.page.getByText(customGuideline, { exact: true })).toBeVisible();
+        const firstPrompt = judge.page.getByRole("button", { name: "Evidence + next step" });
         markProgress("saving and restoring the judge draft");
         await expectTouchTarget(firstPrompt);
         await expect(firstPrompt).toBeEnabled();
-        await firstPrompt.click();
+        await pressWithKeyboard(judge.page, firstPrompt);
         const commentInput = judge.page.getByLabel("Anonymous feedback and score rationale");
-        await expect(commentInput).toHaveValue(/Strength I observed/);
-        await commentInput.fill(comment);
+        await expect(commentInput).toHaveValue(/Evidence I observed/);
+        await replaceTextWithKeyboard(judge.page, commentInput, comment);
+        await replaceTextWithKeyboard(
+            judge.page,
+            commentInput,
+            `${comment} judge@e2e.basishacks.invalid`,
+        );
+        await expect(
+            judge.page.getByText(
+                "Remove your email address or display name from the comment to keep it anonymous.",
+                { exact: true },
+            ),
+        ).toBeVisible();
+        await expect(judge.page.getByRole("button", { name: "Review evaluation" })).toBeDisabled();
+        await replaceTextWithKeyboard(judge.page, commentInput, comment);
         await setJudgeScores(judge.page, "3");
         await expect(judge.page.getByRole("button", { name: "Review evaluation" })).toBeEnabled();
         await expect(judge.page.getByText(/Draft saved/)).toBeVisible();
+        await expectKeyboardOnlyAudit(judge.page);
 
         await judge.page.reload();
         await expect(judge.page.getByRole("heading", { name: "Judge projects" })).toBeVisible();
+        await beginKeyboardOnlyAudit(judge.page);
         await navigateToProject(judge.page, adminProject);
         await expect(judge.page.getByLabel("Anonymous feedback and score rationale")).toHaveValue(
             comment,
@@ -445,13 +622,22 @@ test("participant, judge, and admin can complete the published scoring journey o
             await expect(savedScore).toBeChecked();
         }
 
-        await judge.page.getByRole("button", { name: "Next project" }).click();
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Next project" }),
+        );
         await expect(judge.page.getByRole("heading", { name: participantProject })).toBeVisible();
-        await judge.page.getByRole("button", { name: "Previous project" }).click();
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Previous project" }),
+        );
         await expect(judge.page.getByRole("heading", { name: adminProject })).toBeVisible();
         await expect(commentInput).toHaveValue(comment);
 
-        await judge.page.getByRole("button", { name: "Review evaluation" }).click();
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Review evaluation" }),
+        );
         markProgress("finalizing the administrator evaluation");
         await expect(
             judge.page.getByRole("heading", { name: "Review before you finalize" }),
@@ -459,26 +645,64 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(judge.page.getByText(/your identity will not be shown/i)).toBeVisible();
         await expectResponsivePage(judge.page);
         const firstEvaluation = scoreSubmission(judge.page, adminTeamId);
-        await judge.page.getByRole("button", { name: "Finalize evaluation" }).click();
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Finalize evaluation" }),
+        );
         expect((await firstEvaluation).ok()).toBeTruthy();
 
+        markProgress("wrapping the judge queue after scoring its last pending project");
+        await navigateToProject(judge.page, judgeProject);
+        await expect(judge.page.getByRole("button", { name: "Next project" })).toBeDisabled();
+        const lastProjectComment =
+            "The project states its goal clearly. Add one example to show how the team will measure progress.";
+        await replaceTextWithKeyboard(
+            judge.page,
+            judge.page.getByLabel("Anonymous feedback and score rationale"),
+            lastProjectComment,
+        );
+        await setJudgeScores(judge.page, "2");
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Review evaluation" }),
+        );
+        await expect(
+            judge.page.getByRole("heading", { name: "Review before you finalize" }),
+        ).toBeVisible();
+        const lastProjectTeamId = await getTeamIdByProject(judge.page, judgeProject);
+        const lastEvaluation = scoreSubmission(judge.page, lastProjectTeamId);
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Finalize evaluation" }),
+        );
+        expect((await lastEvaluation).ok()).toBeTruthy();
+        await expect(
+            judge.page.getByRole("heading", { level: 2, name: participantProject }),
+        ).toBeVisible();
+
         markProgress("finalizing the participant evaluation");
-        await navigateToProject(judge.page, participantProject);
         const participantComment =
             "The helpful onboarding flow makes the main task easy to understand. Add one example so new users can get started faster.";
         const participantCommentInput = judge.page.getByLabel(
             "Anonymous feedback and score rationale",
         );
-        await participantCommentInput.fill(participantComment);
+        await replaceTextWithKeyboard(judge.page, participantCommentInput, participantComment);
         await setJudgeScores(judge.page, "4");
         await expect(judge.page.getByRole("button", { name: "Review evaluation" })).toBeEnabled();
-        await judge.page.getByRole("button", { name: "Review evaluation" }).click();
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Review evaluation" }),
+        );
         await expect(
             judge.page.getByRole("heading", { name: "Review before you finalize" }),
         ).toBeVisible();
         const secondEvaluation = scoreSubmission(judge.page, participantTeamId);
-        await judge.page.getByRole("button", { name: "Finalize evaluation" }).click();
+        await pressWithKeyboard(
+            judge.page,
+            judge.page.getByRole("button", { name: "Finalize evaluation" }),
+        );
         expect((await secondEvaluation).ok()).toBeTruthy();
+        await expectKeyboardOnlyAudit(judge.page);
 
         await participant.page.goto("/dashboard/results");
         await expect(participant.page.getByText(participantComment, { exact: true })).toHaveCount(
@@ -487,24 +711,105 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(participant.page.getByText("Judge feedback", { exact: true })).toHaveCount(0);
 
         await admin.page.goto("/developers/season");
-        markProgress("publishing results and checking competitor feedback");
-        await setSeasonStatus(admin.page, "Finished");
+        markProgress("publishing results while one review exists and checking anonymity gate");
         await setSeasonCheckbox(admin.page, "Results Published", true);
         await setSeasonCheckbox(admin.page, "Show Scores", true);
         await setSeasonCheckbox(admin.page, "Show Ranking", true);
+        await recomputeSeasonScores(admin.page);
 
         await participant.page.goto("/dashboard/results");
+        await expectPublicResultsHidden(participant.page, participantTeamId);
+        await expect(
+            participant.page.getByText(
+                /Written feedback is hidden until at least three judges have evaluated this project/,
+            ),
+        ).toBeVisible();
+        await expect(participant.page.getByText("original score", { exact: true })).toHaveCount(0);
+        await expect(participant.page.getByText(/Curved display \(Strong uplift\):/)).toHaveCount(
+            0,
+        );
+        await expect(participant.page.getByText(participantComment, { exact: true })).toHaveCount(
+            0,
+        );
+
+        markProgress("checking anonymity after a second judge evaluation");
+        await setSeasonCheckbox(admin.page, "Results Published", false);
+        await loginAs(judgeTwo.page, "judge-two@e2e.basishacks.invalid", "/judging");
+        const secondJudgeComment =
+            "The navigation is clear. Add one example to help first-time visitors understand the next step.";
+        await evaluateProject(judgeTwo.page, participantProject, secondJudgeComment, "4");
+        await setSeasonCheckbox(admin.page, "Results Published", true);
+        await recomputeSeasonScores(admin.page);
+        await participant.page.goto("/dashboard/results");
+        await expectPublicResultsHidden(participant.page, participantTeamId);
+        await expect(
+            participant.page.getByText(
+                /Written feedback is hidden until at least three judges have evaluated this project/,
+            ),
+        ).toBeVisible();
+        await expect(participant.page.getByText(secondJudgeComment, { exact: true })).toHaveCount(
+            0,
+        );
+
+        markProgress("releasing anonymous feedback after a third judge evaluation");
+        await setSeasonCheckbox(admin.page, "Results Published", false);
+        await loginAs(judgeThree.page, "judge-three@e2e.basishacks.invalid", "/judging");
+        const thirdJudgeComment =
+            "The project explains its purpose well. Add a concrete example to make the benefits easier to picture.";
+        await evaluateProject(judgeThree.page, participantProject, thirdJudgeComment, "4");
+        await setSeasonCheckbox(admin.page, "Results Published", true);
+        await recomputeSeasonScores(admin.page);
+        await admin.page.goto("/developers/season");
+        await setSeasonStatus(admin.page, "Finished");
+
+        await participant.page.goto("/dashboard/results");
+        const visibleTeam = await fetchApiJson(participant.page, `/api/teams/${participantTeamId}`);
+        expect(visibleTeam.status).toBe(200);
+        expect(visibleTeam.body).toMatchObject({ id: participantTeamId, score: 80, rank: 1 });
+        const publicFeedback = await fetchApiJson(
+            participant.page,
+            `/api/teams/${participantTeamId}/scores`,
+        );
+        expect(publicFeedback.status).toBe(200);
+        expect(publicFeedback.body).toMatchObject({
+            original_score: 80,
+            displayed_score: 86,
+        });
+        const publicComments = (
+            publicFeedback.body as { feedback: { reasoning: string }[] }
+        ).feedback.map((entry) => entry.reasoning);
+        expect(publicComments).toEqual(
+            expect.arrayContaining([participantComment, secondJudgeComment, thirdJudgeComment]),
+        );
+        expect(
+            (publicFeedback.body as { feedback: Record<string, unknown>[] }).feedback.every(
+                (entry) => Object.keys(entry).join() === "reasoning",
+            ),
+        ).toBe(true);
+        expect(JSON.stringify(publicFeedback.body)).not.toMatch(
+            /judge(?:-two|-three)?@e2e|judge_(?:user_id|name)|rubric_name|normalized_score/,
+        );
+
         const originalScore = participant.page.getByText("original score", { exact: true });
         await expect(originalScore.locator("xpath=..")).toContainText("80/100");
         await expect(participant.page.getByText(/Curved display \(Strong uplift\):/)).toContainText(
             "86/100",
         );
         await expect(participant.page.getByText(participantComment, { exact: true })).toBeVisible();
+        await expect(participant.page.getByText(secondJudgeComment, { exact: true })).toBeVisible();
+        await expect(participant.page.getByText(thirdJudgeComment, { exact: true })).toBeVisible();
+        const anonymousEvaluationHeadings = participant.page.getByRole("heading", {
+            name: "Anonymous evaluation",
+            exact: true,
+        });
+        await expect(anonymousEvaluationHeadings).toHaveCount(3);
+        for (const heading of await anonymousEvaluationHeadings.all()) {
+            await expect(heading).toBeVisible();
+        }
         await expect(
-            participant.page.getByText("Anonymous evaluation", { exact: true }),
-        ).toBeVisible();
-        await expect(
-            participant.page.getByText("Judge names and account IDs are hidden."),
+            participant.page.getByText(
+                "Judge names, account IDs, rubric metadata, and individual scores are hidden.",
+            ),
         ).toBeVisible();
         await expect(participant.page.getByText("Judge Fixture", { exact: false })).toHaveCount(0);
         await expect(
@@ -519,17 +824,32 @@ test("participant, judge, and admin can complete the published scoring journey o
         await participantRow.getByRole("button", { name: "View", exact: true }).click();
         const feedbackDialog = admin.page.getByRole("dialog");
         await expect(feedbackDialog.getByText(participantComment, { exact: true })).toBeVisible();
+        await expect(feedbackDialog.getByText(secondJudgeComment, { exact: true })).toBeVisible();
+        await expect(feedbackDialog.getByText(thirdJudgeComment, { exact: true })).toBeVisible();
         await expect(feedbackDialog.getByText("Original average:")).toContainText("80/100");
         await expect(feedbackDialog.getByText(/Curved display \(Strong uplift\):/)).toContainText(
             "86/100",
         );
         await expect(
-            feedbackDialog.getByText("Judge names and account IDs are hidden."),
+            feedbackDialog.getByText(
+                "Judge names and account IDs are visible only in this admin view.",
+            ),
         ).toBeVisible();
-        await expect(feedbackDialog.getByText("Judge Fixture", { exact: false })).toHaveCount(0);
-        await expect(
-            feedbackDialog.getByText("judge@e2e.basishacks.invalid", { exact: false }),
-        ).toHaveCount(0);
+        for (const judgeName of ["Judge Fixture", "Judge Two Fixture", "Judge Three Fixture"]) {
+            await expect(feedbackDialog.getByText(judgeName, { exact: false })).toBeVisible();
+        }
+        const adminFeedback = await fetchApiJson(
+            admin.page,
+            `/api/admin/teams/${participantTeamId}/scores`,
+        );
+        expect(adminFeedback.status).toBe(200);
+        expect(
+            (adminFeedback.body as { feedback: { judge_name?: string }[] }).feedback.map(
+                (entry) => entry.judge_name,
+            ),
+        ).toEqual(
+            expect.arrayContaining(["Judge Fixture", "Judge Two Fixture", "Judge Three Fixture"]),
+        );
         await expectResponsivePage(admin.page);
     } finally {
         console.info(`[role-journey] cleanup after ${progress}`);
@@ -537,6 +857,8 @@ test("participant, judge, and admin can complete the published scoring journey o
             admin.context.close(),
             participant.context.close(),
             judge.context.close(),
+            judgeTwo.context.close(),
+            judgeThree.context.close(),
         ]);
     }
 });
