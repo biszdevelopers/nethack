@@ -132,7 +132,8 @@ bun run test
 - `DATABASE_POOL_MAX` defaults to 10 and accepts validated values from 2 through 64.
 - `server/plugins/init-database.ts` creates the pool, applies advisory-locked migrations, seeds initial rows, and closes the pool during shutdown.
 - `server/middleware/02.database.ts` attaches the shared Drizzle instance to each request as `event.context.drizzle`.
-- User uploads are stored under `ASSET_STORAGE_DIR`, outside the release directory.
+- Runtime uploads live under the project-root `/assets` directory. Git ignores this directory so it survives an in-place pull/build/start; back it up separately, and preserve or restore it before serving after a re-clone. The static showcase at `public/assets` is separate.
+- Profile image objects use SHA-256 content-addressed names under `/assets/userassets/profiles/`, deduplicated by image bytes and canonical extension. Cleanup only considers those managed profile objects after at least seven days and a locked database check confirms zero references. Public permalink/debug uploads and legacy non-hashed objects are pinned and are not automatically collected.
 
 ---
 
@@ -261,7 +262,7 @@ Copy `.env.example` to `.env` and fill in at least the required values:
 | `BASIS_AUTH_CLIENT_SECRET` | Confidential basis-auth client secret                    |
 | `BASIS_AUTH_RESOURCE`      | Required resource audience for basishacks access tokens  |
 
-`DATABASE_POOL_MAX` (default 10, range 2–64) and `ASSET_STORAGE_DIR` are optional deployment settings.
+`DATABASE_POOL_MAX` (default 10, range 2–64) is an optional deployment setting. Upload storage always uses the project-root `/assets` directory; it is not configured through an environment variable.
 
 ### Optional (for Graph features)
 
