@@ -333,23 +333,39 @@ export function prepareLegacyColumnRows(source, availableTables) {
     return legacyRows;
 }
 
-export function normalizeLegacyTimestamp(value, field) {
+export function normalizeLegacyTimestamp(value, field, entity = "hackathon") {
     if (typeof value === "number" && Number.isSafeInteger(value)) return value;
     if (typeof value !== "string" || !value.trim()) {
         throw new Error(
-            `Legacy hackathon ${field} is missing or invalid; refusing to alter event timing.`,
+            `Legacy ${entity} ${field} is missing or invalid; refusing to alter event timing.`,
         );
     }
     const raw = value.trim();
-    if (/^-?\d+$/.test(raw)) {
+    if (/^-?\d+(?:\.\d+)?$/.test(raw)) {
         const integer = Number(raw);
-        if (Number.isSafeInteger(integer)) return integer;
+        if (/^-?\d+(?:\.0+)?$/.test(raw) && Number.isSafeInteger(integer)) return integer;
+        throw new Error(
+            `Legacy ${entity} ${field} is not a valid epoch millisecond value or ISO date; refusing to alter event timing.`,
+        );
     }
     const timestamp = Date.parse(raw);
     if (Number.isSafeInteger(timestamp)) return timestamp;
     throw new Error(
-        `Legacy hackathon ${field} is not a valid epoch millisecond value or ISO date; refusing to alter event timing.`,
+        `Legacy ${entity} ${field} is not a valid epoch millisecond value or ISO date; refusing to alter event timing.`,
     );
+}
+
+function normalizeSeasonTimestamps(row) {
+    const normalized = { ...row };
+    for (const field of LEGACY_TIMESTAMP_FIELDS) {
+        if (field in normalized) {
+            normalized[field] =
+                normalized[field] === null || normalized[field] === undefined
+                    ? 0
+                    : normalizeLegacyTimestamp(normalized[field], field, "season");
+        }
+    }
+    return normalized;
 }
 
 export function normalizeLegacyHackathonRow(row) {
@@ -378,7 +394,7 @@ export function detectSeasonSchema(source, availableTables) {
                 "SQLite source has a partial season schema; a seasons table requires season_id on both teams and team_scores.",
             );
         }
-        const seasons = rowsFromSource(source, "seasons");
+        const seasons = rowsFromSource(source, "seasons").map(normalizeSeasonTimestamps);
         if (!seasons.length) {
             throw new Error(
                 "SQLite source contains a seasons table but no seasons; refusing to infer history.",
@@ -775,9 +791,12 @@ export async function importToPostgres(
                 "teams",
                 rowsFromSource(source, "teams"),
                 columnsByTable,
-                sourceInfo.seasonSchema === "single-hackathon"
-                    ? () => ({ season_id: LEGACY_SEASON_ID })
-                    : undefined,
+                (team) => ({
+                    ...(sourceInfo.seasonSchema === "single-hackathon"
+                        ? { season_id: LEGACY_SEASON_ID }
+                        : {}),
+                    sourcing: team.sourcing ?? "",
+                }),
             );
             await insertRows(tx, "users", rowsFromSource(source, "users"), columnsByTable);
 
