@@ -8,6 +8,7 @@ import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { getTeam } from "~~/server/utils/database/teams";
 import { firstRow } from "~~/server/utils/database/query";
 import { isJudgingOpen } from "~~/server/utils/judging";
+import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import { applyRateLimit, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 const ParamsSchema = z.object({ teamId: PositiveIntParam });
@@ -79,7 +80,7 @@ export default defineEventHandler(
                 message: "This draft is pinned to another rubric.",
             });
         }
-        if (!currentDraft && season.rubric_version_id !== version.id) {
+        if (!currentDraft && (await resolveLiveRubricVersionId(event, season)) !== version.id) {
             throw createError({
                 statusCode: 409,
                 message: "The rubric changed. Reload the project before saving a draft.",

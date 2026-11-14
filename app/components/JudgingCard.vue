@@ -262,9 +262,6 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                             {{ scores[criterion.id] ?? "Choose" }}
                         </output>
                     </div>
-                    <p class="mt-2 text-xs text-muted">
-                        {{ criterion.minScore }} = lowest · {{ criterion.maxScore }} = highest
-                    </p>
                 </fieldset>
             </div>
 

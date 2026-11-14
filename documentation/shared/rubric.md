@@ -133,6 +133,12 @@ finalScore = 3.95 × 20 = 79
 
 For the built-in default rubric, each score range is 0–5, so the normalized weighted result is equivalent to the legacy formula above. Custom rubrics use the same normalization with their configured minimum and maximum integer values.
 
+## Live rubric in HACKATHON.yml
+
+Edit `rubric.tracks.<track-id>.criteria` in the live manifest. Each criterion specifies an `id`, `name`, `description`, percentage `weight`, `minScore`, and `maxScore`. Each track's weights must total 100. Set `rubric.name` for the version label and use `rubric.commentGuidance` for the introduction, guidelines, and templates.
+
+When an active rubric is requested, the server validates the manifest and activates a matching immutable PostgreSQL snapshot. It creates a version if the name or definition has changed and no matching snapshot exists. Saved drafts and finalized evaluations retain their original version. A rubric cannot remove a track used by a submitted project. Manifests without a `rubric` section use the season's stored rubric, so deployed files can be updated independently. The TypeScript default still seeds fresh databases and maps legacy SQLite evaluations.
+
 ## Rubric Versions and Templates
 
 Each season points to one active rubric version. Creating a new version snapshots its definition and makes it active for future evaluations; finalized evaluations keep their original `rubric_version_id`. Editing a reusable template does not change any version already used by a season. Organizers can copy a prior season's active version into a new version for the selected season.

@@ -22,3 +22,93 @@ voting_end_timestamp: 1794767462000
 results_open_timestamp: 1794767462000
 theme_name: Beneath The Surface
 theme_description: There is Something beneath the surface...
+
+rubric:
+    name: Imported legacy rubric
+    tracks:
+        junior:
+            name: Junior
+            criteria:
+                - id: originality
+                  name: Innovation & Originality
+                  weight: 30
+                  maxScore: 5
+                  minScore: 0
+                  description: Novelty of idea and approach.
+                - id: presentation
+                  name: Presentation & Design
+                  weight: 25
+                  maxScore: 5
+                  minScore: 0
+                  description: Clarity, polish, and design of demo.
+                - id: technicality
+                  name: Technical Complexity
+                  weight: 20
+                  maxScore: 5
+                  minScore: 0
+                  description: Depth and quality of technical implementation.
+                - id: theme
+                  name: Theme Alignment
+                  weight: 15
+                  maxScore: 5
+                  minScore: 0
+                  description: How clearly the project relates to the theme.
+                - id: impact
+                  name: Impact & Usefulness
+                  weight: 10
+                  maxScore: 5
+                  minScore: 0
+                  description: Potential to solve real problems or benefit users.
+        senior:
+            name: Senior
+            criteria:
+                - id: impact
+                  name: Impact & Usefulness
+                  weight: 30
+                  maxScore: 5
+                  minScore: 0
+                  description: Potential to solve real problems or benefit users.
+                - id: presentation
+                  name: Presentation & Design
+                  weight: 25
+                  maxScore: 5
+                  minScore: 0
+                  description: Clarity, polish, and design of demo.
+                - id: technicality
+                  name: Technical Complexity
+                  weight: 20
+                  maxScore: 5
+                  minScore: 0
+                  description: Depth and quality of technical implementation.
+                - id: theme
+                  name: Theme Alignment
+                  weight: 15
+                  maxScore: 5
+                  minScore: 0
+                  description: How clearly the project relates to the theme.
+                - id: originality
+                  name: Innovation & Originality
+                  weight: 10
+                  maxScore: 5
+                  minScore: 0
+                  description: Novelty of idea and approach.
+    commentGuidance:
+        templates:
+            - body: |-
+                  Strength I observed: {{describe a specific feature or decision}}
+                  Next step: {{suggest one concrete action and why it matters}}
+              label: Strength + next step
+            - body: |-
+                  What stood out: {{describe a specific moment, feature, or result}}
+                  To make it stronger: {{suggest one practical improvement}}
+              label: What stood out
+            - body: |-
+                  Implementation strength: {{name a technical choice and its effect}}
+                  Area to explore next: {{suggest a useful test or refinement}}
+              label: Technical feedback
+        guidelines:
+            - Describe a strength you observed and one actionable next step.
+            - Comment on the work, not the people or their background.
+            - Do not include your name or details that could identify you.
+            - Replace every double-braced example with your own observation.
+        introduction: Make feedback specific, respectful, and focused on the project.

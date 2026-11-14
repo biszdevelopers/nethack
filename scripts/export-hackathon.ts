@@ -20,7 +20,16 @@ try {
     ]) {
         row[key] = Number(row[key]);
     }
-    const yaml = stringify(row);
+    const [version] = await sql`
+        SELECT rv.name, rv.definition
+        FROM seasons s
+        JOIN rubric_versions rv ON rv.id = s.rubric_version_id AND rv.season_id = s.id
+        WHERE s.is_active = 1
+    `;
+    const yaml = stringify({
+        ...row,
+        ...(version ? { rubric: { ...version.definition, name: version.name } } : {}),
+    });
     parseHackathonConfig(yaml);
     await writeFile(output, yaml, { flag: "wx" });
     console.info(`Exported the live hackathon configuration to ${output}.`);

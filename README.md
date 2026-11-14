@@ -91,7 +91,7 @@ The former basishacks OAuth provider and application-management UI/API have been
 
 ## Live hackathon configuration
 
-The live event's status, schedule, theme, and voting, judging, and results settings come from `HACKATHON.yml`. Set `YAML_SOURCE_HACKATHON=local` in `.env` for development. On the VPS, set it to the assets server origin or the full HTTPS URL of the published manifest. PostgreSQL still stores the active season selection, historical seasons, and competition data.
+The live event's status, schedule, theme, voting, judging, and results settings and its `rubric` definition come from `HACKATHON.yml`. Set `YAML_SOURCE_HACKATHON=local` in `.env` for development. On the VPS, set it to the assets server origin or the full HTTPS URL of the published manifest. PostgreSQL still stores the active season selection, historical seasons, and competition data.
 
 For an existing deployment, run `bun run db:export-hackathon -- /path/to/HACKATHON.yml` once to export the legacy PostgreSQL row. The command requires `DATABASE_URL` and creates a new file. Use the repository's [configuration and cutover instructions](documentation/deployment/postgresql-migration.md#move-the-live-hackathon-configuration-to-yaml) to deploy it.
 

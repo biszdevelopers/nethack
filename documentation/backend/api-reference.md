@@ -369,6 +369,8 @@ Recompute and persist judge averages and ranks for a season. Pass `?season_id={i
 
 Season update permission is required for these endpoints. Rubric definitions support named tracks, integer score ranges, and criteria weights totaling 100 per track.
 
+When `HACKATHON.yml` defines the live rubric, the admin response includes `yamlManaged: true` and the version-creation endpoint returns 409 for the active season. Edit the manifest to activate a different rubric.
+
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/admin/seasons/:id/rubric` | Get the active rubric version, season history, and reusable templates |

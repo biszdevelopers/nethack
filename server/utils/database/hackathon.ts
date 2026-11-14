@@ -5,7 +5,10 @@ import { firstRow } from "./query";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 export async function getHackathon(event: H3Event): Promise<Hackathon | null> {
-    if (hackathonUsesYaml()) return readHackathonConfig();
+    if (hackathonUsesYaml()) {
+        const { rubric, ...settings } = await readHackathonConfig();
+        return settings;
+    }
     const row = await firstRow(event.context.drizzle.select().from(hackathon).limit(1));
 
     return (row ?? null) as Hackathon | null;

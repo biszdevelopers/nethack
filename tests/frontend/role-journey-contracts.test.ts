@@ -268,7 +268,9 @@ describe("judge results and admin controls", () => {
         expect(rubricManager).toContain(
             "!loading.value && !savingVersion.value && issues.value.length === 0",
         );
-        expect(rubricManager).toContain(':disabled="!canSave || !versionName.trim()"');
+        expect(rubricManager).toContain(
+            ':disabled="yamlManaged || !canSave || !versionName.trim()"',
+        );
     });
 
     it("saves immutable rubric versions, supports reusable templates, and preserves history", () => {

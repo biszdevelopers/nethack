@@ -41,7 +41,11 @@ describe("live hackathon YAML", () => {
         expect(fetch).toHaveBeenCalledOnce();
         expect(String(fetch.mock.calls[0]![0])).toBe("https://assets.example.test/HACKATHON.yml");
 
-        vi.setSystemTime(Date.now() + 30_000);
+        vi.setSystemTime(Date.now() + 5 * 60 * 1000 - 1);
+        await expect(readHackathonConfig()).resolves.toEqual(expected);
+        expect(fetch).toHaveBeenCalledOnce();
+
+        vi.setSystemTime(Date.now() + 1);
         fetch.mockResolvedValueOnce(new Response("status: invalid"));
         await expect(readHackathonConfig()).resolves.toEqual(expected);
         expect(fetch.mock.calls[1]![1].headers).toEqual({ "If-None-Match": '"v1"' });

@@ -3,9 +3,10 @@ import { createError } from "h3";
 import fetch from "node-fetch";
 import { parse } from "yaml";
 import { z } from "zod";
+import { RubricDefinitionSchema } from "../../shared/schemas";
 
 const maxBytes = 64 * 1024;
-const refreshInterval = 30_000;
+const refreshInterval = 5 * 60 * 1000;
 const flag = z
     .union([z.literal(0), z.literal(1), z.boolean()])
     .transform((value) => (value ? 1 : 0));
@@ -32,9 +33,15 @@ const hackathonSchema = z.strictObject({
     results_open_timestamp: timestamp,
     theme_name: z.string().nullable(),
     theme_description: z.string().nullable(),
+    rubric: z
+        .object({ name: z.string().trim().min(1).max(100) })
+        .and(RubricDefinitionSchema)
+        .optional(),
 });
 
-export function parseHackathonConfig(source: string): Hackathon {
+type HackathonConfig = z.infer<typeof hackathonSchema>;
+
+export function parseHackathonConfig(source: string): HackathonConfig {
     return hackathonSchema.parse(parse(source, { maxAliasCount: 0 }));
 }
 
@@ -47,7 +54,7 @@ export function hackathonUsesYaml() {
     return getHackathonConfigSource() !== "database";
 }
 
-let localConfig: { modifiedAt: number; size: number; value: Hackathon } | undefined;
+let localConfig: { modifiedAt: number; size: number; value: HackathonConfig } | undefined;
 
 async function readLocalConfig() {
     const file = await stat("HACKATHON.yml");
@@ -78,7 +85,7 @@ function getRemoteConfigUrl(source: string) {
 let remote:
     | {
           source: string;
-          value?: Hackathon;
+          value?: HackathonConfig;
           etag?: string;
           nextCheck: number;
           pending?: Promise<void>;
@@ -107,7 +114,7 @@ async function refreshRemote(state: NonNullable<typeof remote>) {
     }
 }
 
-export async function readHackathonConfig(): Promise<Hackathon> {
+export async function readHackathonConfig(): Promise<HackathonConfig> {
     const source = getHackathonConfigSource();
     if (source === "local") {
         try {

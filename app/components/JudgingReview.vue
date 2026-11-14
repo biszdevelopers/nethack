@@ -72,12 +72,12 @@ onMounted(() => nextTick(() => reviewHeading.value?.focus()));
                     <span class="font-medium">{{ criterion.name }}</span>
                     <span class="ml-2 text-sm text-muted">{{ criterion.weight }}%</span>
                 </dt>
-                <dd class="shrink-0 font-semibold tabular-nums">
+                <span class="shrink-0 font-semibold tabular-nums">
                     {{ scores[criterion.id] }}
                     <span class="font-normal text-muted">
-                        ({{ criterion.minScore }}–{{ criterion.maxScore }})
+                        /{{ criterion.maxScore }}
                     </span>
-                </dd>
+                </span>
             </div>
         </dl>
 

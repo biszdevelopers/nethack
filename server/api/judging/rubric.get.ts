@@ -5,12 +5,14 @@ import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { rubricVersions } from "~~/server/database/schema";
 import { firstRow } from "~~/server/utils/database/query";
 import { resolveJudgeCommentGuidance } from "~~/shared/judge-comments";
+import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         await requireUser(event, NethackPermissions.Judging.assignmentsRead);
         const season = await getActiveSeason(event);
-        if (!season?.rubric_version_id) {
+        const versionId = season && (await resolveLiveRubricVersionId(event, season));
+        if (!season || !versionId) {
             throw createError({
                 statusCode: 409,
                 message: "The active season does not have a rubric.",
@@ -21,7 +23,7 @@ export default defineEventHandler(
             event.context.drizzle
                 .select()
                 .from(rubricVersions)
-                .where(eq(rubricVersions.id, season.rubric_version_id))
+                .where(eq(rubricVersions.id, versionId))
                 .limit(1),
         );
         if (!version || version.season_id !== season.id) {
