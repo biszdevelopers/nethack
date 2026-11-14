@@ -25,7 +25,7 @@ $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/basishacks_e2
 bun run test:e2e
 ```
 
-The canonical command is `bun run test`, which executes `vitest run --pool=forks --reporter=json | bun run test:meta`. This resolves Nuxt's `~~/` and `~/` path aliases through `vitest.config.ts`, loads `tests/setup.ts` before each test file, and automatically generates `tests/.test-meta.json` with the current test count. The `test:meta` script reads the vitest JSON output from stdin and writes a summary file used by the VitePress documentation's `<TestCount />` component for dynamic test count display.
+The canonical command is `bun run test`, which executes `vitest run --pool=forks --reporter=json --outputFile=.tmp-vitest/test-results.json` and then `bun run test:meta .tmp-vitest/test-results.json`. This resolves Nuxt's `~~/` and `~/` path aliases through `vitest.config.ts`, loads `tests/setup.ts` before each test file, and automatically generates `tests/.test-meta.json` with the current test count. The `test:meta` script reads the Vitest JSON report file (falling back to stdin when no path is given) and writes a summary file used by the VitePress documentation's `<TestCount />` component for dynamic test count display.
 
 ## Coverage Policy
 

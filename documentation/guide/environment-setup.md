@@ -140,6 +140,14 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 | --- | --- | --- |
 | `CURRENT_URL_ORIGIN` | Public HTTPS origin used for the callback and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. Required in production; local development defaults to `http://localhost:3000`. | `http://localhost:3000` |
 
+#### Live manifest and local caches
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. | `local` |
+| `HACKATHON_CACHE_PATH` | File that stores the last successfully fetched remote manifest, used when the assets server is unavailable at startup | `assets/hackathon-config.yml` |
+| `BASIS_AUTH_PICTURE_CACHE_DIR` | Directory that stores basis-auth avatar bytes so profile pictures survive a provider outage | `assets/basis-auth-pictures` |
+
 #### Integrations & Server
 
 | Variable | Description | Default |
@@ -170,6 +178,17 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 | --- | --- | --- |
 | `DISABLE_DEBUG_ROUTES` | Set to any truthy value to disable debug routes outside production; production disables them automatically | unset |
 
+#### Tooling only
+
+These are read by development scripts, never by the running server.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `PLAYWRIGHT_BASE_URL` | Base URL used by the end-to-end Playwright suite | dev server origin |
+| `VPS_RELEASE_OUTPUT_DIR` | Directory `bun run release:package` writes the deployable bundle into | `release-package` |
+| `VPS_RELEASE_INCLUDE_NODE_MODULES` | Set to `1` to copy production `node_modules` into the release bundle | unset |
+| `BENCHMARK_HEADERS_JSON` | JSON object of extra request headers for `bun run benchmark:vps` | unset |
+
 ### Complete .env Example
 
 ```bash
@@ -184,6 +203,13 @@ BASIS_AUTH_ISSUER=http://localhost:3000
 BASIS_AUTH_CLIENT_ID=your_basis_auth_client_id
 BASIS_AUTH_CLIENT_SECRET=your_basis_auth_client_secret
 BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
+
+# OPTIONAL - Live event configuration source: local | manifest URL | database
+YAML_SOURCE_HACKATHON=local
+
+# OPTIONAL - Remote manifest backup and basis-auth avatar cache locations
+# HACKATHON_CACHE_PATH=assets/hackathon-config.yml
+# BASIS_AUTH_PICTURE_CACHE_DIR=assets/basis-auth-pictures
 
 # OPTIONAL - Microsoft Entra ID tenant ID (directory ID)
 MICROSOFT_TENANT_ID=your_microsoft_tenant_id_here
