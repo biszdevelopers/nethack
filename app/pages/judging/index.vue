@@ -2,6 +2,8 @@
 import JudgeProgressCard from "~/components/JudgeProgressCard.vue";
 import { NethackPermissions } from "~~/shared/permissions";
 
+useHead({ title: `Judging | ${WEBSITE_NAME}` });
+
 definePageMeta({
     middleware: ["auth"],
 });
