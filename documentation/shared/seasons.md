@@ -41,9 +41,9 @@ The `hackathon` table remains a singleton (`id = 1`) holding the **live** state.
 
 ## Score / Rank Visibility
 
-`getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ showScores, showRanking }`. Each season's own tweaks are authoritative for its teams; teams whose season no longer exists fall back to the live `hackathon` singleton row.
+`getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ resultsPublished, showScores, showRanking }`. Each season's own settings are authoritative for its teams; teams whose season no longer exists fall back to the live `hackathon` singleton row.
 
-Published judge feedback is available to current and past members of the evaluated team only after `results_published` is enabled. Score details follow `show_scores`, while rank follows `show_ranking`. Feedback omits judge identifiers and randomizes evaluation order. Administrators with the all-permissions grant can inspect the full feedback before publication. Judge names and account IDs are omitted in both participant and administrator views.
+Judge comments are available to current and past team members only after `results_published` is enabled and at least three judges have submitted evaluations for that team. Until then, the endpoint withholds all comments and individual score details to reduce the chance of identifying a judge. Public feedback returns only comment text and randomizes evaluation order; it omits judge identities and rubric or track metadata. Administrators with the all-permissions grant can inspect full evaluations, including judge names and account IDs, before or after publication. Participants see the overall score only when results are published, at least three evaluations exist, and `show_scores` is enabled; rank requires published results, at least three evaluations, and `show_ranking`.
 
 `score_curve_preset` affects the displayed score returned to participants; it never changes persisted judge evaluations, the computed uncurved average, or rankings. The presets are `original` (unchanged), `gentle`, `moderate`, and `strong`; configure the season in the administration UI.
 
@@ -57,8 +57,8 @@ Published judge feedback is available to current and past members of the evaluat
 | GET | `/api/seasons/:id/tweaks` | Public, read-only | Get safe public season details; unreleased themes and organizer-only fields are hidden |
 | PATCH | `/api/seasons/:id/tweaks` | `PORTAL_SEASONS_EDIT` or admin | Update a season's tweakable settings |
 | PATCH | `/api/admin/seasons/:id/score-curve` | Season update permission | Set that season's score display curve |
-| GET | `/api/teams/:id/scores` | Current or past team member | Read anonymous feedback after results are published |
-| GET | `/api/admin/teams/:id/scores` | Admin with the all-permissions grant | Read full team score feedback, including before publication; judge identities remain hidden |
+| GET | `/api/teams/:id/scores` | Current or past team member | Read anonymous comments after publication and at least three evaluations |
+| GET | `/api/admin/teams/:id/scores` | Admin with the all-permissions grant | Read full team score feedback, including judge identities, before or after publication |
 
 For both season-tweaks routes, the `id` must be a positive safe integer. Missing or malformed IDs return `400`; a valid ID for a season that does not exist returns `404`. The public `GET` response uses the `PublicSeason` allowlist and redacts theme values while a season has not started or is paused.
 
