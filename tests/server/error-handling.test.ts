@@ -37,6 +37,7 @@ const allApiFiles = [
     "server/api/auth/basis/callback.get.ts",
     "server/api/debug/upload.post.ts",
     "server/api/debug/files.get.ts",
+    "server/api/assets/references/index.get.ts",
     "server/api/debug/deepseek/sessions/index.post.ts",
     "server/api/debug/deepseek/sessions/[id]/index.get.ts",
     "server/api/debug/deepseek/sessions/[id]/index.delete.ts",
@@ -195,7 +196,8 @@ describe("Failed request error responses", () => {
             resolve(import.meta.dirname, "..", "..", "server", "api", "debug", "upload.post.ts"),
             "utf-8",
         );
-        expect(source).toContain("400");
+        expect(source).toContain("getValidatedQuery");
+        expect(source).toContain("DebugUploadQuery");
         expect(source).not.toMatch(/return createError/);
 
         const multipart = readFileSync(
