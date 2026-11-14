@@ -3,6 +3,8 @@ import { getUserPastTeams } from "~~/server/utils/database/members";
 import { getTeamById } from "~~/server/utils/database/teams";
 import { UserIdParams } from "~~/shared/schemas";
 import { hasNethackPermission, NethackPermissions } from "~~/shared/permissions";
+import { getTeamEvaluationCounts } from "~~/server/utils/database/scores";
+import { MIN_PUBLIC_FEEDBACK_REVIEWERS } from "~~/server/utils/score-feedback";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -33,6 +35,7 @@ export default defineEventHandler(
 
         const allTeamIds = [...(team ? [team.id] : []), ...pastTeams.map((t) => t.id)];
         const awardsByTeam = await getAwardsForTeams(event, allTeamIds);
+        const evaluationsByTeam = await getTeamEvaluationCounts(event, allTeamIds);
 
         // Scores and ranks are only shown to participants when the toggles of
         // each team's own season are enabled; dev-portal users always see them.
@@ -43,9 +46,19 @@ export default defineEventHandler(
         );
         const optionsFor = (t: Team) => {
             const visibility = resolveVisibility(t.season_id);
+            const meetsAnonymityThreshold =
+                (evaluationsByTeam.get(t.id) ?? 0) >= MIN_PUBLIC_FEEDBACK_REVIEWERS;
             return {
-                withScore: privileged || visibility.showScores,
-                withRank: privileged || visibility.showRanking,
+                withScore:
+                    privileged ||
+                    (visibility.resultsPublished &&
+                        visibility.showScores &&
+                        meetsAnonymityThreshold),
+                withRank:
+                    privileged ||
+                    (visibility.resultsPublished &&
+                        visibility.showRanking &&
+                        meetsAnonymityThreshold),
             };
         };
 
