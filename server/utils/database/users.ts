@@ -36,6 +36,7 @@ export interface BasisAuthIdentity {
     subject: string;
     email: string;
     name?: string;
+    picture?: string;
 }
 
 /**
@@ -48,6 +49,10 @@ export async function findOrLinkBasisAuthUser(
 ): Promise<User> {
     const normalizedEmail = identity.email.trim().toLowerCase();
     const trimmedName = identity.name?.trim() || null;
+    const profileUpdates = {
+        ...(trimmedName ? { name: trimmedName } : {}),
+        ...(identity.picture ? { profile_picture: identity.picture } : {}),
+    };
 
     return event.context.drizzle.transaction(async (tx) => {
         const linked = await firstRow(
@@ -81,7 +86,7 @@ export async function findOrLinkBasisAuthUser(
             return (await firstRow(
                 tx
                     .update(users)
-                    .set({ email: normalizedEmail, ...(trimmedName ? { name: trimmedName } : {}) })
+                    .set({ email: normalizedEmail, ...profileUpdates })
                     .where(eq(users.id, linked.id))
                     .returning(),
             ))!;
@@ -109,7 +114,7 @@ export async function findOrLinkBasisAuthUser(
                     .set({
                         auth_issuer: identity.issuer,
                         auth_subject: identity.subject,
-                        ...(trimmedName ? { name: trimmedName } : {}),
+                        ...profileUpdates,
                     })
                     .where(eq(users.id, emailMatch.id))
                     .returning(),
@@ -122,6 +127,7 @@ export async function findOrLinkBasisAuthUser(
                 .values({
                     email: normalizedEmail,
                     name: trimmedName,
+                    profile_picture: identity.picture,
                     auth_issuer: identity.issuer,
                     auth_subject: identity.subject,
                 })

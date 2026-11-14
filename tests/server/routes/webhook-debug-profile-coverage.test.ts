@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
         path.endsWith(".png") ? "image/png" : "application/octet-stream",
     ),
     openStoredAsset: vi.fn(async () => mocks.profileAsset),
+    fetch: vi.fn(),
     sendStream: vi.fn((_event: unknown, stream: unknown) => ({ streamed: stream })),
 }));
 
@@ -45,6 +46,7 @@ vi.mock("~~/server/utils/assets", () => ({
     openStoredAsset: mocks.openStoredAsset,
 }));
 vi.mock("h3", () => ({ sendStream: mocks.sendStream }));
+vi.mock("node-fetch", () => ({ default: mocks.fetch }));
 
 describe("Microsoft webhook route actions", () => {
     let update: (event: any) => Promise<any>;
@@ -285,10 +287,15 @@ describe("profile picture route", () => {
         mocks.openStoredAsset.mockReset().mockResolvedValue(mocks.profileAsset);
         mocks.assetContentType.mockClear();
         mocks.sendStream.mockClear();
+        mocks.fetch.mockReset();
+        vi.stubEnv("BASIS_AUTH_ISSUER", "https://auth.example.test");
         handler = (await import("~~/server/api/users/[id]/profile_picture.get")).default;
     });
 
-    afterEach(() => vi.unstubAllGlobals());
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+    });
 
     it("returns not found for an unknown user", async () => {
         await expect(handler(event)).rejects.toMatchObject({ statusCode: 404 });
@@ -329,7 +336,68 @@ describe("profile picture route", () => {
             "Content-Type": "image/png",
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, max-age=300",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
         });
+        expect(mocks.openStoredAsset).not.toHaveBeenCalled();
+    });
+
+    it("serves the provider picture without forwarding credentials or following redirects", async () => {
+        const url = "https://auth.example.test/api/picture/person";
+        const bytes = Uint8Array.from([71, 73, 70]);
+        mocks.user = { id: 1, email: "person@example.test", profile_picture: url };
+        mocks.fetch.mockResolvedValue({
+            ok: true,
+            headers: new Headers({ "content-type": "image/gif; charset=binary" }),
+            arrayBuffer: async () => bytes.buffer,
+        });
+
+        await expect(handler(event)).resolves.toEqual(Buffer.from(bytes));
+        expect(mocks.fetch).toHaveBeenCalledWith(url, {
+            redirect: "error",
+            signal: expect.any(AbortSignal),
+            size: 5 * 1024 * 1024,
+        });
+        expect(event.headers["Content-Type"]).toBe("image/gif");
+        expect(mocks.openStoredAsset).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ["another origin", "https://other.example.test/photo.png", undefined],
+        ["a credentialed URL", "https://user:pass@auth.example.test/photo.png", undefined],
+        ["an unsupported URL scheme", "data:image/png;base64,abc", undefined],
+        ["a provider error", "https://auth.example.test/api/picture/person", new Error("offline")],
+        [
+            "an unsuccessful response",
+            "https://auth.example.test/api/picture/person",
+            { status: 404 },
+        ],
+        [
+            "a non-image response",
+            "https://auth.example.test/api/picture/person",
+            { status: 200, type: "text/html" },
+        ],
+        [
+            "an empty image",
+            "https://auth.example.test/api/picture/person",
+            { status: 200, type: "image/png" },
+        ],
+    ])("falls back to an identicon for %s", async (_label, url, upstream) => {
+        mocks.user = { id: 1, email: "person@example.test", profile_picture: url };
+        if (upstream instanceof Error) {
+            mocks.fetch.mockRejectedValue(upstream);
+        } else if (upstream) {
+            mocks.fetch.mockResolvedValue(
+                new Response(null, {
+                    status: upstream.status,
+                    headers: upstream.type ? { "content-type": upstream.type } : {},
+                }),
+            );
+        }
+
+        const response = await handler(event);
+        expect(response).toHaveProperty("pipe");
+        expect(event.headers["Content-Type"]).toBe("image/png");
+        expect(mocks.fetch).toHaveBeenCalledTimes(upstream ? 1 : 0);
         expect(mocks.openStoredAsset).not.toHaveBeenCalled();
     });
 });

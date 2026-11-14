@@ -92,15 +92,15 @@ These interfaces match the SQL schema exactly. They include all columns, includi
 
 ### `User`
 
-| Field             | Type             | Description                                    |
-| ----------------- | ---------------- | ---------------------------------------------- |
-| `id`              | `number`         | Primary key                                    |
-| `email`           | `string`         | User email (`@basischina.com`)                 |
-| `role`            | `string`         | Space-separated URI-encoded permission strings |
-| `name`            | `string \| null` | Display name                                   |
-| `team_id`         | `number \| null` | Foreign key to team                            |
-| `profile_theme`   | `string \| null` | Profile theme as `"mode\|value"` string        |
-| `profile_picture` | `string \| null` | Profile picture path                           |
+| Field             | Type             | Description                                       |
+| ----------------- | ---------------- | ------------------------------------------------- |
+| `id`              | `number`         | Primary key                                       |
+| `email`           | `string`         | User email (`@basischina.com`)                    |
+| `role`            | `string`         | Space-separated URI-encoded permission strings    |
+| `name`            | `string \| null` | Display name                                      |
+| `team_id`         | `number \| null` | Foreign key to team                               |
+| `profile_theme`   | `string \| null` | Profile theme as `"mode\|value"` string           |
+| `profile_picture` | `string \| null` | Basis-auth picture URL or legacy local asset path |
 
 ### `Ballot`
 
@@ -205,7 +205,7 @@ Parsed from the database `"mode|value"` string format.
 | `name` | `string \| null` | Display name |
 | `team_id` | `number \| null` (optional) | Included only in authorized self/admin responses |
 | `profile_theme` | `ProfileTheme \| null` | Parsed profile theme |
-| `profile_picture` | `string \| null` | Profile picture path |
+| `profile_picture` | `string \| null` | Basis-auth picture URL or legacy local asset path |
 
 Public lookups by another user's ID omit both `email` and `team_id` to prevent contact and roster enumeration. Roles are not part of this public response.
 

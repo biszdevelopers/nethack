@@ -34,6 +34,8 @@ const SOURCE_METADATA_TABLES = new Set([
     "_drizzle_migrations",
     "_cf_METADATA",
 ]);
+const RETIRED_SESSION_TABLE = "basis_auth_sessions";
+const COMPAT_ARCHIVE_TABLE = "legacy_schema_compat_archive";
 
 const RELATIONSHIPS = [
     ["teams", "season_id", "seasons", "id", true],
@@ -130,7 +132,11 @@ export function sourceTables(source) {
 
 export function validateSourceTables(availableTables) {
     const unknownTables = [...availableTables].filter(
-        (tableName) => !SOURCE_TABLES.includes(tableName) && !SOURCE_METADATA_TABLES.has(tableName),
+        (tableName) =>
+            !SOURCE_TABLES.includes(tableName) &&
+            !SOURCE_METADATA_TABLES.has(tableName) &&
+            tableName !== RETIRED_SESSION_TABLE &&
+            tableName !== COMPAT_ARCHIVE_TABLE,
     );
     if (unknownTables.length) {
         throw new Error(
@@ -333,6 +339,23 @@ export function prepareLegacyColumnRows(source, availableTables) {
             });
         }
     }
+    if (availableTables.has(COMPAT_ARCHIVE_TABLE)) {
+        for (const row of rowsFromSource(source, COMPAT_ARCHIVE_TABLE)) {
+            if (
+                typeof row.table_name !== "string" ||
+                typeof row.row_key !== "string" ||
+                typeof row.payload !== "string" ||
+                !Number.isSafeInteger(row.archived_at)
+            ) {
+                throw new Error("legacy_schema_compat_archive contains an unexpected row format.");
+            }
+            legacyRows.push({
+                table_name: COMPAT_ARCHIVE_TABLE,
+                row_key: JSON.stringify([row.table_name, row.row_key]),
+                payload: row,
+            });
+        }
+    }
     return legacyRows;
 }
 
@@ -484,6 +507,9 @@ export function validateSource(source, availableTables) {
         ]),
     );
     const targetCountExpectations = { ...counts };
+    for (const table of [RETIRED_SESSION_TABLE, COMPAT_ARCHIVE_TABLE]) {
+        if (availableTables.has(table)) counts[table] = countSourceRows(source, table);
+    }
     if (seasonSchema.kind === "single-hackathon") targetCountExpectations.seasons = 1;
     targetCountExpectations.team_scores = orphanedTeamScores.importableRowCount;
     return {
@@ -535,6 +561,7 @@ export async function ensureEmptyTarget(
     sql,
     columnsByTable,
     sourceColumnsForTargetCheck = new Map(),
+    sourceUsers,
 ) {
     const counts = {};
     for (const tableName of IMPORT_TABLES) {
@@ -549,7 +576,26 @@ export async function ensureEmptyTarget(
         }
     }
 
-    const seedPlan = inspectFreshImportTarget({ counts, rows });
+    let existingUser;
+    if (sourceUsers && counts.users === 1) {
+        const [target] =
+            await sql`SELECT id, email, auth_issuer, auth_subject, profile_picture FROM users`;
+        const matches = sourceUsers.filter(
+            (user) =>
+                user.email?.trim().toLowerCase() === target.email.trim().toLowerCase() &&
+                user.auth_issuer === target.auth_issuer &&
+                user.auth_subject === target.auth_subject,
+        );
+        if (target.auth_issuer && target.auth_subject && matches.length === 1) {
+            existingUser = {
+                targetId: target.id,
+                sourceId: matches[0].id,
+                picture: target.profile_picture,
+            };
+        }
+    }
+    const seedCounts = existingUser ? { ...counts, users: 0 } : counts;
+    const seedPlan = inspectFreshImportTarget({ counts: seedCounts, rows });
     if (!seedPlan) {
         const populated = Object.entries(counts)
             .filter(([, count]) => count > 0)
@@ -577,7 +623,7 @@ export async function ensureEmptyTarget(
             );
         }
     }
-    return seedPlan;
+    return existingUser ? { ...seedPlan, existingUser } : seedPlan;
 }
 
 // This map is assigned after opening SQLite so target compatibility checks can
@@ -747,6 +793,7 @@ export async function importToPostgres(
     sourceInfo,
     {
         databaseUrl = process.env.DATABASE_URL?.trim(),
+        preserveMatchedUser = false,
         postgresClient = postgres,
         logger = console,
     } = {},
@@ -775,10 +822,12 @@ export async function importToPostgres(
             await tx.unsafe(
                 `LOCK TABLE ${IMPORT_TABLES.map(quote).join(", ")} IN ACCESS EXCLUSIVE MODE`,
             );
+            const sourceUsers = rowsFromSource(source, "users");
             const seedPlan = await ensureEmptyTarget(
                 tx,
                 columnsByTable,
                 sourceColumnsForTargetCheck,
+                preserveMatchedUser ? sourceUsers : undefined,
             );
             await clearFreshImportTargetSeeds(tx, seedPlan);
 
@@ -801,7 +850,14 @@ export async function importToPostgres(
                     sourcing: team.sourcing ?? "",
                 }),
             );
-            await insertRows(tx, "users", rowsFromSource(source, "users"), columnsByTable);
+            const retainedUser = seedPlan.existingUser;
+            if (retainedUser) await tx`DELETE FROM users WHERE id = ${retainedUser.targetId}`;
+            await insertRows(tx, "users", sourceUsers, columnsByTable, ({ id }) => {
+                if (retainedUser?.sourceId === id && retainedUser.picture) {
+                    return { profile_picture: retainedUser.picture };
+                }
+                return {};
+            });
 
             const seasonRubricIds = await insertRubricVersions(tx, sourceInfo.seasons);
             const activeSeasonId = Number(
@@ -914,6 +970,10 @@ export async function importToPostgres(
                             : {}),
                         targetCounts,
                         ignoredMetadataTables: sourceInfo.metadataTables,
+                        discardedBasisAuthSessions: sourceInfo.counts[RETIRED_SESSION_TABLE] ?? 0,
+                        ...(seedPlan.existingUser
+                            ? { preservedBasisAuthUserId: seedPlan.existingUser.sourceId }
+                            : {}),
                         legacyArchiveRows: legacyActual,
                         teamScoreRows: getTeamScoreImportSummary(sourceInfo),
                         judgeScoresArtifactRows: {
@@ -968,6 +1028,7 @@ export async function main({
                             ? { legacySeasonMapping: { seasonId: LEGACY_SEASON_ID } }
                             : {}),
                         ignoredMetadataTables: sourceInfo.metadataTables,
+                        discardedBasisAuthSessions: sourceInfo.counts[RETIRED_SESSION_TABLE] ?? 0,
                         teamScoreRows: getTeamScoreImportSummary(sourceInfo),
                         legacyArchiveRows:
                             sourceInfo.legacyColumnRows.length +
@@ -988,6 +1049,7 @@ export async function main({
         }
         await importToPostgres(source, availableTables, sourceInfo, {
             databaseUrl: env.DATABASE_URL?.trim(),
+            preserveMatchedUser: argv.includes("--preserve-matched-user"),
             postgresClient,
             logger,
         });

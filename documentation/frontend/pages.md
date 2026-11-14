@@ -57,7 +57,7 @@ The page loads the signed-in user's API record through `useApiUser()`. This wait
 
 - Displays greeting with user name or email
 - **Name editing** — text input validated by `UpdateUserRequest`
-- **Avatar upload** — `UFileUpload` with live preview via `UserAvatar`. Supports removing the current avatar. Converts uploaded files to base64 before sending.
+- **Avatar** — displays the basis-auth picture through `UserAvatar`. The image URL is synchronized at login.
 - **Profile theme image** — `UFileUpload` for background image. Displays the current theme as a CSS background. Affects the user's profile page (`/user/{id}`) and `UserPopover` card.
 - **Logout button** — clears the session and navigates to `/`
 

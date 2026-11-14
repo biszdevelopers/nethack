@@ -286,11 +286,15 @@ describe("basis-auth authorization-code flow", () => {
             refresh_token: "refresh-token",
             expires_in: 300,
             scope: "openid Profile.read",
-            claims: () => ({ sub: "subject-1" }),
+            claims: () => ({
+                sub: "subject-1",
+                picture: "https://auth.example.test/api/picture/subject-1",
+            }),
         });
         oidc.fetchUserInfo.mockResolvedValue({
             email: "user@example.com",
             name: "User",
+            picture: "data:image/png;base64,ignored",
         });
 
         await expect(
@@ -309,6 +313,7 @@ describe("basis-auth authorization-code flow", () => {
                 subject: "subject-1",
                 email: "user@example.com",
                 name: "User",
+                picture: "https://auth.example.test/api/picture/subject-1",
             },
             tokens: {
                 accessToken: "access-token",
@@ -339,6 +344,26 @@ describe("basis-auth authorization-code flow", () => {
         expect(sanitizePostLoginRedirect("/dashboard?tab=team")).toBe("/dashboard?tab=team");
         expect(sanitizePostLoginRedirect("https://evil.example")).toBeUndefined();
         expect(sanitizePostLoginRedirect("//evil.example")).toBeUndefined();
+    });
+
+    it("uses the UserInfo picture URL when the ID token has no picture URL", async () => {
+        const picture = "https://auth.example.test/api/picture/subject-1";
+        oidc.authorizationCodeGrant.mockResolvedValue({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            expires_in: 300,
+            claims: () => ({ sub: "subject-1" }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({ email: "user@example.com", picture });
+
+        await expect(
+            completeBasisAuthFlow(new URL("https://hacks.example.test/callback"), {
+                state: "state",
+                nonce: "nonce",
+                codeVerifier: "verifier",
+                startedAt: Date.now(),
+            }),
+        ).resolves.toMatchObject({ identity: { picture } });
     });
 
     it.each([undefined, "", "dashboard", "//evil.example", "/\\evil.example/path"])(

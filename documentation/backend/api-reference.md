@@ -95,24 +95,24 @@ Get a single user's profile.
 
 ### PATCH `/api/users/:id`
 
-Update user profile (name, avatar, profile theme image).
+Update the user’s display name or profile theme image. Avatars synchronize from basis-auth on login.
 
 | Field | Details |
 | --- | --- |
 | **Auth** | The user themselves |
-| **Validation** | `UpdateUserRequest` — `{ name?, avatar?, profile_theme_image? }` |
+| **Validation** | `UpdateUserRequest` — `{ name?, profile_theme_image? }` |
 | **Response** | `{ message: string }` |
-| **File handling** | Avatar and theme images are validated as base64 data URLs, limited to 7 MiB decoded, and stored as persistent assets |
+| **File handling** | Theme images are validated as base64 data URLs, limited to 7 MiB decoded, and stored as persistent assets |
 
 ### GET `/api/users/:id/profile_picture`
 
 Get a user's profile picture.
 
-| Field        | Details                                                           |
-| ------------ | ----------------------------------------------------------------- |
-| **Auth**     | None                                                              |
-| **Response** | Image file (served from `/userast/` directory)                    |
-| **Fallback** | Generates a 200px jdenticon identicon if no custom picture exists |
+| Field        | Details                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| **Auth**     | None                                                                |
+| **Response** | Image from the configured basis-auth issuer or a legacy local asset |
+| **Fallback** | Generates a 200px jdenticon identicon if no picture is available    |
 
 ---
 

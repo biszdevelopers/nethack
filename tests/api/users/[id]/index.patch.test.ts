@@ -158,7 +158,6 @@ const VALID_GIF_BASE64 = "data:image/gif;base64," + Buffer.from("GIF89a").toStri
 const VALID_WEBP_BASE64 =
     "data:image/webp;base64," + Buffer.from("RIFF\0\0\0\0WEBP").toString("base64");
 const OLD_THEME_ASSET = `profiles/${"a".repeat(64)}.png`;
-const OLD_AVATAR_ASSET = `profiles/${"b".repeat(64)}.jpg`;
 
 function tooLargeBase64(): string {
     const oversized = Buffer.alloc(7 * 1024 * 1024 + 1, 0);
@@ -277,7 +276,7 @@ describe("PATCH /api/users/:id", () => {
         const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
         mockParams.values["id"] = String(alice.id);
         mockSession.value = { user: { id: alice.id } };
-        mockBody.value = { name: "Should Not Persist", avatar: "not-a-data-url" };
+        mockBody.value = { name: "Should Not Persist", profile_theme_image: "not-a-data-url" };
 
         await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
 
@@ -291,11 +290,6 @@ describe("PATCH /api/users/:id", () => {
             field: "profile_theme_image",
             dataUrl: VALID_PNG_BASE64,
             message: "Published profile theme path does not match its digest",
-        },
-        {
-            field: "avatar",
-            dataUrl: VALID_PNG_BASE64,
-            message: "Published avatar path does not match its digest",
         },
     ])(
         "rejects a $field publication that does not match its digest",
@@ -590,148 +584,25 @@ describe("PATCH /api/users/:id", () => {
         });
     });
 
-    describe("avatar", () => {
-        it("clears the existing avatar reference without deleting its asset", async () => {
-            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
-            ctx.drizzle
-                .update(users)
-                .set({ profile_picture: OLD_AVATAR_ASSET })
-                .where(eq(users.id, alice.id))
-                .run();
+    it("does not treat legacy or remote profile references as managed GC lock paths", async () => {
+        const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+        ctx.drizzle
+            .update(users)
+            .set({
+                profile_picture: "legacy-avatar.png",
+                profile_theme: "url|https://cdn.example.test/legacy-theme.png",
+            })
+            .where(eq(users.id, alice.id))
+            .run();
+        mockParams.values["id"] = String(alice.id);
+        mockSession.value = { user: { id: alice.id } };
+        mockBody.value = { profile_theme_image: null };
 
-            mockParams.values["id"] = String(alice.id);
-            mockSession.value = { user: { id: alice.id } };
-            mockBody.value = { avatar: null };
-
-            const result = await handler(createEvent());
-
-            expect(result).toEqual({ message: "Your profile is updated" });
-            expect(withAssetLifecycleLocks).toHaveBeenCalledWith(
-                ctx.drizzle,
-                [OLD_AVATAR_ASSET],
-                expect.any(Function),
-            );
-            expect(createUserAssetContentAddressed).not.toHaveBeenCalled();
-
-            const updated = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
-            expect(updated!.profile_picture).toBeNull();
+        await expect(handler(createEvent())).resolves.toEqual({
+            message: "Your profile is updated",
         });
 
-        it("rejects an unsupported avatar mime type", async () => {
-            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
-
-            mockParams.values["id"] = String(alice.id);
-            mockSession.value = { user: { id: alice.id } };
-            mockBody.value = { avatar: "data:application/pdf;base64,JVBERi0=" };
-
-            await expect(handler(createEvent())).rejects.toMatchObject({
-                statusCode: 400,
-                message:
-                    "Invalid image type for avatar. Only JPEG, PNG, GIF, and WebP are allowed.",
-            });
-        });
-
-        it("rejects an avatar that exceeds the maximum size", async () => {
-            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
-
-            mockParams.values["id"] = String(alice.id);
-            mockSession.value = { user: { id: alice.id } };
-            mockBody.value = { avatar: tooLargeBase64() };
-
-            await expect(handler(createEvent())).rejects.toMatchObject({
-                statusCode: 413,
-                message: "Avatar image is too large. Maximum size is 7MB.",
-            });
-        });
-
-        it("uploads a new avatar for each accepted image type", async () => {
-            const testCases = [
-                { dataUrl: VALID_JPEG_BASE64, ext: "jpg" },
-                { dataUrl: VALID_PNG_BASE64, ext: "png" },
-                { dataUrl: VALID_GIF_BASE64, ext: "gif" },
-                { dataUrl: VALID_WEBP_BASE64, ext: "webp" },
-            ];
-
-            for (const { dataUrl, ext } of testCases) {
-                resetMockState();
-                createUserAssetContentAddressed.mockClear();
-                withAssetLifecycleLocks.mockClear();
-
-                const alice = seedUser(ctx, {
-                    email: `alice-avatar-${ext}@basischina.com`,
-                    name: "Alice",
-                });
-                ctx.drizzle
-                    .update(users)
-                    .set({ profile_picture: OLD_AVATAR_ASSET })
-                    .where(eq(users.id, alice.id))
-                    .run();
-
-                mockParams.values["id"] = String(alice.id);
-                mockSession.value = { user: { id: alice.id } };
-                mockBody.value = { avatar: dataUrl };
-
-                const result = await handler(createEvent());
-
-                expect(result).toEqual({ message: "Your profile is updated" });
-                expect(createUserAssetContentAddressed).toHaveBeenCalledWith(
-                    expect.any(Buffer),
-                    ext,
-                );
-                expect(withAssetLifecycleLocks.mock.calls[0]?.[1]).toContain(OLD_AVATAR_ASSET);
-
-                const updated = ctx.drizzle
-                    .select()
-                    .from(users)
-                    .where(eq(users.id, alice.id))
-                    .get();
-                expect(updated!.profile_picture).toMatch(
-                    new RegExp(`^profiles/[a-f0-9]{64}\\.${ext}$`),
-                );
-            }
-        });
-
-        it("uses one shared content address for identical avatar and theme bytes", async () => {
-            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
-            mockParams.values["id"] = String(alice.id);
-            mockSession.value = { user: { id: alice.id } };
-            mockBody.value = { avatar: VALID_PNG_BASE64, profile_theme_image: VALID_PNG_BASE64 };
-
-            await expect(handler(createEvent())).resolves.toEqual({
-                message: "Your profile is updated",
-            });
-
-            const updated = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
-            expect(updated!.profile_picture).toMatch(/^profiles\/[a-f0-9]{64}\.png$/);
-            expect(updated!.profile_theme).toBe(`url|${updated!.profile_picture}`);
-            expect(createUserAssetContentAddressed).toHaveBeenCalledTimes(2);
-            expect(withAssetLifecycleLocks.mock.calls[0]?.[1]).toEqual([updated!.profile_picture]);
-        });
-
-        it("does not treat legacy or remote profile references as managed GC lock paths", async () => {
-            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
-            ctx.drizzle
-                .update(users)
-                .set({
-                    profile_picture: "legacy-avatar.png",
-                    profile_theme: "url|https://cdn.example.test/legacy-theme.png",
-                })
-                .where(eq(users.id, alice.id))
-                .run();
-            mockParams.values["id"] = String(alice.id);
-            mockSession.value = { user: { id: alice.id } };
-            mockBody.value = { avatar: null, profile_theme_image: null };
-
-            await expect(handler(createEvent())).resolves.toEqual({
-                message: "Your profile is updated",
-            });
-
-            expect(withAssetLifecycleLocks).toHaveBeenCalledWith(
-                ctx.drizzle,
-                [],
-                expect.any(Function),
-            );
-            expect(removeUserAsset).not.toHaveBeenCalled();
-        });
+        expect(withAssetLifecycleLocks).toHaveBeenCalledWith(ctx.drizzle, [], expect.any(Function));
+        expect(removeUserAsset).not.toHaveBeenCalled();
     });
 });

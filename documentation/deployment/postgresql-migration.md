@@ -63,7 +63,7 @@ If the previous checkout stored legacy profile images in `public/userassets`, co
 
 ### 2. Provision and migrate an empty PostgreSQL database
 
-Configure `DATABASE_URL` and `DATABASE_POOL_MAX`, then run the bundled PostgreSQL migrations before importing. The importer accepts either an empty target or the complete, exact seed produced by `bun run db:migrate` (hackathon, Season 1, and the default rubric template/version). It removes those seed rows inside the import transaction before inserting SQLite history. Any partial or modified seed, or any other target data, stops the import without committing changes.
+Configure `DATABASE_URL` and `DATABASE_POOL_MAX`, then run the bundled PostgreSQL migrations before importing. The importer accepts either an empty target or the complete, exact seed produced by `bun run db:migrate` (hackathon, Season 1, and the default rubric template/version). It removes those seed rows inside the import transaction before inserting SQLite history. Partial or modified seed data causes the import to stop. By default, any additional target data also stops the import.
 
 ### 3. Check the SQLite source
 
@@ -84,6 +84,8 @@ With the old app stopped and the target database migrated but otherwise empty, r
 bun run db:import-sqlite -- --confirm
 ```
 
+For a target that contains the pristine seed and exactly one basis-auth-linked user, add `--preserve-matched-user` to the confirmed import command. The PostgreSQL user's normalized email, issuer, and subject must match exactly one SQLite user. The import adopts that user's SQLite ID and history and carries over the PostgreSQL profile picture if present. The check and replacement happen inside the import transaction. Back up the PostgreSQL target before using this option.
+
 The VPS release bundle includes the importer and its runtime dependencies. Bun reads SQLite through its built-in driver; Node.js uses the packaged `better-sqlite3` dependency. Both runtimes support the importer commands shown above.
 
 The importer preserves explicit IDs and records for teams, users, seasons, submissions, ballots, ballot scores, judge scores, peer-voting scores, legacy `sc_votes`, awards, OAuth application records, and historical team membership. It infers and persists a missing score `season_id` from its team's season (or the active/first season when a source team has no season ID), updates PostgreSQL serial sequences, creates one immutable `Imported legacy rubric` version per season, assigns legacy judge score rows to the version for their season, and writes removed SQLite-only fields (`users.role`, `users.age`, `oauth2_applications.proxy_microsoft`) and the legacy `judge_scores_migrate` artifact to `sqlite_legacy_data`. The CSV header row in that artifact is excluded; data-row counts are reported separately.
@@ -93,6 +95,8 @@ Season event timestamps accept ISO dates and safe epoch-millisecond values, incl
 The importer also supports the earlier single-hackathon schema when it has no `seasons` table and both `teams` and `team_scores` have no `season_id`. It requires exactly the canonical `hackathon` row (`id = 1`), maps that configuration to one active season with ID `1`, and assigns all imported teams and scores to that season. ISO-formatted legacy event timestamps are converted to epoch milliseconds for the PostgreSQL `bigint` columns; integer timestamps and exact zero-fraction numeric strings are retained as integer milliseconds. Missing score-visibility flags default to `0`. The import creates the same immutable default legacy rubric version for this season. A `seasons` table with no rows, or any mixed schema where season columns and tables do not agree, is rejected rather than guessed.
 
 Where the old SQLite `team_scores` table has a standalone `id` that the PostgreSQL composite key does not have, the value is retained in `sqlite_legacy_data` under the score's source row key while the score content, team ID, and judge ID are imported normally. Legacy `users.login_code` and `users.login_expiry` are deliberately discarded: these are one-time authentication credentials from the retired login flow, and neither is copied to PostgreSQL or the legacy archive. User IDs and team relationships remain preserved.
+
+Retired `basis_auth_sessions` rows are counted but their credentials stay in SQLite. The importer preserves `legacy_schema_compat_archive` rows, including their original keys, payload text, and timestamps, in `sqlite_legacy_data`.
 
 Older SQLite schemas did not record an immutable rubric definition with each score. The importer snapshots the rubric definition available in `shared/rubric.ts` at import time. It cannot reconstruct rubric edits that were never stored in SQLite.
 

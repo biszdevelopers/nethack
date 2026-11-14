@@ -11,6 +11,7 @@ import {
     type StoredBasisAuthTokens,
 } from "~~/server/utils/basis-auth-session";
 import { isValidE2ELoopbackOrigin } from "~~/server/utils/environment-validation";
+import { getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
@@ -216,6 +217,9 @@ export async function completeBasisAuthFlow(
             subject: claims.sub,
             email: userInfo.email,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
+            picture:
+                getBasisAuthPictureUrl(claims.picture, config.issuer) ??
+                getBasisAuthPictureUrl(userInfo.picture, config.issuer),
         },
         tokens: normalizeTokenSet(tokens),
     };

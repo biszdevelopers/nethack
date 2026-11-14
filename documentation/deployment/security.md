@@ -99,7 +99,7 @@ Asset download routes set `nosniff` and a restrictive content policy.
 
 When upgrading from a deployment with existing uploads, preserve the old `assets/` and `userassets/` collection contents in the new checkout's `/assets` directory before switching traffic. If the old deployment stored profile images in `public/userassets`, copy those files into the new `/assets/userassets/` collection with their original names. Review same-name conflicts before copying; do not overwrite files silently. Verify ownership/read access as the service account and keep a separate backup until profile images and permalink uploads have been checked after cutover.
 
-Avatar and profile theme uploads accept JPEG, PNG, and WebP images up to 7 MiB decoded. Their base64 JSON body is bounded by the 10 MiB profile-update limit; decoding validates the content size, base64 structure, and file signature before persisting the image.
+Profile theme uploads accept JPEG, PNG, GIF, and WebP images up to 7 MiB decoded. Their base64 JSON body is bounded by the 10 MiB profile-update limit; decoding validates the content size, base64 structure, and file signature before persisting the image. The avatar endpoint fetches provider images only from the configured basis-auth issuer origin, rejects redirects, and caps the response at 5 MiB with a five-second timeout.
 
 ## Session Security
 

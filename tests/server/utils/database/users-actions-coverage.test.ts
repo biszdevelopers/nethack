@@ -9,6 +9,7 @@ describe("existing basis-auth link update actions", () => {
         subject: "linked-subject",
         email: "member@example.test",
         name: "Initial Member",
+        picture: "https://auth.example.test/api/picture/linked-subject",
     };
 
     beforeEach(async () => {
@@ -28,6 +29,7 @@ describe("existing basis-auth link update actions", () => {
             id: initial.id,
             email: "updated-address@example.test",
             name: "Current Display Name",
+            profile_picture: identity.picture,
             auth_issuer: identity.issuer,
             auth_subject: identity.subject,
         });
@@ -42,6 +44,7 @@ describe("existing basis-auth link update actions", () => {
         expect(user).toMatchObject({
             email: "new-member@example.test",
             name: "Initial Member",
+            profile_picture: identity.picture,
             auth_issuer: identity.issuer,
             auth_subject: identity.subject,
         });
@@ -58,6 +61,7 @@ describe("existing basis-auth link update actions", () => {
             id: 1,
             email: identity.email,
             name: "Local Name",
+            profile_picture: identity.picture,
             auth_issuer: identity.issuer,
             auth_subject: identity.subject,
         });

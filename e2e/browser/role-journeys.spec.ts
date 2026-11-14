@@ -444,6 +444,15 @@ test("participant and admin complete mobile journeys while judging and review st
     try {
         markProgress("configuring the season and reusable rubric");
         await loginAs(admin.page, "admin@e2e.basishacks.invalid", "/developers/season");
+        const { body: session } = (await fetchApiJson(admin.page, "/api/auth/session")) as {
+            body: { user: { id: number } };
+        };
+        const picture = await admin.page.request.get(
+            `/api/users/${session.user.id}/profile_picture`,
+        );
+        expect(picture.ok()).toBe(true);
+        expect(picture.headers()["content-type"]).toBe("image/gif");
+        expect((await picture.body()).subarray(0, 6).toString()).toBe("GIF89a");
         await expect(
             admin.page.getByRole("heading", { name: "Hackathon Configuration" }),
         ).toBeVisible();

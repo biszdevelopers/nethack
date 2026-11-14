@@ -41,6 +41,8 @@ The `users` table contains nullable `auth_issuer` and `auth_subject` columns wit
 4. A returning user can update their local email from UserInfo when the address is available. The callback rejects email collisions and attempts to link a second identity to an already linked account.
 5. The callback requires an email from subject-validated UserInfo. Account linking depends on the configured basis-auth provider controlling which address it returns for each subject.
 
+The callback stores the basis-auth picture URL from the validated ID token or subject-validated UserInfo. The avatar endpoint loads it from the configured issuer and falls back to an identicon if the provider image is unavailable. Existing local avatars remain usable until a login supplies a provider URL.
+
 ## Roles and sessions
 
 The encrypted `basis-auth-tokens` cookie carries the basis-auth access token and refresh token; the browser cannot read it. Protected routes verify the access token from that cookie or an explicit bearer header before applying local authorization:

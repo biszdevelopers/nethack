@@ -307,22 +307,6 @@ export const UpdateUserRequest = z.object({
             z.null(),
         ])
         .optional(),
-    avatar: z
-        .union([
-            z
-                .instanceof(File)
-                .refine(
-                    (file) => file.size <= MAX_PROFILE_IMAGE_BYTES,
-                    `The image is too large. Please choose an image smaller than ${formatBytes(MAX_PROFILE_IMAGE_BYTES)}.`,
-                )
-                .refine(
-                    (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-                    "Please upload a valid image file (JPEG, PNG, GIF, or WebP)",
-                ),
-            z.string().startsWith("data"),
-            z.null(),
-        ])
-        .optional(),
 });
 export type UpdateUserRequest = z.infer<typeof UpdateUserRequest>;
 
