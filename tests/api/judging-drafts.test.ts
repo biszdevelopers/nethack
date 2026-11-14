@@ -120,6 +120,16 @@ describe("judging draft rubric recovery", () => {
     });
 
     it("saves a draft against the rubric the judge opened after an organizer publishes a new version", async () => {
+        mockBody.value = {
+            scores: { originality: 2 },
+            reasoning: "Start a draft with the rubric currently shown.",
+            rubric_version_id: originalRubricId,
+        };
+        await expect(saveDraftHandler(createEvent())).resolves.toMatchObject({
+            saved: true,
+            rubric_version_id: originalRubricId,
+        });
+
         const newerRubric = ctx.sqlite
             .prepare(
                 "INSERT INTO rubric_versions (season_id, version, name, definition) VALUES (?, ?, ?, ?)",
@@ -155,6 +165,28 @@ describe("judging draft rubric recovery", () => {
             reasoning: "Saved against the rubric already shown to this judge.",
             rubric_version_id: originalRubricId,
         });
+    });
+
+    it("rejects a new draft that starts with a stale rubric version", async () => {
+        const newerRubric = ctx.sqlite
+            .prepare(
+                "INSERT INTO rubric_versions (season_id, version, name, definition) VALUES (?, ?, ?, ?)",
+            )
+            .run(1, 2, "Updated rubric", JSON.stringify(DEFAULT_RUBRIC_DEFINITION));
+        ctx.sqlite
+            .prepare("UPDATE seasons SET rubric_version_id = ? WHERE id = 1")
+            .run(Number(newerRubric.lastInsertRowid));
+        mockBody.value = {
+            scores: { originality: 4 },
+            reasoning: "Attempt to start with the older rubric.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "The rubric changed. Reload the project before saving a draft.",
+        });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
     });
 
     it("does not let a draft switch to a different rubric version after it is pinned", async () => {
