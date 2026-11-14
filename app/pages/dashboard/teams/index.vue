@@ -46,6 +46,7 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
                 body: { name },
                 query: { add: true },
             });
+            await refresh();
             toast.add({
                 color: "success",
                 title: "Your team is created",
