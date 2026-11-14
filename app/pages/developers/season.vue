@@ -198,7 +198,7 @@ function onFieldChange() {
         if (typeof val === "number" && Number.isNaN(val)) continue;
         body[key] = val;
     }
-    body.season_id = activeSeasonId.value;
+    if (activeSeasonId.value !== null) body.season_id = activeSeasonId.value;
 
     // Chain onto the previous PATCH so they never race.
     // Each PATCH carries every field, so even if the user changed
