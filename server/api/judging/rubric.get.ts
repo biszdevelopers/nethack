@@ -4,6 +4,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { rubricVersions } from "~~/server/database/schema";
 import { firstRow } from "~~/server/utils/database/query";
+import { resolveJudgeCommentGuidance } from "~~/shared/judge-comments";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -30,6 +31,11 @@ export default defineEventHandler(
             });
         }
 
-        return { version_id: version.id, name: version.name, tracks: version.definition.tracks };
+        return {
+            version_id: version.id,
+            name: version.name,
+            tracks: version.definition.tracks,
+            commentGuidance: resolveJudgeCommentGuidance(version.definition.commentGuidance),
+        };
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );
