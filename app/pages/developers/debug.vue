@@ -9,13 +9,27 @@ definePageMeta({
 const file = ref<File | null>(null);
 const uploading = ref(false);
 const permalink = ref("");
+const referenceId = ref("");
+const releasingReferenceId = ref<string | null>(null);
 const safePermalink = computed(() => safeUrl(permalink.value));
 const uploadError = ref("");
 const loadingFiles = ref(false);
+const loadingReferences = ref(false);
+const references = ref<AssetReference[]>([]);
+const referencePage = ref(1);
+const referencePageSize = 20;
+const referencePagination = ref({ total: 0, total_pages: 0 });
 const fileLists = ref({
     assets: [] as Array<{ name: string; url: string }>,
     userast: [] as Array<{ name: string; url: string }>,
 });
+
+interface AssetReference {
+    id: string;
+    collection: "assets" | "userassets";
+    permalink: string;
+    created_at: string;
+}
 
 const items = ref(["static", "user"]);
 const value = ref("static");
@@ -39,6 +53,36 @@ const loadFiles = async () => {
     }
 };
 
+const loadReferences = async (page = referencePage.value) => {
+    loadingReferences.value = true;
+    try {
+        const response = await $fetch<{
+            items: AssetReference[];
+            page: number;
+            page_size: number;
+            total: number;
+            total_pages: number;
+        }>("/api/assets/references", {
+            query: { page, page_size: referencePageSize },
+        });
+        references.value = response.items;
+        referencePage.value = response.page;
+        referencePagination.value = {
+            total: response.total,
+            total_pages: response.total_pages,
+        };
+    } catch (err: any) {
+        uploadError.value = err.message || "Unable to load permalink references";
+    } finally {
+        loadingReferences.value = false;
+    }
+};
+
+const refreshUploads = async (resetReferencePage = false) => {
+    if (resetReferencePage) referencePage.value = 1;
+    await Promise.all([loadFiles(), loadReferences()]);
+};
+
 const handleFileChange = (event: Event) => {
     const target = event.target as HTMLInputElement;
     file.value = target.files?.[0] || null;
@@ -50,13 +94,14 @@ const uploadFile = async () => {
     uploading.value = true;
     uploadError.value = "";
     permalink.value = "";
+    referenceId.value = "";
 
     try {
         const formData = new FormData();
         formData.append("file", file.value);
 
         const params = new URLSearchParams({ mode: value.value });
-        const response = await $fetch<{ permalink: string }>(
+        const response = await $fetch<{ permalink: string; referenceId: string }>(
             `/api/debug/upload?${params.toString()}`,
             {
                 method: "POST",
@@ -65,7 +110,8 @@ const uploadFile = async () => {
         );
 
         permalink.value = response.permalink;
-        await loadFiles();
+        referenceId.value = response.referenceId;
+        await refreshUploads(true);
     } catch (err: any) {
         uploadError.value = err.message || "Upload failed";
     } finally {
@@ -73,7 +119,25 @@ const uploadFile = async () => {
     }
 };
 
-onMounted(loadFiles);
+const releaseReference = async (id = referenceId.value) => {
+    if (!id || releasingReferenceId.value) return;
+    releasingReferenceId.value = id;
+    uploadError.value = "";
+    try {
+        await $fetch(`/api/assets/references/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (referenceId.value === id) {
+            permalink.value = "";
+            referenceId.value = "";
+        }
+        await refreshUploads(true);
+    } catch (err: any) {
+        uploadError.value = err.message || "Unable to release this permalink";
+    } finally {
+        releasingReferenceId.value = null;
+    }
+};
+
+onMounted(refreshUploads);
 </script>
 
 <template>
@@ -143,6 +207,20 @@ onMounted(loadFiles);
                                 {{ permalink }} (blocked unsafe URL)
                             </span>
                         </p>
+                        <p class="mt-2 text-sm text-muted">
+                            This permalink stays active until released. After release, its file can
+                            be collected after seven days if no other permalink uses it.
+                        </p>
+                        <UButton
+                            v-if="referenceId"
+                            class="mt-2"
+                            color="error"
+                            variant="soft"
+                            :loading="releasingReferenceId === referenceId"
+                            :disabled="releasingReferenceId !== null"
+                            label="Release this permalink"
+                            @click="releaseReference(referenceId)"
+                        />
                     </div>
                 </UCard>
 
@@ -155,7 +233,7 @@ onMounted(loadFiles);
                                 color="neutral"
                                 variant="ghost"
                                 size="sm"
-                                @click="loadFiles"
+                                @click="refreshUploads()"
                             />
                         </div>
                     </template>
@@ -208,6 +286,105 @@ onMounted(loadFiles);
                                 </li>
                             </ul>
                         </div>
+                    </div>
+                </UCard>
+
+                <UCard>
+                    <template #header>
+                        <div
+                            class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div>
+                                <h2 class="text-lg font-semibold">Active Permalink References</h2>
+                                <p class="mt-1 text-sm text-muted">
+                                    References remain active until released. Shared files stay
+                                    available while any reference remains.
+                                </p>
+                            </div>
+                            <UButton
+                                icon="i-lucide-refresh-cw"
+                                color="neutral"
+                                variant="ghost"
+                                size="sm"
+                                label="Refresh references"
+                                :loading="loadingReferences"
+                                @click="loadReferences()"
+                            />
+                        </div>
+                    </template>
+
+                    <ul class="space-y-3">
+                        <li v-if="loadingReferences" class="text-sm text-muted">
+                            Loading references...
+                        </li>
+                        <li v-else-if="references.length === 0" class="text-sm text-muted">
+                            No active permalink references.
+                        </li>
+                        <li
+                            v-for="reference in references"
+                            :key="reference.id"
+                            class="flex flex-col gap-2 rounded border border-default p-3 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div class="min-w-0">
+                                <a
+                                    :href="reference.permalink"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="break-all text-primary hover:underline"
+                                >
+                                    {{ reference.permalink }}
+                                </a>
+                                <p class="text-xs text-muted">
+                                    {{
+                                        reference.collection === "assets"
+                                            ? "Static upload"
+                                            : "User asset"
+                                    }}
+                                    · {{ reference.created_at }}
+                                </p>
+                            </div>
+                            <UButton
+                                class="min-h-11 min-w-11 shrink-0"
+                                color="error"
+                                variant="soft"
+                                :loading="releasingReferenceId === reference.id"
+                                :disabled="releasingReferenceId !== null"
+                                :label="
+                                    releasingReferenceId === reference.id
+                                        ? 'Releasing...'
+                                        : 'Release'
+                                "
+                                @click="releaseReference(reference.id)"
+                            />
+                        </li>
+                    </ul>
+                    <div
+                        v-if="referencePagination.total_pages > 1"
+                        class="mt-4 flex items-center justify-between gap-3"
+                        aria-label="Permalink reference pages"
+                    >
+                        <UButton
+                            class="min-h-11 min-w-11"
+                            color="neutral"
+                            variant="outline"
+                            label="Previous"
+                            :disabled="loadingReferences || referencePage <= 1"
+                            @click="loadReferences(referencePage - 1)"
+                        />
+                        <span class="text-sm text-muted">
+                            Page {{ referencePage }} of {{ referencePagination.total_pages }}
+                        </span>
+                        <UButton
+                            class="min-h-11 min-w-11"
+                            color="neutral"
+                            variant="outline"
+                            label="Next"
+                            :disabled="
+                                loadingReferences ||
+                                referencePage >= referencePagination.total_pages
+                            "
+                            @click="loadReferences(referencePage + 1)"
+                        />
                     </div>
                 </UCard>
             </div>
