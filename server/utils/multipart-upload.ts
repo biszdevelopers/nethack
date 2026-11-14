@@ -3,6 +3,7 @@ import { extname } from "node:path/posix";
 import type { IncomingMessage } from "node:http";
 import type { Readable } from "node:stream";
 import { createError } from "h3";
+import type { DrizzleDatabase } from "../database";
 import {
     discardStagedAsset,
     publishStagedAssetContentAddressed,
@@ -26,6 +27,11 @@ const ALLOWED_EXTENSIONS = new Set([
     ".webp",
     ".zip",
 ]);
+
+export interface MultipartAssetReferenceContext {
+    database: DrizzleDatabase;
+    createdBy: number;
+}
 
 function uploadError(statusCode: number, statusMessage: string) {
     return createError({ statusCode, statusMessage, message: statusMessage });
@@ -53,7 +59,8 @@ export async function storeMultipartAsset(
     request: IncomingMessage,
     contentType: string | undefined,
     collection: AssetCollection = "assets",
-): Promise<{ filename: string; relativePath: string }> {
+    referenceContext?: MultipartAssetReferenceContext,
+): Promise<{ filename: string; relativePath: string; referenceId?: string }> {
     const rawLength = request.headers["content-length"];
     const contentLength = typeof rawLength === "string" ? Number(rawLength) : undefined;
     if (
@@ -190,7 +197,12 @@ export async function storeMultipartAsset(
     }
 
     try {
-        return await publishStagedAssetContentAddressed(stagedName, stagedExtension, collection);
+        return await publishStagedAssetContentAddressed(
+            stagedName,
+            stagedExtension,
+            collection,
+            referenceContext,
+        );
     } catch {
         throw uploadError(500, "Unable to store uploaded file");
     }
