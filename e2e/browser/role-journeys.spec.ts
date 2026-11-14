@@ -80,6 +80,7 @@ function apiResponse(page: Page, path: string, method: string) {
     return page.waitForResponse(
         (response) =>
             new URL(response.url()).pathname === path && response.request().method() === method,
+        { timeout: 15_000 },
     );
 }
 
