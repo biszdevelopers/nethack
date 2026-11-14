@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     checkSourceRelationships,
+    classifyOrphanedTeamScores,
     countSourceRows,
     detectSeasonSchema,
     ensureEmptyTarget,
@@ -517,6 +518,133 @@ describe("SQLite importer source inspection", () => {
         missingKey.close();
     });
 
+    it("archives team-score rows with missing references and still rejects other broken tables", () => {
+        const source = createSource();
+        source.exec(`
+            INSERT INTO team_scores (team_id, judge_user_id, season_id, rubric_version_id)
+            VALUES (404, 7, 1, 1), (3, 404, 1, 1), (405, 405, 1, 1);
+        `);
+        const available = sourceTables(source);
+        const classified = classifyOrphanedTeamScores(source, available);
+        expect(classified).toMatchObject({
+            importableRowCount: 1,
+            byRelationship: {
+                "team_scores.team_id": 2,
+                "team_scores.judge_user_id": 2,
+            },
+        });
+        expect(classified.rows).toHaveLength(3);
+        expect(new Set(classified.rows.map((row) => row.row_key)).size).toBe(3);
+        expect(classified.rows[0]).toMatchObject({
+            table_name: "team_scores",
+            row_key: expect.stringMatching(/^rowid:/),
+            payload: {
+                source: "sqlite",
+                source_table: "team_scores",
+                source_row_key: expect.stringMatching(/^rowid:/),
+                orphaned_relationships: ["team_scores.team_id"],
+                row: { team_id: 404, judge_user_id: 7, season_id: 1, rubric_version_id: 1 },
+            },
+        });
+        expect(classified.rows[2].payload.orphaned_relationships).toEqual([
+            "team_scores.team_id",
+            "team_scores.judge_user_id",
+        ]);
+        expect(classifyOrphanedTeamScores(source, new Set()).rows).toEqual([]);
+        expect(classifyOrphanedTeamScores(source, new Set(["users"]))).toMatchObject({
+            rows: [],
+            byRelationship: {},
+            importableRowCount: 0,
+        });
+
+        const sourceInfo = validateSource(source, available);
+        expect(sourceInfo.targetCountExpectations.team_scores).toBe(1);
+        expect(
+            checkSourceRelationships(source, available, { excludeChildTables: ["team_scores"] }),
+        ).toEqual([]);
+        source.close();
+
+        const scoreAndTeamOrphans = createSource();
+        scoreAndTeamOrphans.exec(`
+            INSERT INTO team_scores (team_id, judge_user_id, season_id, rubric_version_id)
+            VALUES (404, 7, 1, 1);
+            INSERT INTO teams (id, season_id) VALUES (4, 99);
+        `);
+        expect(() =>
+            validateSource(scoreAndTeamOrphans, sourceTables(scoreAndTeamOrphans)),
+        ).toThrow("teams.season_id has 1 orphan row(s)");
+        scoreAndTeamOrphans.close();
+    });
+
+    it("uses a declared primary key when a SQLite score table has no rowid", () => {
+        const source = createSource();
+        source.exec(`
+            DROP TABLE team_scores;
+            CREATE TABLE team_scores (
+                team_id INTEGER NOT NULL,
+                judge_user_id INTEGER NOT NULL,
+                season_id INTEGER,
+                rubric_version_id INTEGER,
+                PRIMARY KEY (team_id, judge_user_id)
+            ) WITHOUT ROWID;
+            INSERT INTO team_scores VALUES (404, 7, 1, 1);
+        `);
+        const classified = classifyOrphanedTeamScores(source, sourceTables(source));
+        expect(classified.rows).toMatchObject([
+            {
+                row_key: "primary-key:[404,7]",
+                payload: {
+                    source_row_key: "primary-key:[404,7]",
+                    orphaned_relationships: ["team_scores.team_id"],
+                    row: { team_id: 404, judge_user_id: 7, season_id: 1, rubric_version_id: 1 },
+                },
+            },
+        ]);
+        source.close();
+    });
+
+    it("uses an unshadowed hidden row identifier when a source column is named rowid", () => {
+        const source = createSource();
+        source.exec(`
+            ALTER TABLE team_scores ADD COLUMN rowid TEXT;
+            INSERT INTO team_scores (team_id, judge_user_id, season_id, rubric_version_id, rowid)
+            VALUES (404, 7, 1, 1, 'source-value');
+        `);
+        const classified = classifyOrphanedTeamScores(source, sourceTables(source));
+        expect(classified.rows[0]).toMatchObject({
+            row_key: "rowid:2",
+            payload: {
+                row: {
+                    team_id: 404,
+                    judge_user_id: 7,
+                    season_id: 1,
+                    rubric_version_id: 1,
+                    rowid: "source-value",
+                },
+            },
+        });
+        source.close();
+    });
+
+    it("refuses ambiguous SQLite score rows when neither rowid nor a primary key exists", () => {
+        const source = {
+            prepare: (statement: string) => {
+                if (statement.includes("rowid AS")) {
+                    return {
+                        all: () => {
+                            throw new Error("no such column: rowid");
+                        },
+                    };
+                }
+                if (statement.startsWith("PRAGMA table_info")) return { all: () => [] };
+                return { all: () => [{ team_id: 4 }], get: () => ({ count: 1 }) };
+            },
+        } as unknown as Database.Database;
+        expect(() => classifyOrphanedTeamScores(source, new Set(["team_scores"]))).toThrow(
+            "has no rowid or primary key",
+        );
+    });
+
     it("checks all declared relationships and skips pairs whose source columns are absent", () => {
         const allTables = new Set(
             DATABASE_FOREIGN_KEYS.flatMap(([child, , parent]) => [child, parent]),
@@ -680,6 +808,24 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         expect(await insertRubricVersions(rubricSql, [])).toEqual(new Map());
     });
 
+    it("chunks large archive imports below PostgreSQL's bind parameter limit", async () => {
+        const unsafe = vi.fn(async () => undefined);
+        const sql = Object.assign(vi.fn(), { unsafe });
+        const rows = Array.from({ length: 22_000 }, (_, index) => ({
+            table_name: "team_scores",
+            row_key: String(index),
+            payload: { team_id: index },
+        }));
+
+        await expect(insertLegacyArchive(sql as never, rows)).resolves.toBe(rows.length);
+
+        expect(unsafe).toHaveBeenCalledTimes(2);
+        expect(unsafe.mock.calls.map(([, params]) => params.length)).toEqual([60_000, 6_000]);
+        expect(Math.max(...unsafe.mock.calls.map(([, params]) => params.length))).toBeLessThan(
+            65_535,
+        );
+    });
+
     it("maps score seasons, verifies source relationships and checks every target foreign key", async () => {
         expect(importSeasonForScore({ season_id: 7 }, new Map(), 4)).toBe(7);
         expect(importSeasonForScore({ team_id: 2 }, new Map([[2, 8]]), 4)).toBe(8);
@@ -762,6 +908,79 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         expect(fake.counts.sqlite_legacy_data).toBe(2);
         expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('"legacySeasonMapping"'));
         expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('"archivedDataRows": 1'));
+        source.close();
+    });
+
+    it("imports only linked team scores and archives each orphan row with its source values", async () => {
+        const source = createSource();
+        source.exec(`
+            INSERT INTO team_scores (team_id, judge_user_id, season_id, rubric_version_id)
+            VALUES (404, 7, 1, 1), (3, 404, 1, 1);
+        `);
+        const available = sourceTables(source);
+        const sourceInfo = validateSource(source, available);
+        const fake = createPostgresDouble(source);
+        const logger = { log: vi.fn() };
+
+        await expect(
+            importToPostgres(source, available, sourceInfo, {
+                databaseUrl: "postgres://fixture@localhost/db",
+                postgresClient: fake.postgresClient,
+                logger: logger as unknown as Console,
+            }),
+        ).resolves.toBeUndefined();
+
+        expect(fake.counts.team_scores).toBe(1);
+        expect(fake.counts.sqlite_legacy_data).toBe(3);
+        const archiveCall = fake.sql.unsafe.mock.calls.find(([statement]: [string]) =>
+            statement.startsWith("INSERT INTO sqlite_legacy_data"),
+        );
+        const archiveParams = archiveCall?.[1] as unknown[];
+        const archivedRows = Array.from({ length: archiveParams.length / 3 }, (_, index) => {
+            const offset = index * 3;
+            return {
+                tableName: archiveParams[offset],
+                rowKey: archiveParams[offset + 1],
+                payload: JSON.parse(String(archiveParams[offset + 2])),
+            };
+        });
+        expect(archivedRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    tableName: "team_scores",
+                    payload: expect.objectContaining({
+                        source_table: "team_scores",
+                        orphaned_relationships: ["team_scores.team_id"],
+                        row: { team_id: 404, judge_user_id: 7, season_id: 1, rubric_version_id: 1 },
+                    }),
+                }),
+                expect.objectContaining({
+                    tableName: "team_scores",
+                    payload: expect.objectContaining({
+                        source_table: "team_scores",
+                        orphaned_relationships: ["team_scores.judge_user_id"],
+                        row: { team_id: 3, judge_user_id: 404, season_id: 1, rubric_version_id: 1 },
+                    }),
+                }),
+            ]),
+        );
+        const archivedScoreRows = archivedRows.filter(
+            ({ tableName }) => tableName === "team_scores",
+        );
+        expect(archivedScoreRows).toHaveLength(2);
+        expect(new Set(archivedRows.map(({ rowKey }) => rowKey)).size).toBe(3);
+        expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('"archivedOrphanRows": 2'));
+        expect(logger.log).toHaveBeenCalledWith(
+            expect.stringContaining(
+                "source team_scores orphans are preserved in sqlite_legacy_data",
+            ),
+        );
+        expect(logger.log).toHaveBeenCalledWith(
+            expect.stringContaining('"archivedOrphanTeamScoreRows": 2'),
+        );
+        expect(logger.log).toHaveBeenCalledWith(
+            expect.stringContaining('"archivedOrphanRowsByRelationship"'),
+        );
         source.close();
     });
 
