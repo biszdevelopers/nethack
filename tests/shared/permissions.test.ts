@@ -6,6 +6,7 @@ import {
     hasNethackPermission,
     isInitialAdminEmail,
     NethackPermissions,
+    satisfiesNethackRequirement,
 } from "~~/shared/permissions";
 
 describe("nethack permission helpers", () => {
@@ -44,6 +45,35 @@ describe("nethack permission helpers", () => {
                 allOf: [NethackPermissions.Teams.list, NethackPermissions.Teams.delete],
             }),
         ).toBe(true);
+        expect(
+            hasNethackPermission([NethackPermissions.Teams.list], {
+                allOf: [NethackPermissions.Teams.list, NethackPermissions.Teams.delete],
+            }),
+        ).toBe(false);
+    });
+
+    it("supports any-of requirements and an empty requirement", () => {
+        expect(
+            hasNethackPermission([NethackPermissions.Teams.delete], {
+                anyOf: [NethackPermissions.Teams.list, NethackPermissions.Teams.delete],
+            }),
+        ).toBe(true);
+        expect(
+            hasNethackPermission([], {
+                anyOf: [NethackPermissions.Teams.list, NethackPermissions.Teams.delete],
+            }),
+        ).toBe(false);
+        expect(satisfiesNethackRequirement([])).toBe(true);
+    });
+
+    it("matches wildcard grants only inside their own namespace", () => {
+        expect(satisfiesNethackRequirement(["nethack.Teams.all"], "nethack.Teams.list")).toBe(true);
+        expect(satisfiesNethackRequirement(["nethack.Teams.all"], "nethack.Users.list")).toBe(
+            false,
+        );
+        expect(satisfiesNethackRequirement([" NETHACK.TEAMS.ALL "], "nethack.Teams.list")).toBe(
+            true,
+        );
     });
 
     it("does not let participant compatibility grants satisfy administrative permissions", () => {

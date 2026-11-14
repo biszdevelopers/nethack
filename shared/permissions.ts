@@ -1,4 +1,4 @@
-import { DelegatedPermissionSet, type PermissionRequirement } from "@basis/schema/permissions";
+import type { PermissionRequirement } from "@basis/schema/permissions";
 
 /** Canonical permissions issued by basis-auth for the basishacks resource. */
 export const NethackPermissions = {
@@ -114,13 +114,42 @@ export function expandLegacyNethackPermissions(
     return [...effective.values()];
 }
 
+/** Case-insensitive permission match with `namespace.all` wildcard support. */
+function permissionSatisfiedBy(permissions: Iterable<string>, required: string): boolean {
+    const requiredKey = required.trim().toLocaleLowerCase("en-US");
+    for (const permission of permissions) {
+        const grantedKey = permission.trim().toLocaleLowerCase("en-US");
+        if (grantedKey === requiredKey) return true;
+        if (
+            grantedKey.endsWith(".all") &&
+            requiredKey.startsWith(`${grantedKey.slice(0, -".all".length)}.`)
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Evaluate a basis-auth permission requirement without a runtime schema dependency. */
+export function satisfiesNethackRequirement(
+    permissions: Iterable<string>,
+    requirement?: PermissionRequirement,
+): boolean {
+    if (!requirement) return true;
+    if (typeof requirement === "string") return permissionSatisfiedBy(permissions, requirement);
+    if ("allOf" in requirement) {
+        return requirement.allOf.every((permission) =>
+            permissionSatisfiedBy(permissions, permission),
+        );
+    }
+    return requirement.anyOf.some((permission) => permissionSatisfiedBy(permissions, permission));
+}
+
 export function hasNethackPermission(
     permissions: Iterable<string> | undefined,
     requirement: PermissionRequirement,
 ): boolean {
-    return new DelegatedPermissionSet(expandLegacyNethackPermissions(permissions)).satisfies(
-        requirement,
-    );
+    return satisfiesNethackRequirement(expandLegacyNethackPermissions(permissions), requirement);
 }
 
 export interface NethackPermissionUser {
@@ -148,7 +177,5 @@ export function hasEffectiveNethackPermission(
     requirement: PermissionRequirement,
     user?: NethackPermissionUser,
 ): boolean {
-    return new DelegatedPermissionSet(effectiveNethackPermissions(permissions, user)).satisfies(
-        requirement,
-    );
+    return satisfiesNethackRequirement(effectiveNethackPermissions(permissions, user), requirement);
 }
