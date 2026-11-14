@@ -10,6 +10,9 @@ export default defineEventHandler(
         const { id: teamId } = await getValidatedRouterParams(event, TeamIdParams.parse);
         const team = await getTeamById(event, teamId);
         if (!team) throw createError({ statusCode: 404, message: "Team not found." });
-        return getTeamScoreFeedback(event, team);
+        const response: TeamScoreFeedbackResponse = await getTeamScoreFeedback(event, team, {
+            includeJudgeIdentity: true,
+        });
+        return response;
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );
