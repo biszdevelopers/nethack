@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import {
     judgingDrafts,
     rubricVersions,
@@ -147,4 +147,19 @@ export async function getTeamScoresBySeasonId(
         .select()
         .from(teamScores)
         .where(eq(teamScores.season_id, seasonID));
+}
+
+/** Count saved judge evaluations for each requested team in one bounded query. */
+export async function getTeamEvaluationCounts(
+    event: H3Event,
+    teamIds: number[],
+): Promise<Map<number, number>> {
+    if (teamIds.length === 0) return new Map();
+
+    const rows = await event.context.drizzle
+        .select({ team_id: teamScores.team_id, evaluation_count: count() })
+        .from(teamScores)
+        .where(inArray(teamScores.team_id, teamIds))
+        .groupBy(teamScores.team_id);
+    return new Map(rows.map(({ team_id, evaluation_count }) => [team_id, evaluation_count]));
 }
