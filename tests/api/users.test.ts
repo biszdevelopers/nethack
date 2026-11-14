@@ -16,6 +16,7 @@ import {
 } from "./helpers";
 import { eq } from "drizzle-orm";
 import { users, teams, userPastTeams } from "~~/server/database/schema";
+import { clearRateLimitHistory } from "~~/server/utils/rateLimit";
 
 let ctx: TestContext;
 let listHandler: any;
@@ -64,6 +65,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+    clearRateLimitHistory();
     resetMockState();
     ctx = await createTestContext();
     seedHackathon(ctx);
