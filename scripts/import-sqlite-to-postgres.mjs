@@ -466,9 +466,7 @@ export function validateSource(source, availableTables) {
     );
     const targetCountExpectations = { ...counts };
     if (seasonSchema.kind === "single-hackathon") targetCountExpectations.seasons = 1;
-    if ("team_scores" in targetCountExpectations) {
-        targetCountExpectations.team_scores = orphanedTeamScores.importableRowCount;
-    }
+    targetCountExpectations.team_scores = orphanedTeamScores.importableRowCount;
     return {
         counts,
         targetCountExpectations,
