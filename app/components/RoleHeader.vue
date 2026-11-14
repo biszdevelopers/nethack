@@ -44,7 +44,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 
 const { user, sessionUser: userRef } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
-const { data: hackathon } = useFetch("/api/seasons/active", {
+const { data: hackathon } = useApiFetch("/api/seasons/active", {
     lazy: true,
     $fetch: globalThis.$fetch,
 });
