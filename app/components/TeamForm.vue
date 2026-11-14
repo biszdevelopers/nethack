@@ -20,7 +20,7 @@ const {
     data: users,
     error,
     refresh,
-} = await useFetch<GetTeamMembersResponse>(`/api/teams/${id}/users`);
+} = await useApiFetch<GetTeamMembersResponse>(`/api/teams/${id}/users`);
 if (error.value) {
     throw error.value;
 }
