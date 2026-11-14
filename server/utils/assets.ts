@@ -16,9 +16,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createError } from "h3";
-import { eq, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, lte, or, sql } from "drizzle-orm";
 import type { DrizzleDatabase } from "../database";
-import { oauth2Applications, users } from "../database/schema";
+import { assetObjects, assetReferences, oauth2Applications, users } from "../database/schema";
 
 export type AssetCollection = "assets" | "userassets";
 
@@ -1185,36 +1185,104 @@ export async function publishStagedAssetContentAddressed(
     stagedName: string,
     extension: string,
     collection: AssetCollection,
-): Promise<{ filename: string; relativePath: string }> {
+    referenceContext?: { database: DrizzleDatabase; createdBy: number },
+): Promise<{ filename: string; relativePath: string; referenceId?: string }> {
     if (!STAGED_ASSET_NAME.test(stagedName)) throw new Error("Invalid staged asset token");
     const stageId = stagedName.slice(".staging/".length, -".tmp".length);
     const stagedPath = resolveAssetPath(collection, stagedName, true);
     const leasePath = resolveAssetPath(collection, `.staging/.lease-${stageId}.tmp`, true);
     try {
         const canonicalExtension = normalizeContentAddressExtension(extension);
-        const { digest } = await hashRegularFile(stagedPath);
+        const { digest, size } = await hashRegularFile(stagedPath);
         const filename = `${digest}.${canonicalExtension}`;
         const relativePath = collection === "assets" ? `uploads/${filename}` : filename;
         const destinationPath = resolveAssetPath(collection, relativePath);
         await ensureSafeParentDirectory(collection, destinationPath);
 
-        try {
-            await link(stagedPath, destinationPath);
-        } catch (error) {
-            if (isLinkPublicationFallbackError(error)) {
-                try {
-                    await copyFileExclusively(stagedPath, destinationPath, digest);
-                } catch (copyError) {
-                    if ((copyError as NodeJS.ErrnoException).code !== "EEXIST") throw copyError;
-                    await assertFilesMatch(stagedPath, destinationPath, digest);
+        const publish = async (): Promise<boolean> => {
+            try {
+                await link(stagedPath, destinationPath);
+                return true;
+            } catch (error) {
+                if (isLinkPublicationFallbackError(error)) {
+                    try {
+                        await copyFileExclusively(stagedPath, destinationPath, digest);
+                        return true;
+                    } catch (copyError) {
+                        if ((copyError as NodeJS.ErrnoException).code !== "EEXIST") throw copyError;
+                        await assertFilesMatch(stagedPath, destinationPath, digest);
+                        return false;
+                    }
                 }
-            } else if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-                await assertFilesMatch(stagedPath, destinationPath, digest);
-            } else {
+                if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+                    await assertFilesMatch(stagedPath, destinationPath, digest);
+                    return false;
+                }
                 throw error;
             }
+        };
+
+        if (!referenceContext) {
+            await publish();
+            return { filename, relativePath };
         }
-        return { filename, relativePath };
+
+        const referenceId = randomUUID();
+        const lockName = `${collection}/${relativePath}`;
+        await withAssetLifecycleLocks(
+            referenceContext.database,
+            [lockName],
+            async (transaction) => {
+                const existingObject = (
+                    await transaction
+                        .select()
+                        .from(assetObjects)
+                        .where(
+                            and(
+                                eq(assetObjects.collection, collection),
+                                eq(assetObjects.asset_path, relativePath),
+                            ),
+                        )
+                        .limit(1)
+                )[0];
+                const created = await publish();
+                if (existingObject) {
+                    if (existingObject.sha256 !== digest || existingObject.byte_size !== size) {
+                        throw new Error(
+                            "Registered asset metadata does not match its content hash",
+                        );
+                    }
+                    await transaction
+                        .update(assetObjects)
+                        .set({ unreferenced_at: null })
+                        .where(
+                            and(
+                                eq(assetObjects.collection, collection),
+                                eq(assetObjects.asset_path, relativePath),
+                            ),
+                        );
+                } else {
+                    await transaction.insert(assetObjects).values({
+                        collection,
+                        asset_path: relativePath,
+                        sha256: digest,
+                        byte_size: size,
+                        // An object already on disk but absent from the registry may
+                        // have old public URLs that cannot be enumerated safely.
+                        pinned: !created,
+                        unreferenced_at: null,
+                    });
+                }
+                await transaction.insert(assetReferences).values({
+                    id: referenceId,
+                    collection,
+                    asset_path: relativePath,
+                    reference_type: "permalink",
+                    created_by: referenceContext.createdBy,
+                });
+            },
+        );
+        return { filename, relativePath, referenceId };
     } finally {
         // A published content-addressed object is immutable and may already be
         // shared by another permalink. Only the private staging name is removed.
@@ -1230,6 +1298,251 @@ export async function publishStagedAssetContentAddressed(
             await releaseAssetLease(leasePath);
         }
     }
+}
+
+/** Release only the caller's permalink, unless the caller has admin access. */
+export async function releaseAssetReference(
+    database: DrizzleDatabase,
+    referenceId: string,
+    requesterId: number,
+    isAdmin = false,
+    now = new Date(),
+): Promise<boolean> {
+    const reference = (
+        await database
+            .select()
+            .from(assetReferences)
+            .where(eq(assetReferences.id, referenceId))
+            .limit(1)
+    )[0];
+    if (!reference || (!isAdmin && reference.created_by !== requesterId)) return false;
+
+    const lockName = `${reference.collection}/${reference.asset_path}`;
+    return withAssetLifecycleLocks(database, [lockName], async (transaction) => {
+        const current = (
+            await transaction
+                .select()
+                .from(assetReferences)
+                .where(eq(assetReferences.id, referenceId))
+                .limit(1)
+        )[0];
+        if (!current || (!isAdmin && current.created_by !== requesterId)) return false;
+
+        await transaction.delete(assetReferences).where(eq(assetReferences.id, referenceId));
+        const remainingReference = (
+            await transaction
+                .select({ id: assetReferences.id })
+                .from(assetReferences)
+                .where(
+                    and(
+                        eq(assetReferences.collection, current.collection),
+                        eq(assetReferences.asset_path, current.asset_path),
+                    ),
+                )
+                .limit(1)
+        )[0];
+        if (!remainingReference) {
+            await transaction
+                .update(assetObjects)
+                .set({ unreferenced_at: now })
+                .where(
+                    and(
+                        eq(assetObjects.collection, current.collection),
+                        eq(assetObjects.asset_path, current.asset_path),
+                        eq(assetObjects.pinned, false),
+                    ),
+                );
+        }
+        return true;
+    });
+}
+
+export interface AssetReferenceListOptions {
+    page: number;
+    pageSize: number;
+}
+
+/** List active permalink references owned by a user, or all references for an admin. */
+export async function listAssetReferences(
+    database: DrizzleDatabase,
+    requesterId: number,
+    isAdmin: boolean,
+    options: AssetReferenceListOptions,
+) {
+    const ownerFilter = isAdmin ? undefined : eq(assetReferences.created_by, requesterId);
+    const [countRows, rows] = await Promise.all([
+        database.select({ total: count() }).from(assetReferences).where(ownerFilter),
+        database
+            .select({
+                id: assetReferences.id,
+                collection: assetReferences.collection,
+                asset_path: assetReferences.asset_path,
+                created_at: assetReferences.created_at,
+            })
+            .from(assetReferences)
+            .where(ownerFilter)
+            .orderBy(desc(assetReferences.created_at), desc(assetReferences.id))
+            .limit(options.pageSize)
+            .offset((options.page - 1) * options.pageSize),
+    ]);
+    const total = Number(countRows[0]?.total ?? 0);
+
+    return {
+        items: rows.map((reference) => {
+            const encodedPath = reference.asset_path
+                .split("/")
+                .map((segment) => encodeURIComponent(segment))
+                .join("/");
+            const permalink =
+                reference.collection === "assets"
+                    ? `/assets/${encodedPath}`
+                    : reference.collection === "userassets"
+                      ? `/userast/${encodedPath}`
+                      : null;
+            if (!permalink) {
+                throw new Error("Stored asset reference has an unsupported collection");
+            }
+            return { ...reference, permalink };
+        }),
+        page: options.page,
+        page_size: options.pageSize,
+        total,
+        total_pages: total === 0 ? 0 : Math.ceil(total / options.pageSize),
+    };
+}
+
+export interface PermalinkAssetGcOptions {
+    now?: number;
+    maxDeletions?: number;
+    maxScanned?: number;
+}
+
+export interface PermalinkAssetGcResult {
+    scanned: number;
+    deleted: number;
+    missing: number;
+    referenced: number;
+    unsafe: number;
+}
+
+/** Collect only registry-managed, unpinned permalinks with no references for seven days. */
+export async function collectOrphanPermalinkAssets(
+    database: DrizzleDatabase,
+    options: PermalinkAssetGcOptions = {},
+): Promise<PermalinkAssetGcResult> {
+    const now = options.now ?? Date.now();
+    const maxDeletions = options.maxDeletions ?? 25;
+    const maxScanned = options.maxScanned ?? 250;
+    if (!Number.isSafeInteger(now) || now < 0) {
+        throw new Error("Permalink asset GC time must be a non-negative safe integer");
+    }
+    if (!Number.isInteger(maxDeletions) || maxDeletions < 1 || maxDeletions > 100) {
+        throw new Error("Permalink asset GC maxDeletions must be an integer between 1 and 100");
+    }
+    if (!Number.isInteger(maxScanned) || maxScanned < 1 || maxScanned > 1000) {
+        throw new Error("Permalink asset GC maxScanned must be an integer between 1 and 1000");
+    }
+
+    const cutoff = new Date(now - MIN_PROFILE_ASSET_GC_AGE_MS);
+    const candidates = await database
+        .select({ collection: assetObjects.collection, asset_path: assetObjects.asset_path })
+        .from(assetObjects)
+        .where(and(eq(assetObjects.pinned, false), lte(assetObjects.unreferenced_at, cutoff)))
+        .orderBy(
+            asc(assetObjects.unreferenced_at),
+            asc(assetObjects.collection),
+            asc(assetObjects.asset_path),
+        )
+        .limit(maxScanned);
+    const result: PermalinkAssetGcResult = {
+        scanned: 0,
+        deleted: 0,
+        missing: 0,
+        referenced: 0,
+        unsafe: 0,
+    };
+
+    for (const candidate of candidates) {
+        result.scanned += 1;
+        const lockName = `${candidate.collection}/${candidate.asset_path}`;
+        const outcome = await withAssetLifecycleLocks(database, [lockName], async (transaction) => {
+            const object = (
+                await transaction
+                    .select()
+                    .from(assetObjects)
+                    .where(
+                        and(
+                            eq(assetObjects.collection, candidate.collection),
+                            eq(assetObjects.asset_path, candidate.asset_path),
+                            eq(assetObjects.pinned, false),
+                            lte(assetObjects.unreferenced_at, cutoff),
+                        ),
+                    )
+                    .limit(1)
+            )[0];
+            if (!object) return "missing" as const;
+
+            const reference = (
+                await transaction
+                    .select({ id: assetReferences.id })
+                    .from(assetReferences)
+                    .where(
+                        and(
+                            eq(assetReferences.collection, candidate.collection),
+                            eq(assetReferences.asset_path, candidate.asset_path),
+                        ),
+                    )
+                    .limit(1)
+            )[0];
+            if (reference) {
+                await transaction
+                    .update(assetObjects)
+                    .set({ unreferenced_at: null })
+                    .where(
+                        and(
+                            eq(assetObjects.collection, candidate.collection),
+                            eq(assetObjects.asset_path, candidate.asset_path),
+                        ),
+                    );
+                return "referenced" as const;
+            }
+
+            const filePath = resolveAssetPath(
+                candidate.collection as AssetCollection,
+                candidate.asset_path,
+            );
+            await ensureNoSymlinkDirectories(
+                candidate.collection as AssetCollection,
+                dirname(filePath),
+            );
+            let fileInfo;
+            try {
+                fileInfo = await lstat(filePath);
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            }
+            if (fileInfo && (!fileInfo.isFile() || fileInfo.isSymbolicLink())) {
+                return "unsafe" as const;
+            }
+            if (fileInfo) await rm(filePath);
+            await transaction
+                .delete(assetObjects)
+                .where(
+                    and(
+                        eq(assetObjects.collection, candidate.collection),
+                        eq(assetObjects.asset_path, candidate.asset_path),
+                    ),
+                );
+            return fileInfo ? ("deleted" as const) : ("missing" as const);
+        });
+
+        if (outcome === "deleted") result.deleted += 1;
+        else if (outcome === "referenced") result.referenced += 1;
+        else if (outcome === "unsafe") result.unsafe += 1;
+        else result.missing += 1;
+        if (result.deleted >= maxDeletions) break;
+    }
+    return result;
 }
 
 /** Delete only a private multipart staging object; never accept published paths. */
