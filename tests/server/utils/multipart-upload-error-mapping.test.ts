@@ -19,10 +19,9 @@ const { parserMock, assetMocks, busboyMock } = vi.hoisted(() => {
         reset: () => listeners.clear(),
     };
     const assets = {
-        createAssetFromStream: vi.fn(),
-        getStoredAssetNames: vi.fn(async () => []),
-        removeAsset: vi.fn(),
-        removeUserAsset: vi.fn(),
+        stageAssetFromStream: vi.fn(),
+        publishStagedAssetContentAddressed: vi.fn(),
+        discardStagedAsset: vi.fn(),
     };
     return { parserMock: parser, assetMocks: assets, busboyMock: vi.fn(() => parser) };
 });
@@ -49,8 +48,7 @@ describe("multipart asset storage error mapping", () => {
             parserMock.emit("close");
             return destination;
         });
-        assetMocks.getStoredAssetNames.mockResolvedValue([]);
-        assetMocks.createAssetFromStream.mockRejectedValue(
+        assetMocks.stageAssetFromStream.mockRejectedValue(
             Object.assign(new Error(statusMessage), { statusCode, statusMessage }),
         );
 
