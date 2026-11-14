@@ -40,7 +40,7 @@ The production build is generated with:
 bun run build
 ```
 
-Nitro leaves runtime dependencies external so its generated bundles resolve them from the deployed `node_modules` directory. Deploy the self-contained VPS release package with production dependencies and configure `DATABASE_URL`. Uploaded files use the persistent `ASSET_STORAGE_DIR` outside the release directory. The same build runs with `bun run start` or `node start-fix.mjs`.
+Nitro leaves runtime dependencies external so its generated bundles resolve them from the deployed `node_modules` directory. Deploy with production dependencies and configure `DATABASE_URL`. Runtime uploads are stored under the project-root `/assets` directory, which is gitignored and must be writable by the service account. In-place pull/build/start updates preserve this directory; a re-clone or fresh checkout must preserve or restore it before serving. Back up uploads separately. `public/assets` contains committed showcase files and is separate from runtime storage. The same build runs with `bun run start` or `node start-fix.mjs`.
 
 ::: warning The in-memory rate limiter is per-process. Under high concurrency or with multiple server instances, consider using a shared store (e.g., Redis) for consistent rate limiting. :::
 
