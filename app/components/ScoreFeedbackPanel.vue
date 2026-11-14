@@ -35,7 +35,7 @@ const headingId = useId();
 const endpoint = computed(() =>
     props.admin ? `/api/admin/teams/${props.teamId}/scores` : `/api/teams/${props.teamId}/scores`,
 );
-const { data, pending, error } = await useFetch<ScoreFeedbackResponse>(endpoint);
+const { data, pending, error } = await useApiFetch<ScoreFeedbackResponse>(endpoint);
 const curve = computed(() =>
     data.value?.curve_preset ? SCORE_CURVE_PRESETS[data.value.curve_preset] : null,
 );
