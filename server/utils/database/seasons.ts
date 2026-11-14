@@ -47,6 +47,7 @@ export async function getActiveSeason(event: H3Event): Promise<Season | null> {
 }
 
 export interface ScoreRankVisibility {
+    resultsPublished: boolean;
     showScores: boolean;
     showRanking: boolean;
 }
@@ -66,12 +67,14 @@ export async function getScoreRankVisibilityResolver(
     const bySeason = new Map<number, ScoreRankVisibility>();
     for (const season of allSeasons) {
         bySeason.set(season.id, {
+            resultsPublished: !!season.results_published,
             showScores: !!season.show_scores,
             showRanking: !!season.show_ranking,
         });
     }
 
     const fallback: ScoreRankVisibility = {
+        resultsPublished: !!hackathonRow?.results_published,
         showScores: !!hackathonRow?.show_scores,
         showRanking: !!hackathonRow?.show_ranking,
     };
