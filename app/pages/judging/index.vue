@@ -6,7 +6,7 @@ definePageMeta({
     middleware: ["auth"],
 });
 
-const { data: hackathon } = await useFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
+const { data: hackathon } = await useApiFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
 if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
     throw await navigateTo("/");
 }
@@ -23,7 +23,7 @@ const {
     error,
     refresh,
     status: summaryStatus,
-} = await useFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false });
+} = await useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false });
 
 const currentSummary = computed(() => summary.value?.current ?? null);
 const summaryLoading = computed(
