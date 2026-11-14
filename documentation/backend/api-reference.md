@@ -174,7 +174,7 @@ Final project submission (irreversible).
 
 ### POST `/api/teams/:id/scores`
 
-Finalize a judge's evaluation for an assigned project. New evaluations must match the active season rubric version and the project's track. A saved draft may remain pinned to an older immutable version after an organizer publishes a replacement rubric; finalizing that draft retains the version it was scored against.
+Finalize a judge's evaluation for an assigned project. New drafts and evaluations must match the active season rubric version and the project's track. A draft created before an organizer publishes a replacement rubric may remain pinned to its older immutable version; finalizing that draft retains the version it was scored against.
 
 | Field | Details |
 | --- | --- |
@@ -415,7 +415,7 @@ Rename, activate, or deactivate a season.
 
 ### DELETE `/api/admin/seasons/[id]`
 
-Delete a season by ID.
+Delete an empty, inactive season by ID. Active seasons and seasons with teams or judging history return `409 Conflict`; deleting an eligible season also removes its unused rubric versions.
 
 | Field        | Details                 |
 | ------------ | ----------------------- |
