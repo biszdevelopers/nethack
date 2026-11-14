@@ -1,13 +1,12 @@
 import Busboy from "busboy";
-import { randomUUID } from "node:crypto";
 import { extname } from "node:path/posix";
 import type { IncomingMessage } from "node:http";
 import type { Readable } from "node:stream";
 import { createError } from "h3";
 import {
-    createAssetFromStream,
-    removeAsset,
-    removeUserAsset,
+    discardStagedAsset,
+    publishStagedAssetContentAddressed,
+    stageAssetFromStream,
     type AssetCollection,
 } from "./assets";
 
@@ -47,12 +46,6 @@ function getPrefixValidator(extension: string): ((prefix: Buffer) => boolean) | 
         ".zip": (prefix) => prefix[0] === 0x50 && prefix[1] === 0x4b,
     };
     return signatures[extension];
-}
-
-function createUploadFilename(extension: string) {
-    // Exclusive publication below rejects the astronomically unlikely UUID collision
-    // without scanning the ever-growing asset directory for every upload.
-    return `${randomUUID()}${extension}`;
 }
 
 /** Accept exactly one file part and stream it to disk with bounded memory. */
@@ -95,18 +88,17 @@ export async function storeMultipartAsset(
 
     let fileSeen = false;
     let activeFileStream: Readable | undefined;
-    let savedFilename: string | undefined;
+    let stagedName: string | undefined;
+    let stagedExtension: string | undefined;
     let failure: ReturnType<typeof uploadError> | undefined;
     let fileTask: Promise<void> | undefined;
     const fail = (statusCode: number, message: string) => {
         failure ??= uploadError(statusCode, message);
     };
-    const removeSavedUpload = async () => {
-        if (!savedFilename) return;
-        const relativePath = collection === "assets" ? `uploads/${savedFilename}` : savedFilename;
-        if (collection === "assets") await removeAsset(relativePath);
-        else await removeUserAsset(relativePath);
-        savedFilename = undefined;
+    const discardStagedUpload = async () => {
+        if (!stagedName) return;
+        await discardStagedAsset(stagedName, collection);
+        stagedName = undefined;
     };
     let requestBytes = 0;
     request.on("data", (chunk: Buffer) => {
@@ -139,17 +131,13 @@ export async function storeMultipartAsset(
         stream.on("limit", () => fail(413, "File too large"));
         fileTask = (async () => {
             try {
-                const filename = createUploadFilename(extension);
-                const relativePath = collection === "assets" ? `uploads/${filename}` : filename;
-                await createAssetFromStream(
-                    relativePath,
+                stagedName = await stageAssetFromStream(
                     stream,
                     MAX_DEBUG_UPLOAD_BYTES,
                     getPrefixValidator(extension),
                     collection,
-                    false,
                 );
-                savedFilename = filename;
+                stagedExtension = extension;
             } catch (error) {
                 // If setup failed before the bounded storage pipeline took ownership,
                 // drain the part so Busboy can finish parsing the request.
@@ -186,19 +174,24 @@ export async function storeMultipartAsset(
         request.resume();
         activeFileStream?.destroy();
         await fileTask;
-        await removeSavedUpload();
+        await discardStagedUpload();
         if (failure) throw failure;
         throw uploadError(400, "Malformed multipart upload");
     }
     await fileTask;
 
     if (failure) {
-        await removeSavedUpload();
+        await discardStagedUpload();
         throw failure;
     }
-    if (!fileSeen || !savedFilename) throw uploadError(400, "No file uploaded");
-    return {
-        filename: savedFilename,
-        relativePath: collection === "assets" ? `uploads/${savedFilename}` : savedFilename,
-    };
+    if (!fileSeen || !stagedName || !stagedExtension) {
+        await discardStagedUpload();
+        throw uploadError(400, "No file uploaded");
+    }
+
+    try {
+        return await publishStagedAssetContentAddressed(stagedName, stagedExtension, collection);
+    } catch {
+        throw uploadError(500, "Unable to store uploaded file");
+    }
 }
