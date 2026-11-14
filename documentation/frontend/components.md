@@ -150,7 +150,7 @@ Judge scoring card for evaluating a team's project against rubric criteria.
 - Displays the project name, team name, track, safe-rendered description, AI sourcing statement, and validated repository/demo links.
 - Renders the active season rubric's configured integer ranges and criterion weights.
 - Saves a recoverable draft, gives comment guidance and editable prompt templates, and previews the complete evaluation before finalization.
-- Requires a specific anonymous comment; judges are told that comments become visible after results are published.
+- Requires a specific anonymous comment; judges are told comments become visible after results are published and at least three judges have evaluated the team.
 
 **Validation:** Validates against the immutable rubric version used for the season. Drafts use `/api/judging/drafts/:teamId`; final scores post to `/api/teams/:id/scores`.
 
