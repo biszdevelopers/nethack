@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_RUBRIC_DEFINITION, type RubricDefinition } from "~~/shared/rubric";
+import {
+    DEFAULT_RUBRIC_DEFINITION,
+    type RubricDefinition,
+    withDefaultRubricCommentGuidance,
+} from "~~/shared/rubric";
 import {
     createRubricTemplate,
     createRubricVersion,
@@ -225,7 +229,9 @@ describe("rubric database actions", () => {
                 source_template_id: template?.id,
                 created_by: 17,
             });
-            expect(parseDefinition(version?.definition)).toEqual(definition);
+            expect(parseDefinition(version?.definition)).toEqual(
+                withDefaultRubricCommentGuidance(definition),
+            );
         });
 
         it("reports a missing reusable template", async () => {
@@ -258,7 +264,9 @@ describe("rubric database actions", () => {
             });
 
             expect(copied).toMatchObject({ season_id: 1, version: 1, name: "Copied history" });
-            expect(parseDefinition(copied?.definition)).toEqual(definition);
+            expect(parseDefinition(copied?.definition)).toEqual(
+                withDefaultRubricCommentGuidance(definition),
+            );
             expect(
                 rawDb.prepare("SELECT id, version FROM rubric_versions WHERE season_id = 2").get(),
             ).toEqual({ id: sourceVersionId, version: 4 });
