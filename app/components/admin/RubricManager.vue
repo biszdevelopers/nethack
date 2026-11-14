@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from "vue";
-import { DEFAULT_RUBRIC_DEFINITION, type RubricDefinition } from "~~/shared/rubric";
+import {
+    DEFAULT_RUBRIC_DEFINITION,
+    withDefaultRubricCommentGuidance,
+    type RubricDefinition,
+} from "~~/shared/rubric";
+import type { JudgeCommentGuidance } from "~~/shared/judge-comments";
+import { JudgeCommentGuidanceSchema } from "~~/shared/schemas";
 import RubricDefinitionEditor from "~/components/admin/RubricDefinitionEditor.vue";
+import JudgeCommentGuidanceEditor from "~/components/admin/JudgeCommentGuidanceEditor.vue";
 import RubricTemplateLibrary from "~/components/admin/RubricTemplateLibrary.vue";
 import type { RubricTemplateSummary } from "~/components/admin/rubric-types";
 
@@ -48,6 +55,12 @@ const deletingTemplateId = ref<number | null>(null);
 const loadError = ref("");
 
 const activeVersion = computed(() => rubricData.value?.active ?? null);
+const commentGuidance = computed<JudgeCommentGuidance>({
+    get: () => definition.value.commentGuidance ?? DEFAULT_RUBRIC_DEFINITION.commentGuidance!,
+    set: (value) => {
+        definition.value = { ...definition.value, commentGuidance: value };
+    },
+});
 const versions = computed(() => rubricData.value?.versions ?? []);
 const templates = computed(() => rubricData.value?.templates ?? []);
 const sourceSeasons = computed(() =>
@@ -55,7 +68,7 @@ const sourceSeasons = computed(() =>
 );
 
 function copyDefinition(source: RubricDefinition): RubricDefinition {
-    return JSON.parse(JSON.stringify(source)) as RubricDefinition;
+    return withDefaultRubricCommentGuidance(JSON.parse(JSON.stringify(source)) as RubricDefinition);
 }
 
 function validationIssues(value: RubricDefinition): string[] {
@@ -128,6 +141,11 @@ function validationIssues(value: RubricDefinition): string[] {
                 `Weights for “${track.name || trackId}” currently total ${weightTotal}%; change them to 100%.`,
             );
         }
+    }
+
+    const guidance = JudgeCommentGuidanceSchema.safeParse(value.commentGuidance);
+    if (!guidance.success) {
+        issues.push(...guidance.error.issues.map((issue) => issue.message));
     }
 
     return [...new Set(issues)];
@@ -448,6 +466,10 @@ async function removeTemplate(template: RubricTemplateSummary) {
             </UAlert>
 
             <RubricDefinitionEditor v-model="definition" :disabled="savingVersion || loading" />
+            <JudgeCommentGuidanceEditor
+                v-model="commentGuidance"
+                :disabled="savingVersion || loading"
+            />
 
             <section
                 class="space-y-3 border-t border-ui-border pt-5"
