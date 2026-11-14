@@ -8,15 +8,17 @@ import { and, eq } from "drizzle-orm";
 import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { isJudgingOpen } from "~~/server/utils/judging";
+import {
+    commentContainsJudgeIdentity,
+    JUDGE_COMMENT_IDENTITY_ERROR,
+} from "~~/shared/judge-comments";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         const { id: teamID } = await getValidatedRouterParams(event, TeamIdParams.parse);
 
-        const { id: userID } = await requireUser(
-            event,
-            NethackPermissions.Judging.scoresWriteAssigned,
-        );
+        const judge = await requireUser(event, NethackPermissions.Judging.scoresWriteAssigned);
+        const userID = judge.id;
 
         const [hackathon, season] = await Promise.all([
             getHackathon(event),
@@ -47,6 +49,9 @@ export default defineEventHandler(
         }
 
         const payload = await readValidatedBody(event, SubmitTeamScoresRequest.parse);
+        if (commentContainsJudgeIdentity(payload.reasoning, judge.email, judge.name)) {
+            throw createError({ statusCode: 400, message: JUDGE_COMMENT_IDENTITY_ERROR });
+        }
         const version = await firstRow(
             event.context.drizzle
                 .select()
