@@ -66,4 +66,14 @@ describe("GET /api/seasons/active", () => {
         expect(result).toHaveProperty("theme_name", null);
         expect(result).toHaveProperty("theme_description", null);
     });
+
+    it("exposes whether judging is open during the voting period", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", judging_open: 1 });
+        seedSeason(ctx);
+
+        const result = await handler(createEvent());
+
+        expect(result).toHaveProperty("judging_open", true);
+    });
 });
