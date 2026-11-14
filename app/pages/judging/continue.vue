@@ -6,6 +6,11 @@ import JudgingReview from "~/components/JudgingReview.vue";
 import { useJudgingDraft } from "~/composables/useJudgingDraft";
 import type { RubricDefinition } from "~~/shared/rubric";
 import { NethackPermissions } from "~~/shared/permissions";
+import {
+    commentContainsJudgeIdentity,
+    JUDGE_COMMENT_IDENTITY_ERROR,
+} from "~~/shared/judge-comments";
+import { getJudgingQueueScanRanges } from "~/utils/judging-queue";
 import { WEBSITE_NAME } from "~/utils/consts";
 
 interface JudgingRubric extends RubricDefinition {
@@ -27,7 +32,7 @@ if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
     throw await navigateTo("/");
 }
 
-const { error: userError } = await useApiUser();
+const { user, error: userError } = await useApiUser();
 const { can } = useNethackPermissions();
 if (userError.value) throw userError.value;
 if (!can(NethackPermissions.Judging.assignmentsRead)) {
@@ -55,6 +60,7 @@ const activeIndex = shallowRef(0);
 const navigating = shallowRef(false);
 const step = shallowRef<"score" | "review">("score");
 const submitting = shallowRef(false);
+const submissionError = shallowRef<string | null>(null);
 const finalized = shallowRef<Record<number, FinalizedEvaluation>>({});
 const scoredCount = shallowRef(0);
 const toast = useToast();
@@ -76,6 +82,14 @@ const activeTrack = computed(() => {
         ? (draft.rubric.value?.tracks[pathway] ?? rubricFetch.data.value?.tracks[pathway] ?? null)
         : null;
 });
+const activeCommentGuidance = computed(
+    () => draft.rubric.value?.commentGuidance ?? rubricFetch.data.value?.commentGuidance,
+);
+const commentIdentityError = computed(() =>
+    commentContainsJudgeIdentity(draft.state.reasoning, user.value?.email, user.value?.name)
+        ? JUDGE_COMMENT_IDENTITY_ERROR
+        : null,
+);
 const activeFinalized = computed(() =>
     activeTeam.value
         ? (finalized.value[activeTeam.value.id] ?? activeItem.value?.evaluation ?? null)
@@ -247,15 +261,17 @@ async function openPreviousProject() {
 }
 
 async function focusNextPending(startPage: number, startIndex: number) {
-    for (let page = startPage; page <= totalPages.value; page += 1) {
+    for (const range of getJudgingQueueScanRanges(startPage, startIndex, totalPages.value)) {
         try {
-            const pageItems = await getQueuePage(page);
+            const pageItems = await getQueuePage(range.page);
             const index = pageItems.findIndex(
                 (item, itemIndex) =>
-                    (page > startPage || itemIndex >= startIndex) && !item.evaluated,
+                    !item.evaluated &&
+                    itemIndex >= range.fromIndex &&
+                    (range.untilIndex === undefined || itemIndex < range.untilIndex),
             );
             if (index >= 0) {
-                currentPage.value = page;
+                currentPage.value = range.page;
                 activeIndex.value = index;
                 navigationError.value = null;
                 return true;
@@ -271,6 +287,7 @@ async function focusNextPending(startPage: number, startIndex: number) {
 async function openReview() {
     try {
         await draft.flush();
+        submissionError.value = null;
         step.value = "review";
     } catch {
         toast.add({
@@ -279,6 +296,11 @@ async function openReview() {
             description: "Retry saving your work before reviewing it.",
         });
     }
+}
+
+function returnToScoring() {
+    submissionError.value = null;
+    step.value = "score";
 }
 
 async function finalizeEvaluation() {
@@ -337,6 +359,7 @@ async function finalizeEvaluation() {
             toast.add({ color: "success", title: "Evaluation submitted" });
         }
     } catch (error) {
+        submissionError.value = getErrorMessage(error);
         toast.add({
             color: "error",
             title: "Could not submit evaluation",
@@ -506,10 +529,12 @@ onBeforeRouteLeave(async () => {
                 :key="`review-${activeTeam.id}`"
                 :team="activeTeam"
                 :track="activeTrack"
+                :comment-guidance="activeCommentGuidance"
+                :submit-error="submissionError"
                 :scores="displayScores"
                 :reasoning="displayReasoning"
                 :submitting="submitting"
-                @back="step = 'score'"
+                @back="returnToScoring"
                 @finalize="finalizeEvaluation"
             />
 
@@ -518,6 +543,8 @@ onBeforeRouteLeave(async () => {
                 :key="`score-${activeTeam.id}`"
                 :team="activeTeam"
                 :track="activeTrack"
+                :comment-guidance="activeCommentGuidance"
+                :comment-identity-error="commentIdentityError"
                 :scores="displayScores"
                 :reasoning="displayReasoning"
                 :draft-status="activeFinalized ? 'saved' : draftStatus"
