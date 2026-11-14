@@ -4,7 +4,7 @@ setPageLayout("fullwidth");
 const route = useRoute();
 const userID = route.params.id as string;
 
-const { data, error } = await useFetch<APIUser>(() => `/api/users/${userID}`);
+const { data, error } = await useApiFetch<APIUser>(() => `/api/users/${userID}`);
 if (error.value) {
     throw createError({
         status: 404,
