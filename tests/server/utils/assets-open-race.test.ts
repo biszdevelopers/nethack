@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const { openMock } = vi.hoisted(() => ({ openMock: vi.fn() }));
+const { openMock, lstatMock } = vi.hoisted(() => ({ openMock: vi.fn(), lstatMock: vi.fn() }));
 
 vi.mock("node:fs/promises", async (importOriginal) => ({
     ...(await importOriginal<typeof import("node:fs/promises")>()),
     open: openMock,
+    lstat: lstatMock,
 }));
 
 import { createAsset, openStoredAsset } from "~~/server/utils/assets";
@@ -26,6 +27,7 @@ describe("asset file replacement race", () => {
         await actualFsPromises.writeFile(join(storageDir, "assets", "file.txt"), "regular file");
         vi.stubEnv("ASSET_STORAGE_DIR", storageDir);
         close.mockReset();
+        lstatMock.mockReset().mockImplementation(actualFsPromises.lstat);
         openMock.mockReset().mockResolvedValue({
             stat: async () => ({ isFile: () => false }),
             close,
@@ -55,5 +57,18 @@ describe("asset file replacement race", () => {
 
         expect(openMock).toHaveBeenCalledOnce();
         expect(close).toHaveBeenCalledOnce();
+    });
+
+    it("propagates an unexpected stat failure for the requested asset", async () => {
+        const failure = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+        lstatMock.mockImplementation(async (path: string) => {
+            if (path.endsWith(join("assets", "file.txt"))) throw failure;
+            return actualFsPromises.lstat(path);
+        });
+
+        await expect(openStoredAsset("assets", "file.txt")).rejects.toThrow(
+            "EACCES: permission denied",
+        );
+        expect(openMock).not.toHaveBeenCalled();
     });
 });

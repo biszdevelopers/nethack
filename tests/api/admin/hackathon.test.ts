@@ -75,6 +75,19 @@ describe("GET /api/admin/hackathon", () => {
         expect(result.hackathon).toHaveProperty("status");
         expect(result).toHaveProperty("seasons");
         expect(Array.isArray(result.seasons)).toBe(true);
+        expect(result.configSource).toBe("database");
+    });
+
+    it("reports a remote manifest source", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/HACKATHON.yml");
+        try {
+            await expect(getHandler(createEvent())).resolves.toMatchObject({
+                configSource: "remote",
+            });
+        } finally {
+            vi.unstubAllEnvs();
+        }
     });
 });
 
@@ -119,6 +132,16 @@ describe("PATCH /api/admin/hackathon", () => {
         mockBody.value = {};
 
         await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it("rejects a body whose fields are all nullish", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { schedule_start: null, theme_description: null };
+
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "No fields to update",
+        });
     });
 
     it("persists changes to the database", async () => {
@@ -177,6 +200,87 @@ describe("PATCH /api/admin/hackathon", () => {
         row = ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()!;
         expect(row.start_timestamp).toBe(1737367200000);
         expect(row.end_timestamp).toBe(1740000000000);
+    });
+});
+
+describe("PATCH /api/admin/hackathon under manifest authority", () => {
+    function createManifestEvent(season: Record<string, unknown> | null) {
+        const updates: Record<string, unknown>[] = [];
+        const query: any = {
+            from: () => query,
+            where: () => query,
+            for: () => query,
+            then: (resolve: (rows: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
+                Promise.resolve(season ? [season] : []).then(resolve, reject),
+        };
+        const transaction = {
+            select: () => query,
+            update: () => ({
+                set: (values: Record<string, unknown>) => ({
+                    where: async () => {
+                        updates.push(values);
+                    },
+                }),
+            }),
+        };
+        const drizzle = new Proxy(
+            {
+                transaction: async (run: (transaction: typeof transaction) => unknown) =>
+                    run(transaction),
+            },
+            {
+                get(target, property, receiver) {
+                    if (property in target) return Reflect.get(target, property, receiver);
+                    const value = Reflect.get(ctx.drizzle as any, property);
+                    return typeof value === "function" ? value.bind(ctx.drizzle) : value;
+                },
+            },
+        );
+        return { event: { context: { drizzle } }, updates };
+    }
+
+    beforeEach(() => {
+        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it("rejects a live update that omits the season hint", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { theme_name: "Manifest only" };
+        const { event, updates } = createManifestEvent({ is_active: 0 });
+
+        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 409 });
+        expect(updates).toEqual([]);
+    });
+
+    it("rejects changes to the active season", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { season_id: 1, theme_name: "Manifest only" };
+        const { event, updates } = createManifestEvent({ is_active: 1 });
+
+        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 409 });
+        expect(updates).toEqual([]);
+    });
+
+    it("rejects an unknown season", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { season_id: 987, theme_name: "Nowhere" };
+        const { event, updates } = createManifestEvent(null);
+
+        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 404 });
+        expect(updates).toEqual([]);
+    });
+
+    it("updates a historical season without touching live settings", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { season_id: 2, theme_name: "Archived theme" };
+        const { event, updates } = createManifestEvent({ is_active: 0 });
+
+        await expect(patchHandler(event)).resolves.toHaveProperty("seasons");
+        expect(updates).toEqual([{ theme_name: "Archived theme" }]);
     });
 });
 

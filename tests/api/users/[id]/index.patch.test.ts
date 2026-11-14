@@ -362,6 +362,28 @@ describe("PATCH /api/users/:id", () => {
             expect(updated!.profile_theme).toBeNull();
         });
 
+        it("locks a legacy content-addressed path stored without a mode prefix", async () => {
+            const alice = seedUser(ctx, { email: "legacy-theme@basischina.com", name: "Alice" });
+            ctx.drizzle
+                .update(users)
+                .set({ profile_theme: OLD_THEME_ASSET })
+                .where(eq(users.id, alice.id))
+                .run();
+
+            mockParams.values["id"] = String(alice.id);
+            mockSession.value = { user: { id: alice.id } };
+            mockBody.value = { profile_theme_image: null };
+
+            await expect(handler(createEvent())).resolves.toEqual({
+                message: "Your profile is updated",
+            });
+            expect(withAssetLifecycleLocks).toHaveBeenCalledWith(
+                ctx.drizzle,
+                [OLD_THEME_ASSET],
+                expect.any(Function),
+            );
+        });
+
         it("rejects an invalid image data URL format", async () => {
             const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
 

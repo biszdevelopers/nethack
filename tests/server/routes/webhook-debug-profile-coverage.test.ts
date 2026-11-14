@@ -349,6 +349,39 @@ describe("profile picture route", () => {
         expect(mocks.openStoredAsset).not.toHaveBeenCalled();
     });
 
+    it("rethrows an unexpected stored-asset failure instead of masking it", async () => {
+        mocks.user = {
+            id: 1,
+            email: "person@example.test",
+            profile_picture: "profiles/person.png",
+        };
+        mocks.openStoredAsset.mockRejectedValueOnce(
+            Object.assign(new Error("disk offline"), { statusCode: 500 }),
+        );
+
+        await expect(handler(event)).rejects.toMatchObject({ statusCode: 500 });
+    });
+
+    it("falls back to an identicon when the stored asset is missing", async () => {
+        mocks.user = {
+            id: 1,
+            email: "person@example.test",
+            profile_picture: "profiles/missing.png",
+        };
+        mocks.openStoredAsset.mockRejectedValueOnce(
+            Object.assign(new Error("Asset not found"), { statusCode: 404 }),
+        );
+
+        const response = await handler(event);
+        const chunks: Buffer[] = [];
+        for await (const chunk of response) chunks.push(Buffer.from(chunk));
+
+        expect(Buffer.concat(chunks).subarray(0, 8)).toEqual(
+            Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+        );
+        expect(event.headers["Content-Type"]).toBe("image/png");
+    });
+
     it("serves the provider picture without forwarding credentials or following redirects", async () => {
         const url = "https://auth.example.test/api/picture/person";
         const bytes = Uint8Array.from([71, 73, 70]);

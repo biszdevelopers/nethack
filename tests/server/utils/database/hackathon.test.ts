@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createMockEvent } from "./helpers";
 import { getHackathon, updateHackathon } from "~~/server/utils/database/hackathon";
 
@@ -231,6 +231,24 @@ describe("hackathon database helpers", () => {
         it("returns null when no hackathon row exists", async () => {
             const updated = await updateHackathon(event, { show_scores: 1 });
             expect(updated).toBeNull();
+        });
+
+        it("refuses to write live settings while the manifest is authoritative", async () => {
+            vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
+            try {
+                seedRow();
+
+                await expect(updateHackathon(event, { show_scores: 1 })).rejects.toMatchObject({
+                    statusCode: 409,
+                });
+                expect(
+                    event.context.drizzle
+                        .prepare("SELECT show_scores FROM hackathon WHERE id = 1")
+                        .first(),
+                ).toEqual({ show_scores: 0 });
+            } finally {
+                vi.unstubAllEnvs();
+            }
         });
     });
 });

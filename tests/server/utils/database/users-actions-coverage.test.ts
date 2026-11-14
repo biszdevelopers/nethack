@@ -115,4 +115,24 @@ describe("existing basis-auth link update actions", () => {
             getUserByBasisAuthSubject(event, identity.issuer, "missing-subject"),
         ).resolves.toBeNull();
     });
+
+    it("promotes a designated initial administrator on link and on creation", async () => {
+        const existing = await findOrLinkBasisAuthUser(event, identity);
+        const relinked = await findOrLinkBasisAuthUser(event, {
+            ...identity,
+            email: "Cindy.Cheng-Bisz@basischina.com",
+        });
+        const created = await findOrLinkBasisAuthUser(event, {
+            ...identity,
+            subject: "another-subject",
+            email: "zhiyu.jiang90454-bisz@basischina.com",
+        });
+
+        expect(relinked).toMatchObject({
+            id: existing.id,
+            email: "cindy.cheng-bisz@basischina.com",
+            is_admin: 1,
+        });
+        expect(created).toMatchObject({ is_admin: 1 });
+    });
 });

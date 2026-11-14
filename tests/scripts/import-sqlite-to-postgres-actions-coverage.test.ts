@@ -35,7 +35,11 @@ import {
     validateTargetRelationships,
     DATABASE_FOREIGN_KEYS,
 } from "../../scripts/import-sqlite-to-postgres.mjs";
-import { IMPORT_TARGET_TABLES } from "../../scripts/sqlite-import-target.mjs";
+import {
+    IMPORT_TARGET_TABLES,
+    PRISTINE_HACKATHON_SEED,
+} from "../../scripts/sqlite-import-target.mjs";
+import { DEFAULT_RUBRIC_DEFINITION } from "../../shared/rubric";
 
 const temporaryDirectories: string[] = [];
 
@@ -193,17 +197,83 @@ const targetColumns = (source: Database.Database) => {
 
 const createPostgresDouble = (
     source: Database.Database,
-    overrides: { populated?: boolean; mismatch?: boolean; archiveMismatch?: boolean } = {},
+    overrides: {
+        populated?: boolean;
+        mismatch?: boolean;
+        archiveMismatch?: boolean;
+        existingUser?: {
+            id: number;
+            email: string;
+            auth_issuer: string;
+            auth_subject: string;
+            profile_picture: string | null;
+        };
+    } = {},
 ) => {
     const columns = targetColumns(source);
     const counts = Object.fromEntries(IMPORT_TARGET_TABLES.map((table) => [table, 0])) as Record<
         string,
         number
     >;
+    const pristineRows: Record<string, Record<string, unknown>> = {
+        hackathon: { ...PRISTINE_HACKATHON_SEED },
+        seasons: {
+            id: 1,
+            name: "Season 1",
+            is_active: 1,
+            status: "not_started",
+            voting_enabled: 0,
+            results_published: 0,
+            judging_open: 0,
+            show_scores: 0,
+            show_ranking: 0,
+            max_votes_per_user: 0,
+            schedule_start: null,
+            schedule_end: null,
+            start_timestamp: 0,
+            end_timestamp: 0,
+            voting_start_timestamp: 0,
+            voting_end_timestamp: 0,
+            results_open_timestamp: 0,
+            theme_name: null,
+            theme_description: null,
+            score_curve_preset: "original",
+            rubric_version_id: 1,
+        },
+        rubric_templates: {
+            id: 1,
+            name: "BIBS-C Default",
+            description: "The original BIBS-C judging rubric.",
+            definition: DEFAULT_RUBRIC_DEFINITION,
+            created_by: null,
+        },
+        rubric_versions: {
+            id: 1,
+            season_id: 1,
+            version: 1,
+            name: "BIBS-C Default",
+            definition: DEFAULT_RUBRIC_DEFINITION,
+            source_template_id: 1,
+            created_by: null,
+        },
+    };
+    if (overrides.existingUser) {
+        counts.users = 1;
+        for (const table of ["hackathon", "seasons", "rubric_templates", "rubric_versions"])
+            counts[table] = 1;
+    }
     const state = { inTransaction: false, statements: [] as string[], legacyCountReads: 0 };
     const sql: any = async (parts: TemplateStringsArray, ...values: unknown[]) => {
         const statement = parts.join(" ").replace(/\s+/g, " ");
         state.statements.push(statement);
+        if (overrides.existingUser) {
+            if (statement.includes("profile_picture FROM users")) return [overrides.existingUser];
+            const deletion = statement.match(/^DELETE FROM "?(\w+)"?/);
+            if (deletion) {
+                counts[deletion[1]] -= 1;
+                return [];
+            }
+        }
         if (statement.includes("information_schema.columns")) {
             const table = String(values[0]);
             const rows = [...(columns.get(table)?.values() ?? [])];
@@ -227,6 +297,10 @@ const createPostgresDouble = (
     };
     sql.unsafe = vi.fn(async (statement: string, params: unknown[] = []) => {
         state.statements.push(statement);
+        if (overrides.existingUser) {
+            const selectAll = statement.match(/^SELECT \* FROM "([^"]+)"$/);
+            if (selectAll && pristineRows[selectAll[1]]) return [pristineRows[selectAll[1]]];
+        }
         if (/SELECT count\(\*\)::bigint AS count FROM "[^"]+" c LEFT JOIN/.test(statement)) {
             return [{ count: 0 }];
         }
@@ -398,6 +472,24 @@ describe("SQLite importer source inspection", () => {
                     archived_at: 100,
                 },
             });
+        } finally {
+            source.close();
+        }
+    });
+
+    it("rejects compatibility archive rows that are missing the expected archived_at integer", () => {
+        const source = createSource();
+        try {
+            source.exec(`
+                CREATE TABLE legacy_schema_compat_archive (
+                    table_name TEXT, row_key TEXT, payload TEXT, archived_at INTEGER
+                );
+                INSERT INTO legacy_schema_compat_archive
+                VALUES ('seasons', '1', '{"id":1}', 'not-an-epoch');
+            `);
+            expect(() => validateSource(source, sourceTables(source))).toThrow(
+                "legacy_schema_compat_archive contains an unexpected row format.",
+            );
         } finally {
             source.close();
         }
@@ -673,13 +765,17 @@ describe("SQLite importer source inspection", () => {
     it("uses an unshadowed hidden row identifier when a source column is named rowid", () => {
         const source = createSource();
         source.exec(`
-            ALTER TABLE team_scores ADD COLUMN rowid TEXT;
+            DROP TABLE team_scores;
+            CREATE TABLE team_scores (
+                team_id INTEGER, judge_user_id INTEGER, season_id INTEGER,
+                rubric_version_id INTEGER, rowid TEXT
+            );
             INSERT INTO team_scores (team_id, judge_user_id, season_id, rubric_version_id, rowid)
             VALUES (404, 7, 1, 1, 'source-value');
         `);
         const classified = classifyOrphanedTeamScores(source, sourceTables(source));
         expect(classified.rows[0]).toMatchObject({
-            row_key: "rowid:2",
+            row_key: "rowid:1",
             payload: {
                 row: {
                     team_id: 404,
@@ -814,6 +910,69 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         ).resolves.toMatchObject({
             hackathonId: undefined,
         });
+        source.close();
+    });
+
+    it("retains only a single basis-auth user whose identity fields match the source exactly", async () => {
+        const source = createSource();
+        const columns = targetColumns(source);
+        const targetUser = {
+            id: 42,
+            email: "Retained@Example.com ",
+            auth_issuer: "https://auth.example",
+            auth_subject: "subject-7",
+            profile_picture: "/assets/userassets/profiles/pic.png",
+        };
+        const sourceUser = {
+            id: 7,
+            email: "retained@example.com",
+            auth_issuer: "https://auth.example",
+            auth_subject: "subject-7",
+        };
+        const emptyTargetWithUser = (row?: Record<string, unknown>) =>
+            Object.assign(
+                async (parts: TemplateStringsArray) =>
+                    row && parts.join(" ").includes("profile_picture FROM users") ? [row] : [],
+                {
+                    unsafe: vi.fn(async (statement: string) =>
+                        statement.includes('"users"') && statement.includes("count(*)")
+                            ? [{ count: 1 }]
+                            : [{ count: 0 }],
+                    ),
+                },
+            );
+
+        await expect(
+            ensureEmptyTarget(emptyTargetWithUser(targetUser), columns, new Map(), [sourceUser]),
+        ).resolves.toMatchObject({
+            existingUser: {
+                targetId: 42,
+                sourceId: 7,
+                picture: "/assets/userassets/profiles/pic.png",
+            },
+        });
+
+        const emptySql = Object.assign(async () => [], {
+            unsafe: vi.fn(async () => [{ count: 0 }]),
+        });
+        await expect(
+            ensureEmptyTarget(emptySql, columns, new Map(), [sourceUser]),
+        ).resolves.toMatchObject({ hackathonId: undefined });
+
+        const unmatchedUsers: Array<[Record<string, unknown>, Array<Record<string, unknown>>]> = [
+            [{ ...targetUser, auth_issuer: null }, [sourceUser]],
+            [{ ...targetUser, auth_subject: null }, [sourceUser]],
+            [{ ...targetUser, email: "other@example.com" }, [sourceUser]],
+            [targetUser, [{ ...sourceUser, email: null }]],
+            [targetUser, [{ ...sourceUser, auth_issuer: "https://other.example" }]],
+            [targetUser, [{ ...sourceUser, auth_subject: "other-subject" }]],
+            [targetUser, [sourceUser, { ...sourceUser, id: 8 }]],
+        ];
+        for (const [target, users] of unmatchedUsers) {
+            await expect(
+                ensureEmptyTarget(emptyTargetWithUser(target), columns, new Map(), users),
+            ).rejects.toThrow("outside the exact fresh-migration seed state");
+        }
         source.close();
     });
 
@@ -1068,6 +1227,68 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
             logger: { log: vi.fn() } as unknown as Console,
         });
         expect(fake.counts.team_scores).toBe(1);
+        source.close();
+    });
+
+    it("deletes a retained basis-auth user before reinserting it and restores only an existing picture", async () => {
+        const source = createSource();
+        source.exec(`
+            ALTER TABLE users ADD COLUMN email TEXT;
+            ALTER TABLE users ADD COLUMN auth_issuer TEXT;
+            ALTER TABLE users ADD COLUMN auth_subject TEXT;
+            ALTER TABLE users ADD COLUMN profile_picture TEXT;
+            UPDATE users SET email = 'Retained@Example.com',
+                auth_issuer = 'https://auth.example', auth_subject = 'subject-7'
+            WHERE id = 7;
+        `);
+        const available = sourceTables(source);
+        const sourceInfo = validateSource(source, available);
+        const retainedUser = {
+            id: 7,
+            email: "retained@example.com",
+            auth_issuer: "https://auth.example",
+            auth_subject: "subject-7",
+            profile_picture: "/assets/userassets/profiles/pic.png",
+        };
+        const logger = { log: vi.fn() };
+        const withPicture = createPostgresDouble(source, { existingUser: retainedUser });
+
+        await importToPostgres(source, available, sourceInfo, {
+            databaseUrl: "postgres://fixture@localhost/db",
+            preserveMatchedUser: true,
+            postgresClient: withPicture.postgresClient,
+            logger: logger as unknown as Console,
+        });
+
+        expect(withPicture.counts.users).toBe(1);
+        expect(
+            withPicture.state.statements.some((statement) =>
+                statement.startsWith("DELETE FROM users WHERE id ="),
+            ),
+        ).toBe(true);
+        const pictureInsert = withPicture.sql.unsafe.mock.calls.find(([statement]: [string]) =>
+            statement.startsWith('INSERT INTO "users"'),
+        );
+        expect(pictureInsert?.[1]).toContain("/assets/userassets/profiles/pic.png");
+        expect(logger.log).toHaveBeenCalledWith(
+            expect.stringContaining('"preservedBasisAuthUserId": 7'),
+        );
+
+        const withoutPicture = createPostgresDouble(source, {
+            existingUser: { ...retainedUser, profile_picture: null },
+        });
+        await importToPostgres(source, available, sourceInfo, {
+            databaseUrl: "postgres://fixture@localhost/db",
+            preserveMatchedUser: true,
+            postgresClient: withoutPicture.postgresClient,
+            logger: { log: vi.fn() } as unknown as Console,
+        });
+
+        expect(withoutPicture.counts.users).toBe(1);
+        const plainInsert = withoutPicture.sql.unsafe.mock.calls.find(([statement]: [string]) =>
+            statement.startsWith('INSERT INTO "users"'),
+        );
+        expect(plainInsert?.[1]).not.toContain("/assets/userassets/profiles/pic.png");
         source.close();
     });
 

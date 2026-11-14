@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     getScoreRankVisibilityResolver,
     setActiveSeason,
@@ -126,5 +126,72 @@ describe("season visibility and action boundaries", () => {
         expect(
             event.context.drizzle.prepare("SELECT is_active FROM seasons WHERE id = 1").first(),
         ).toEqual({ is_active: 1 });
+    });
+});
+
+describe("live YAML season switching", () => {
+    let event: Awaited<ReturnType<typeof createMockEvent>>;
+
+    beforeEach(async () => {
+        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
+        event = await createMockEvent();
+        event.context.drizzle
+            .prepare(
+                "INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp) VALUES(1, 'not_started', 0, 0, 0, 0, 0)",
+            )
+            .run();
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it("refuses to change live settings on the active season", async () => {
+        event.context.drizzle
+            .prepare(
+                "INSERT INTO seasons(id, name, is_active, status) VALUES(1, 'Live', 1, 'voting')",
+            )
+            .run();
+
+        await expect(updateSeasonTweaks(event, 1, { show_scores: 0 })).rejects.toMatchObject({
+            statusCode: 409,
+        });
+    });
+
+    it("snapshots the outgoing live manifest into its active season when switching", async () => {
+        event.context.drizzle
+            .prepare(
+                "INSERT INTO seasons(id, name, is_active, status, show_scores) VALUES(1, 'Outgoing', 1, 'not_started', 0), (2, 'Incoming', 0, 'finished', 1)",
+            )
+            .run();
+
+        await setActiveSeason(event, 2);
+
+        expect(
+            event.context.drizzle
+                .prepare("SELECT status, is_active FROM seasons WHERE id = 1")
+                .first(),
+        ).toEqual({ status: "voting", is_active: 0 });
+        expect(
+            event.context.drizzle
+                .prepare("SELECT status, is_active FROM seasons WHERE id = 2")
+                .first(),
+        ).toEqual({ status: "finished", is_active: 1 });
+    });
+
+    it("does not re-snapshot a season that is already the live one", async () => {
+        event.context.drizzle
+            .prepare(
+                "INSERT INTO seasons(id, name, is_active, status) VALUES(1, 'Current', 1, 'not_started')",
+            )
+            .run();
+
+        await setActiveSeason(event, 1);
+
+        expect(
+            event.context.drizzle
+                .prepare("SELECT status, is_active FROM seasons WHERE id = 1")
+                .first(),
+        ).toEqual({ status: "not_started", is_active: 1 });
     });
 });

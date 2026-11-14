@@ -293,7 +293,7 @@ const durationComplete = elapsedSeconds >= durationSeconds * 0.99;
 const memorySamplingComplete =
     observations.sampleErrors === 0 &&
     rssSamples.length >= minimumExpectedSamples &&
-    (!cgroupMemoryFile || (cgroupMemory?.sample_count ?? 0) >= minimumExpectedSamples);
+    (!cgroupMemoryFile || cgroupMemory.sample_count >= minimumExpectedSamples);
 const cpuSamples = observations.samples.filter((sample) => typeof sample.cpu_ticks === "number");
 const cpuCount =
     typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;

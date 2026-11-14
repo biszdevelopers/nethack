@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +35,8 @@ describe("basis-auth profile pictures", () => {
         expect(
             getBasisAuthPictureUrl("https://auth.example.test/a.png", undefined),
         ).toBeUndefined();
+        expect(getBasisAuthPictureUrl(42, "https://auth.example.test")).toBeUndefined();
+        expect(getBasisAuthPictureUrl("not a url", "https://auth.example.test")).toBeUndefined();
     });
 
     it("caches provider bytes and serves them when the provider is unavailable", async () => {
@@ -60,6 +62,45 @@ describe("basis-auth profile pictures", () => {
         );
         await expect(
             fetchBasisAuthPicture("https://auth.example.test/api/picture/1", "../escape"),
+        ).resolves.toBeUndefined();
+    });
+
+    it("returns provider bytes without caching when no cache key is supplied", async () => {
+        const bytes = Buffer.from([1, 2, 3]);
+        fetch.mockResolvedValueOnce(
+            new Response(bytes, { headers: { "content-type": "image/webp; charset=binary" } }),
+        );
+
+        await expect(fetchBasisAuthPicture("https://auth.example.test/a.webp")).resolves.toEqual({
+            bytes,
+            contentType: "image/webp",
+        });
+    });
+
+    it("ignores responses without an image content type", async () => {
+        fetch.mockResolvedValueOnce(new Response(Buffer.from([1, 2, 3])));
+
+        await expect(
+            fetchBasisAuthPicture("https://auth.example.test/a.png", "7"),
+        ).resolves.toBeUndefined();
+    });
+
+    it("skips an empty cached picture file", async () => {
+        await mkdir(cacheDir, { recursive: true });
+        await writeFile(join(cacheDir, "42.png"), new Uint8Array());
+        fetch.mockRejectedValueOnce(new Error("provider offline"));
+
+        await expect(
+            fetchBasisAuthPicture("https://auth.example.test/a.png", "42"),
+        ).resolves.toBeUndefined();
+    });
+
+    it("falls back to the default cache directory", async () => {
+        vi.stubEnv("BASIS_AUTH_PICTURE_CACHE_DIR", "");
+        fetch.mockRejectedValueOnce(new Error("provider offline"));
+
+        await expect(
+            fetchBasisAuthPicture("https://auth.example.test/a.png", "424242"),
         ).resolves.toBeUndefined();
     });
 });

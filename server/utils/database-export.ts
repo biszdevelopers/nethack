@@ -78,9 +78,7 @@ export async function* snapshotDatabaseExport(db: DrizzleDatabase, format: "json
         while (true) {
             const rawRows =
                 name === "hackathon" && hackathonUsesYaml()
-                    ? offset === 0
-                        ? [await readHackathonConfig()]
-                        : []
+                    ? [await readHackathonConfig()]
                     : ((await db
                           .select()
                           .from(table as any)

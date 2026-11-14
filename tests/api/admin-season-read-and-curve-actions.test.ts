@@ -199,4 +199,34 @@ describe("season rubric history read actions", () => {
         await expect(getSeasonRubric(event)).rejects.toMatchObject({ statusCode: 403 });
         expect(mocks.firstRow).not.toHaveBeenCalled();
     });
+
+    it("does not flag an active season as manifest-managed while the database is authoritative", async () => {
+        mockParams.values.id = "8";
+        mocks.firstRow.mockResolvedValue({ ...season, is_active: 1 });
+        selectQuery.orderBy.mockResolvedValue([active]);
+        mocks.listRubricTemplates.mockResolvedValue([]);
+
+        await expect(getSeasonRubric(event)).resolves.toEqual({
+            active,
+            versions: [active],
+            templates: [],
+        });
+    });
+
+    it("flags an active season whose rubric comes from the live manifest", async () => {
+        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
+        try {
+            mockParams.values.id = "8";
+            mocks.firstRow.mockResolvedValue({ ...season, is_active: 1 });
+            selectQuery.orderBy.mockResolvedValue([active]);
+            mocks.listRubricTemplates.mockResolvedValue([]);
+
+            await expect(getSeasonRubric(event)).resolves.toMatchObject({
+                active,
+                yamlManaged: true,
+            });
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
 });

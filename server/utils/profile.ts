@@ -3,15 +3,6 @@ import { dirname, resolve } from "node:path";
 import jdenticon from "jdenticon";
 import fetch from "node-fetch";
 
-const PROVIDER_IMAGE_TYPES = new Set([
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "image/avif",
-]);
-
 const extensionByType: Record<string, string> = {
     "image/jpeg": "jpg",
     "image/jpg": "jpg",
@@ -20,6 +11,8 @@ const extensionByType: Record<string, string> = {
     "image/webp": "webp",
     "image/avif": "avif",
 };
+
+const PROVIDER_IMAGE_TYPES = new Set(Object.keys(extensionByType));
 
 function cachePath(cacheKey: string, extension: string) {
     const root = process.env.BASIS_AUTH_PICTURE_CACHE_DIR?.trim() || "assets/basis-auth-pictures";
@@ -39,8 +32,8 @@ async function readCachedPicture(cacheKey: string) {
 }
 
 async function writeCachedPicture(cacheKey: string, contentType: string, bytes: Buffer) {
-    const extension = extensionByType[contentType];
-    if (!extension) return;
+    // Callers reject types outside PROVIDER_IMAGE_TYPES, so the extension always exists.
+    const extension = extensionByType[contentType]!;
     try {
         const path = cachePath(cacheKey, extension);
         await mkdir(dirname(path), { recursive: true });

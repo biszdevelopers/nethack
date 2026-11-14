@@ -78,4 +78,15 @@ describe("nethack permission helpers", () => {
             }),
         ).toContain(NethackPermissions.Profile.updateSelf);
     });
+
+    it("does not duplicate an administrative grant that is already present", () => {
+        const effective = effectiveNethackPermissions(["NETHACK.ALL"], {
+            email: "admin@example.test",
+            is_admin: 1,
+        });
+
+        expect(effective.filter((permission) => /^nethack\.all$/i.test(permission))).toHaveLength(
+            1,
+        );
+    });
 });

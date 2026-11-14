@@ -192,6 +192,18 @@ describe("judge score aggregation and ranking", () => {
         });
     });
 
+    it("sorts a null-pathway team alongside tracked teams", async () => {
+        const untracked = addTeam(null);
+        const untrackedUnscored = addTeam(null);
+        const junior = addTeam("junior");
+        addScore(junior, 4);
+
+        const ranked = await calculateSeasonScoresWithDatabase(event.context.drizzle, seasonId);
+
+        expect(ranked.map((team) => team.id)).toEqual([untracked, untrackedUnscored, junior]);
+        expect(ranked.map((team) => team.pathway)).toEqual([null, null, "junior"]);
+    });
+
     it("ranks null-pathway teams and normalizes uncached track scores", async () => {
         const targetId = addTeam(null);
         const scoredId = addTeam(null);

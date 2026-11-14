@@ -63,6 +63,24 @@ describe("GET /api/auth/session", () => {
         expect(JSON.stringify(result)).not.toContain("refresh-token");
     });
 
+    it("grants the participant bundle when the local user row is missing", async () => {
+        mocks.getFreshSession.mockResolvedValue({
+            userId: 7,
+            tokens: {
+                accessToken: "access-token",
+                accessTokenExpiresAt: 123456,
+                refreshToken: "refresh-token",
+            },
+        });
+        mocks.verifyAccessToken.mockResolvedValue({ permissions: undefined });
+        mocks.getUser.mockResolvedValue(undefined);
+
+        await expect(handler({ context: {} })).resolves.toMatchObject({
+            user: { id: 7 },
+            permissions: expect.arrayContaining(["nethack.Profile.updateSelf"]),
+        });
+    });
+
     it("expands legacy grants for display-only client gating", async () => {
         mocks.getFreshSession.mockResolvedValue({
             userId: 7,
