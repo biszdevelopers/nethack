@@ -154,16 +154,25 @@ describe.skipIf(!enabled || !hasDatabaseUrl)("PostgreSQL integration", () => {
 
     it("keeps seeded event and rubric state unchanged on repeat startup", async () => {
         const db = database!;
+        const [originalEvent] = await db.select().from(hackathon).where(eq(hackathon.id, 1));
+        expect(originalEvent).toBeDefined();
         await db.update(hackathon).set({ status: "paused" });
-        const originalSeasons = await db.select().from(seasons);
-        const originalRubrics = await db.select().from(rubricVersions);
+        try {
+            const originalSeasons = await db.select().from(seasons);
+            const originalRubrics = await db.select().from(rubricVersions);
 
-        await createAndMigrateDatabase(db);
+            await createAndMigrateDatabase(db);
 
-        const [event] = await db.select().from(hackathon);
-        expect(event?.status).toBe("paused");
-        expect(await db.select().from(seasons)).toHaveLength(originalSeasons.length);
-        expect(await db.select().from(rubricVersions)).toHaveLength(originalRubrics.length);
+            const [event] = await db.select().from(hackathon);
+            expect(event?.status).toBe("paused");
+            expect(await db.select().from(seasons)).toHaveLength(originalSeasons.length);
+            expect(await db.select().from(rubricVersions)).toHaveLength(originalRubrics.length);
+        } finally {
+            await db
+                .update(hackathon)
+                .set({ status: originalEvent!.status })
+                .where(eq(hackathon.id, originalEvent!.id));
+        }
     });
 
     it("round-trips current-era millisecond timestamps as JavaScript numbers", async () => {
