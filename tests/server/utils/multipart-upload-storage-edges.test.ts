@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PassThrough, Readable } from "node:stream";
 import { MAX_DEBUG_UPLOAD_BYTES, storeMultipartAsset } from "~~/server/utils/multipart-upload";
-
-const { randomUuidMock } = vi.hoisted(() => ({ randomUuidMock: vi.fn() }));
-
-vi.mock("node:crypto", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("node:crypto")>()),
-    randomUUID: randomUuidMock,
-}));
+import { publishStagedAssetContentAddressed, stageAssetFromStream } from "~~/server/utils/assets";
 
 function requestFor(parts: Array<{ name: string; filename?: string; content: string | Buffer }>) {
     const boundary = "multipart-storage-edge";
@@ -38,8 +33,8 @@ describe("multipart storage failure boundaries", () => {
     beforeEach(async () => {
         tempDir = await mkdtemp(join(tmpdir(), "multipart-storage-edge-"));
         storageDir = join(tempDir, "persistent");
+        vi.stubEnv("NODE_ENV", "test");
         vi.stubEnv("ASSET_STORAGE_DIR", storageDir);
-        randomUuidMock.mockReset().mockReturnValue("unused-random-id");
     });
 
     afterEach(async () => {
@@ -64,7 +59,7 @@ describe("multipart storage failure boundaries", () => {
         });
     });
 
-    it("removes a saved user asset when an extra form field invalidates the upload", async () => {
+    it("removes only the staged user asset when an extra form field invalidates the upload", async () => {
         const { request, contentType } = requestFor([
             { name: "file", filename: "notes.txt", content: "file contents" },
             { name: "comment", content: "not allowed" },
@@ -77,7 +72,8 @@ describe("multipart storage failure boundaries", () => {
             },
         );
 
-        await expect(readdir(join(storageDir, "userassets"))).resolves.toEqual([]);
+        await expect(readdir(join(storageDir, "userassets"))).resolves.toEqual([".staging"]);
+        await expect(readdir(join(storageDir, "userassets", ".staging"))).resolves.toEqual([]);
     });
 
     it("returns a storage error when the destination collection is not a directory", async () => {
@@ -95,14 +91,16 @@ describe("multipart storage failure boundaries", () => {
         );
     });
 
-    it("rejects an improbable UUID collision without replacing the existing upload", async () => {
+    it("rejects a corrupted object at the expected content address without overwriting it", async () => {
         const uploadDirectory = join(storageDir, "assets", "uploads");
         await mkdir(uploadDirectory, { recursive: true });
-        const existing = Buffer.from("existing upload");
-        await writeFile(join(uploadDirectory, "collision-id.txt"), existing);
-        randomUuidMock.mockReturnValue("collision-id");
+        const incoming = Buffer.from("new upload");
+        const digest = createHash("sha256").update(incoming).digest("hex");
+        const filename = `${digest}.txt`;
+        const existing = Buffer.from("incorrect existing bytes");
+        await writeFile(join(uploadDirectory, filename), existing);
         const { request, contentType } = requestFor([
-            { name: "file", filename: "incoming.txt", content: "new upload" },
+            { name: "file", filename: "incoming.txt", content: incoming },
         ]);
 
         await expect(storeMultipartAsset(request, contentType)).rejects.toMatchObject({
@@ -110,11 +108,8 @@ describe("multipart storage failure boundaries", () => {
             statusMessage: "Unable to store uploaded file",
         });
 
-        expect(randomUuidMock).toHaveBeenCalledTimes(2);
-        await expect(readFile(join(uploadDirectory, "collision-id.txt"))).resolves.toEqual(
-            existing,
-        );
-        await expect(readdir(uploadDirectory)).resolves.toEqual(["collision-id.txt"]);
+        await expect(readFile(join(uploadDirectory, filename))).resolves.toEqual(existing);
+        await expect(readdir(uploadDirectory)).resolves.toEqual([filename]);
     });
 
     it("cleans up after an interrupted multipart parser stream", async () => {
@@ -140,6 +135,22 @@ describe("multipart storage failure boundaries", () => {
         });
     });
 
+    it("releases the staging lease when publication preflight fails", async () => {
+        const bytes = Buffer.from("staged bytes");
+        const stagedName = await stageAssetFromStream(
+            Readable.from([bytes]),
+            128,
+            undefined,
+            "assets",
+        );
+        await rm(join(storageDir, "assets", stagedName));
+
+        await expect(
+            publishStagedAssetContentAddressed(stagedName, ".txt", "assets"),
+        ).rejects.toBeDefined();
+        await expect(readdir(join(storageDir, "assets", ".staging"))).resolves.toEqual([]);
+    });
+
     it("rejects multipart bodies that exceed the part limit", async () => {
         const { request, contentType } = requestFor([
             { name: "file", filename: "one.txt", content: "first" },
@@ -151,7 +162,12 @@ describe("multipart storage failure boundaries", () => {
             statusCode: 400,
             statusMessage: "Upload exactly one file",
         });
-        await expect(readdir(join(storageDir, "assets", "uploads"))).resolves.toEqual([]);
+        await expect(
+            readdir(join(storageDir, "assets", "uploads")).catch((error) => {
+                if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+                throw error;
+            }),
+        ).resolves.toEqual([]);
     });
 
     it("maps a file-size limit failure to HTTP 413", async () => {
@@ -167,7 +183,12 @@ describe("multipart storage failure boundaries", () => {
             statusCode: 413,
             statusMessage: "File too large",
         });
-        await expect(readdir(join(storageDir, "assets", "uploads"))).resolves.toEqual([]);
+        await expect(
+            readdir(join(storageDir, "assets", "uploads")).catch((error) => {
+                if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+                throw error;
+            }),
+        ).resolves.toEqual([]);
     });
 
     it("maps invalid file signatures to HTTP 400", async () => {
