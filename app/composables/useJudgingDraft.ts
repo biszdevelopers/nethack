@@ -1,4 +1,5 @@
 import { reactive, shallowRef } from "vue";
+import { apiFetch } from "./useApiFetch";
 
 export interface JudgingDraft {
     scores: Record<string, number>;
@@ -59,7 +60,7 @@ export function useJudgingDraft() {
         status.value = "loading";
 
         try {
-            const response = await $fetch<{
+            const response = await apiFetch<{
                 rubric: JudgingRubric;
                 draft: JudgingDraft | null;
             }>(`/api/judging/drafts/${teamId}`);
@@ -132,7 +133,7 @@ export function useJudgingDraft() {
         dirty.value = false;
         status.value = "saving";
 
-        inFlight = $fetch(`/api/judging/drafts/${teamId}`, {
+        inFlight = apiFetch(`/api/judging/drafts/${teamId}`, {
             method: "PUT",
             body: payload,
         })
@@ -173,7 +174,7 @@ export function useJudgingDraft() {
     }
 
     async function clear(teamId: number) {
-        await $fetch(`/api/judging/drafts/${teamId}`, { method: "DELETE" });
+        await apiFetch(`/api/judging/drafts/${teamId}`, { method: "DELETE" });
         if (currentTeamId === teamId) {
             loadGeneration++;
             clearTimeout(saveTimer);
