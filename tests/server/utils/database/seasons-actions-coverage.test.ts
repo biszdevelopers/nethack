@@ -27,11 +27,31 @@ describe("season visibility and action boundaries", () => {
 
         const resolveVisibility = await getScoreRankVisibilityResolver(event);
 
-        expect(resolveVisibility(41)).toEqual({ showScores: true, showRanking: false });
-        expect(resolveVisibility(42)).toEqual({ showScores: false, showRanking: true });
-        expect(resolveVisibility(404)).toEqual({ showScores: true, showRanking: true });
-        expect(resolveVisibility(null)).toEqual({ showScores: true, showRanking: true });
-        expect(resolveVisibility(undefined)).toEqual({ showScores: true, showRanking: true });
+        expect(resolveVisibility(41)).toEqual({
+            resultsPublished: false,
+            showScores: true,
+            showRanking: false,
+        });
+        expect(resolveVisibility(42)).toEqual({
+            resultsPublished: false,
+            showScores: false,
+            showRanking: true,
+        });
+        expect(resolveVisibility(404)).toEqual({
+            resultsPublished: false,
+            showScores: true,
+            showRanking: true,
+        });
+        expect(resolveVisibility(null)).toEqual({
+            resultsPublished: false,
+            showScores: true,
+            showRanking: true,
+        });
+        expect(resolveVisibility(undefined)).toEqual({
+            resultsPublished: false,
+            showScores: true,
+            showRanking: true,
+        });
     });
 
     it("uses disabled visibility when no season or live hackathon row exists", async () => {
@@ -39,8 +59,16 @@ describe("season visibility and action boundaries", () => {
 
         const resolveVisibility = await getScoreRankVisibilityResolver(event);
 
-        expect(resolveVisibility(1)).toEqual({ showScores: false, showRanking: false });
-        expect(resolveVisibility(null)).toEqual({ showScores: false, showRanking: false });
+        expect(resolveVisibility(1)).toEqual({
+            resultsPublished: false,
+            showScores: false,
+            showRanking: false,
+        });
+        expect(resolveVisibility(null)).toEqual({
+            resultsPublished: false,
+            showScores: false,
+            showRanking: false,
+        });
     });
 
     it("returns a season unchanged when an update contains no tweak fields", async () => {
