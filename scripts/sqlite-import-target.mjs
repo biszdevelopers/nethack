@@ -18,6 +18,8 @@ export const IMPORT_TARGET_TABLES = [
     "user_past_teams",
     "sc_votes",
     "sqlite_legacy_data",
+    "asset_objects",
+    "asset_references",
 ];
 
 export const PRISTINE_HACKATHON_SEED = {
