@@ -1,4 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { createError } from "h3";
 import fetch from "node-fetch";
 import { parse } from "yaml";
@@ -7,6 +8,10 @@ import { RubricDefinitionSchema } from "../../shared/schemas";
 
 const maxBytes = 64 * 1024;
 const refreshInterval = 5 * 60 * 1000;
+
+export function getHackathonCacheFile(): string {
+    return resolve(process.env.HACKATHON_CACHE_PATH?.trim() || "assets/hackathon-config.yml");
+}
 const flag = z
     .union([z.literal(0), z.literal(1), z.boolean()])
     .transform((value) => (value ? 1 : 0));
@@ -69,6 +74,23 @@ async function readLocalConfig() {
     return value;
 }
 
+async function readCachedRemoteConfig() {
+    const source = await readFile(getHackathonCacheFile());
+    if (source.length > maxBytes) throw new Error("Cached HACKATHON.yml exceeds 64 KiB");
+    return parseHackathonConfig(source.toString("utf8"));
+}
+
+async function writeCachedRemoteConfig(source: string) {
+    try {
+        await mkdir(dirname(getHackathonCacheFile()), { recursive: true });
+        const temporary = `${getHackathonCacheFile()}.${process.pid}.tmp`;
+        await writeFile(temporary, source, { mode: 0o600 });
+        await rename(temporary, getHackathonCacheFile());
+    } catch {
+        // The cache is best-effort; the in-memory manifest remains usable.
+    }
+}
+
 function getRemoteConfigUrl(source: string) {
     const url = new URL(source);
     if (
@@ -101,8 +123,10 @@ async function refreshRemote(state: NonNullable<typeof remote>) {
             headers: state.etag ? { "If-None-Match": state.etag } : {},
         });
         if (response.ok) {
-            state.value = parseHackathonConfig(await response.text());
+            const source = await response.text();
+            state.value = parseHackathonConfig(source);
             state.etag = response.headers.get("etag") ?? undefined;
+            await writeCachedRemoteConfig(source);
         } else {
             response.body?.destroy();
         }
@@ -134,10 +158,18 @@ export async function readHackathonConfig(): Promise<HackathonConfig> {
         await state.pending;
     }
     if (!state.value) {
-        throw createError({
-            statusCode: 503,
-            message: "Remote hackathon configuration is unavailable.",
-        });
+        try {
+            return await readCachedRemoteConfig();
+        } catch {
+            try {
+                return await readLocalConfig();
+            } catch {
+                throw createError({
+                    statusCode: 503,
+                    message: "Remote hackathon configuration is unavailable.",
+                });
+            }
+        }
     }
     return state.value;
 }

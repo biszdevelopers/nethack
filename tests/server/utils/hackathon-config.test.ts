@@ -1,5 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     getHackathonConfigSource,
     parseHackathonConfig,
@@ -11,11 +14,18 @@ import { getSeasons, getScoreRankVisibilityResolver } from "~~/server/utils/data
 const { fetch } = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock("node-fetch", () => ({ default: fetch }));
 const yaml = await readFile("HACKATHON.yml", "utf8");
+let cacheFile = "";
 
-afterEach(() => {
+beforeEach(() => {
+    cacheFile = join(tmpdir(), `basishacks-hackathon-${randomUUID()}.yml`);
+    vi.stubEnv("HACKATHON_CACHE_PATH", cacheFile);
+});
+
+afterEach(async () => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
     fetch.mockReset();
+    if (cacheFile) await rm(cacheFile, { force: true });
 });
 
 describe("live hackathon YAML", () => {
@@ -51,10 +61,21 @@ describe("live hackathon YAML", () => {
         expect(fetch.mock.calls[1]![1].headers).toEqual({ "If-None-Match": '"v1"' });
     });
 
-    it("fails closed when an explicit remote asset has no validated configuration", async () => {
+    it("uses the on-disk backup when the assets server is unavailable after a restart", async () => {
+        vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/HACKATHON.yml");
+        fetch.mockResolvedValueOnce(new Response(yaml));
+        await expect(readHackathonConfig()).resolves.toEqual(parseHackathonConfig(yaml));
+
+        vi.resetModules();
+        fetch.mockRejectedValueOnce(new Error("assets server offline"));
+        const reloaded = await import("~~/server/utils/hackathon-config");
+        await expect(reloaded.readHackathonConfig()).resolves.toEqual(parseHackathonConfig(yaml));
+    });
+
+    it("falls back to the bundled manifest when a remote asset has no validated configuration", async () => {
         vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/manifests/current.yml");
         fetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
-        await expect(readHackathonConfig()).rejects.toMatchObject({ statusCode: 503 });
+        await expect(readHackathonConfig()).resolves.toEqual(parseHackathonConfig(yaml));
         expect(String(fetch.mock.calls[0]![0])).toBe(
             "https://assets.example.test/manifests/current.yml",
         );

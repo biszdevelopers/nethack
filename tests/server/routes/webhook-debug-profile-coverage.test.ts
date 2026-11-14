@@ -1,3 +1,7 @@
+import { rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -264,8 +268,11 @@ describe("profile picture route", () => {
     let handler: (event: any) => Promise<any>;
     let event: any;
     let id: string;
+    let cacheDir: string;
 
     beforeEach(async () => {
+        cacheDir = join(tmpdir(), `basishacks-profile-${randomUUID()}`);
+        vi.stubEnv("BASIS_AUTH_PICTURE_CACHE_DIR", cacheDir);
         vi.stubGlobal("defineEventHandler", (handler: any) => handler);
         vi.stubGlobal("getValidatedRouterParams", async () => ({ id }));
         vi.stubGlobal(
@@ -292,9 +299,10 @@ describe("profile picture route", () => {
         handler = (await import("~~/server/api/users/[id]/profile_picture.get")).default;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         vi.unstubAllGlobals();
         vi.unstubAllEnvs();
+        if (cacheDir) await rm(cacheDir, { recursive: true, force: true });
     });
 
     it("returns not found for an unknown user", async () => {

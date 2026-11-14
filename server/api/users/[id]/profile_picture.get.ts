@@ -27,7 +27,7 @@ export default defineEventHandler(
             process.env.BASIS_AUTH_ISSUER,
         );
         if (providerUrl) {
-            const picture = await fetchBasisAuthPicture(providerUrl);
+            const picture = await fetchBasisAuthPicture(providerUrl, String(user.id));
             if (picture) {
                 setResponseHeader(event, "Content-Type", picture.contentType);
                 setResponseHeader(event, "Content-Length", picture.bytes.length);
