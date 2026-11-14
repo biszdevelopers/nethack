@@ -177,7 +177,7 @@ describe("SQLite importer summary defaults", () => {
                 ];
             } else if (table === "seasons") {
                 columns = ["id", "name", "is_active", "status", "rubric_version_id"];
-            } else if (table === "teams") columns = ["id", "season_id"];
+            } else if (table === "teams") columns = ["id", "season_id", "sourcing"];
             else if (table === "users") columns = ["id", "team_id"];
             else if (table === "team_scores") {
                 columns = ["team_id", "judge_user_id", "season_id", "rubric_version_id"];
