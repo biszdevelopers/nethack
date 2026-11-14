@@ -24,6 +24,8 @@
 </template>
 
 <script setup lang="ts">
+useHead({ title: `Results | ${WEBSITE_NAME}` });
+
 definePageMeta({
     layout: "dashboard",
     middleware: ["auth"],
