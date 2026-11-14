@@ -131,6 +131,7 @@ export default defineNuxtConfig({
             trace: false,
         },
         rollupConfig: {
+            maxParallelFileOps: 1,
             onwarn(warning, warn) {
                 if (warning.code === "UNRESOLVED_IMPORT") return;
                 if (warning.code === "CIRCULAR_DEPENDENCY") return;
