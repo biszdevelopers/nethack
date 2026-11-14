@@ -68,10 +68,10 @@ Attempts to revoke the stored refresh-token family, always clears the local sess
 
 List all users (mod portal).
 
-| Field        | Details                                           |
-| ------------ | ------------------------------------------------- |
-| **Auth**     | User with `portal.users.view` permission or admin |
-| **Response** | `data: APIUser[]`                                 |
+| Field        | Details                                     |
+| ------------ | ------------------------------------------- |
+| **Auth**     | `nethack.Users.list`                        |
+| **Response** | `data: (APIUser & { is_admin: boolean })[]` |
 
 ### DELETE `/api/users`
 
@@ -79,7 +79,7 @@ Delete users by ID.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | User with `dev_users` permission or admin |
+| **Auth** | `nethack.Users.delete` |
 | **Body** | `{ ids: number[] }` |
 | **Response** | `{ message: string }` |
 | **Side effects** | Removes related team_scores, ballot_scores, ballots, peer_voting_scores, user_past_teams, and OAuth2 applications owned by the users |
@@ -103,6 +103,17 @@ Update the user’s display name or profile theme image. Avatars synchronize fro
 | **Validation** | `UpdateUserRequest` — `{ name?, profile_theme_image? }` |
 | **Response** | `{ message: string }` |
 | **File handling** | Theme images are validated as base64 data URLs, limited to 7 MiB decoded, and stored as persistent assets |
+
+### PATCH `/api/users/:id/admin`
+
+Promote or demote a user.
+
+| Field           | Details                                                          |
+| --------------- | ---------------------------------------------------------------- |
+| **Auth**        | `nethack.all`                                                    |
+| **Body**        | `{ is_admin: boolean }`                                          |
+| **Protections** | Designated initial administrators and self-demotion are rejected |
+| **Response**    | `{ id: number, is_admin: boolean }`                              |
 
 ### GET `/api/users/:id/profile_picture`
 

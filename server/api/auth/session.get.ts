@@ -2,6 +2,7 @@ import { APIError } from "@basis/schema/api";
 import { setResponseHeader } from "h3";
 import { getFreshBasisAuthUserSession } from "~~/server/utils/basis-auth";
 import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
+import { getUser } from "~~/server/utils/database/users";
 import { verifyAccessToken } from "~~/server/utils/oauth2-jwt";
 import { applyRateLimit, AUTH_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { effectiveNethackPermissions } from "~~/shared/permissions";

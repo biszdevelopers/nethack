@@ -10,6 +10,7 @@ import {
     oauth2Applications,
 } from "~~/server/database/schema";
 import { changedRows, firstRow } from "./query";
+import { isInitialAdminEmail } from "~~/shared/permissions";
 
 export async function getUser(event: H3Event, userID: number): Promise<User | null> {
     const row = await firstRow(
@@ -49,9 +50,11 @@ export async function findOrLinkBasisAuthUser(
 ): Promise<User> {
     const normalizedEmail = identity.email.trim().toLowerCase();
     const trimmedName = identity.name?.trim() || null;
+    const initialAdmin = isInitialAdminEmail(normalizedEmail) ? 1 : 0;
     const profileUpdates = {
         ...(trimmedName ? { name: trimmedName } : {}),
         ...(identity.picture ? { profile_picture: identity.picture } : {}),
+        ...(initialAdmin ? { is_admin: 1 } : {}),
     };
 
     return event.context.drizzle.transaction(async (tx) => {
@@ -130,6 +133,7 @@ export async function findOrLinkBasisAuthUser(
                     profile_picture: identity.picture,
                     auth_issuer: identity.issuer,
                     auth_subject: identity.subject,
+                    is_admin: initialAdmin,
                 })
                 .returning(),
         ))!;

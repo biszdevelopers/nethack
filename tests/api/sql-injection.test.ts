@@ -37,6 +37,7 @@ vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
     DEFAULT_RATE_LIMIT_CONFIG: { maxRequests: 6000, windowMs: 60 * 1000 },
     VOTE_RATE_LIMIT_CONFIG: { maxRequests: 600, windowMs: 60 * 1000 },
+    UPLOAD_RATE_LIMIT_CONFIG: { maxRequests: 100, windowMs: 60 * 1000 },
 }));
 
 const SQL_METACHARACTERS = [

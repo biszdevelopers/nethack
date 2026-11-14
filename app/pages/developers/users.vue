@@ -2,6 +2,7 @@
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
+import { isInitialAdminEmail } from "~~/shared/permissions";
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -26,7 +27,7 @@ const columnFilters = ref([
 const columnVisibility = ref();
 const rowSelection = ref<Record<string, boolean>>({});
 
-type AdminUser = User & { past_team_ids: string | null };
+type AdminUser = User & { past_team_ids: string | null; is_admin: boolean };
 
 const { data, status, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
     server: false,
@@ -66,6 +67,28 @@ async function onDelete() {
         });
     } finally {
         modalOpen.value = false;
+    }
+}
+
+async function toggleAdmin(user: AdminUser) {
+    if (isInitialAdminEmail(user.email)) return;
+    try {
+        await $fetch(`/api/users/${user.id}/admin`, {
+            method: "PATCH",
+            body: { is_admin: !user.is_admin },
+        });
+        toast.add({
+            title: user.is_admin ? "Administrator removed" : "Administrator added",
+            description: user.email,
+            color: "success",
+        });
+        await refresh();
+    } catch (e: any) {
+        toast.add({
+            title: "Failed to update administrator",
+            description: e?.data?.message || e?.message || "Try again.",
+            color: "error",
+        });
     }
 }
 
@@ -132,6 +155,27 @@ const columns: TableColumn<AdminUser>[] = [
                 onClick: () => column.toggleSorting(column.getIsSorted() === "asc"),
             });
         },
+    },
+    {
+        id: "is_admin",
+        header: "Admin",
+        cell: ({ row }) =>
+            h(UButton, {
+                size: "xs",
+                variant: "soft",
+                color: isInitialAdminEmail(row.original.email)
+                    ? "neutral"
+                    : row.original.is_admin
+                      ? "error"
+                      : "primary",
+                label: isInitialAdminEmail(row.original.email)
+                    ? "Initial admin"
+                    : row.original.is_admin
+                      ? "Demote"
+                      : "Promote",
+                disabled: isInitialAdminEmail(row.original.email),
+                onClick: () => toggleAdmin(row.original),
+            }),
     },
     {
         accessorKey: "team_id",

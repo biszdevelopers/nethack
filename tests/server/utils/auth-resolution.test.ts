@@ -61,7 +61,7 @@ describe("authenticated user resolution", () => {
         });
     });
 
-    it("rejects a missing permission before resolving the local user", async () => {
+    it("resolves the local user before rejecting a missing permission so local admins still work", async () => {
         await expect(
             requireUser(event(), NethackPermissions.Projects.submitOwn),
         ).rejects.toMatchObject({
@@ -69,7 +69,7 @@ describe("authenticated user resolution", () => {
             statusMessage: "insufficient_permission",
         });
 
-        expect(mocks.resolve).not.toHaveBeenCalled();
+        expect(mocks.resolve).toHaveBeenCalledOnce();
     });
 
     it("resolves a missing user in a previously verified token context", async () => {

@@ -1,9 +1,6 @@
 import type { H3Event } from "h3";
 import type { PermissionRequirement } from "@basis/schema/permissions";
-import {
-    effectiveNethackPermissions,
-    hasEffectiveNethackPermission,
-} from "~~/shared/permissions";
+import { effectiveNethackPermissions, hasEffectiveNethackPermission } from "~~/shared/permissions";
 import { resolveOAuth2User, verifyOAuth2JWT } from "./oauth2-jwt";
 import { readBasisAuthUserSession } from "./basis-auth-session";
 

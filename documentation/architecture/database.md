@@ -73,13 +73,15 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 | --- | --- | --- |
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | User ID |
 | `email` | `TEXT NOT NULL UNIQUE` | User email |
-| `role` | `TEXT NOT NULL DEFAULT 'participant'` | Space-separated permission string |
 | `name` | `TEXT` | Display name |
 | `team_id` | `INTEGER` | FK to `teams.id` |
 | `profile_theme` | `TEXT` | Profile theme as `"mode\|value"` |
 | `profile_picture` | `TEXT` | Basis-auth picture URL or legacy local asset path |
+| `auth_issuer` | `TEXT` | Linked basis-auth issuer |
+| `auth_subject` | `TEXT` | Linked basis-auth subject |
+| `is_admin` | `INTEGER NOT NULL DEFAULT 0` | Locally promoted administrator flag; designated initial administrators are matched by email |
 
-::: warning The `role` column originally had a `CHECK` constraint limiting it to `participant`, `judge`, or `admin`. This was removed via `migration-permissions.sql` to support space-separated permission strings such as `"participant portal.users.view portal.teams.view"`. :::
+::: warning The legacy `role` column is retired. Authorization comes from the validated basis-auth `permissions` claim, the participant compatibility bundle, and the local administrator flag. :::
 
 ### `ballots`
 

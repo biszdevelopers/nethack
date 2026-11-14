@@ -125,7 +125,7 @@ export function hasNethackPermission(
 
 export interface NethackPermissionUser {
     email?: string | null;
-    is_admin?: boolean;
+    is_admin?: boolean | number;
 }
 
 /** Add local administrator grants for designated or promoted users. */

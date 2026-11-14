@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
     getFreshSession: vi.fn(),
     clearSession: vi.fn(),
     verifyAccessToken: vi.fn(),
+    getUser: vi.fn(),
 }));
 
 vi.mock("~~/server/utils/basis-auth", () => ({
@@ -14,6 +15,9 @@ vi.mock("~~/server/utils/basis-auth-session", () => ({
 }));
 vi.mock("~~/server/utils/oauth2-jwt", () => ({
     verifyAccessToken: mocks.verifyAccessToken,
+}));
+vi.mock("~~/server/utils/database/users", () => ({
+    getUser: mocks.getUser,
 }));
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (handler: (event: unknown) => unknown) => handler,
@@ -29,6 +33,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getUser.mockImplementation(async (_event: unknown, id: number) => ({
+        id,
+        email: "user@example.com",
+        is_admin: false,
+    }));
 });
 
 describe("GET /api/auth/session action edges", () => {
@@ -43,7 +52,7 @@ describe("GET /api/auth/session action edges", () => {
         await expect(handler({ context: {}, node: { res: { setHeader } } })).resolves.toEqual({
             user: { id: 42 },
             expiresAt: 1234,
-            permissions: [],
+            permissions: expect.arrayContaining(["nethack.Profile.updateSelf"]),
         });
         expect(setHeader).toHaveBeenCalledWith("cache-control", "no-store");
     });

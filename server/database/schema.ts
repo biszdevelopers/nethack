@@ -121,7 +121,7 @@ export const users = pgTable(
         profile_picture: text("profile_picture"),
         auth_issuer: text("auth_issuer"),
         auth_subject: text("auth_subject"),
-        is_admin: boolean("is_admin").notNull().default(false),
+        is_admin: integer("is_admin").notNull().default(0),
     },
     (table) => [
         index("idx_users_email").on(table.email),

@@ -126,6 +126,13 @@ describe("PostgreSQL migrations", () => {
         };
         const database = {
             insert: () => makeInsert("hackathon"),
+            update: () => {
+                const builder = {
+                    set: () => builder,
+                    where: () => Promise.resolve([]),
+                };
+                return builder;
+            },
             transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) => {
                 events.push("begin-default-seed-transaction");
                 return callback(transaction);

@@ -33,6 +33,7 @@ vi.mock("~~/server/utils/basis-auth-session", () => ({
 }));
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (handler: (event: unknown) => unknown) => handler,
+    UPLOAD_RATE_LIMIT_CONFIG: { maxRequests: 100, windowMs: 60 * 1000 },
 }));
 
 let ctx: TestContext;

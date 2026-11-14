@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+    effectiveNethackPermissions,
     expandLegacyNethackPermissions,
+    hasEffectiveNethackPermission,
     hasNethackPermission,
+    isInitialAdminEmail,
     NethackPermissions,
 } from "~~/shared/permissions";
 
@@ -21,9 +24,9 @@ describe("nethack permission helpers", () => {
     });
 
     it("does not expand participant permissions when only an explicit granular grant exists", () => {
-        expect(
-            expandLegacyNethackPermissions([NethackPermissions.Voting.readOwn]),
-        ).toEqual([NethackPermissions.Voting.readOwn]);
+        expect(expandLegacyNethackPermissions([NethackPermissions.Voting.readOwn])).toEqual([
+            NethackPermissions.Voting.readOwn,
+        ]);
     });
 
     it("matches permissions case-insensitively", () => {
@@ -49,5 +52,30 @@ describe("nethack permission helpers", () => {
 
     it("lets the legacy admin grant satisfy every nethack leaf", () => {
         expect(hasNethackPermission(["admin"], NethackPermissions.Seasons.delete)).toBe(true);
+    });
+
+    it("matches initial administrator emails case-insensitively", () => {
+        expect(isInitialAdminEmail(" ZHIYU.JIANG90454-BISZ@BASISCHINA.COM ")).toBe(true);
+        expect(isInitialAdminEmail("someone@example.test")).toBe(false);
+    });
+
+    it("adds the administrative grant for initial and promoted local admins", () => {
+        expect(
+            hasEffectiveNethackPermission([], NethackPermissions.Seasons.delete, {
+                email: "cindy.cheng-bisz@basischina.com",
+            }),
+        ).toBe(true);
+        expect(
+            hasEffectiveNethackPermission([], NethackPermissions.Seasons.delete, {
+                email: "user@example.test",
+                is_admin: 1,
+            }),
+        ).toBe(true);
+        expect(
+            effectiveNethackPermissions([], {
+                email: "user@example.test",
+                is_admin: false,
+            }),
+        ).toContain(NethackPermissions.Profile.updateSelf);
     });
 });

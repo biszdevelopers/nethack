@@ -45,6 +45,8 @@ The callback stores the basis-auth picture URL from the validated ID token or su
 
 ## Roles and sessions
 
+The designated initial administrators are matched by email case-insensitively, are seeded on startup, and cannot be demoted. Existing administrators can promote or demote other users with `PATCH /api/users/:id/admin`; attempts to demote an initial administrator or self-demote are rejected. A token without any granular `nethack.*` grant receives the participant bundle, so an identity-only basis-auth client still works, while judge and administrator routes continue to require explicit grants or local administrator status.
+
 The encrypted `basis-auth-tokens` cookie carries the basis-auth access token and refresh token; the browser cannot read it. Protected routes verify the access token from that cookie or an explicit bearer header before applying local authorization:
 
 - `requireUser(event, permission?)` loads the local user and optionally enforces a permission requirement.

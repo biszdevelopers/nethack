@@ -145,7 +145,7 @@ export async function seedDefaultSeasonAndRubrics(database: DrizzleDatabase): Pr
 export async function seedInitialAdmins(database: DrizzleDatabase): Promise<void> {
     await database
         .update(users)
-        .set({ is_admin: true })
+        .set({ is_admin: 1 })
         .where(inArray(sql`lower(${users.email})`, [...INITIAL_ADMIN_EMAILS]));
 }
 

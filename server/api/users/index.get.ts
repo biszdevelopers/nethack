@@ -1,5 +1,5 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { NethackPermissions } from "~~/shared/permissions";
+import { isInitialAdminEmail, NethackPermissions } from "~~/shared/permissions";
 import { users } from "~~/server/database/schema";
 
 export default defineEventHandler(
@@ -14,10 +14,14 @@ export default defineEventHandler(
                 team_id: users.team_id,
                 profile_theme: users.profile_theme,
                 profile_picture: users.profile_picture,
+                is_admin: users.is_admin,
             })
             .from(users)
             .orderBy(users.id);
 
-        return results.map((user) => convertUserToPublic(user as User)) satisfies APIUser[];
+        return results.map((user) => ({
+            ...convertUserToPublic(user as User),
+            is_admin: Boolean(user.is_admin || isInitialAdminEmail(user.email)),
+        }));
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

@@ -122,78 +122,75 @@ function decodeValidatedImage(dataUrl: string): { data: Buffer; extension: strin
 }
 
 export default defineEventHandler(
-    applyRateLimit(
-        async (event) => {
-            const { id } = await getValidatedRouterParams(event, UserIdParams.parse);
-            const { id: userID } = await requireUser(event, NethackPermissions.Profile.updateSelf);
+    applyRateLimit(async (event) => {
+        const { id } = await getValidatedRouterParams(event, UserIdParams.parse);
+        const { id: userID } = await requireUser(event, NethackPermissions.Profile.updateSelf);
 
-            if (id !== userID) {
-                throw createError({ status: 403, message: "Cannot update other users" });
+        if (id !== userID) {
+            throw createError({ status: 403, message: "Cannot update other users" });
+        }
+
+        return await withProfileUpdateCapacity(event, async () => {
+            event._requestBody = (await readLimitedRequestBody(
+                event,
+                MAX_PROFILE_UPDATE_BODY_BYTES,
+            )) as unknown as BodyInit;
+            const { name, profile_theme_image } = await readValidatedBody(
+                event,
+                UpdateUserRequest.parse,
+            );
+            const user = await getUser(event, id);
+            if (!user) {
+                clearBasisAuthUserSession(event);
+                throw createError({ status: 401, message: "Logged in user not found" });
             }
 
-            return await withProfileUpdateCapacity(event, async () => {
-                event._requestBody = (await readLimitedRequestBody(
-                    event,
-                    MAX_PROFILE_UPDATE_BODY_BYTES,
-                )) as unknown as BodyInit;
-                const { name, profile_theme_image } = await readValidatedBody(
-                    event,
-                    UpdateUserRequest.parse,
-                );
-                const user = await getUser(event, id);
-                if (!user) {
-                    clearBasisAuthUserSession(event);
-                    throw createError({ status: 401, message: "Logged in user not found" });
-                }
-
-                const themeImage =
-                    profile_theme_image !== undefined && profile_theme_image !== null
-                        ? decodeValidatedImage(profile_theme_image.toString())
-                        : null;
-                const previousTheme =
-                    profile_theme_image !== undefined
-                        ? getManagedProfileAssetPath(user.profile_theme)
-                        : null;
-                const themePath = themeImage
-                    ? getUserAssetContentAddress(themeImage.data, themeImage.extension)
+            const themeImage =
+                profile_theme_image !== undefined && profile_theme_image !== null
+                    ? decodeValidatedImage(profile_theme_image.toString())
                     : null;
-                const lockPaths = [previousTheme, themePath].filter(
-                    (path): path is string => path !== null,
-                );
+            const previousTheme =
+                profile_theme_image !== undefined
+                    ? getManagedProfileAssetPath(user.profile_theme)
+                    : null;
+            const themePath = themeImage
+                ? getUserAssetContentAddress(themeImage.data, themeImage.extension)
+                : null;
+            const lockPaths = [previousTheme, themePath].filter(
+                (path): path is string => path !== null,
+            );
 
-                const updates: Partial<typeof users.$inferInsert> = {};
-                if (name !== undefined) updates.name = name;
-                if (profile_theme_image !== undefined) {
-                    updates.profile_theme = themePath ? `url|${themePath}` : null;
-                }
+            const updates: Partial<typeof users.$inferInsert> = {};
+            if (name !== undefined) updates.name = name;
+            if (profile_theme_image !== undefined) {
+                updates.profile_theme = themePath ? `url|${themePath}` : null;
+            }
 
-                if (Object.keys(updates).length > 0) {
-                    await withAssetLifecycleLocks(event.context.drizzle, lockPaths, async (tx) => {
-                        if (themeImage) {
-                            const publishedPath = await createUserAssetContentAddressed(
-                                themeImage.data,
-                                themeImage.extension,
+            if (Object.keys(updates).length > 0) {
+                await withAssetLifecycleLocks(event.context.drizzle, lockPaths, async (tx) => {
+                    if (themeImage) {
+                        const publishedPath = await createUserAssetContentAddressed(
+                            themeImage.data,
+                            themeImage.extension,
+                        );
+                        if (publishedPath !== themePath) {
+                            throw new Error(
+                                "Published profile theme path does not match its digest",
                             );
-                            if (publishedPath !== themePath) {
-                                throw new Error(
-                                    "Published profile theme path does not match its digest",
-                                );
-                            }
                         }
-                        const changed = await tx
-                            .update(users)
-                            .set(updates)
-                            .where(eq(users.id, id))
-                            .returning({ id: users.id });
-                        if (changed.length === 0) {
-                            throw createError({ status: 404, message: "User not found" });
-                        }
-                    });
-                }
+                    }
+                    const changed = await tx
+                        .update(users)
+                        .set(updates)
+                        .where(eq(users.id, id))
+                        .returning({ id: users.id });
+                    if (changed.length === 0) {
+                        throw createError({ status: 404, message: "User not found" });
+                    }
+                });
+            }
 
-                return { message: "Your profile is updated" };
-            });
-        },
-        UPLOAD_RATE_LIMIT_CONFIG,
-    ),
+            return { message: "Your profile is updated" };
+        });
+    }, UPLOAD_RATE_LIMIT_CONFIG),
 );
