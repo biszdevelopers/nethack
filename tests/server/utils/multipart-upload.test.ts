@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { MAX_DEBUG_UPLOAD_BYTES, storeMultipartAsset } from "~~/server/utils/multipart-upload";
 import { getAssetStorageRoot } from "~~/server/utils/assets";
 
@@ -43,6 +44,7 @@ describe("streamed multipart uploads", () => {
     beforeEach(async () => {
         tempDir = await mkdtemp(join(tmpdir(), "stream-upload-test-"));
         storageDir = join(tempDir, "persistent");
+        vi.stubEnv("NODE_ENV", "test");
         vi.stubEnv("ASSET_STORAGE_DIR", storageDir);
     });
 
@@ -51,15 +53,16 @@ describe("streamed multipart uploads", () => {
         await rm(tempDir, { recursive: true, force: true });
     });
 
-    it("streams a file into persistent storage with a generated name", async () => {
+    it("streams a file into persistent storage with a content-addressed name", async () => {
         const payload = Buffer.concat([PNG_SIGNATURE, Buffer.from("image data")]);
         const { request, contentType } = createRequest([
             { name: "file", filename: "screen.PNG", content: payload },
         ]);
 
         const result = await storeMultipartAsset(request, contentType);
-        expect(result.filename).toMatch(/^[0-9a-f-]{36}\.png$/);
-        expect(result.relativePath).toBe(`uploads/${result.filename}`);
+        const digest = createHash("sha256").update(payload).digest("hex");
+        expect(result.filename).toBe(`${digest}.png`);
+        expect(result.relativePath).toBe(`uploads/${digest}.png`);
         expect(await readFile(join(getAssetStorageRoot(), "assets", result.relativePath))).toEqual(
             payload,
         );
@@ -73,10 +76,60 @@ describe("streamed multipart uploads", () => {
         ]);
 
         const result = await storeMultipartAsset(request, contentType, "userassets");
-        expect(result.relativePath).toBe(result.filename);
+        const digest = createHash("sha256").update(payload).digest("hex");
+        expect(result.filename).toBe(`${digest}.txt`);
+        expect(result.relativePath).toBe(`${digest}.txt`);
         expect(await readFile(join(getAssetStorageRoot(), "userassets", result.filename))).toEqual(
             payload,
         );
+    });
+
+    it("deduplicates exact bytes within each collection", async () => {
+        const payload = Buffer.from("same text bytes");
+        const upload = (filename: string, collection: "assets" | "userassets") => {
+            const { request, contentType } = createRequest([
+                { name: "file", filename, content: payload },
+            ]);
+            return storeMultipartAsset(request, contentType, collection);
+        };
+
+        const first = await upload("first.txt", "assets");
+        const second = await upload("second.txt", "assets");
+        const userCopy = await upload("third.txt", "userassets");
+        const digest = createHash("sha256").update(payload).digest("hex");
+
+        expect(first).toEqual({
+            filename: `${digest}.txt`,
+            relativePath: `uploads/${digest}.txt`,
+        });
+        expect(second).toEqual(first);
+        expect(userCopy).toEqual({ filename: `${digest}.txt`, relativePath: `${digest}.txt` });
+        await expect(readdir(join(storageDir, "assets", "uploads"))).resolves.toEqual([
+            `${digest}.txt`,
+        ]);
+        await expect(readFile(join(storageDir, "userassets", `${digest}.txt`))).resolves.toEqual(
+            payload,
+        );
+    });
+
+    it("canonicalizes jpeg and jpg extensions to the same hashed filename", async () => {
+        const payload = Buffer.from([0xff, 0xd8, 0xff, ...Buffer.alloc(13, 0x20)]);
+        const upload = (filename: string) => {
+            const { request, contentType } = createRequest([
+                { name: "file", filename, content: payload },
+            ]);
+            return storeMultipartAsset(request, contentType);
+        };
+
+        const jpeg = await upload("portrait.jpeg");
+        const jpg = await upload("portrait.jpg");
+        const digest = createHash("sha256").update(payload).digest("hex");
+
+        expect(jpeg).toEqual({
+            filename: `${digest}.jpg`,
+            relativePath: `uploads/${digest}.jpg`,
+        });
+        expect(jpg).toEqual(jpeg);
     });
 
     it("rejects unsupported active content such as SVG", async () => {
