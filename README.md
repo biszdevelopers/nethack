@@ -159,7 +159,9 @@ bun install --frozen-lockfile
 bun run build
 bun run db:migrate
 bun run start
-# Or use the supported Node.js runtime after building the same checkout:
+# On Linux VPS hosts, `npm run start` uses the same POSIX runtime selector.
+# It prefers Bun 1.3.14 and falls back to Node.js 24 or newer.
+# To explicitly use Node.js after building the same checkout:
 node start-fix.mjs
 ```
 
@@ -175,7 +177,7 @@ Uploads are stored in project-root `/assets` under the `assets` and `userassets`
 
 1. Build on the server: `bun run build`
 2. Set all required environment variables in the server environment
-3. Start with `bun run start` (Bun) or `node start-fix.mjs` (Node.js)
+3. Start with `bun run start` or, on Linux, `npm run start` (selects Bun 1.3.14 when available, otherwise Node.js 24 or newer), or use `node start-fix.mjs` to explicitly choose Node.js
 4. Reverse proxy with TLS in front (port defaults to `3000`)
 
 ### GitHub tag releases
