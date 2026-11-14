@@ -61,6 +61,7 @@ async function expectResponsivePage(page: Page) {
                 results.violations,
                 `WCAG 2.2 AA violations at ${width}px: ${JSON.stringify(results.violations, null, 2)}`,
             ).toEqual([]);
+            console.info(`[responsive-a11y-complete] ${new URL(page.url()).pathname} ${width}px`);
         }
     } finally {
         if (originalViewport) await page.setViewportSize(originalViewport);
@@ -265,8 +266,10 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(
             admin.page.getByRole("heading", { name: "Hackathon Configuration" }),
         ).toBeVisible();
+        markProgress("checking the administrator layout at all required widths");
         await expectResponsivePage(admin.page);
 
+        markProgress("saving the reusable rubric template");
         const templateName = `E2E rubric template ${suffix}`;
         await admin.page
             .getByPlaceholder("For example, Project showcase rubric")
@@ -276,6 +279,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         expect((await templateSave).ok()).toBeTruthy();
         await expect(admin.page.getByText("Reusable template saved.")).toBeVisible();
 
+        markProgress("setting the score curve and season status");
         await setScoreCurve(admin.page, "Strong uplift");
         await setSeasonStatus(admin.page, "In Progress");
         markProgress("creating the administrator project");
