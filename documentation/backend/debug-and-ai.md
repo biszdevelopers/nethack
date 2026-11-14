@@ -17,8 +17,10 @@ Debug file endpoints let authorized users upload and list static assets without 
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/upload` | `dev_debug` or admin | Stream one bounded file into persistent asset storage |
-| GET | `/api/debug/files` | `portal.debug.view` or admin | List uploaded assets |
+| POST | `/api/debug/upload` | `nethack.Debug.filesWrite` or `nethack.all` | Stream one bounded file into persistent asset storage and create an owner-managed permalink reference |
+| GET | `/api/debug/files` | `nethack.Debug.filesRead` or `nethack.all` | List filenames in the upload directory and top-level user-asset directory |
+| GET | `/api/assets/references` | Authenticated user; `nethack.all` lists all owners | List the caller's active references with pagination |
+| DELETE | `/api/assets/references/:referenceId` | Reference owner or `nethack.all` | Release a permalink reference; cleanup waits seven days and rechecks under a lock |
 
 ### Upload Request
 
@@ -35,11 +37,12 @@ Response:
 
 ```json
 {
-    "permalink": "/assets/uploads/<sha256>.<extension>"
+    "permalink": "/assets/uploads/<sha256>.<extension>",
+    "referenceId": "<uuid>"
 }
 ```
 
-For `mode=user` the response path is `/userast/<sha256>.<extension>`. Files are stored in the project-root `/assets/userassets` collection; static uploads are stored under project-root `/assets/assets/uploads`. These public permalink/debug uploads are pinned and are never automatically deleted because they may be referenced outside the database. Runtime uploads are separate from the committed static showcase in `public/assets`; see [Persistent upload storage](../deployment/security#persistent-upload-storage) for persistence, backups, profile deduplication, and cleanup behavior. The file routes set `X-Content-Type-Options: nosniff`, a restrictive CSP, and attachment disposition for non-image/video content.
+For `mode=user` the response path is `/userast/<sha256>.<extension>`. Files are stored in the project-root `/assets/userassets` collection; static uploads are stored under project-root `/assets/assets/uploads`. The response also includes an opaque `referenceId`. Repeated uploads of identical bytes reuse the object but create separate owner-managed references. `GET /api/assets/references` lists the caller's references (or all references for an admin) in pages of up to 50. Releasing a reference does not immediately delete a file: collection waits at least seven days after the last reference is released, then the daily bounded collector rechecks the database under an advisory lock. Existing files that are missing from the registry, including legacy uploads, remain pinned. Runtime uploads are separate from the committed static showcase in `public/assets`; see [Persistent upload storage](../deployment/security#persistent-upload-storage) for persistence, backups, deduplication, and cleanup behavior. The file routes set `X-Content-Type-Options: nosniff`, a restrictive CSP, and attachment disposition for non-image/video content.
 
 All cookie-authenticated mutations, including uploads, pass the global same-origin `Origin`/`Referer` check. Requests authenticated with an explicit bearer token do not use cookie-based CSRF protection. Debug routes always return 404 in production; `DISABLE_DEBUG_ROUTES=true` also disables them in non-production environments.
 
@@ -66,10 +69,10 @@ This prevents the server from crashing at startup when the key is not provided.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/deepseek/sessions` | `dev_deepseek` | Create a new chat session |
-| GET | `/api/debug/deepseek/sessions/:id` | `portal.deepseek.view` | Get session and messages |
-| DELETE | `/api/debug/deepseek/sessions/:id` | `dev_deepseek` | Delete a session |
-| POST | `/api/debug/deepseek/sessions/:id/message` | `dev_deepseek` | Send a message and run tools |
+| POST | `/api/debug/deepseek/sessions` | `nethack.Debug.deepseekWrite` or `nethack.all` | Create a new chat session |
+| GET | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekRead` or `nethack.all` | Get session and messages |
+| DELETE | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekWrite` or `nethack.all` | Delete a session |
+| POST | `/api/debug/deepseek/sessions/:id/message` | `nethack.Debug.deepseekWrite` or `nethack.all` | Send a message and run tools |
 
 The message endpoint also calls `requireUser` so the current user row can be injected into the system prompt.
 
@@ -122,7 +125,7 @@ Tool results are appended to the session as `role: 'tool'` messages and the conv
 
 ### UI
 
-The mod portal page `/developers/deepseek` provides the chat UI. It is gated by `portal.deepseek.view` or admin.
+The mod portal page `/developers/deepseek` provides the chat UI and is available to admins through the developers dashboard. Its API calls use the route-level permissions listed above.
 
 ---
 
@@ -151,14 +154,14 @@ See [Plugins & Middleware](./plugins-middleware) for subscription creation and r
 
 ## Permissions
 
-| Permission             | Allows                                        |
-| ---------------------- | --------------------------------------------- |
-| `dev_debug`            | Direct access to debug API routes             |
-| `portal.debug.view`    | View the Debug Files page in the mod portal   |
-| `dev_deepseek`         | Direct access to DeepSeek API routes          |
-| `portal.deepseek.view` | View the DeepSeek chat page in the mod portal |
+| Permission                    | Allows                                              |
+| ----------------------------- | --------------------------------------------------- |
+| `nethack.Debug.filesRead`     | List uploaded filenames and permalink references    |
+| `nethack.Debug.filesWrite`    | Upload files and release owned permalink references |
+| `nethack.Debug.deepseekRead`  | Read DeepSeek sessions and messages                 |
+| `nethack.Debug.deepseekWrite` | Create, update, and delete DeepSeek sessions        |
 
-Admins implicitly have all of the above.
+`nethack.all` grants all of these permissions.
 
 ---
 
