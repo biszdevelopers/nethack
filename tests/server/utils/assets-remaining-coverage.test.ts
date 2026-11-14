@@ -1422,7 +1422,7 @@ describe("remaining asset utility behavior", () => {
         ).toHaveLength(1);
     });
 
-    it("collects old profile temporaries before content-addressed objects and respects its budget", async () => {
+    it("honors the deletion budget across profile temporary and object candidates", async () => {
         const profiles = join(storageRoot, "userassets", "profiles");
         await mkdir(profiles, { recursive: true });
         const tempPath = join(profiles, `.profile-${UUID_A}.tmp`);
@@ -1434,6 +1434,9 @@ describe("remaining asset utility behavior", () => {
         await writeFile(assetFile, bytes);
         const now = Date.now();
         await Promise.all([makeOld(tempPath, now), makeOld(assetFile, now)]);
+        filesystemFaults.opendirOrders.set(profiles, [
+            [`.profile-${UUID_A}.tmp`, assetPath.slice("profiles/".length)],
+        ]);
         const { database } = fakeDatabase();
 
         const result = await collectOrphanProfileAssets(database, { now, maxDeletions: 1 });
