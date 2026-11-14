@@ -983,15 +983,12 @@ describe("remaining asset utility behavior", () => {
     it("clears a stale staging scan cursor when the entry it pointed to was removed", async () => {
         const staging = join(storageRoot, "assets", ".staging");
         await mkdir(staging, { recursive: true });
-        await Promise.all(
-            Array.from({ length: 20 }, (_, index) =>
-                writeFile(join(staging, `unmanaged-${index}.tmp`), "retain"),
-            ),
-        );
+        const entries = Array.from({ length: 20 }, (_, index) => `unmanaged-${index}.tmp`);
+        await Promise.all(entries.map((name) => writeFile(join(staging, name), "retain")));
+        filesystemFaults.opendirOrders.set(staging, [entries.slice(0, 8)]);
         const { database } = fakeDatabase();
         const first = await collectOrphanProfileAssets(database, { maxScanned: 8 });
-        const entries = await readdir(staging);
-        await rm(join(staging, entries[7]));
+        await rm(join(staging, entries[7]!));
 
         const second = await collectOrphanProfileAssets(database, { maxScanned: 8 });
 
