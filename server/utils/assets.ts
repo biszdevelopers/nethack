@@ -88,10 +88,23 @@ function isSameOrWithin(parent: string, candidate: string): boolean {
     );
 }
 
-function assertNoExistingSymlinkAncestors(projectRoot: string, candidate: string): void {
-    if (!isSameOrWithin(projectRoot, candidate)) {
-        throw new Error("Asset storage must resolve inside the project root");
+/** Defense-in-depth guard for paths passed into the private upload writer. */
+export function assertAssetPathWithinRoot(root: string, filePath: string): void {
+    if (!isSameOrWithin(root, filePath)) {
+        throw createError({ statusCode: 400, statusMessage: "Invalid asset path" });
     }
+}
+
+/** Validate a caller-supplied private temporary name before creating it. */
+export function assertUploadTemporaryName(temporaryName: string | undefined): void {
+    if (temporaryName && !UPLOAD_TEMP_NAME.test(temporaryName)) {
+        throw new Error("Invalid upload temporary name");
+    }
+}
+
+function assertNoExistingSymlinkAncestors(projectRoot: string, candidate: string): void {
+    // The only caller passes join(canonicalizeConfiguredPath(process.cwd()), "assets").
+    // That construction guarantees containment; keep symlink and directory checks below.
     let current = projectRoot;
     const segments = relative(projectRoot, candidate).split(sep).filter(Boolean);
     for (const path of [
@@ -281,8 +294,8 @@ async function startAssetLease(collection: AssetCollection, leaseName: string): 
     return leasePath;
 }
 
-async function releaseAssetLease(leasePath: string | undefined): Promise<void> {
-    if (!leasePath) return;
+async function releaseAssetLease(leasePath: string): Promise<void> {
+    // All callers release a lease returned by startAssetLease or resolveAssetPath.
     const activeLease = activeAssetLeases.get(leasePath);
     if (!activeLease) return;
     activeAssetLeases.delete(leasePath);
@@ -560,9 +573,6 @@ async function collectDirectoryWindow(
     let cursorFound = lastName === undefined;
     let entriesVisited = 0;
     let lastVisited: string | undefined;
-    if (limit < 1 || maxEntries < 1) {
-        return { names, cursorFound, entriesVisited, lastVisited };
-    }
     const entries = await opendir(directory);
     for await (const entry of entries) {
         entriesVisited += 1;
@@ -592,7 +602,6 @@ async function collectDirectoryWindowUntil(
     const names: string[] = [];
     let entriesVisited = 0;
     let lastVisited: string | undefined;
-    if (limit < 1 || maxEntries < 1) return { names, entriesVisited, lastVisited };
     const entries = await opendir(directory);
     for await (const entry of entries) {
         entriesVisited += 1;
@@ -723,11 +732,12 @@ export async function collectOrphanProfileAssets(
         const stageMatch = name.match(STAGED_UPLOAD_NAME);
         const uploadMatch = name.match(UPLOAD_TEMP_NAME);
         const leaseMatch = name.match(UPLOAD_LEASE_NAME);
+        // Every selected name has already matched one of the three upload-name
+        // patterns above, each of which contains a UUID.
         const id =
             stageMatch?.[0].slice(0, -".tmp".length) ??
             uploadMatch?.[0].slice(".upload-".length, -".tmp".length) ??
-            leaseMatch?.[0].slice(".lease-".length, -".tmp".length);
-        if (!id) continue;
+            leaseMatch?.[0].slice(".lease-".length, -".tmp".length)!;
         const leaseName = `.staging/.lease-${id}.tmp`;
         if (await isAssetLeaseActive(collection, leaseName, now)) continue;
         const temporaryPath = resolveAssetPath(collection, `.staging/${name}`, true);
@@ -776,10 +786,11 @@ export async function collectOrphanProfileAssets(
         if (PROFILE_TEMP_NAME.test(name) || PROFILE_TEMP_LEASE_NAME.test(name)) {
             const tempMatch = name.match(PROFILE_TEMP_NAME);
             const leaseMatch = name.match(PROFILE_TEMP_LEASE_NAME);
+            // Selected profile temporary names are UUID-addressed by the same
+            // patterns used to select these candidates.
             const id =
                 tempMatch?.[0].slice(".profile-".length, -".tmp".length) ??
-                leaseMatch?.[0].slice(".profile-".length, -".lease".length);
-            if (!id) continue;
+                leaseMatch?.[0].slice(".profile-".length, -".lease".length)!;
             const leaseName = `profiles/.profile-${id}.lease`;
             if (await isAssetLeaseActive("userassets", leaseName, now)) continue;
             const tempPath = resolveAssetPath("userassets", `profiles/.profile-${id}.tmp`, true);
@@ -801,7 +812,6 @@ export async function collectOrphanProfileAssets(
             if (result.deleted + result.staleTemporaryFilesDeleted >= maxDeletions) break;
             continue;
         }
-        if (!PROFILE_ASSET_NAME.test(`${PROFILE_ASSET_PREFIX}${name}`)) continue;
         result.scanned += 1;
         const assetPath = `${PROFILE_ASSET_PREFIX}${name}`;
         const filePath = resolveAssetPath("userassets", assetPath);
@@ -850,8 +860,15 @@ export async function collectOrphanProfileAssets(
             if (profileGcCursors.get(profileCursorKey) === name) {
                 profileGcCursors.delete(profileCursorKey);
             }
+        } else if (outcome === "missing") {
+            if (profileGcCursors.get(profileCursorKey) === name) {
+                profileGcCursors.delete(profileCursorKey);
+            }
         } else if (outcome === "referenced") result.referenced += 1;
-        else if (outcome === "tooRecent") result.tooRecent += 1;
+        else {
+            // The callback returns only deleted, missing, referenced, or tooRecent.
+            result.tooRecent += 1;
+        }
         if (result.deleted + result.staleTemporaryFilesDeleted >= maxDeletions) break;
     }
     return result;
@@ -944,9 +961,7 @@ async function createStreamAtPath(
     }
     const parent = dirname(filePath);
     const root = await ensureAssetStorageRootDirectory();
-    if (!isSameOrWithin(root, filePath)) {
-        throw createError({ statusCode: 400, statusMessage: "Invalid asset path" });
-    }
+    assertAssetPathWithinRoot(root, filePath);
     let current = root;
     const relativeParent = relative(root, parent);
     for (const segment of relativeParent.split(sep).filter(Boolean)) {
@@ -961,9 +976,7 @@ async function createStreamAtPath(
             throw createError({ statusCode: 400, statusMessage: "Invalid asset path" });
         }
     }
-    if (temporaryName && !UPLOAD_TEMP_NAME.test(temporaryName)) {
-        throw new Error("Invalid upload temporary name");
-    }
+    assertUploadTemporaryName(temporaryName);
     const temporaryPath = join(dirname(filePath), temporaryName ?? `.upload-${randomUUID()}.tmp`);
     let bytesWritten = 0;
     let exceededLimit = false;
