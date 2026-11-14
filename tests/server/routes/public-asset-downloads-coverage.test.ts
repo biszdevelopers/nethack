@@ -124,6 +124,13 @@ describe.each(routes)(
             expect(assetMocks.openStoredAsset).not.toHaveBeenCalled();
         });
 
+        it("returns 404 for hidden path segments before opening storage", async () => {
+            requestedPath = "folder/.staging/private.tmp";
+
+            await expect(handler(event)).rejects.toMatchObject({ statusCode: 404 });
+            expect(assetMocks.openStoredAsset).not.toHaveBeenCalled();
+        });
+
         it.each(["ENOENT", "ELOOP"])("maps %s file-open errors to 404", async (code) => {
             assetMocks.openStoredAsset.mockRejectedValue(
                 Object.assign(new Error("not found"), { code }),
