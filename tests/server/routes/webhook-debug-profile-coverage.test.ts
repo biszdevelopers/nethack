@@ -7,7 +7,11 @@ const mocks = vi.hoisted(() => ({
     stateValid: true,
     user: null as any,
     profileAsset: { stream: { profile: true }, size: 23 } as any,
-    uploadResult: { filename: "photo.png", relativePath: "uploads/photo.png" },
+    uploadResult: {
+        filename: "photo.png",
+        relativePath: "uploads/photo.png",
+        referenceId: "3e45b75f-8a46-4b98-b3dc-a6ad84955e45",
+    },
     storedNames: vi.fn(async (collection: string, path?: string) => [
         `${collection}:${path ?? "root"}`,
     ]),
@@ -63,7 +67,13 @@ describe("Microsoft webhook route actions", () => {
 
     beforeEach(async () => {
         vi.stubGlobal("defineEventHandler", (handler: any) => handler);
-        vi.stubGlobal("getQuery", () => mocks.query);
+        vi.stubGlobal("getValidatedQuery", (_event: unknown, validate: (query: unknown) => any) => {
+            try {
+                return validate(mocks.query);
+            } catch (error) {
+                throw Object.assign(error as Error, { statusCode: 400 });
+            }
+        });
         vi.stubGlobal("setResponseHeader", (target: any, name: string, value: string) => {
             target.headers[name] = value;
         });
@@ -97,7 +107,7 @@ describe("Microsoft webhook route actions", () => {
         ["empty array", { value: [] }],
     ])("rejects %s update payloads", async (_label, body) => {
         mocks.jsonBody = body;
-        await expect(update(event)).resolves.toMatchObject({ statusCode: 400 });
+        await expect(update(event)).rejects.toMatchObject({ statusCode: 400 });
     });
 
     it("echoes Graph validation tokens as plain text without reading a body", async () => {
@@ -108,6 +118,25 @@ describe("Microsoft webhook route actions", () => {
         expect(event.status).toBe(200);
         expect(event.headers["Content-Type"]).toBe("text/plain; charset=utf-8");
         expect(mocks.readLimitedJsonBody).not.toHaveBeenCalled();
+    });
+
+    it("rejects repeated or oversized validation tokens", async () => {
+        mocks.query = { validationToken: ["first", "second"] };
+        await expect(update(event)).rejects.toMatchObject({ statusCode: 400 });
+
+        mocks.query = { validationToken: "x".repeat(4097) };
+        await expect(lifecycle(event)).rejects.toMatchObject({ statusCode: 400 });
+        expect(mocks.readLimitedJsonBody).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ["missing client state", { value: [{ changeType: "updated" }] }],
+        ["non-string client state", { value: [{ clientState: ["invalid"] }] }],
+        ["invalid change type", { value: [{ clientState: "webhook-secret", changeType: 4 }] }],
+    ])("rejects malformed update notification fields: %s", async (_label, body) => {
+        mocks.jsonBody = body;
+        await expect(update(event)).rejects.toMatchObject({ statusCode: 400 });
+        expect(mocks.hasValidMicrosoftWebhookState).not.toHaveBeenCalled();
     });
 
     it("rejects update notifications with an invalid client state", async () => {
@@ -204,7 +233,13 @@ describe("debug asset actions", () => {
 
     beforeEach(async () => {
         vi.stubGlobal("defineEventHandler", (handler: any) => handler);
-        vi.stubGlobal("getQuery", () => ({ mode }));
+        vi.stubGlobal("getValidatedQuery", (_event: unknown, validate: (query: unknown) => any) => {
+            try {
+                return validate({ mode });
+            } catch (error) {
+                throw Object.assign(error as Error, { statusCode: 400 });
+            }
+        });
         vi.stubGlobal("getHeader", (_event: any, name: string) => {
             expect(name).toBe("content-type");
             return "multipart/form-data; boundary=test";
@@ -216,7 +251,7 @@ describe("debug asset actions", () => {
             }),
         );
         mode = "static";
-        event = { node: { req: { body: "multipart" } } };
+        event = { node: { req: { body: "multipart" } }, context: { drizzle: {} } };
         mocks.requireUser.mockReset().mockResolvedValue({ id: 9 });
         mocks.enforceSameOriginCookieRequest.mockReset();
         mocks.storeMultipartAsset.mockReset().mockResolvedValue(mocks.uploadResult);
@@ -244,7 +279,10 @@ describe("debug asset actions", () => {
         async (uploadMode, permalink, collection) => {
             mode = uploadMode;
 
-            await expect(upload(event)).resolves.toEqual({ permalink });
+            await expect(upload(event)).resolves.toEqual({
+                permalink,
+                referenceId: mocks.uploadResult.referenceId,
+            });
 
             expect(mocks.enforceSameOriginCookieRequest).toHaveBeenCalledWith(event);
             expect(mocks.requireUser).toHaveBeenCalledWith(event, "nethack.Debug.filesWrite");
@@ -252,9 +290,22 @@ describe("debug asset actions", () => {
                 event.node.req,
                 "multipart/form-data; boundary=test",
                 collection,
+                { database: event.context.drizzle, createdBy: 9 },
             );
         },
     );
+
+    it("fails closed when the storage layer cannot register an uploaded reference", async () => {
+        mocks.storeMultipartAsset.mockResolvedValueOnce({
+            filename: "photo.png",
+            relativePath: "uploads/photo.png",
+        } as any);
+
+        await expect(upload(event)).rejects.toMatchObject({
+            statusCode: 500,
+            statusMessage: "Unable to register asset reference",
+        });
+    });
 
     it("stops uploads when same-origin protection rejects the request", async () => {
         const failure = new Error("origin rejected");
