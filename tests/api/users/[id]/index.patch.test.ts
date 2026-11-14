@@ -16,20 +16,68 @@ import {
 import { users } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
+const assetMocks = vi.hoisted(() => ({
+    failProfileUpdate: false,
+}));
+
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
     AUTH_RATE_LIMIT_CONFIG: { maxRequests: 600, windowMs: 60 * 1000 },
 }));
 
-vi.mock("~~/server/utils/assets", () => ({
-    createUserAsset: vi.fn().mockResolvedValue("test-asset.png"),
-    removeUserAsset: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("~~/server/utils/assets", () => {
+    const contentAddress = (data: Buffer, extension: string) => {
+        const digest = data.toString("hex").padEnd(64, "0").slice(0, 64);
+        const canonicalExtension = extension.toLowerCase().replace(/^jpeg$/, "jpg");
+        return `profiles/${digest}.${canonicalExtension}`;
+    };
+
+    return {
+        getUserAssetContentAddress: vi.fn(contentAddress),
+        createUserAssetContentAddressed: vi.fn(async (data: Buffer, extension: string) =>
+            contentAddress(data, extension),
+        ),
+        removeUserAsset: vi.fn(),
+        withAssetLifecycleLocks: vi.fn((database: any, _paths: string[], callback: any) =>
+            database.transaction((transaction: any) => {
+                if (!assetMocks.failProfileUpdate) return callback(transaction);
+                return callback(
+                    new Proxy(transaction, {
+                        get(target, property) {
+                            if (property === "update") {
+                                return (...args: any[]) => {
+                                    const query = target.update(...args);
+                                    return {
+                                        set(values: unknown) {
+                                            const builder = query.set(values);
+                                            return {
+                                                where(...whereArgs: unknown[]) {
+                                                    builder.where(...whereArgs).run();
+                                                    throw new Error(
+                                                        "simulated profile database update failure",
+                                                    );
+                                                },
+                                            };
+                                        },
+                                    };
+                                };
+                            }
+                            const value = Reflect.get(target, property, target);
+                            return typeof value === "function" ? value.bind(target) : value;
+                        },
+                    }),
+                );
+            }),
+        ),
+    };
+});
 
 let ctx: TestContext;
 let handler: any;
 let requestBodyLimit: any;
-let createUserAsset: ReturnType<typeof vi.fn>;
+let createUserAssetContentAddressed: ReturnType<typeof vi.fn>;
+let getUserAssetContentAddress: ReturnType<typeof vi.fn>;
+let withAssetLifecycleLocks: ReturnType<typeof vi.fn>;
 let removeUserAsset: ReturnType<typeof vi.fn>;
 
 beforeAll(async () => {
@@ -37,12 +85,13 @@ beforeAll(async () => {
 
     const usersDb = await import("~~/server/utils/database/users");
     vi.stubGlobal("getUser", usersDb.getUser);
-    vi.stubGlobal("updateUserName", usersDb.updateUserName);
-    vi.stubGlobal("updateUserProfileTheme", usersDb.updateUserProfileTheme);
-    vi.stubGlobal("updateUserProfilePicture", usersDb.updateUserProfilePicture);
 
     const assets = await import("~~/server/utils/assets");
-    createUserAsset = assets.createUserAsset as ReturnType<typeof vi.fn>;
+    createUserAssetContentAddressed = assets.createUserAssetContentAddressed as ReturnType<
+        typeof vi.fn
+    >;
+    getUserAssetContentAddress = assets.getUserAssetContentAddress as ReturnType<typeof vi.fn>;
+    withAssetLifecycleLocks = assets.withAssetLifecycleLocks as ReturnType<typeof vi.fn>;
     removeUserAsset = assets.removeUserAsset as ReturnType<typeof vi.fn>;
 
     handler = (await import("~~/server/api/users/[id]/index.patch")).default;
@@ -51,6 +100,11 @@ beforeAll(async () => {
 
 beforeEach(async () => {
     resetMockState();
+    assetMocks.failProfileUpdate = false;
+    createUserAssetContentAddressed?.mockClear();
+    getUserAssetContentAddress?.mockClear();
+    withAssetLifecycleLocks?.mockClear();
+    removeUserAsset?.mockClear();
     ctx = await createTestContext();
     seedHackathon(ctx);
     seedSeason(ctx);
@@ -103,6 +157,8 @@ const VALID_JPEG_BASE64 =
 const VALID_GIF_BASE64 = "data:image/gif;base64," + Buffer.from("GIF89a").toString("base64");
 const VALID_WEBP_BASE64 =
     "data:image/webp;base64," + Buffer.from("RIFF\0\0\0\0WEBP").toString("base64");
+const OLD_THEME_ASSET = `profiles/${"a".repeat(64)}.png`;
+const OLD_AVATAR_ASSET = `profiles/${"b".repeat(64)}.jpg`;
 
 function tooLargeBase64(): string {
     const oversized = Buffer.alloc(7 * 1024 * 1024 + 1, 0);
@@ -174,12 +230,79 @@ describe("PATCH /api/users/:id", () => {
         expect(updated!.name).toBe("Alice Updated");
     });
 
+    it("validates every profile image before applying other profile changes", async () => {
+        const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+        mockParams.values["id"] = String(alice.id);
+        mockSession.value = { user: { id: alice.id } };
+        mockBody.value = { name: "Should Not Persist", avatar: "not-a-data-url" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
+
+        const unchanged = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
+        expect(unchanged!.name).toBe("Alice");
+        expect(withAssetLifecycleLocks).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            field: "profile_theme_image",
+            dataUrl: VALID_PNG_BASE64,
+            message: "Published profile theme path does not match its digest",
+        },
+        {
+            field: "avatar",
+            dataUrl: VALID_PNG_BASE64,
+            message: "Published avatar path does not match its digest",
+        },
+    ])(
+        "rejects a $field publication that does not match its digest",
+        async ({ field, dataUrl, message }) => {
+            const alice = seedUser(ctx, { email: `alice-${field}@basischina.com`, name: "Alice" });
+            mockParams.values["id"] = String(alice.id);
+            mockSession.value = { user: { id: alice.id } };
+            mockBody.value = { [field]: dataUrl };
+            createUserAssetContentAddressed.mockResolvedValueOnce(`profiles/${"f".repeat(64)}.png`);
+
+            await expect(handler(createEvent())).rejects.toThrow(message);
+
+            const unchanged = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
+            expect(unchanged!.profile_picture).toBeNull();
+            expect(unchanged!.profile_theme).toBeNull();
+        },
+    );
+
+    it("returns 404 when the user disappears before the profile update", async () => {
+        const alice = seedUser(ctx, { email: "alice-disappeared@basischina.com", name: "Alice" });
+        mockParams.values["id"] = String(alice.id);
+        mockSession.value = { user: { id: alice.id } };
+        mockBody.value = { name: "Updated Alice" };
+        withAssetLifecycleLocks.mockImplementationOnce(
+            async (
+                _database: unknown,
+                _paths: string[],
+                callback: (transaction: unknown) => unknown,
+            ) =>
+                callback({
+                    update: () => ({
+                        set: () => ({
+                            where: () => ({ returning: async () => [] }),
+                        }),
+                    }),
+                }),
+        );
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 404,
+            message: "User not found",
+        });
+    });
+
     describe("profile_theme_image", () => {
-        it("removes the existing profile theme image when null", async () => {
+        it("clears the existing profile theme reference without deleting its asset", async () => {
             const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
             ctx.drizzle
                 .update(users)
-                .set({ profile_theme: "url|old-theme.png" })
+                .set({ profile_theme: `url|${OLD_THEME_ASSET}` })
                 .where(eq(users.id, alice.id))
                 .run();
 
@@ -190,7 +313,12 @@ describe("PATCH /api/users/:id", () => {
             const result = await handler(createEvent());
 
             expect(result).toEqual({ message: "Your profile is updated" });
-            expect(removeUserAsset).toHaveBeenCalledWith("old-theme.png");
+            expect(withAssetLifecycleLocks).toHaveBeenCalledWith(
+                ctx.drizzle,
+                [OLD_THEME_ASSET],
+                expect.any(Function),
+            );
+            expect(createUserAssetContentAddressed).not.toHaveBeenCalled();
 
             const updated = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
             expect(updated!.profile_theme).toBeNull();
@@ -323,8 +451,8 @@ describe("PATCH /api/users/:id", () => {
 
             for (const { dataUrl, ext, tag } of testCases) {
                 resetMockState();
-                createUserAsset.mockClear();
-                removeUserAsset.mockClear();
+                createUserAssetContentAddressed.mockClear();
+                withAssetLifecycleLocks.mockClear();
 
                 const alice = seedUser(ctx, {
                     email: `alice-${tag}@basischina.com`,
@@ -332,7 +460,7 @@ describe("PATCH /api/users/:id", () => {
                 });
                 ctx.drizzle
                     .update(users)
-                    .set({ profile_theme: "url|old-theme.png" })
+                    .set({ profile_theme: `url|${OLD_THEME_ASSET}` })
                     .where(eq(users.id, alice.id))
                     .run();
 
@@ -343,10 +471,15 @@ describe("PATCH /api/users/:id", () => {
                 const result = await handler(createEvent());
 
                 expect(result).toEqual({ message: "Your profile is updated" });
-                expect(removeUserAsset).toHaveBeenCalledWith("old-theme.png");
-                expect(createUserAsset).toHaveBeenCalledWith(
-                    expect.stringMatching(new RegExp(`\\.${ext}$`)),
+                expect(createUserAssetContentAddressed).toHaveBeenCalledWith(
                     expect.any(Buffer),
+                    ext,
+                );
+                expect(withAssetLifecycleLocks.mock.calls[0]?.[1]).toEqual(
+                    expect.arrayContaining([
+                        OLD_THEME_ASSET,
+                        expect.stringMatching(new RegExp(`^profiles/[a-f0-9]{64}\\.${ext}$`)),
+                    ]),
                 );
 
                 const updated = ctx.drizzle
@@ -354,8 +487,43 @@ describe("PATCH /api/users/:id", () => {
                     .from(users)
                     .where(eq(users.id, alice.id))
                     .get();
-                expect(updated!.profile_theme).toMatch(/^url\|test-asset\.png$/);
+                expect(updated!.profile_theme).toMatch(
+                    new RegExp(`^url\\|profiles/[a-f0-9]{64}\\.${ext}$`),
+                );
             }
+        });
+
+        it("keeps the old asset and database reference safe when the profile update fails", async () => {
+            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+            ctx.drizzle
+                .update(users)
+                .set({ profile_theme: `url|${OLD_THEME_ASSET}` })
+                .where(eq(users.id, alice.id))
+                .run();
+            mockParams.values["id"] = String(alice.id);
+            mockSession.value = { user: { id: alice.id } };
+            mockBody.value = { profile_theme_image: VALID_PNG_BASE64 };
+            assetMocks.failProfileUpdate = true;
+
+            await expect(handler(createEvent())).rejects.toThrow(
+                "simulated profile database update failure",
+            );
+
+            const updated = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
+            expect(updated!.profile_theme).toBe(`url|${OLD_THEME_ASSET}`);
+            expect(createUserAssetContentAddressed).toHaveBeenCalledOnce();
+            const orphanPath = getUserAssetContentAddress.mock.results[0]?.value as string;
+            expect(orphanPath).toMatch(/^profiles\/[a-f0-9]{64}\.png$/);
+            expect(updated!.profile_theme).not.toContain(orphanPath);
+            await expect(createUserAssetContentAddressed.mock.results[0]?.value).resolves.toBe(
+                orphanPath,
+            );
+            expect(withAssetLifecycleLocks).toHaveBeenCalledOnce();
+            expect(removeUserAsset).not.toHaveBeenCalled();
+            expect(getUserAssetContentAddress).toHaveBeenCalledWith(
+                Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+                "png",
+            );
         });
 
         it.each([
@@ -380,11 +548,11 @@ describe("PATCH /api/users/:id", () => {
     });
 
     describe("avatar", () => {
-        it("removes the existing avatar when null", async () => {
+        it("clears the existing avatar reference without deleting its asset", async () => {
             const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
             ctx.drizzle
                 .update(users)
-                .set({ profile_picture: "old-avatar.png" })
+                .set({ profile_picture: OLD_AVATAR_ASSET })
                 .where(eq(users.id, alice.id))
                 .run();
 
@@ -395,7 +563,12 @@ describe("PATCH /api/users/:id", () => {
             const result = await handler(createEvent());
 
             expect(result).toEqual({ message: "Your profile is updated" });
-            expect(removeUserAsset).toHaveBeenCalledWith("old-avatar.png");
+            expect(withAssetLifecycleLocks).toHaveBeenCalledWith(
+                ctx.drizzle,
+                [OLD_AVATAR_ASSET],
+                expect.any(Function),
+            );
+            expect(createUserAssetContentAddressed).not.toHaveBeenCalled();
 
             const updated = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
             expect(updated!.profile_picture).toBeNull();
@@ -438,8 +611,8 @@ describe("PATCH /api/users/:id", () => {
 
             for (const { dataUrl, ext } of testCases) {
                 resetMockState();
-                createUserAsset.mockClear();
-                removeUserAsset.mockClear();
+                createUserAssetContentAddressed.mockClear();
+                withAssetLifecycleLocks.mockClear();
 
                 const alice = seedUser(ctx, {
                     email: `alice-avatar-${ext}@basischina.com`,
@@ -447,7 +620,7 @@ describe("PATCH /api/users/:id", () => {
                 });
                 ctx.drizzle
                     .update(users)
-                    .set({ profile_picture: "old-avatar.png" })
+                    .set({ profile_picture: OLD_AVATAR_ASSET })
                     .where(eq(users.id, alice.id))
                     .run();
 
@@ -458,19 +631,64 @@ describe("PATCH /api/users/:id", () => {
                 const result = await handler(createEvent());
 
                 expect(result).toEqual({ message: "Your profile is updated" });
-                expect(removeUserAsset).toHaveBeenCalledWith("old-avatar.png");
-                expect(createUserAsset).toHaveBeenCalledWith(
-                    expect.stringMatching(new RegExp(`\\.${ext}$`)),
+                expect(createUserAssetContentAddressed).toHaveBeenCalledWith(
                     expect.any(Buffer),
+                    ext,
                 );
+                expect(withAssetLifecycleLocks.mock.calls[0]?.[1]).toContain(OLD_AVATAR_ASSET);
 
                 const updated = ctx.drizzle
                     .select()
                     .from(users)
                     .where(eq(users.id, alice.id))
                     .get();
-                expect(updated!.profile_picture).toBe("test-asset.png");
+                expect(updated!.profile_picture).toMatch(
+                    new RegExp(`^profiles/[a-f0-9]{64}\\.${ext}$`),
+                );
             }
+        });
+
+        it("uses one shared content address for identical avatar and theme bytes", async () => {
+            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+            mockParams.values["id"] = String(alice.id);
+            mockSession.value = { user: { id: alice.id } };
+            mockBody.value = { avatar: VALID_PNG_BASE64, profile_theme_image: VALID_PNG_BASE64 };
+
+            await expect(handler(createEvent())).resolves.toEqual({
+                message: "Your profile is updated",
+            });
+
+            const updated = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
+            expect(updated!.profile_picture).toMatch(/^profiles\/[a-f0-9]{64}\.png$/);
+            expect(updated!.profile_theme).toBe(`url|${updated!.profile_picture}`);
+            expect(createUserAssetContentAddressed).toHaveBeenCalledTimes(2);
+            expect(withAssetLifecycleLocks.mock.calls[0]?.[1]).toEqual([updated!.profile_picture]);
+        });
+
+        it("does not treat legacy or remote profile references as managed GC lock paths", async () => {
+            const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+            ctx.drizzle
+                .update(users)
+                .set({
+                    profile_picture: "legacy-avatar.png",
+                    profile_theme: "url|https://cdn.example.test/legacy-theme.png",
+                })
+                .where(eq(users.id, alice.id))
+                .run();
+            mockParams.values["id"] = String(alice.id);
+            mockSession.value = { user: { id: alice.id } };
+            mockBody.value = { avatar: null, profile_theme_image: null };
+
+            await expect(handler(createEvent())).resolves.toEqual({
+                message: "Your profile is updated",
+            });
+
+            expect(withAssetLifecycleLocks).toHaveBeenCalledWith(
+                ctx.drizzle,
+                [],
+                expect.any(Function),
+            );
+            expect(removeUserAsset).not.toHaveBeenCalled();
         });
     });
 });
