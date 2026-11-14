@@ -17,7 +17,7 @@ if (seasonId === null) {
     throw createError({ statusCode: 404, statusMessage: "Season not found", fatal: true });
 }
 
-const { data: seasons, error } = await useFetch<PublicSeason[]>("/api/seasons", {
+const { data: seasons, error } = await useApiFetch<PublicSeason[]>("/api/seasons", {
     $fetch: globalThis.$fetch,
 });
 if (error.value) throw error.value;
