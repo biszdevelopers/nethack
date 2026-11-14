@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const linkMockState = vi.hoisted(() => ({ errorCode: "" as "" | "EPERM" | "EXDEV", calls: 0 }));
+const linkMockState = vi.hoisted(() => ({
+    errorCode: "" as "" | "EPERM" | "EXDEV",
+    calls: 0,
+    successAsCopy: false,
+}));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
     const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -18,6 +22,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
                 throw Object.assign(new Error(`simulated ${linkMockState.errorCode}`), {
                     code: linkMockState.errorCode,
                 });
+            }
+            if (linkMockState.successAsCopy) {
+                await actual.copyFile(args[0], args[1]);
+                return;
             }
             return actual.link(...args);
         },
@@ -59,6 +67,7 @@ describe("asset hard-link publication fallbacks", () => {
         vi.stubEnv("ASSET_STORAGE_DIR", storageRoot);
         linkMockState.errorCode = "";
         linkMockState.calls = 0;
+        linkMockState.successAsCopy = false;
     });
 
     afterEach(async () => {
@@ -66,6 +75,7 @@ describe("asset hard-link publication fallbacks", () => {
         vi.unstubAllEnvs();
         linkMockState.errorCode = "";
         linkMockState.calls = 0;
+        linkMockState.successAsCopy = false;
         await rm(temporaryRoot, { recursive: true, force: true });
     });
 
@@ -91,6 +101,45 @@ describe("asset hard-link publication fallbacks", () => {
             expect(linkMockState.calls).toBeGreaterThanOrEqual(2);
         },
     );
+
+    it("publishes a new staged object when hard-link creation succeeds", async () => {
+        linkMockState.successAsCopy = true;
+        const bytes = Buffer.from("hard-link publication succeeds");
+        const stagedName = await stageAssetFromStream(
+            Readable.from([bytes]),
+            bytes.length,
+            undefined,
+            "assets",
+        );
+        const digest = createHash("sha256").update(bytes).digest("hex");
+
+        await expect(
+            publishStagedAssetContentAddressed(stagedName, ".txt", "assets"),
+        ).resolves.toEqual({ filename: `${digest}.txt`, relativePath: `uploads/${digest}.txt` });
+        await expect(readFile(storedPath("assets", `uploads/${digest}.txt`))).resolves.toEqual(
+            bytes,
+        );
+    });
+
+    it("reuses identical content when the exclusive fallback finds a destination race", async () => {
+        linkMockState.errorCode = "EPERM";
+        const bytes = Buffer.from("matching pre-existing upload content");
+        const digest = createHash("sha256").update(bytes).digest("hex");
+        const destination = storedPath("assets", `uploads/${digest}.txt`);
+        await mkdir(join(storageRoot, "assets", "uploads"), { recursive: true });
+        await writeFile(destination, bytes);
+        const stagedName = await stageAssetFromStream(
+            Readable.from([bytes]),
+            bytes.length,
+            undefined,
+            "assets",
+        );
+
+        await expect(
+            publishStagedAssetContentAddressed(stagedName, ".txt", "assets"),
+        ).resolves.toEqual({ filename: `${digest}.txt`, relativePath: `uploads/${digest}.txt` });
+        await expect(readFile(destination)).resolves.toEqual(bytes);
+    });
 
     it("rejects a mismatching existing profile object during the fallback without replacing it", async () => {
         linkMockState.errorCode = "EPERM";
