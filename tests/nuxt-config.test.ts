@@ -49,6 +49,11 @@ describe("nuxt production performance defaults", () => {
         expect(config.fonts?.processCSSVariables).toBe(true);
     });
 
+    it("uses the supported Comark Nuxt module", () => {
+        expect(config.modules).toContain("@comark/vue");
+        expect(config.modules).not.toContain("@comark/nuxt");
+    });
+
     it("scans installed icon packages without generated custom collections", () => {
         expect(config.icon?.serverBundle?.collections.length).toBeGreaterThan(0);
         expect(config.icon?.clientBundle?.scan?.globInclude).toEqual([

@@ -36,7 +36,7 @@ export default defineNuxtConfig({
     },
     compatibilityDate: "2025-07-15",
     devtools: { enabled: false }, // keeps crasing
-    modules: ["@nuxt/eslint", "@nuxt/ui", "@comark/nuxt"],
+    modules: ["@nuxt/eslint", "@nuxt/ui", "@comark/vue"],
 
     css: ["~/assets/css/main.css"],
     colorMode: {
