@@ -1,7 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
-import { createUserAsset, removeUserAsset } from "~~/server/utils/assets";
-import { updateUserProfilePicture } from "~~/server/utils/database/users";
+import {
+    createUserAssetContentAddressed,
+    getUserAssetContentAddress,
+    withAssetLifecycleLocks,
+} from "~~/server/utils/assets";
+import { users } from "~~/server/database/schema";
 import { applyRateLimit } from "~~/server/utils/rateLimit";
 import { MAX_PROFILE_IMAGE_BYTES, UpdateUserRequest, UserIdParams } from "~~/shared/schemas";
 import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
@@ -9,6 +13,13 @@ import { readLimitedRequestBody } from "~~/server/utils/limited-json-body";
 
 const MAX_FILE_SIZE = MAX_PROFILE_IMAGE_BYTES;
 const MAX_PROFILE_UPDATE_BODY_BYTES = 10 * 1024 * 1024;
+const CONTENT_ADDRESSED_PROFILE_ASSET = /^profiles\/[a-f0-9]{64}\.(?:gif|jpg|png|webp)$/;
+
+function getManagedProfileAssetPath(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const path = value.startsWith("url|") ? value.slice(4) : value;
+    return CONTENT_ADDRESSED_PROFILE_ASSET.test(path) ? path : null;
+}
 
 function decodedBase64Length(encoded: string): number | null {
     if (!encoded.length || encoded.length % 4 !== 0) return null;
@@ -135,40 +146,80 @@ export default defineEventHandler(
                 throw createError({ status: 401, message: "Logged in user not found" });
             }
 
-            if (name !== undefined) {
-                user.name = name;
-                await updateUserName(event, user);
-            }
+            // Decode and validate every uploaded image before any write so a bad
+            // second field cannot leave a partially updated profile.
+            const themeImage =
+                profile_theme_image !== undefined && profile_theme_image !== null
+                    ? decodeValidatedImage(profile_theme_image.toString(), "Profile theme")
+                    : null;
+            const avatarImage =
+                avatar !== undefined && avatar !== null
+                    ? decodeValidatedImage(avatar.toString(), "Avatar")
+                    : null;
 
+            const lockPaths = [
+                ...(profile_theme_image !== undefined
+                    ? [getManagedProfileAssetPath(user.profile_theme)]
+                    : []),
+                ...(avatar !== undefined ? [getManagedProfileAssetPath(user.profile_picture)] : []),
+                ...(themeImage
+                    ? [getUserAssetContentAddress(themeImage.data, themeImage.extension)]
+                    : []),
+                ...(avatarImage
+                    ? [getUserAssetContentAddress(avatarImage.data, avatarImage.extension)]
+                    : []),
+            ].filter((path): path is string => path !== null);
+            const uniqueLockPaths = [...new Set(lockPaths)];
+
+            const updates: Partial<typeof users.$inferInsert> = {};
+            if (name !== undefined) updates.name = name;
             if (profile_theme_image !== undefined) {
-                if (profile_theme_image === null) {
-                    await removeUserAsset(user.profile_theme?.split("|")[1]);
-                    user.profile_theme = null;
-                    await updateUserProfileTheme(event, user);
-                } else {
-                    const { data, extension } = decodeValidatedImage(
-                        profile_theme_image.toString(),
-                        "Profile theme",
-                    );
-                    await removeUserAsset(user.profile_theme?.split("|")[1]);
-                    const path = await createUserAsset(`${randomUUID()}.${extension}`, data);
-                    user.profile_theme = `url|${path}`;
-                    await updateUserProfileTheme(event, user);
-                }
+                updates.profile_theme = themeImage
+                    ? `url|${getUserAssetContentAddress(themeImage.data, themeImage.extension)}`
+                    : null;
+            }
+            if (avatar !== undefined) {
+                updates.profile_picture = avatarImage
+                    ? getUserAssetContentAddress(avatarImage.data, avatarImage.extension)
+                    : null;
             }
 
-            if (avatar !== undefined) {
-                if (avatar === null) {
-                    await removeUserAsset(user.profile_picture);
-                    user.profile_picture = null;
-                    await updateUserProfilePicture(event, user);
-                } else {
-                    const { data, extension } = decodeValidatedImage(avatar.toString(), "Avatar");
-                    await removeUserAsset(user.profile_picture);
-                    const path = await createUserAsset(`${randomUUID()}.${extension}`, data);
-                    user.profile_picture = path;
-                    await updateUserProfilePicture(event, user);
-                }
+            if (Object.keys(updates).length > 0) {
+                await withAssetLifecycleLocks(
+                    event.context.drizzle,
+                    uniqueLockPaths,
+                    async (tx) => {
+                        if (themeImage) {
+                            const publishedPath = await createUserAssetContentAddressed(
+                                themeImage.data,
+                                themeImage.extension,
+                            );
+                            if (publishedPath !== updates.profile_theme?.slice(4)) {
+                                throw new Error(
+                                    "Published profile theme path does not match its digest",
+                                );
+                            }
+                        }
+                        if (avatarImage) {
+                            const publishedPath = await createUserAssetContentAddressed(
+                                avatarImage.data,
+                                avatarImage.extension,
+                            );
+                            if (publishedPath !== updates.profile_picture) {
+                                throw new Error("Published avatar path does not match its digest");
+                            }
+                        }
+
+                        const changed = await tx
+                            .update(users)
+                            .set(updates)
+                            .where(eq(users.id, id))
+                            .returning({ id: users.id });
+                        if (changed.length === 0) {
+                            throw createError({ status: 404, message: "User not found" });
+                        }
+                    },
+                );
             }
 
             return { message: "Your profile is updated" };
