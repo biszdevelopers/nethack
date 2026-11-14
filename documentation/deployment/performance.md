@@ -120,7 +120,7 @@ For a full production smoke test, build the app:
 bun run build
 ```
 
-and then start the server with `bun run start` or `node start-fix.mjs`.
+and then start the server with `bun run start` or, on Linux, `npm run start`. The start script selects Bun 1.3.14 when installed and otherwise uses Node.js 24 or newer; run `node start-fix.mjs` to select Node.js directly.
 
 ## VPS measurement workflow
 
