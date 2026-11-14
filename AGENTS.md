@@ -176,7 +176,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 - Shared Zod schemas are in `shared/schemas.ts`.
 - API responses should match the interfaces in `shared/responses.d.ts`.
 - Use `convertUserToPublic` and `convertTeamToPublic` to strip internal fields before returning data.
-- Rate limiting is applied with `applyRateLimit(handler)` from `server/utils/rateLimit.ts` (default: 120 requests/minute). See `RATE_LIMITING.md` for usage.
+- Rate limiting is applied with `applyRateLimit(handler)` from `server/utils/rateLimit.ts` (default: 120 requests/minute). See `documentation/deployment/rate-limiting.md` for usage.
 
 ---
 
