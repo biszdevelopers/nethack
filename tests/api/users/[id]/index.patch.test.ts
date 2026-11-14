@@ -193,6 +193,49 @@ describe("PATCH /api/users/:id", () => {
         await expect(handler(event)).resolves.toEqual({ message: "Your profile is updated" });
     });
 
+    it("rejects a concurrent profile body before buffering it and releases capacity afterward", async () => {
+        const alice = seedUser(ctx, { email: "alice-capacity@basischina.com", name: "Alice" });
+        mockParams.values["id"] = String(alice.id);
+        mockSession.value = { user: { id: alice.id } };
+        mockBody.value = { name: "Alice Updated" };
+
+        const firstRequest = Object.assign(new Readable({ read() {} }), {
+            headers: {
+                "content-length": "25",
+                "content-type": "application/json",
+            },
+        });
+        const first = handler(
+            createEvent({
+                node: {
+                    req: firstRequest,
+                    res: { headersSent: false, setHeader() {} },
+                },
+            }),
+        );
+        await vi.waitFor(() => expect(firstRequest.listenerCount("data")).toBeGreaterThan(0));
+
+        const retryHeader = vi.fn();
+        const retryRequest = Object.assign(Readable.from([Buffer.from('{"name":"Retry Alice"}')]), {
+            headers: {
+                "content-length": "23",
+                "content-type": "application/json",
+            },
+        });
+        const retry = createEvent({
+            node: { req: retryRequest, res: { headersSent: false, setHeader: retryHeader } },
+        });
+
+        await expect(handler(retry)).rejects.toMatchObject({ statusCode: 503 });
+        expect(retryHeader).toHaveBeenCalledWith("Retry-After", "2");
+        expect(retryRequest.readableEnded).toBe(false);
+
+        firstRequest.push(Buffer.from('{"name":"Alice Updated"}'));
+        firstRequest.push(null);
+        await expect(first).resolves.toEqual({ message: "Your profile is updated" });
+        await expect(handler(retry)).resolves.toEqual({ message: "Your profile is updated" });
+    });
+
     it("returns 403 when updating another user", async () => {
         seedUser(ctx, { email: "viewer@basischina.com" });
         mockParams.values["id"] = "2";
