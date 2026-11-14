@@ -6,6 +6,7 @@ import JudgingReview from "~/components/JudgingReview.vue";
 import { useJudgingDraft } from "~/composables/useJudgingDraft";
 import type { RubricDefinition } from "~~/shared/rubric";
 import { NethackPermissions } from "~~/shared/permissions";
+import { WEBSITE_NAME } from "~/utils/consts";
 
 interface JudgingRubric extends RubricDefinition {
     version_id: number;
@@ -19,6 +20,7 @@ interface FinalizedEvaluation {
 definePageMeta({
     middleware: ["auth"],
 });
+useHead({ title: `Judging queue | ${WEBSITE_NAME}` });
 
 const { data: hackathon } = await useApiFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
 if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
