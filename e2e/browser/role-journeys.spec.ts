@@ -283,11 +283,17 @@ test("participant, judge, and admin can complete the published scoring journey o
         await admin.page.getByRole("button", { name: "Save as new template" }).click();
         const templateResponse = await templateSave;
         expect(templateResponse.ok()).toBeTruthy();
-        expect(await templateResponse.json()).toMatchObject({ template: { name: templateName } });
+        expect(await templateResponse.json()).toMatchObject({
+            data: { template: { name: templateName } },
+        });
         await templateSavedToast;
         const refreshedRubric = await templateRefresh;
         expect(await refreshedRubric.json()).toMatchObject({
-            templates: expect.arrayContaining([expect.objectContaining({ name: templateName })]),
+            data: {
+                templates: expect.arrayContaining([
+                    expect.objectContaining({ name: templateName }),
+                ]),
+            },
         });
         await expect(
             admin.page.getByRole("heading", { name: templateName, exact: true }),
