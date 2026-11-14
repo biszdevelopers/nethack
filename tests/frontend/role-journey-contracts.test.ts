@@ -154,12 +154,9 @@ describe("judge action paths", () => {
     });
 
     it("provides anonymous comment prompts and returns focus to the comment editor", () => {
-        expect(scoringCard).toContain("Strength + next step");
-        expect(scoringCard).toContain("What stood out");
-        expect(scoringCard).toContain("Technical feedback");
-        expect(scoringCard).toContain(
-            "Do not include your name or details that could identify you.",
-        );
+        expect(scoringCard).toContain('v-for="template in commentGuidance.templates"');
+        expect(scoringCard).toContain("appendCommentPrompt(template.body)");
+        expect(scoringCard).toContain('v-for="(guideline, index) in commentGuidance.guidelines"');
         expect(scoringCard).toContain(
             "Teams can read this comment anonymously after results are published.",
         );
@@ -232,7 +229,9 @@ describe("judge results and admin controls", () => {
     it("uses role-specific score endpoints and hides judge identity in published feedback", () => {
         expect(feedback).toContain("props.admin ? `/api/admin/teams/${props.teamId}/scores`");
         expect(feedback).toContain(": `/api/teams/${props.teamId}/scores`");
-        expect(feedback).toContain("Judge names and account IDs are hidden.");
+        expect(feedback).toContain(
+            "Judge names, account IDs, rubric metadata, and individual scores are hidden.",
+        );
         expect(feedback).toContain("Anonymous evaluation");
         expect(feedback).toContain("No written feedback is available.");
         expect(feedback).toContain("Feedback could not be loaded");
@@ -242,7 +241,7 @@ describe("judge results and admin controls", () => {
         expect(feedback).toContain("Original average:");
         expect(feedback).toContain("Curved display ({{ curve?.label }}):");
         expect(feedback).toContain("Rank:");
-        expect(feedback).toContain("evaluation.normalized_score !== null");
+        expect(feedback).toContain("admin && evaluation.normalized_score != null");
         expect(feedback).toContain('evaluation.scores[criterion.id] ?? "—"');
     });
 
