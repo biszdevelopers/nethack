@@ -18,7 +18,7 @@ The platform manages the entire hackathon lifecycle:
 | **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, and sourcing information. Submissions are accepted only during `not_started` or `in_progress` states. |
 | **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. |
 | **Judge Scoring** | Judges use season-specific, versioned weighted rubrics with track-specific criteria and integer score ranges. Guided comment prompts and templates help judges write useful anonymous feedback. |
-| **Published Feedback** | Competitors can review judge comments after results are published. Organizers can review feedback earlier. Judge identities stay hidden in both views; configurable score curves change display only and preserve original scores and rankings. |
+| **Published Feedback** | Competitors can review anonymous comments after results are published and at least three judges have evaluated their team. Organizers can inspect full feedback, including judge identities, at any time. Configurable score curves change display only and preserve original scores and rankings. |
 | **Mod Portal** | Administrative dashboard for managing users, teams, seasons, and debug tools. |
 | **Graph API** | Independent meeting scheduling and Teams chat integration. It is not an authentication provider. |
 | **DeepSeek AI Chatbot** | In-memory chat session store powered by the OpenAI SDK for DeepSeek AI interactions in debug routes. |
@@ -69,7 +69,7 @@ The app grants access through fine-grained permissions from basis-auth. The labe
 | Role | Description |
 | --- | --- |
 | `participant` | Default role. Can join teams, submit projects, and vote. |
-| `judge` | Can score projects using the season rubric. Judge identity is hidden in participant and administrator feedback views. |
+| `judge` | Can score projects using the season rubric. Identity is hidden from competitors; organizers with the all-permissions grant can see it in the admin feedback view. |
 | `admin` | Access depends on delegated basis-auth permissions, including the mod portal. |
 
 ### Fine-Grained Developer Permissions
