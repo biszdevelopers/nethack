@@ -103,44 +103,79 @@ describe("asset helpers", () => {
             );
         });
 
-        it("rejects production asset storage inside the release directory", async () => {
+        it("keeps production storage inside the checkout and ignores legacy overrides", async () => {
             vi.stubEnv("NODE_ENV", "production");
             vi.stubEnv("ASSET_STORAGE_DIR", join(tempDir, "public", "userassets"));
-            await expect(createAsset("safe.txt", Buffer.from("x"))).rejects.toThrow(
-                "ASSET_STORAGE_DIR must be outside the application release directory in production",
-            );
+            await createAsset("safe.txt", Buffer.from("x"));
+            await expect(readdir(join(tempDir, "assets", "assets"))).resolves.toContain("safe.txt");
         });
 
-        it("rejects a storage path reached through a symlink into the release directory", async () => {
+        it("does not follow legacy production overrides through a symlink", async ({ skip }) => {
             const storageAlias = join(tempDir, "storage-alias");
-            await symlink(tempDir, storageAlias, "junction");
+            try {
+                await symlink(tempDir, storageAlias, "junction");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
             vi.stubEnv("NODE_ENV", "production");
             vi.stubEnv("ASSET_STORAGE_DIR", join(storageAlias, "public", "userassets"));
 
-            await expect(createAsset("safe.txt", Buffer.from("x"))).rejects.toThrow(
-                "ASSET_STORAGE_DIR must be outside the application release directory in production",
-            );
+            await createAsset("safe.txt", Buffer.from("x"));
+            await expect(readdir(join(tempDir, "assets", "assets"))).resolves.toContain("safe.txt");
+            await expect(readdir(join(tempDir, "public"))).rejects.toMatchObject({
+                code: "ENOENT",
+            });
         });
 
-        it("canonicalizes a symlinked release working directory", async () => {
+        it("stores beneath the canonical symlinked checkout", async ({ skip }) => {
             const releaseRoot = join(tempDir, "release");
             const releaseAlias = join(tempDir, "current");
             await mkdir(releaseRoot);
-            await symlink(releaseRoot, releaseAlias, "junction");
+            try {
+                await symlink(releaseRoot, releaseAlias, "junction");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
             cwdSpy.mockReturnValue(releaseAlias);
             vi.stubEnv("NODE_ENV", "production");
             vi.stubEnv("ASSET_STORAGE_DIR", join(releaseRoot, "public", "uploads"));
 
-            await expect(createAsset("safe.txt", Buffer.from("x"))).rejects.toThrow(
-                "ASSET_STORAGE_DIR must be outside the application release directory in production",
+            await createAsset("safe.txt", Buffer.from("x"));
+            await expect(readdir(join(releaseRoot, "assets", "assets"))).resolves.toContain(
+                "safe.txt",
             );
         });
 
-        it("rejects writes through a symlinked directory", async () => {
+        it("rejects writes through a symlinked directory", async ({ skip }) => {
             const outside = join(tempDir, "outside");
             await mkdir(outside);
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outside, join(assetsDir, "linked"), "junction");
+            try {
+                await symlink(outside, join(assetsDir, "linked"), "junction");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
             await expect(createAsset("linked/escape.txt", Buffer.from("x"))).rejects.toThrow(
                 "Invalid asset path",
             );
@@ -234,11 +269,22 @@ describe("asset helpers", () => {
             await expect(getUserAsset("nonexistent.txt")).rejects.toThrow();
         });
 
-        it("refuses to read through a symlink", async () => {
+        it("refuses to read through a symlink", async ({ skip }) => {
             const outsideFile = join(tempDir, "outside.txt");
             await writeFile(outsideFile, "outside storage");
             await mkdir(userAssetsDir, { recursive: true });
-            await symlink(outsideFile, join(userAssetsDir, "linked.txt"), "file");
+            try {
+                await symlink(outsideFile, join(userAssetsDir, "linked.txt"), "file");
+            } catch (error) {
+                if (
+                    ["EPERM", "EACCES", "ENOTSUP"].includes(
+                        (error as NodeJS.ErrnoException).code ?? "",
+                    )
+                ) {
+                    skip("This Windows environment does not permit creating symlinks");
+                }
+                throw error;
+            }
 
             await expect(getUserAsset("linked.txt")).rejects.toThrow("Asset not found");
         });
@@ -314,9 +360,10 @@ describe("asset helpers", () => {
             await expect(createAsset("/", Buffer.from("x"))).rejects.toThrow("Invalid asset name");
         });
 
-        it("allows names starting with double dots (..name is a valid filename)", async () => {
-            const result = await createAsset("..name", Buffer.from("x"));
-            expect(result).toBe("..name");
+        it("rejects hidden names so private staging paths cannot be exposed", async () => {
+            await expect(createAsset("..name", Buffer.from("x"))).rejects.toThrow(
+                "Invalid asset name",
+            );
         });
 
         it("writes and reads back the correct binary content", async () => {
