@@ -60,6 +60,23 @@
                     </a>
                     <span v-else class="text-muted">{{ permalink }} (blocked unsafe URL)</span>
                 </p>
+                <p class="mt-2 text-sm text-muted">
+                    This permalink remains active until its reference is released. Unreferenced
+                    files become eligible for cleanup after seven days.
+                </p>
+                <button
+                    v-if="referenceId"
+                    type="button"
+                    class="mt-2 min-h-11 rounded bg-red-700 px-3 py-2 text-white disabled:opacity-50"
+                    :disabled="releasingReferenceId !== null"
+                    @click="releaseReference(referenceId)"
+                >
+                    {{
+                        releasingReferenceId === referenceId
+                            ? "Releasing..."
+                            : "Release this permalink"
+                    }}
+                </button>
             </div>
             <div v-if="error" class="mt-4 text-red-500">Error: {{ error }}</div>
 
@@ -69,7 +86,7 @@
                     <button
                         type="button"
                         class="bg-secondary text-white px-3 py-2 rounded"
-                        @click="loadFiles"
+                        @click="refreshUploads()"
                     >
                         Refresh
                     </button>
@@ -123,6 +140,93 @@
                             </li>
                         </ul>
                     </div>
+                </div>
+            </section>
+
+            <section class="mt-8 rounded border border-slate-200 p-4">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-xl font-bold">Active Permalink References</h2>
+                        <p class="mt-1 text-sm text-slate-600">
+                            References remain active until released. Shared files stay available
+                            while any reference remains.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="min-h-11 rounded bg-secondary px-3 py-2 text-white"
+                        :disabled="loadingReferences"
+                        @click="loadReferences()"
+                    >
+                        Refresh references
+                    </button>
+                </div>
+                <ul class="space-y-3">
+                    <li v-if="loadingReferences" class="text-sm text-slate-500">
+                        Loading references...
+                    </li>
+                    <li v-else-if="references.length === 0" class="text-sm text-slate-500">
+                        No active permalink references.
+                    </li>
+                    <li
+                        v-for="reference in references"
+                        :key="reference.id"
+                        class="flex flex-col gap-2 rounded border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                        <div class="min-w-0">
+                            <a
+                                :href="reference.permalink"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="break-all text-blue-600 hover:underline"
+                            >
+                                {{ reference.permalink }}
+                            </a>
+                            <p class="text-xs text-slate-500">
+                                {{
+                                    reference.collection === "assets"
+                                        ? "Static upload"
+                                        : "User asset"
+                                }}
+                                · {{ reference.created_at }}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            class="min-h-11 min-w-11 shrink-0 rounded bg-red-700 px-3 py-2 text-white disabled:opacity-50"
+                            :disabled="releasingReferenceId !== null"
+                            @click="releaseReference(reference.id)"
+                        >
+                            {{ releasingReferenceId === reference.id ? "Releasing..." : "Release" }}
+                        </button>
+                    </li>
+                </ul>
+                <div
+                    v-if="referencePagination.total_pages > 1"
+                    class="mt-4 flex items-center justify-between gap-3"
+                    aria-label="Permalink reference pages"
+                >
+                    <button
+                        type="button"
+                        class="min-h-11 min-w-11 rounded border px-3"
+                        :disabled="loadingReferences || referencePage <= 1"
+                        @click="loadReferences(referencePage - 1)"
+                    >
+                        Previous
+                    </button>
+                    <span class="text-sm text-slate-600">
+                        Page {{ referencePage }} of {{ referencePagination.total_pages }}
+                    </span>
+                    <button
+                        type="button"
+                        class="min-h-11 min-w-11 rounded border px-3"
+                        :disabled="
+                            loadingReferences || referencePage >= referencePagination.total_pages
+                        "
+                        @click="loadReferences(referencePage + 1)"
+                    >
+                        Next
+                    </button>
                 </div>
             </section>
         </div>
@@ -244,13 +348,27 @@ const activeTab = ref<"upload" | "deepseek">("upload");
 const file = ref<File | null>(null);
 const uploading = ref(false);
 const permalink = ref("");
+const referenceId = ref("");
+const releasingReferenceId = ref<string | null>(null);
 const safePermalink = computed(() => safeUrl(permalink.value));
 const error = ref("");
 const loadingFiles = ref(false);
+const loadingReferences = ref(false);
+const references = ref<AssetReference[]>([]);
+const referencePage = ref(1);
+const referencePageSize = 20;
+const referencePagination = ref({ total: 0, total_pages: 0 });
 const fileLists = ref({
     assets: [] as Array<{ name: string; url: string }>,
     userast: [] as Array<{ name: string; url: string }>,
 });
+
+interface AssetReference {
+    id: string;
+    collection: "assets" | "userassets";
+    permalink: string;
+    created_at: string;
+}
 
 const items = ref(["static", "user"]);
 const value = ref("static");
@@ -294,6 +412,36 @@ const loadFiles = async () => {
     }
 };
 
+const loadReferences = async (page = referencePage.value) => {
+    loadingReferences.value = true;
+    try {
+        const response = await $fetch<{
+            items: AssetReference[];
+            page: number;
+            page_size: number;
+            total: number;
+            total_pages: number;
+        }>("/api/assets/references", {
+            query: { page, page_size: referencePageSize },
+        });
+        references.value = response.items;
+        referencePage.value = response.page;
+        referencePagination.value = {
+            total: response.total,
+            total_pages: response.total_pages,
+        };
+    } catch (err: any) {
+        error.value = err.message || "Unable to load permalink references";
+    } finally {
+        loadingReferences.value = false;
+    }
+};
+
+const refreshUploads = async (resetReferencePage = false) => {
+    if (resetReferencePage) referencePage.value = 1;
+    await Promise.all([loadFiles(), loadReferences()]);
+};
+
 const handleFileChange = (event: Event) => {
     const target = event.target as HTMLInputElement;
     file.value = target.files?.[0] || null;
@@ -305,13 +453,14 @@ const uploadFile = async () => {
     uploading.value = true;
     error.value = "";
     permalink.value = "";
+    referenceId.value = "";
 
     try {
         const formData = new FormData();
         formData.append("file", file.value);
 
         const params = new URLSearchParams({ mode: value.value });
-        const response = await $fetch<{ permalink: string }>(
+        const response = await $fetch<{ permalink: string; referenceId: string }>(
             `/api/debug/upload?${params.toString()}`,
             {
                 method: "POST",
@@ -320,13 +469,34 @@ const uploadFile = async () => {
         );
 
         permalink.value = response.permalink;
-        await loadFiles();
+        referenceId.value = response.referenceId;
+        await refreshUploads(true);
     } catch (err: any) {
         error.value = err.message || "Upload failed";
     } finally {
         uploading.value = false;
     }
 };
+
+const releaseReference = async (id = referenceId.value) => {
+    if (!id || releasingReferenceId.value) return;
+    releasingReferenceId.value = id;
+    error.value = "";
+    try {
+        await $fetch(`/api/assets/references/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (referenceId.value === id) {
+            permalink.value = "";
+            referenceId.value = "";
+        }
+        await refreshUploads(true);
+    } catch (err: any) {
+        error.value = err.message || "Unable to release this permalink";
+    } finally {
+        releasingReferenceId.value = null;
+    }
+};
+
+onMounted(refreshUploads);
 
 // DeepSeek functions
 const createSession = async () => {
@@ -407,6 +577,4 @@ const deleteSession = async (sessionId: number) => {
         deletingSessionId.value = null;
     }
 };
-
-onMounted(loadFiles);
 </script>
