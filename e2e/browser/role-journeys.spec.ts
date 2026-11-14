@@ -281,12 +281,11 @@ test("participant, judge, and admin can complete the published scoring journey o
             admin.page.getByText("Reusable template saved."),
         ).toBeVisible();
         await admin.page.getByRole("button", { name: "Save as new template" }).click();
-        const templateResponse = await templateSave;
+        const [templateResponse] = await Promise.all([templateSave, templateSavedToast]);
         expect(templateResponse.ok()).toBeTruthy();
         expect(await templateResponse.json()).toMatchObject({
             data: { template: { name: templateName } },
         });
-        await templateSavedToast;
         const refreshedRubric = await templateRefresh;
         expect(await refreshedRubric.json()).toMatchObject({
             data: {
