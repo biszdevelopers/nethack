@@ -20,7 +20,7 @@ definePageMeta({
     middleware: ["auth"],
 });
 
-const { data: hackathon } = await useFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
+const { data: hackathon } = await useApiFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
 if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
     throw await navigateTo("/");
 }
@@ -34,11 +34,14 @@ if (!can(NethackPermissions.Judging.assignmentsRead)) {
 
 const queuePageSize = 20;
 const [queueFetch, summaryFetch, rubricFetch] = await Promise.all([
-    useFetch<GetJudgingQueueResponse>(`/api/teams?judging=true&page=1&page_size=${queuePageSize}`, {
-        server: false,
-    }),
-    useFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false }),
-    useFetch<JudgingRubric>("/api/judging/rubric", { server: false }),
+    useApiFetch<GetJudgingQueueResponse>(
+        `/api/teams?judging=true&page=1&page_size=${queuePageSize}`,
+        {
+            server: false,
+        },
+    ),
+    useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false }),
+    useApiFetch<JudgingRubric>("/api/judging/rubric", { server: false }),
 ]);
 
 const queuePages = shallowRef<Record<number, JudgeQueueItem[]>>({});
