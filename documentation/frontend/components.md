@@ -143,18 +143,24 @@ Team management component for renaming, adding, and removing members.
 
 **File:** `app/components/JudgingCard.vue`
 
-Judge scoring card for evaluating a team's project against rubric criteria.
+Full-width workspace with a centered divider between the equal-width project details and scoring panes on wider screens. The panes scroll independently at tablet and desktop widths and stack on narrow screens.
 
 **Scoring interface:**
 
-- Displays the project name, team name, track, safe-rendered description, AI sourcing statement, and validated repository/demo links.
-- Renders the active season rubric's configured integer ranges and criterion weights.
-- Saves a recoverable draft, gives comment guidance and editable prompt templates, and previews the complete evaluation before finalization.
+- Shows the project name, team name, track, safe-rendered description, and AI-use statement in the project pane.
+- Shows validated repository and demo links below Scoring Guidelines, followed by the rubric's configured integer ranges, criterion weights, and feedback form.
+- Saves a recoverable draft, gives comment guidance and editable prompt templates, and opens the review dialog after saving.
 - Requires a specific anonymous comment; judges are told comments become visible after results are published and at least three judges have evaluated the team.
 
 **Validation:** Validates against the immutable rubric version used for the season. Drafts use `/api/judging/drafts/:teamId`; final scores post to `/api/teams/:id/scores`.
 
 The card reads the assigned project and its judge-specific draft from the judging page. The queue owns project navigation, paging, and final score submission.
+
+### JudgingReview
+
+**File:** `app/components/JudgingReview.vue`
+
+Shows the weighted score preview, individual scores, and anonymous feedback in a modal dialog. Judges can return to the draft or explicitly finalize the evaluation.
 
 ### VotingProjectCard
 

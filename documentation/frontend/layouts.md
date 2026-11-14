@@ -34,7 +34,7 @@ The standard page layout used by most public pages.
 - `Footer` — site-wide footer with links and copyright
 - A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
 
-**Used by:** `/`, `/profile`, `/rules`, `/voting`, `/judging`, `/judging/continue`
+**Used by:** `/`, `/profile`, `/rules`, `/voting`, `/judging`
 
 ## default-background
 
@@ -64,7 +64,9 @@ Same header/footer structure as `default`, but **without** the inner padded cont
 └──────────────────────────────┘
 ```
 
-**Used by:** `/user/[id]` (set programmatically via `setPageLayout`)
+A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
+
+**Used by:** `/judging/continue`, `/user/[id]` (the profile sets it programmatically via `setPageLayout`)
 
 ## fullwidth-nostick
 

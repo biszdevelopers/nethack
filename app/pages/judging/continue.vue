@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
+import { createReusableTemplate } from "@vueuse/core";
 import { onBeforeRouteLeave } from "vue-router";
 import JudgingCard from "~/components/JudgingCard.vue";
 import JudgingReview from "~/components/JudgingReview.vue";
@@ -23,6 +24,7 @@ interface FinalizedEvaluation {
 }
 
 definePageMeta({
+    layout: "fullwidth",
     middleware: ["auth"],
 });
 useHead({ title: `Judging queue | ${WEBSITE_NAME}` });
@@ -39,6 +41,7 @@ if (!can(NethackPermissions.Judging.assignmentsRead)) {
     throw await navigateTo("/");
 }
 
+const [DefineNavigation, ReuseNavigation] = createReusableTemplate();
 const queuePageSize = 20;
 const [queueFetch, summaryFetch, rubricFetch] = await Promise.all([
     useApiFetch<GetJudgingQueueResponse>(
@@ -60,6 +63,7 @@ const activeIndex = shallowRef(0);
 const navigating = shallowRef(false);
 const step = shallowRef<"score" | "review">("score");
 const submitting = shallowRef(false);
+let reviewTrigger: HTMLElement | null = null;
 const submissionError = shallowRef<string | null>(null);
 const finalized = shallowRef<Record<number, FinalizedEvaluation>>({});
 const scoredCount = shallowRef(0);
@@ -98,11 +102,6 @@ const activeFinalized = computed(() =>
 const displayScores = computed(() => activeFinalized.value?.scores ?? draft.state.scores);
 const displayReasoning = computed(() => activeFinalized.value?.reasoning ?? draft.state.reasoning);
 const submittedCount = computed(() => currentSummary.value?.submitted_count ?? 0);
-const progressValue = computed(() =>
-    submittedCount.value > 0
-        ? Math.min(100, Math.round((scoredCount.value / submittedCount.value) * 100))
-        : 0,
-);
 const queueError = computed(
     () =>
         navigationError.value ||
@@ -284,9 +283,15 @@ async function focusNextPending(startPage: number, startIndex: number) {
     return false;
 }
 
-async function openReview() {
+async function openReview(event: MouseEvent) {
+    if (navigating.value || activeFinalized.value) return;
+
+    const team = activeTeam.value;
+    const trigger = event.currentTarget as HTMLElement;
     try {
         await draft.flush();
+        if (team !== activeTeam.value || navigating.value) return;
+        reviewTrigger = trigger;
         submissionError.value = null;
         step.value = "review";
     } catch {
@@ -296,6 +301,14 @@ async function openReview() {
             description: "Retry saving your work before reviewing it.",
         });
     }
+}
+
+function restoreReviewFocus(event: Event) {
+    event.preventDefault();
+    if (reviewTrigger?.isConnected && !reviewTrigger.matches(":disabled")) {
+        reviewTrigger.focus();
+    }
+    reviewTrigger = null;
 }
 
 function returnToScoring() {
@@ -400,76 +413,53 @@ onBeforeRouteLeave(async () => {
 </script>
 
 <template>
-    <main
-        class="judging-workspace mx-auto mt-4 w-full max-w-4xl pb-8"
-        :aria-busy="navigating || submitting"
-    >
-        <header class="mb-5">
-            <NuxtLink
-                to="/judging"
-                class="inline-flex min-h-11 items-center gap-2 text-sm text-muted hover:text-primary"
-            >
-                <UIcon name="i-lucide-arrow-left" aria-hidden="true" />
-                Judging overview
-            </NuxtLink>
-            <h1 class="mt-3 text-3xl font-bold text-primary glow sm:text-4xl">Judge projects</h1>
-            <p class="mt-2 max-w-prose text-muted">
-                Review one submission at a time. Your draft is saved automatically, and you can move
-                between pages without losing your place or your work.
-            </p>
-        </header>
-
-        <section
-            v-if="currentSummary && currentSummary.submitted_count > 0"
-            class="mb-5 rounded-xl border border-default bg-elevated p-4"
-            aria-label="Your evaluation progress"
-        >
-            <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <p class="font-semibold">Your progress</p>
-                <p class="text-sm text-muted">
-                    <span class="font-semibold text-primary">{{ scoredCount }}</span>
-                    of {{ currentSummary.submitted_count }} projects evaluated
-                </p>
-            </div>
-            <div
-                class="mt-3 h-2 overflow-hidden rounded-full bg-primary/20"
-                role="progressbar"
-                :aria-valuenow="scoredCount"
-                :aria-valuemin="0"
-                :aria-valuemax="currentSummary.submitted_count"
-                :aria-label="`${scoredCount} of ${currentSummary.submitted_count} projects evaluated`"
-            >
-                <div
-                    class="h-full rounded-full bg-primary transition-[width]"
-                    :style="{ width: `${progressValue}%` }"
-                />
-            </div>
-        </section>
-
+    <div class="judging-workspace" :aria-busy="navigating || submitting">
+        <h1 class="sr-only">Judge projects</h1>
+        <DefineNavigation>
+            <nav aria-label="Judging queue" class="mb-4 flex flex-wrap gap-2">
+                <UButton
+                    variant="outline"
+                    icon="i-lucide-arrow-left"
+                    class="min-h-11"
+                    aria-label="Previous project"
+                    :disabled="activeProjectNumber <= 1 || submitting || navigating"
+                    @click="openPreviousProject"
+                >
+                    Previous
+                </UButton>
+                <UButton
+                    variant="outline"
+                    trailing-icon="i-lucide-arrow-right"
+                    class="min-h-11"
+                    aria-label="Next project"
+                    :disabled="activeProjectNumber >= totalProjects || submitting || navigating"
+                    @click="openNextProject"
+                >
+                    Next
+                </UButton>
+            </nav>
+        </DefineNavigation>
         <UAlert
             v-if="queueError"
             color="error"
             icon="i-lucide-circle-alert"
             title="Could not load the judging queue"
             :description="getErrorMessage(queueError)"
-            class="mb-5"
+            class="mx-4 my-4 sm:mx-6"
         >
             <template #actions>
                 <UButton class="min-h-11" variant="outline" @click="retryQueue">Try again</UButton>
             </template>
         </UAlert>
 
-        <div v-else-if="isLoading" class="rounded-xl border border-default p-6" aria-live="polite">
+        <div v-else-if="isLoading" class="p-4 sm:p-6" aria-live="polite">
             <p class="font-semibold">Loading your judging queue…</p>
             <p class="mt-1 text-sm text-muted">
                 Your project descriptions and saved draft are on their way.
             </p>
         </div>
 
-        <div
-            v-else-if="!hasPendingProjects || totalProjects === 0"
-            class="rounded-2xl border border-default bg-elevated p-6 sm:p-8"
-        >
+        <div v-else-if="!hasPendingProjects || totalProjects === 0" class="p-4 sm:p-6">
             <UIcon
                 name="i-lucide-party-popper"
                 class="mb-3 size-8 text-primary"
@@ -484,62 +474,18 @@ onBeforeRouteLeave(async () => {
         </div>
 
         <template v-else-if="activeTeam">
-            <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <p class="font-semibold tabular-nums" aria-live="polite">
-                    Project {{ activeProjectNumber }} of {{ totalProjects }}
-                    <span class="text-sm font-normal text-muted">
-                        · Page {{ currentPage }} of {{ totalPages }}
-                    </span>
-                </p>
-                <div class="flex gap-2">
-                    <UButton
-                        variant="outline"
-                        icon="i-lucide-arrow-left"
-                        class="min-h-11"
-                        aria-label="Previous project"
-                        :disabled="activeProjectNumber <= 1 || submitting || navigating"
-                        @click="openPreviousProject"
-                    >
-                        <span class="hidden sm:inline">Previous</span>
-                    </UButton>
-                    <UButton
-                        variant="outline"
-                        trailing-icon="i-lucide-arrow-right"
-                        class="min-h-11"
-                        aria-label="Next project"
-                        :disabled="activeProjectNumber >= totalProjects || submitting || navigating"
-                        @click="openNextProject"
-                    >
-                        <span class="hidden sm:inline">Next</span>
-                    </UButton>
-                </div>
+            <div v-if="!activeTrack" class="p-4 sm:p-6">
+                <ReuseNavigation />
+                <UAlert
+                    color="error"
+                    icon="i-lucide-triangle-alert"
+                    title="This project cannot be scored yet"
+                    description="Its judging track is missing from the active rubric. Contact an organizer so your work is not recorded incorrectly."
+                />
             </div>
 
-            <UAlert
-                v-if="!activeTrack"
-                color="error"
-                icon="i-lucide-triangle-alert"
-                title="This project cannot be scored yet"
-                description="Its judging track is missing from the active rubric. Contact an organizer so your work is not recorded incorrectly."
-                class="mb-4"
-            />
-
-            <JudgingReview
-                v-else-if="step === 'review' && !activeFinalized"
-                :key="`review-${activeTeam.id}`"
-                :team="activeTeam"
-                :track="activeTrack"
-                :comment-guidance="activeCommentGuidance"
-                :submit-error="submissionError"
-                :scores="displayScores"
-                :reasoning="displayReasoning"
-                :submitting="submitting"
-                @back="returnToScoring"
-                @finalize="finalizeEvaluation"
-            />
-
             <JudgingCard
-                v-else-if="activeTrack"
+                v-else
                 :key="`score-${activeTeam.id}`"
                 :team="activeTeam"
                 :track="activeTrack"
@@ -556,9 +502,27 @@ onBeforeRouteLeave(async () => {
                 @reasoning="updateReasoning"
                 @retry="retryDraft"
                 @review="openReview"
+            >
+                <template #navigation>
+                    <ReuseNavigation />
+                </template>
+            </JudgingCard>
+
+            <JudgingReview
+                v-if="activeTrack"
+                :open="step === 'review'"
+                :team="activeTeam"
+                :track="activeTrack"
+                :submit-error="submissionError"
+                :scores="displayScores"
+                :reasoning="displayReasoning"
+                :submitting="submitting"
+                @close="returnToScoring"
+                @close-auto-focus="restoreReviewFocus"
+                @finalize="finalizeEvaluation"
             />
         </template>
-    </main>
+    </div>
 </template>
 
 <style scoped>
