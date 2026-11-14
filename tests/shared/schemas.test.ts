@@ -365,11 +365,9 @@ describe("UpdateUserRequest", () => {
         );
     });
 
-    it("rejects a profile_theme_image File with an invalid type", () => {
+    it("accepts GIF profile theme images because the uploader supports them", () => {
         const file = new File([new Uint8Array([1, 2, 3])], "theme.gif", { type: "image/gif" });
-        expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).toThrow(
-            "valid image file",
-        );
+        expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).not.toThrow();
     });
 
     it("accepts an avatar as null", () => {
@@ -394,9 +392,9 @@ describe("UpdateUserRequest", () => {
         expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("smaller than 7 MB");
     });
 
-    it("rejects an avatar File with an invalid type", () => {
+    it("accepts GIF avatars because the uploader supports them", () => {
         const file = new File([new Uint8Array([1, 2, 3])], "avatar.gif", { type: "image/gif" });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("valid image file");
+        expect(() => UpdateUserRequest.parse({ avatar: file })).not.toThrow();
     });
 
     it("rejects an avatar that is not a data string, null, or File", () => {
