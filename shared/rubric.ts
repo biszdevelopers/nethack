@@ -1,3 +1,9 @@
+import {
+    DEFAULT_JUDGE_COMMENT_GUIDANCE,
+    resolveJudgeCommentGuidance,
+    type JudgeCommentGuidance,
+} from "./judge-comments";
+
 export interface RubricData {
     abbr: string;
     name: string;
@@ -29,10 +35,20 @@ export interface RubricTrack {
 
 export interface RubricDefinition {
     tracks: Record<string, RubricTrack>;
+    /** Immutable judge comment instructions and starter templates for this version. */
+    commentGuidance?: JudgeCommentGuidance;
 }
 
 export interface RubricScoreValidationOptions {
     allowPartial?: boolean;
+}
+
+/** Add legacy-compatible comment defaults when loading a rubric created before comment settings. */
+export function withDefaultRubricCommentGuidance(definition: RubricDefinition): RubricDefinition {
+    return {
+        ...definition,
+        commentGuidance: resolveJudgeCommentGuidance(definition.commentGuidance),
+    };
 }
 
 export function validateRubricScores(
@@ -157,6 +173,7 @@ export const DEFAULT_RUBRIC_DEFINITION: RubricDefinition = {
             criteria: Object.entries(rubrics.senior).map(([id, item]) => toCriterion(id, item)),
         },
     },
+    commentGuidance: DEFAULT_JUDGE_COMMENT_GUIDANCE,
 };
 
 /** Normalize any configured integer score scale to the existing 0–100 result range. */
