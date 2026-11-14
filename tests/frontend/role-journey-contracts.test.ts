@@ -34,7 +34,7 @@ describe("participant action paths", () => {
         expect(projectForm).toContain('id="project-submit"');
         expect(projectForm).toMatch(/id="project-save"[\s\S]*?class="min-h-11"/);
         expect(projectForm).toMatch(/id="project-submit"[\s\S]*?class="min-h-11"/);
-        expect(confirmModal.match(/class="min-h-11"/g)).toHaveLength(2);
+        expect(confirmModal.match(/class="min-h-12"/g)).toHaveLength(2);
     });
 
     it("limits star distribution and makes voting available only at exactly ten stars", () => {
