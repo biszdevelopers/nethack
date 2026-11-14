@@ -131,6 +131,33 @@ describe("merged Vitest coverage enforcement", () => {
         expect(mergeCoverageMaps(report(28), report(18))[path]?.s).toEqual({ 15: 2 });
     });
 
+    it("normalizes the SSR API-user fetch branch column shift", () => {
+        const path = "app/composables/useApiUser.ts";
+        const report = (column: number) => ({
+            [path]: {
+                path,
+                statementMap: {},
+                fnMap: {},
+                branchMap: {
+                    2: {
+                        loc: { start: { line: 34, column }, end: { line: 34, column: null } },
+                        type: "cond-expr",
+                        locations: [
+                            { start: { line: 34, column: 37 }, end: { line: 34, column: 57 } },
+                            { start: { line: 34, column: 57 }, end: { line: 34, column: null } },
+                        ],
+                        line: 34,
+                    },
+                },
+                s: {},
+                f: {},
+                b: { 2: [1, 0] },
+            },
+        });
+
+        expect(mergeCoverageMaps(report(16), report(8))[path]?.b).toEqual({ 2: [2, 0] });
+    });
+
     it("reports files with no executable statement counters unless explicitly allowlisted", () => {
         const coverage: Record<
             string,
