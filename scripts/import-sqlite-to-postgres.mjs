@@ -153,9 +153,14 @@ export function rowsFromSource(source, tableName) {
     return source.prepare(`SELECT * FROM ${quote(tableName)}`).all();
 }
 
-export function checkSourceRelationships(source, availableTables) {
+export function checkSourceRelationships(
+    source,
+    availableTables,
+    { excludeChildTables = [] } = {},
+) {
     const failures = [];
     for (const [childTable, childColumn, parentTable, parentColumn, nullable] of RELATIONSHIPS) {
+        if (excludeChildTables.includes(childTable)) continue;
         if (!availableTables.has(childTable) || !availableTables.has(parentTable)) continue;
         const childColumns = new Set(sourceColumns(source, childTable));
         const parentColumns = new Set(sourceColumns(source, parentTable));
@@ -172,6 +177,104 @@ export function checkSourceRelationships(source, availableTables) {
         if (count > 0) failures.push(`${childTable}.${childColumn} has ${count} orphan row(s)`);
     }
     return failures;
+}
+
+function rowsWithSourceKeys(source, tableName) {
+    const columns = sourceColumns(source, tableName);
+    const rowIdColumn = ["rowid", "_rowid_", "oid"].find((column) => !columns.includes(column));
+    if (rowIdColumn) {
+        try {
+            const rows = source
+                .prepare(
+                    `SELECT ${rowIdColumn} AS "__import_source_rowid__", * FROM ${quote(tableName)}`,
+                )
+                .all();
+            return rows.map((row) => {
+                const sourceRowId = row.__import_source_rowid__;
+                const payload = Object.fromEntries(columns.map((column) => [column, row[column]]));
+                return { key: `rowid:${sourceRowId}`, row: payload };
+            });
+        } catch (error) {
+            if (!String(error).includes(`no such column: ${rowIdColumn}`)) throw error;
+        }
+    }
+
+    const primaryKey = source
+        .prepare(`PRAGMA table_info(${quote(tableName)})`)
+        .all()
+        .filter((column) => column.pk > 0)
+        .sort((left, right) => left.pk - right.pk)
+        .map((column) => column.name);
+    if (!primaryKey.length) {
+        throw new Error(
+            `SQLite source table ${tableName} has no rowid or primary key; refusing to archive rows without an unambiguous key.`,
+        );
+    }
+    return rowsFromSource(source, tableName).map((row) => ({
+        key: `primary-key:${JSON.stringify(primaryKey.map((column) => row[column]))}`,
+        row,
+    }));
+}
+
+export function classifyOrphanedTeamScores(source, availableTables) {
+    if (!availableTables.has("team_scores")) {
+        return { rows: [], byRelationship: {}, importableRowCount: 0 };
+    }
+
+    const scoreRows = rowsWithSourceKeys(source, "team_scores");
+    const orphanedRelationships = RELATIONSHIPS.filter(
+        ([childTable]) => childTable === "team_scores",
+    ).filter(([, , parentTable]) => availableTables.has(parentTable));
+    const parentKeysByRelationship = new Map();
+    for (const [childTable, childColumn, parentTable, parentColumn] of orphanedRelationships) {
+        const childColumns = new Set(sourceColumns(source, childTable));
+        const parentColumns = new Set(sourceColumns(source, parentTable));
+        if (!childColumns.has(childColumn) || !parentColumns.has(parentColumn)) continue;
+        parentKeysByRelationship.set(
+            `${childTable}.${childColumn}`,
+            new Set(
+                source
+                    .prepare(`SELECT ${quote(parentColumn)} FROM ${quote(parentTable)}`)
+                    .all()
+                    .map((row) => row[parentColumn]),
+            ),
+        );
+    }
+
+    const rows = [];
+    const byRelationship = {};
+    let importableRowCount = 0;
+    for (const { key, row } of scoreRows) {
+        const invalidReferences = [];
+        for (const [childTable, childColumn, , , nullable] of orphanedRelationships) {
+            const parentKeys = parentKeysByRelationship.get(`${childTable}.${childColumn}`);
+            if (!parentKeys) continue;
+            const value = row[childColumn];
+            if (nullable && (value === null || value === undefined)) continue;
+            if (!parentKeys.has(value)) {
+                const relationship = `${childTable}.${childColumn}`;
+                invalidReferences.push(relationship);
+                byRelationship[relationship] = (byRelationship[relationship] ?? 0) + 1;
+            }
+        }
+        if (!invalidReferences.length) {
+            importableRowCount += 1;
+            continue;
+        }
+        rows.push({
+            table_name: "team_scores",
+            row_key: key,
+            payload: {
+                source: "sqlite",
+                source_table: "team_scores",
+                source_row_key: key,
+                orphaned_relationships: invalidReferences,
+                row,
+            },
+        });
+    }
+
+    return { rows, byRelationship, importableRowCount };
 }
 
 export function prepareLegacyJudgeRows(source, availableTables) {
@@ -327,7 +430,10 @@ export function validateSource(source, availableTables) {
         }
     }
     const seasonSchema = detectSeasonSchema(source, availableTables);
-    const relationshipFailures = checkSourceRelationships(source, availableTables);
+    const orphanedTeamScores = classifyOrphanedTeamScores(source, availableTables);
+    const relationshipFailures = checkSourceRelationships(source, availableTables, {
+        excludeChildTables: ["team_scores"],
+    });
     if (relationshipFailures.length) {
         throw new Error(
             `SQLite source has broken relationships; repair or restore a verified backup before import:\n- ${relationshipFailures.join("\n- ")}`,
@@ -360,6 +466,9 @@ export function validateSource(source, availableTables) {
     );
     const targetCountExpectations = { ...counts };
     if (seasonSchema.kind === "single-hackathon") targetCountExpectations.seasons = 1;
+    if ("team_scores" in targetCountExpectations) {
+        targetCountExpectations.team_scores = orphanedTeamScores.importableRowCount;
+    }
     return {
         counts,
         targetCountExpectations,
@@ -368,6 +477,7 @@ export function validateSource(source, availableTables) {
         seasonSchema: seasonSchema.kind,
         legacyJudgeRows,
         legacyColumnRows,
+        orphanedTeamScores,
         metadataTables,
     };
 }
@@ -493,15 +603,19 @@ export async function insertRows(sql, tableName, rows, columnsByTable, overrides
 
 export async function insertLegacyArchive(sql, rows) {
     if (!rows.length) return 0;
-    const values = [];
-    const tuples = rows.map((row) => {
-        values.push(row.table_name, row.row_key, JSON.stringify(row.payload));
-        const offset = values.length - 2;
-        return `($${offset}, $${offset + 1}, $${offset + 2}::jsonb)`;
-    });
-    const statement =
-        "INSERT INTO sqlite_legacy_data (table_name, row_key, payload) VALUES " + tuples.join(", ");
-    await sql.unsafe(statement, values);
+    const rowsPerBatch = 20_000;
+    for (let start = 0; start < rows.length; start += rowsPerBatch) {
+        const values = [];
+        const tuples = rows.slice(start, start + rowsPerBatch).map((row) => {
+            values.push(row.table_name, row.row_key, JSON.stringify(row.payload));
+            const offset = values.length - 2;
+            return `($${offset}, $${offset + 1}, $${offset + 2}::jsonb)`;
+        });
+        const statement =
+            "INSERT INTO sqlite_legacy_data (table_name, row_key, payload) VALUES " +
+            tuples.join(", ");
+        await sql.unsafe(statement, values);
+    }
     return rows.length;
 }
 
@@ -525,6 +639,18 @@ export function importSeasonForScore(row, teams, activeSeasonId) {
     if (row.season_id !== null && row.season_id !== undefined) return Number(row.season_id);
     const teamSeason = teams.get(Number(row.team_id));
     return Number(teamSeason ?? activeSeasonId ?? 1);
+}
+
+function getTeamScoreImportSummary(sourceInfo) {
+    const sourceRows = sourceInfo.counts.team_scores ?? 0;
+    const importableRows = sourceInfo.orphanedTeamScores.importableRowCount;
+    const archivedRows = sourceInfo.orphanedTeamScores.rows.length;
+    return {
+        sourceRows,
+        importedRows: importableRows,
+        archivedOrphanRows: archivedRows,
+        archivedOrphanRowsByRelationship: sourceInfo.orphanedTeamScores.byRelationship,
+    };
 }
 
 export async function validateTargetRelationships(sql) {
@@ -668,20 +794,25 @@ export async function importToPostgres(
                     Number(team.season_id ?? 1),
                 ]),
             );
-            const scores = rowsFromSource(source, "team_scores").map((row) => {
-                const seasonId = importSeasonForScore(row, teams, activeSeasonId);
-                const rubricVersionId = seasonRubricIds.get(seasonId);
-                if (!rubricVersionId) {
-                    throw new Error(
-                        `No imported rubric version exists for team_scores season ${seasonId}; refusing to alter score history.`,
-                    );
-                }
-                return {
-                    ...row,
-                    __seasonId: seasonId,
-                    __rubricVersionId: rubricVersionId,
-                };
-            });
+            const archivedScoreKeys = new Set(
+                sourceInfo.orphanedTeamScores.rows.map((row) => row.row_key),
+            );
+            const scores = rowsWithSourceKeys(source, "team_scores")
+                .filter(({ key }) => !archivedScoreKeys.has(key))
+                .map(({ row }) => {
+                    const seasonId = importSeasonForScore(row, teams, activeSeasonId);
+                    const rubricVersionId = seasonRubricIds.get(seasonId);
+                    if (!rubricVersionId) {
+                        throw new Error(
+                            `No imported rubric version exists for team_scores season ${seasonId}; refusing to alter score history.`,
+                        );
+                    }
+                    return {
+                        ...row,
+                        __seasonId: seasonId,
+                        __rubricVersionId: rubricVersionId,
+                    };
+                });
             await insertRows(tx, "team_scores", scores, columnsByTable, (row) => ({
                 season_id: row.__seasonId,
                 rubric_version_id: row.__rubricVersionId,
@@ -715,6 +846,7 @@ export async function importToPostgres(
                     row_key: String(row.field1),
                     payload: row,
                 })),
+                ...sourceInfo.orphanedTeamScores.rows,
             ];
             await insertLegacyArchive(tx, archiveRows);
 
@@ -741,7 +873,9 @@ export async function importToPostgres(
                 }
             }
             const archivedLegacyExpected =
-                sourceInfo.legacyColumnRows.length + sourceInfo.legacyJudgeRows.rows.length;
+                sourceInfo.legacyColumnRows.length +
+                sourceInfo.legacyJudgeRows.rows.length +
+                sourceInfo.orphanedTeamScores.rows.length;
             const legacyActual = await targetRows(tx, "sqlite_legacy_data");
             if (legacyActual !== archivedLegacyExpected) {
                 throw new Error(
@@ -761,13 +895,15 @@ export async function importToPostgres(
                         targetCounts,
                         ignoredMetadataTables: sourceInfo.metadataTables,
                         legacyArchiveRows: legacyActual,
+                        teamScoreRows: getTeamScoreImportSummary(sourceInfo),
                         judgeScoresArtifactRows: {
                             sourceRows: sourceInfo.legacyJudgeRows.sourceCount,
                             headerRowsExcluded: sourceInfo.legacyJudgeRows.headerCount,
                             archivedDataRows: sourceInfo.legacyJudgeRows.rows.length,
                         },
                         foreignKeys:
-                            "all required target constraints present; source and target have no orphan references",
+                            "all required target constraints present; imported target has no orphan references; source team_scores orphans are preserved in sqlite_legacy_data",
+                        archivedOrphanTeamScoreRows: sourceInfo.orphanedTeamScores.rows.length,
                         result: "committed",
                     },
                     null,
@@ -812,9 +948,11 @@ export async function main({
                             ? { legacySeasonMapping: { seasonId: LEGACY_SEASON_ID } }
                             : {}),
                         ignoredMetadataTables: sourceInfo.metadataTables,
+                        teamScoreRows: getTeamScoreImportSummary(sourceInfo),
                         legacyArchiveRows:
                             sourceInfo.legacyColumnRows.length +
-                            sourceInfo.legacyJudgeRows.rows.length,
+                            sourceInfo.legacyJudgeRows.rows.length +
+                            sourceInfo.orphanedTeamScores.rows.length,
                         judgeScoresArtifactRows: {
                             sourceRows: sourceInfo.legacyJudgeRows.sourceCount,
                             headerRowsExcluded: sourceInfo.legacyJudgeRows.headerCount,
