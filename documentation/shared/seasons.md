@@ -5,7 +5,7 @@ description: Database-driven hackathon seasons, per-season configuration, and sc
 
 # Seasons
 
-Hackathon seasons are stored entirely in the database. Each season carries its own copy of every hackathon configuration field, so organizers can preview and tune a future season without touching the live event. Teams are linked to a season via the `season_id` foreign key.
+Hackathon season records are stored in PostgreSQL. The active season's effective live settings come from `HACKATHON.yml`. Each season carries its own copy of every hackathon configuration field, so organizers can preview and tune a future season without touching the live event. Teams are linked to a season via the `season_id` foreign key.
 
 ## Season Storage
 
@@ -30,18 +30,18 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `results_open_timestamp` | bigint in PostgreSQL; JavaScript `number` | When results become visible, in epoch milliseconds |
 | `theme_name` / `theme_description` | text | Season theme |
 
-The `hackathon` table remains a singleton (`id = 1`) holding the **live** state. The admin page shows a merged view — global values with the selected season's non-default overrides layered on top. Saving with a `season_id` writes to that season's row (and to the global row when the season is active); saving without one writes only to the global row.
+The live state comes from the selected YAML manifest. In YAML mode the admin page shows live settings as read-only and keeps other seasons editable. The legacy singleton remains available for PostgreSQL rollback mode.
 
 ## Tweakable Settings
 
-`SEASON_TWEAK_FIELDS` in `server/utils/database/seasons.ts` defines the fields that sync between a season and the live `hackathon` row: `status`, `show_scores`, `show_ranking`.
+`SEASON_TWEAK_FIELDS` in `server/utils/database/seasons.ts` defines the fields that sync in rollback mode between a season and the live `hackathon` row: `status`, `show_scores`, `show_ranking`.
 
-- `updateSeasonTweaks` updates a season, and also the `hackathon` row when the season is the active one.
-- `setActiveSeason` copies the newly active season's tweaks into the `hackathon` row when a season is activated.
+- `updateSeasonTweaks` updates stored settings and rejects active-season edits in YAML mode.
+- `setActiveSeason` snapshots the outgoing season's live YAML settings before changing the active season.
 
 ## Score / Rank Visibility
 
-`getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ resultsPublished, showScores, showRanking }`. Each season's own settings are authoritative for its teams; teams whose season no longer exists fall back to the live `hackathon` singleton row.
+`getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ resultsPublished, showScores, showRanking }`. The active season uses live YAML settings and other seasons use their stored settings. Unknown seasons keep results private in YAML mode.
 
 Judge comments are available to current and past team members only after `results_published` is enabled and at least three judges have submitted evaluations for that team. Until then, the endpoint withholds all comments and individual score details to reduce the chance of identifying a judge. Public feedback returns only comment text and randomizes evaluation order; it omits judge identities and rubric or track metadata. Administrators with the all-permissions grant can inspect full evaluations, including judge names and account IDs, before or after publication. Participants see the overall score only when results are published, at least three evaluations exist, and `show_scores` is enabled; rank requires published results, at least three evaluations, and `show_ranking`.
 
@@ -96,7 +96,7 @@ At least one field is required. Boolean values are stored as `0`/`1`.
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
 | `setActiveSeason(event, seasonId)` | Activate one season and deactivate all others; throws 404 if the season does not exist |
-| `updateSeasonTweaks(event, seasonId, data)` | Update a season's tweaks; also updates the `hackathon` row when the season is live |
+| `updateSeasonTweaks(event, seasonId, data)` | Update stored tweaks. Live edits are rejected in YAML mode. |
 | `getScoreRankVisibilityResolver(event)` | Build a season-ID-to-visibility resolver with a global fallback |
 
 ## Usage in the UI

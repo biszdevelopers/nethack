@@ -285,7 +285,7 @@ Get the currently active season (public).
 
 ### PATCH `/api/seasons/active`
 
-Set the active season. The newly active season's tweaks are copied into the live `hackathon` row.
+Set the active season. In YAML mode, the outgoing season's settings are captured from the current manifest.
 
 | Field          | Details                                                    |
 | -------------- | ---------------------------------------------------------- |
@@ -312,7 +312,7 @@ Update the tweakable settings of a single season. Accepts a partial body with an
 
 The `id` path value must be a positive safe integer. Missing, malformed, zero, negative, or unsafe values return `400`; a well-formed ID with no matching season returns `404`.
 
-When the season is the currently active (live) season, the `hackathon` singleton row is updated as well so changes take effect immediately.
+The active season uses YAML settings and this endpoint returns 409 for live edits in YAML mode.
 
 | Field          | Details                                             |
 | -------------- | --------------------------------------------------- |
@@ -379,7 +379,7 @@ Season update permission is required for these endpoints. Rubric definitions sup
 
 ### GET `/api/admin/hackathon`
 
-Read the current global hackathon configuration and all seasons.
+Read live hackathon configuration and all seasons. The response includes `configSource` (`local`, `remote`, or `database`).
 
 | Field        | Details                                       |
 | ------------ | --------------------------------------------- |
@@ -388,7 +388,7 @@ Read the current global hackathon configuration and all seasons.
 
 ### PATCH `/api/admin/hackathon`
 
-Update hackathon configuration. All fields are per-season when `season_id` is provided. When `season_id` matches the currently active season, changes are also synced to the global hackathon row so the rest of the app sees the active season's config.
+Update stored settings for a season. In YAML mode, requests without a season ID or targeting the active season return 409. Edit the selected manifest to change live settings.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |

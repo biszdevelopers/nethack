@@ -60,6 +60,7 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `BASIS_AUTH_RESOURCE` | Required | Resource audience for basishacks access tokens (`devconnect://nethack.bisz.dev`) |
 | `DATABASE_URL` | Required | PostgreSQL connection URL used in development, CI, and production |
 | `DATABASE_POOL_MAX` | Optional | Connection pool maximum (default `10`, accepted range `2`–`64`) |
+| `YAML_SOURCE_HACKATHON` | Optional | `local` or blank reads `HACKATHON.yml`. An assets origin or full asset URL selects a remote manifest. |
 | `DATABASE_METRICS` | Optional | Set to `1` to log bounded PostgreSQL query and pool-acquisition timing summaries once per minute |
 | `MICROSOFT_TENANT_ID` | Optional | Tenant used only by Graph features |
 | `MICROSOFT_CLIENT_ID` | Optional | Application ID used only by Graph features |
@@ -87,6 +88,12 @@ The authorization request targets `devconnect://nethack.bisz.dev` and requests `
 Protected application APIs validate basis-auth RS256 access tokens from the encrypted HTTP-only token cookie or an explicit `Authorization: Bearer …` header. The separate browser session cookie alone is insufficient. Tokens must match the configured issuer and resource audience; JWT permissions are the authorization source. Failed requests use `Accept` negotiation: clients accepting `text/html` receive the shared Barry error page showing only the canonical error code, while other clients receive the `@basis/schema` JSON envelope `{ status, code, error, error_description }` with matching HTTP and envelope status values.
 
 The former basishacks OAuth provider and application-management UI/API have been retired. The legacy `oauth2_applications` table and records remain for audit and rollback. Graph integration is independent and is never used to authenticate a basishacks session.
+
+## Live hackathon configuration
+
+The live event's status, schedule, theme, and voting, judging, and results settings come from `HACKATHON.yml`. Set `YAML_SOURCE_HACKATHON=local` in `.env` for development. On the VPS, set it to the assets server origin or the full HTTPS URL of the published manifest. PostgreSQL still stores the active season selection, historical seasons, and competition data.
+
+For an existing deployment, run `bun run db:export-hackathon -- /path/to/HACKATHON.yml` once to export the legacy PostgreSQL row. The command requires `DATABASE_URL` and creates a new file. Use the repository's [configuration and cutover instructions](documentation/deployment/postgresql-migration.md#move-the-live-hackathon-configuration-to-yaml) to deploy it.
 
 ## Database Setup
 

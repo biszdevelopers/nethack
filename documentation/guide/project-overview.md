@@ -97,11 +97,11 @@ The platform supports multiple hackathon seasons stored in the `seasons` table. 
 
 - **Name**: the display name of the season.
 - **Active status**: only one season can be active at a time (partial unique index on `is_active`).
-- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`). Seasons can override the global `hackathon` row, or fall back to it via defaults.
+- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`). The active season uses settings from `HACKATHON.yml`.
 
 Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed.
 
-Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Editing tweaks (`status`, `show_scores`, `show_ranking`) on the live season also updates the `hackathon` row; `setActiveSeason` copies the newly active season's tweaks into the global row.
+Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings are edited in the configured YAML manifest. The administration page updates stored settings for other seasons.
 
 ## Directory Structure
 
@@ -217,7 +217,7 @@ basishacks-r2/
 
 ### Single-Row Hackathon State
 
-The `hackathon` table contains a single row (`id = 1`) that controls the global event state. The status field determines what actions are available:
+The configured `HACKATHON.yml` controls the global event state. The status field determines what actions are available:
 
 | Status        | Description                                           |
 | ------------- | ----------------------------------------------------- |

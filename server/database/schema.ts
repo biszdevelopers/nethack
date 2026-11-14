@@ -18,8 +18,7 @@ import type { RubricDefinition } from "../../shared/rubric";
 import type { ScoreCurvePreset } from "../../shared/score-curve";
 
 // ---------------------------------------------------------------------------
-// Global hackathon state – a single row (id = 1) that controls the entire
-// event lifecycle.
+// Legacy live configuration retained for export, SQLite import, and rollback.
 // ---------------------------------------------------------------------------
 export const hackathon = pgTable(
     "hackathon",

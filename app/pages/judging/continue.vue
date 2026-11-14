@@ -432,7 +432,7 @@ onBeforeRouteLeave(async () => {
                 </p>
             </div>
             <div
-                class="mt-3 h-2 overflow-hidden rounded-full bg-muted/20"
+                class="mt-3 h-2 overflow-hidden rounded-full bg-primary/20"
                 role="progressbar"
                 :aria-valuenow="scoredCount"
                 :aria-valuemin="0"

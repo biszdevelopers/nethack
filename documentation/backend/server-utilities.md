@@ -454,8 +454,8 @@ Per-table database helper modules in `server/utils/database/`.
 
 | Function                       | Description                                                    |
 | ------------------------------ | -------------------------------------------------------------- |
-| `getHackathon(event)`          | Get the hackathon status row (single row, id=1)                |
-| `updateHackathon(event, data)` | Update hackathon settings (partial) and return the updated row |
+| `getHackathon(event)`          | Read live settings from YAML or the PostgreSQL rollback source |
+| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode               |
 
 ### ballots.ts
 
@@ -476,9 +476,9 @@ Per-table database helper modules in `server/utils/database/`.
 | `getSeasons(event)` | List all seasons ordered by ID |
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
-| `setActiveSeason(event, seasonId)` | Set the active season (pass `null` to clear); copies the newly active season's tweaks into the `hackathon` row |
-| `updateSeasonTweaks(event, seasonId, data)` | Update a season's tweakable settings; also updates the `hackathon` row when the season is live |
-| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, falling back to the `hackathon` row when the season is missing. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
+| `setActiveSeason(event, seasonId)` | Set or clear the active season and snapshot the outgoing live YAML settings |
+| `updateSeasonTweaks(event, seasonId, data)` | Update a season's stored settings. Live edits are rejected in YAML mode. |
+| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, using live YAML for the active season. Unknown seasons keep results private in YAML mode. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
 
 `SEASON_TWEAK_FIELDS` lists the tweakable columns shared by the `seasons` and `hackathon` tables.
 

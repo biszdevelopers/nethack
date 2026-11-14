@@ -30,6 +30,20 @@ node .output/tools/db-migrate.mjs
 
 The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. Migration `0004` advances or resets the `seasons` serial sequence to match existing rows and adds a foreign key from `seasons.rubric_version_id` to `rubric_versions.id`. It clears only dangling rubric pointers before adding the constraint; startup seeding restores the default version pointer before requests are served. The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. Production-only installs skip source preparation because the Nuxt output has already been built. GitHub tag archives perform these steps automatically.
 
+## Move the live hackathon configuration to YAML
+
+Export the old PostgreSQL singleton using the deployment's `DATABASE_URL`:
+
+```bash
+bun run db:export-hackathon -- /path/to/export/HACKATHON.yml
+```
+
+The command validates the configuration and creates a new file. For development, put the file at the checkout root and set `YAML_SOURCE_HACKATHON=local` in `.env`. An empty value also selects the local file. For production, publish the exported file to the assets server and set `YAML_SOURCE_HACKATHON` in the service environment to either its HTTPS origin or the full HTTPS asset URL. An origin loads `/HACKATHON.yml`. Assets configuration is checked at most once every 30 seconds per process. A running server retains the last valid remote configuration if a refresh fails. On cold start, config-dependent requests return 503 until a valid manifest is available.
+
+After switching, edit the manifest to change live status, dates, theme, voting, judging, or results settings. The active season ID and historical seasons stay in PostgreSQL. To save the outgoing season's live settings, activate the next season while the outgoing manifest is still in use, then publish the next season's manifest. Schedule this switch while event participation is paused. Keep any unreleased theme text out of a publicly readable manifest until it is ready to be disclosed.
+
+The PostgreSQL singleton remains available for rollback with `YAML_SOURCE_HACKATHON=database` and for SQLite imports. If migrating from SQLite first, run the import before exporting the live configuration.
+
 ## One-time SQLite import
 
 Run the importer only for a cutover from an existing SQLite deployment. It reads the source file in read-only mode and writes to a newly migrated, otherwise empty PostgreSQL database. It will not merge into a populated target. The import is one PostgreSQL transaction and rolls back if a row count or relationship check fails.

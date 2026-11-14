@@ -30,6 +30,14 @@ const { data: adminData, refresh: refreshAdmin } = await useApiFetch("/api/admin
 });
 const hackathon = computed(() => adminData.value?.hackathon ?? null);
 const seasons = computed(() => adminData.value?.seasons ?? []);
+const liveConfigReadOnly = computed(
+    () =>
+        adminData.value?.configSource !== "database" &&
+        (activeSeasonId.value === null ||
+            seasons.value.some(
+                (season: Season) => season.id === activeSeasonId.value && season.is_active === 1,
+            )),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers: ms epoch <-> datetime-local
@@ -147,7 +155,7 @@ function applyConfig(seasonId: number | null) {
     }
     Object.assign(hackathonForm, raw);
 
-    if (seasonId !== null) {
+    if (seasonId !== null && !liveConfigReadOnly.value) {
         const s = seasons.value?.find((s: any) => s.id === seasonId);
         if (s) restoreSeasonConfig(s);
     }
@@ -180,6 +188,7 @@ function hasChanged(key: string, normalized: any): boolean {
 let patchChain = Promise.resolve();
 
 function onFieldChange() {
+    if (liveConfigReadOnly.value) return;
     const body: Record<string, any> = {};
     for (const key of allFieldKeys) {
         const raw = hackathonForm[key];
@@ -405,7 +414,6 @@ async function addSeason() {
             />
             <USeparator />
 
-            <!-- Hackathon Configuration (all fields per-season, auto-save on change) -->
             <section v-if="hackathon && formInitialized" class="bg-ui-bg p-6 space-y-4">
                 <h2 class="text-xl font-semibold">
                     Hackathon Configuration
@@ -413,11 +421,17 @@ async function addSeason() {
                         Saving...
                     </span>
                 </h2>
-                <p class="text-sm text-ui-text-muted">
-                    All fields are per-season. Changes auto-save with the selected season.
+                <p v-if="liveConfigReadOnly" class="text-sm text-ui-text-muted">
+                    Edit HACKATHON.yml to change live settings.
+                </p>
+                <p v-else class="text-sm text-ui-text-muted">
+                    Changes auto-save with the selected season.
                 </p>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <fieldset
+                    :disabled="liveConfigReadOnly"
+                    class="grid grid-cols-1 md:grid-cols-2 gap-4"
+                >
                     <UFormField label="Status" name="status" class="w-full">
                         <USelect
                             :items="[
@@ -428,6 +442,7 @@ async function addSeason() {
                                 { label: 'Paused', value: 'paused' },
                             ]"
                             v-model="hackathonForm.status"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                             :ui="{ base: 'min-h-11' }"
                             class="w-full"
@@ -454,6 +469,7 @@ async function addSeason() {
                             :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
                     </div>
@@ -465,6 +481,7 @@ async function addSeason() {
                             :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
                     </div>
@@ -476,6 +493,7 @@ async function addSeason() {
                             :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
                     </div>
@@ -487,6 +505,7 @@ async function addSeason() {
                             :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
                     </div>
@@ -498,6 +517,7 @@ async function addSeason() {
                             :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                             :true-value="1"
                             :false-value="0"
+                            :disabled="liveConfigReadOnly"
                             @update:model-value="onFieldChange()"
                         />
                     </div>
@@ -603,7 +623,7 @@ async function addSeason() {
                             class="w-full"
                         />
                     </UFormField>
-                </div>
+                </fieldset>
             </section>
             <USeparator />
 

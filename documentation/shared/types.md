@@ -26,7 +26,7 @@ type HackathonStatus =
     | "paused"; // event paused for maintenance, etc.
 ```
 
-The `hackathon` table has a single row (`id = 1`) whose `status` column controls the global event state.
+The live YAML manifest uses the same fields as the legacy `hackathon` singleton. Its `status` field controls the global event state.
 
 ### `TeamPathway`
 

@@ -88,9 +88,9 @@ bun run db:migrate
 
 This applies the pending PostgreSQL migrations. Migrations also run automatically at server startup.
 
-### Seed the Hackathon Row
+### Load live hackathon configuration
 
-The `hackathon` table has a singleton row with `id = 1`; startup seeds it if it is missing. Do not add a second row or edit it directly outside application code.
+The app reads `HACKATHON.yml` from the checkout by default. Set `YAML_SOURCE_HACKATHON` to an assets server origin or manifest URL to load a remote file. The seeded PostgreSQL singleton is retained for compatibility and rollback.
 
 ### Apply Migrations
 

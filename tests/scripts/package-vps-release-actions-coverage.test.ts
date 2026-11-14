@@ -126,7 +126,11 @@ describe("VPS release package builder", () => {
         state.optionalDirectoriesExist = false;
         await run();
 
-        expect(state.cp).toHaveBeenCalledTimes(6);
+        expect(state.cp).toHaveBeenCalledTimes(7);
+        expect(state.cp).toHaveBeenCalledWith(
+            resolve(projectRoot, "HACKATHON.yml"),
+            resolve(projectRoot, "release-package/HACKATHON.yml"),
+        );
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "scripts/start.sh"),
             resolve(projectRoot, "release-package/scripts/start.sh"),

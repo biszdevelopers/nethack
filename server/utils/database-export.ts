@@ -1,5 +1,6 @@
 import * as schema from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
+import { hackathonUsesYaml, readHackathonConfig } from "./hackathon-config";
 
 const PAGE_SIZE = 250;
 
@@ -75,11 +76,16 @@ export async function* snapshotDatabaseExport(db: DrizzleDatabase, format: "json
         let firstRow = true;
         let headerWritten = false;
         while (true) {
-            const rawRows = (await db
-                .select()
-                .from(table as any)
-                .limit(PAGE_SIZE)
-                .offset(offset)) as Record<string, unknown>[];
+            const rawRows =
+                name === "hackathon" && hackathonUsesYaml()
+                    ? offset === 0
+                        ? [await readHackathonConfig()]
+                        : []
+                    : ((await db
+                          .select()
+                          .from(table as any)
+                          .limit(PAGE_SIZE)
+                          .offset(offset)) as Record<string, unknown>[]);
             if (rawRows.length === 0) break;
 
             const rows = rawRows.map((row) => anonymizeExportRow(name, row));

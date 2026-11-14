@@ -337,7 +337,7 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). Contains:
 - **Season Name** — rename the selected season via `PATCH /api/admin/seasons`.
 - **Judging rubric** — edit track keys and labels, criteria, integer score ranges, and weights. Weights are checked to total 100% for each track. Saving creates a new immutable version; the version history shows which rubric is active. Organizers can copy a prior season directly or load its rubric to customize, apply or copy reusable named templates, and save, update, or delete templates. A track used by a submitted project must be reassigned before it can be removed.
 - **Score display curve** — choose a season-level presentation curve while preserving original judge averages and rankings.
-- **Hackathon Configuration** — all settings are per-season (including score and rank visibility) and auto-save through `/api/admin/hackathon` with `season_id`. Editing the active season also syncs to the global `hackathon` row. No "Save" button; every field change is persisted via a serialized PATCH chain carrying all form fields, so no field is ever dropped and no two PATCHes race.
+- **Hackathon Configuration** — live settings are read-only with a YAML source. Other seasons retain editable stored settings, auto-saved through `/api/admin/hackathon`.
 - **Database Export** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
 
 **Layout:** `developers-dashboard`

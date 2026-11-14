@@ -11,7 +11,7 @@ basishacks uses PostgreSQL in development, CI, and production. Both Bun and Node
 
 ### `hackathon` (singleton)
 
-The hackathon table always has exactly one row (`id = 1`) that controls the global event state.
+The legacy singleton (`id = 1`) is retained for export, import compatibility, and rollback. The app reads live event settings from the selected `HACKATHON.yml` by default.
 
 | Column | Type | Description |
 | --- | --- | --- |
@@ -129,11 +129,11 @@ Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they a
 | `name`      | `TEXT NOT NULL UNIQUE`              | Season name                                  |
 | `is_active` | `INTEGER NOT NULL DEFAULT 0`        | Only one season can be active (CHECK 0 or 1) |
 
-Each season also stores its own copy of the tweakable settings (`status`, `show_scores`, `show_ranking`), which also exist on the `hackathon` singleton. Editing the tweaks of the currently active season also updates the `hackathon` row so changes take effect immediately, and activating a season copies its tweaks into the `hackathon` row. The nullable `rubric_version_id` points to `rubric_versions.id`; it is null while a season and its first rubric version are being created, then set after that version exists. The PostgreSQL foreign key protects the reference, while write paths also verify that the selected version belongs to that season. The remaining hackathon-state columns (`voting_enabled`, `results_published`, `judging_open`, timestamps, theme, etc.) still exist on both tables but are not part of the season tweaks system.
+Each season stores a snapshot of its event settings. With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
 
 The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 
-When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from the team's **own** season (via `getScoreRankVisibilityResolver` in `server/utils/database/seasons.ts`), falling back to the `hackathon` singleton only when the season no longer exists. This keeps past-season results governed by their own season's settings rather than the live season's.
+When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from the team's **own** season (via `getScoreRankVisibilityResolver` in `server/utils/database/seasons.ts`), using live YAML for the active season. Unknown seasons keep scores and ranks private in YAML mode. This keeps past-season results governed by their own season's settings rather than the live season's.
 
 A partial unique index ensures at most one active season:
 

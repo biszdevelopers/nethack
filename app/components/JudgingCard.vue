@@ -170,7 +170,7 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
 
         <section aria-labelledby="rubric-heading">
             <div class="mb-4">
-                <p class="text-sm text-muted">Step 1 of 2</p>
+                <p class="text-sm text-muted">Step 1</p>
                 <h3 id="rubric-heading" class="text-xl font-bold sm:text-2xl">
                     {{ readOnly ? "Your submitted evaluation" : "Score this project" }}
                 </h3>
@@ -295,8 +295,7 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                     Anonymous feedback and score rationale
                 </label>
                 <p :id="`reasoning-${team.id}-hint`" class="mb-2 text-sm text-muted">
-                    {{ reasoning.trim().length }} characters · at least
-                    {{ MIN_JUDGE_COMMENT_LENGTH }} required
+                    Needs at least {{ MIN_JUDGE_COMMENT_LENGTH }} characters
                 </p>
                 <div
                     class="mb-2 flex flex-wrap gap-2"
@@ -380,13 +379,6 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
         >
             Review evaluation
         </UButton>
-        <p
-            v-if="!readOnly && !canReview && !commentIdentityError && draftStatus !== 'loading'"
-            class="mt-2 text-sm text-muted"
-        >
-            Select a score for every criterion and write at least
-            {{ MIN_JUDGE_COMMENT_LENGTH }} characters of feedback, replacing any template examples.
-        </p>
     </UCard>
 </template>
 
