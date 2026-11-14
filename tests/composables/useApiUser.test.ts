@@ -1,5 +1,6 @@
 import { computed, ref, watch, type Ref } from "vue";
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { normalizeApiUserResponse } from "~~/app/composables/useApiUser";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -42,6 +43,14 @@ describe("useApiUser composable", () => {
 
     it("null checks userID", () => {
         expect(source).toContain("!userID.value");
+    });
+
+    it("unwraps API envelopes and accepts an already normalized user", () => {
+        const user = { id: 9, team: { id: 4 } };
+
+        expect(normalizeApiUserResponse({ status: 200, code: "ok", data: user })).toEqual(user);
+        expect(normalizeApiUserResponse(user)).toEqual(user);
+        expect(normalizeApiUserResponse(null)).toBeNull();
     });
 
     it("refreshes settled empty user data before returning it", async () => {
