@@ -77,6 +77,15 @@ describe("multipart upload validation boundaries", () => {
         await rm(tempDir, { recursive: true, force: true });
     });
 
+    async function listUploads() {
+        try {
+            return await readdir(join(tempDir, "persistent", "assets", "uploads"));
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+            throw error;
+        }
+    }
+
     it.each([".gif", ".jpg", ".jpeg", ".mp4", ".pdf", ".png", ".webp", ".zip"])(
         "accepts a valid %s magic signature",
         async (extension) => {
@@ -87,7 +96,9 @@ describe("multipart upload validation boundaries", () => {
 
             const stored = await storeMultipartAsset(request, contentType);
 
-            expect(stored.filename).toMatch(new RegExp(`^[0-9a-f-]{36}\\${extension}$`));
+            const canonicalExtension = extension === ".jpeg" ? ".jpg" : extension;
+            expect(stored.filename).toMatch(new RegExp(`^[0-9a-f]{64}\\${canonicalExtension}$`));
+            expect(stored.relativePath).toBe(`uploads/${stored.filename}`);
             expect(
                 await readFile(join(tempDir, "persistent", "assets", stored.relativePath)),
             ).toEqual(payload);
@@ -123,9 +134,7 @@ describe("multipart upload validation boundaries", () => {
         await expect(storeMultipartAsset(request, contentType)).rejects.toMatchObject({
             statusCode: 400,
         });
-        await expect(readdir(join(tempDir, "persistent", "assets", "uploads"))).resolves.toEqual(
-            [],
-        );
+        await expect(listUploads()).resolves.toEqual([]);
     });
 
     it("rejects a streamed file just over the file limit within the multipart overhead budget", async () => {
@@ -145,8 +154,6 @@ describe("multipart upload validation boundaries", () => {
             statusCode: 413,
             statusMessage: "File too large",
         });
-        await expect(readdir(join(tempDir, "persistent", "assets", "uploads"))).resolves.toEqual(
-            [],
-        );
+        await expect(listUploads()).resolves.toEqual([]);
     });
 });
