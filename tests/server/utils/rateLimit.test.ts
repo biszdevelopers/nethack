@@ -95,6 +95,14 @@ describe("getClientIdentifier", () => {
         expect(id).toBe("ip:unknown");
     });
 
+    it("returns the unknown client bucket when a synthetic event has no Node request", async () => {
+        readBasisAuthUserSessionMock.mockReturnValue(undefined);
+
+        const event = makeMockEvent({ node: undefined });
+
+        expect(await getClientIdentifier(event)).toBe("ip:unknown");
+    });
+
     it("ignores x-forwarded-for when no trusted proxy hops are configured", async () => {
         (globalThis as any).getUserSession = vi.fn().mockResolvedValue({});
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
