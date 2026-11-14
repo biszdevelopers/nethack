@@ -1,5 +1,6 @@
 import { reactive, shallowRef } from "vue";
 import { apiFetch } from "./useApiFetch";
+import type { JudgeCommentGuidance } from "~~/shared/judge-comments";
 
 export interface JudgingDraft {
     scores: Record<string, number>;
@@ -12,6 +13,7 @@ export interface JudgingRubric {
     version_id: number;
     name: string;
     tracks: Record<string, import("~~/shared/rubric").RubricTrack>;
+    commentGuidance?: JudgeCommentGuidance;
 }
 
 export type JudgingDraftStatus = "loading" | "saved" | "unsaved" | "saving" | "error";
