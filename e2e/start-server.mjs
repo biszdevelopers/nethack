@@ -189,6 +189,18 @@ export async function runE2eServer(env = process.env) {
                     permissions: ["judge"],
                 },
                 {
+                    sub: "e2e-judge-two",
+                    email: "judge-two@e2e.basishacks.invalid",
+                    name: "Judge Two Fixture",
+                    permissions: ["judge"],
+                },
+                {
+                    sub: "e2e-judge-three",
+                    email: "judge-three@e2e.basishacks.invalid",
+                    name: "Judge Three Fixture",
+                    permissions: ["judge"],
+                },
+                {
                     sub: "e2e-admin",
                     email: "admin@e2e.basishacks.invalid",
                     name: "Admin Fixture",
