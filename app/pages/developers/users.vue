@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
@@ -46,7 +47,7 @@ async function onDelete() {
     if (selectedIds.value.length === 0) return;
 
     try {
-        await $fetch("/api/users", {
+        await apiFetch("/api/users", {
             method: "DELETE",
             body: { ids: selectedIds.value },
         });
@@ -73,7 +74,7 @@ async function onDelete() {
 async function toggleAdmin(user: AdminUser) {
     if (isInitialAdminEmail(user.email)) return;
     try {
-        await $fetch(`/api/users/${user.id}/admin`, {
+        await apiFetch(`/api/users/${user.id}/admin`, {
             method: "PATCH",
             body: { is_admin: !user.is_admin },
         });

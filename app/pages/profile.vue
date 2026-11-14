@@ -47,7 +47,7 @@ const fileToBase64 = function (file) {
 async function removeProfileTheme() {
     try {
         const { message } = await withLoadingIndicator(async () => {
-            return $fetch(`/api/users/${userID.value}`, {
+            return apiFetch(`/api/users/${userID.value}`, {
                 method: "PATCH",
                 body: { profile_theme_image: null },
             });
@@ -82,7 +82,7 @@ async function onSubmitName(event) {
         }
 
         const { message } = await withLoadingIndicator(async () => {
-            return $fetch(`/api/users/${userID.value}`, {
+            return apiFetch(`/api/users/${userID.value}`, {
                 method: "PATCH",
                 body: event.data,
             });

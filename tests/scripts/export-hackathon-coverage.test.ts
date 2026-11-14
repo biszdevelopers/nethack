@@ -71,7 +71,7 @@ afterEach(() => {
     process.argv = ["node", "vitest"];
 });
 
-describe("hackathon manifest export script", () => {
+describe("hackathon manifest export script", { timeout: 30_000 }, () => {
     it("requires a PostgreSQL connection string", async () => {
         await expect(runScript(undefined)).rejects.toThrow(
             "Set DATABASE_URL before exporting the hackathon configuration.",

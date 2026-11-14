@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
 import AdminRubricManager from "~/components/admin/RubricManager.vue";
@@ -56,7 +57,7 @@ function datetimeToTs(s: string): number {
 }
 
 async function downloadDatabase(format: "json" | "csv") {
-    const blob = await $fetch<Blob>(`/api/admin/database/export?format=${format}`, {
+    const blob = await apiFetch<Blob>(`/api/admin/database/export?format=${format}`, {
         responseType: "blob",
     });
     const url = URL.createObjectURL(blob);
@@ -205,7 +206,7 @@ function onFieldChange() {
     // second PATCH will persist BOTH.
     saving.value = true;
     patchChain = patchChain
-        .then(() => $fetch("/api/admin/hackathon", { method: "PATCH", body }))
+        .then(() => apiFetch("/api/admin/hackathon", { method: "PATCH", body }))
         .then(() => refreshAdmin())
         .catch(() => {})
         .then(() => {
@@ -258,7 +259,7 @@ async function saveScoreCurvePreset(value: ScoreCurvePreset) {
     if (seasonId === null) return;
     scoreCurveSaving.value = true;
     try {
-        await $fetch(`/api/admin/seasons/${seasonId}/score-curve`, {
+        await apiFetch(`/api/admin/seasons/${seasonId}/score-curve`, {
             method: "PATCH",
             body: { preset: value },
         });
@@ -285,7 +286,7 @@ async function renameSeason() {
     if (activeSeasonId.value === null || !seasonNameForm.value.trim()) return;
     seasonNameSaving.value = true;
     try {
-        await $fetch("/api/admin/seasons", {
+        await apiFetch("/api/admin/seasons", {
             method: "PATCH",
             body: { id: activeSeasonId.value, name: seasonNameForm.value.trim() },
         });
@@ -301,7 +302,7 @@ async function renameSeason() {
 async function setActiveSeason() {
     if (activeSeasonId.value === null) return;
     try {
-        await $fetch("/api/seasons/active", {
+        await apiFetch("/api/seasons/active", {
             method: "PATCH",
             body: { season_id: activeSeasonId.value },
         });
@@ -319,7 +320,7 @@ async function addSeason() {
     const name = prompt("New season name:");
     if (!name || !name.trim()) return;
     try {
-        await $fetch("/api/admin/seasons", { method: "POST", body: { name: name.trim() } });
+        await apiFetch("/api/admin/seasons", { method: "POST", body: { name: name.trim() } });
         await refreshAdmin();
         toast.add({ title: `Season "${name}" created.`, color: "success" });
     } catch (e: any) {

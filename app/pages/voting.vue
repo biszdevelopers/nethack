@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { WEBSITE_NAME } from "~/utils/consts";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { SubmitVoteRequest, MAX_REASONING_LENGTH } from "~~/shared/schemas";
@@ -52,7 +53,7 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
 
     try {
         await withLoadingIndicator(async () => {
-            const res: any = await $fetch(`/api/ballot`, {
+            const res: any = await apiFetch(`/api/ballot`, {
                 method: "POST",
                 body: event.data,
             });

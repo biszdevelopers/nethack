@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { AddTeamMemberRequest, UpdateTeamRequest } from "~~/shared/schemas";
 
@@ -38,7 +39,7 @@ const removeMemberMessage = (user: Pick<User, "id" | "name" | "email">) => {
 async function removeUser(user: Pick<User, "id" | "name" | "email">) {
     try {
         await withLoadingIndicator(async () => {
-            const { message } = await $fetch(`/api/teams/${id}/users/${user.id}`, {
+            const { message } = await apiFetch(`/api/teams/${id}/users/${user.id}`, {
                 method: "DELETE",
             });
             toast.add({
@@ -68,7 +69,7 @@ const nameState = reactive({
 async function onNameSubmit(event: FormSubmitEvent<UpdateTeamRequest>, close: () => void) {
     try {
         await withLoadingIndicator(async () => {
-            const { message } = await $fetch(`/api/teams/${id}`, {
+            const { message } = await apiFetch(`/api/teams/${id}`, {
                 method: "PATCH",
                 body: event.data,
             });
@@ -98,7 +99,7 @@ const state = reactive({
 async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () => void) {
     try {
         await withLoadingIndicator(async () => {
-            const { message } = await $fetch(`/api/teams/${id}/users`, {
+            const { message } = await apiFetch(`/api/teams/${id}/users`, {
                 method: "POST",
                 body: event.data,
             });

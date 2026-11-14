@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import {
     SubmitTeamRequest,
@@ -57,7 +58,7 @@ async function triggerAutosave() {
 
     autosaveStatus.value = "Auto-saving...";
     try {
-        await $fetch(`/api/teams/${defaultTeam.id}`, {
+        await apiFetch(`/api/teams/${defaultTeam.id}`, {
             method: "PATCH",
             body: {
                 name: state.name,
@@ -153,12 +154,12 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
             }
             if (!isSubmit) {
                 // @ts-ignore i dont know
-                res = await $fetch(`/api/teams/${defaultTeam.id}`, {
+                res = await apiFetch(`/api/teams/${defaultTeam.id}`, {
                     method: "PATCH",
                     body: payload,
                 });
             } else {
-                res = await $fetch(`/api/teams/${defaultTeam.id}/submit`, {
+                res = await apiFetch(`/api/teams/${defaultTeam.id}/submit`, {
                     method: "POST",
                     body: payload,
                 });

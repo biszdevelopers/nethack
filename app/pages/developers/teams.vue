@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
@@ -55,7 +56,7 @@ async function onDelete() {
     if (selectedIds.value.length === 0) return;
 
     try {
-        await $fetch("/api/admin/teams", {
+        await apiFetch("/api/admin/teams", {
             method: "DELETE",
             body: { ids: selectedIds.value },
         });

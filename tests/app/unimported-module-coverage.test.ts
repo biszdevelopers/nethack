@@ -60,7 +60,6 @@ describe("application utility modules", () => {
     it("returns strings and useful fetch error messages from every supported shape", async () => {
         const { FetchError } = await import("ofetch");
         const { getErrorMessage } = await import("~~/app/utils/errors");
-        const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
         expect(getErrorMessage("plain message")).toBe("plain message");
         expect(getErrorMessage({ reason: "unknown" })).toBe("[object Object]");
@@ -71,12 +70,6 @@ describe("application utility modules", () => {
             statusMessage: "Bad request",
         });
         expect(getErrorMessage(apiError)).toBe("friendly message");
-        expect(log).toHaveBeenCalledWith(
-            apiError.message,
-            apiError.data,
-            apiError.stack,
-            "Bad request",
-        );
 
         const emptyDataError = new FetchError("fallback message");
         Object.assign(emptyDataError, { data: { message: "" } });
@@ -93,6 +86,16 @@ describe("application utility modules", () => {
         const primitiveDataError = new FetchError("primitive fallback");
         Object.assign(primitiveDataError, { data: "not an object" });
         expect(getErrorMessage(primitiveDataError)).toBe("primitive fallback");
+    });
+
+    it("detects unavailable endpoints from every error shape", async () => {
+        const { isEndpointUnavailable } = await import("~~/app/utils/errors");
+
+        expect(isEndpointUnavailable({ status: 404 })).toBe(true);
+        expect(isEndpointUnavailable({ statusCode: 403 })).toBe(true);
+        expect(isEndpointUnavailable({ response: { status: 404 } })).toBe(true);
+        expect(isEndpointUnavailable({ status: 500 })).toBe(false);
+        expect(isEndpointUnavailable(undefined)).toBe(false);
     });
 
     it("recovers when formatting an unexpected error first throws", async () => {

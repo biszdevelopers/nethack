@@ -118,7 +118,7 @@ describe("API response consumers", () => {
         ] as const;
 
         expect(
-            consumers.filter(([, source]) => !source.includes("useApiFetch")).map(([name]) => name),
+            consumers.filter(([, source]) => !source.includes("ApiFetch")).map(([name]) => name),
         ).toEqual([]);
     });
 });
@@ -137,6 +137,11 @@ describe("judge action paths", () => {
         expect(scoringCard).toContain(
             ":disabled=\"!canReview || draftStatus === 'error' || draftStatus === 'saving'\"",
         );
+    });
+
+    it("unwraps each judging queue page before reading its items", () => {
+        expect(judgingQueue).toContain("apiFetch<GetJudgingQueueResponse>");
+        expect(judgingQueue).not.toContain("$fetch<GetJudgingQueueResponse>");
     });
 
     it("keeps scoring accessible and prevents edits after an evaluation is finalized", () => {

@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { onMounted } from "vue";
+import { isEndpointUnavailable } from "~~/app/utils/errors";
 
 definePageMeta({
     layout: "developers-dashboard",
@@ -7,6 +9,7 @@ definePageMeta({
 });
 
 const fileListError = ref("");
+const filesUnavailable = ref(false);
 const loadingFiles = ref(false);
 const loadingReferences = ref(false);
 const references = ref<AssetReference[]>([]);
@@ -28,7 +31,9 @@ interface AssetReference {
 const loadFiles = async () => {
     loadingFiles.value = true;
     try {
-        const response = await $fetch<{ assets: string[]; userast: string[] }>("/api/debug/files");
+        const response = await apiFetch<{ assets: string[]; userast: string[] }>(
+            "/api/debug/files",
+        );
         fileLists.value.assets = response.assets.map((name) => ({
             name,
             url: `/assets/uploads/${name}`,
@@ -37,7 +42,13 @@ const loadFiles = async () => {
             name,
             url: `/userast/${name}`,
         }));
+        filesUnavailable.value = false;
     } catch (err: any) {
+        if (isEndpointUnavailable(err)) {
+            filesUnavailable.value = true;
+            fileListError.value = "";
+            return;
+        }
         fileListError.value = err.message || "Unable to load file list";
     } finally {
         loadingFiles.value = false;
@@ -47,7 +58,7 @@ const loadFiles = async () => {
 const loadReferences = async (page = referencePage.value) => {
     loadingReferences.value = true;
     try {
-        const response = await $fetch<{
+        const response = await apiFetch<{
             items: AssetReference[];
             page: number;
             page_size: number;
@@ -99,7 +110,16 @@ onMounted(refreshFiles);
             />
 
             <div class="space-y-6">
-                <UCard>
+                <UAlert
+                    v-if="filesUnavailable"
+                    color="neutral"
+                    variant="soft"
+                    icon="i-lucide-info"
+                    title="Raw asset listing is unavailable"
+                    description="Debug routes are disabled in this environment. Use the permalink references below to inspect stored files."
+                />
+
+                <UCard v-if="!filesUnavailable">
                     <template #header>
                         <div class="flex items-center justify-between">
                             <h2 class="text-lg font-semibold">Existing Asset Files</h2>

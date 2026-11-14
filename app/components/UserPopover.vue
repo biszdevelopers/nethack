@@ -90,6 +90,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { WEBSITE_NAME } from "~/utils/consts";
 
 const props = defineProps<{
@@ -111,7 +112,7 @@ const handleHover = async (isOpen: boolean) => {
     pending.value = true;
     try {
         if (typeof props.user === "number") {
-            hoveredUser.value = await $fetch<APIUser>(`/api/users/${props.user}`);
+            hoveredUser.value = await apiFetch<APIUser>(`/api/users/${props.user}`);
         } else {
             hoveredUser.value = props.user;
         }

@@ -26,8 +26,12 @@
         <!-- Existing Files Tab -->
         <div v-if="activeTab === 'files'">
             <div v-if="error" class="mt-4 text-red-500">Error: {{ error }}</div>
+            <p v-if="filesUnavailable" class="mt-4 text-sm text-slate-500">
+                Debug file listing is disabled in this environment. Use the developers dashboard
+                file references instead.
+            </p>
 
-            <section class="mt-8">
+            <section v-if="!filesUnavailable" class="mt-8">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-2xl font-bold">Existing Asset Files</h2>
                     <button
@@ -266,8 +270,10 @@
 </template>
 
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { onMounted } from "vue";
 import { NethackPermissions } from "~~/shared/permissions";
+import { isEndpointUnavailable } from "~~/app/utils/errors";
 
 definePageMeta({
     middleware: ["auth"],
@@ -283,6 +289,7 @@ if (!can(NethackPermissions.all)) {
 const activeTab = ref<"files" | "deepseek">("files");
 
 const error = ref("");
+const filesUnavailable = ref(false);
 const loadingFiles = ref(false);
 const loadingReferences = ref(false);
 const references = ref<AssetReference[]>([]);
@@ -324,7 +331,9 @@ const roleValues = ref(["user", "tool"]);
 const loadFiles = async () => {
     loadingFiles.value = true;
     try {
-        const response = await $fetch<{ assets: string[]; userast: string[] }>("/api/debug/files");
+        const response = await apiFetch<{ assets: string[]; userast: string[] }>(
+            "/api/debug/files",
+        );
         fileLists.value.assets = response.assets.map((name) => ({
             name,
             url: `/assets/uploads/${name}`,
@@ -333,17 +342,21 @@ const loadFiles = async () => {
             name,
             url: `/userast/${name}`,
         }));
+        filesUnavailable.value = false;
     } catch (err: any) {
+        if (isEndpointUnavailable(err)) {
+            filesUnavailable.value = true;
+            return;
+        }
         error.value = err.message || "Unable to load file list";
     } finally {
         loadingFiles.value = false;
     }
 };
-
 const loadReferences = async (page = referencePage.value) => {
     loadingReferences.value = true;
     try {
-        const response = await $fetch<{
+        const response = await apiFetch<{
             items: AssetReference[];
             page: number;
             page_size: number;
@@ -375,7 +388,7 @@ const createSession = async () => {
 
     creatingSession.value = true;
     try {
-        const session = await $fetch<{
+        const session = await apiFetch<{
             id: number;
             sessionName: string;
             createdAt: number;
@@ -404,7 +417,7 @@ const sendMessage = async (sessionId: number) => {
 
     sendingSessionId.value = sessionId;
     try {
-        const response = await $fetch<{
+        const response = await apiFetch<{
             sessionId: number;
             userMessage: string;
             assistantMessage: string;
@@ -436,7 +449,7 @@ const sendMessage = async (sessionId: number) => {
 const deleteSession = async (sessionId: number) => {
     deletingSessionId.value = sessionId;
     try {
-        await $fetch(`/api/debug/deepseek/sessions/${sessionId}`, {
+        await apiFetch(`/api/debug/deepseek/sessions/${sessionId}`, {
             method: "DELETE",
         });
 

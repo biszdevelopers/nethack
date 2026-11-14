@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { createReusableTemplate } from "@vueuse/core";
 import { onBeforeRouteLeave } from "vue-router";
@@ -203,7 +204,7 @@ async function getQueuePage(page: number) {
     const cached = queuePages.value[page];
     if (cached) return cached;
 
-    const response = await $fetch<GetJudgingQueueResponse>("/api/teams", {
+    const response = await apiFetch<GetJudgingQueueResponse>("/api/teams", {
         query: { judging: true, page, page_size: queuePageSize },
     });
     queuePages.value = { ...queuePages.value, [page]: response.items };
@@ -324,7 +325,7 @@ async function finalizeEvaluation() {
     submitting.value = true;
     try {
         await draft.flush();
-        await $fetch(`/api/teams/${team.id}/scores`, {
+        await apiFetch(`/api/teams/${team.id}/scores`, {
             method: "POST",
             body: {
                 scores: { ...draft.state.scores },

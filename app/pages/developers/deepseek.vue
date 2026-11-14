@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -30,7 +31,7 @@ const createSession = async () => {
 
     creatingSession.value = true;
     try {
-        const session = await $fetch<{
+        const session = await apiFetch<{
             id: number;
             sessionName: string;
             createdAt: number;
@@ -68,7 +69,7 @@ const sendMessage = async (sessionId: number) => {
 
     sendingSessionId.value = sessionId;
     try {
-        const response = await $fetch<{
+        const response = await apiFetch<{
             sessionId: number;
             userMessage: string;
             assistantMessage: string;
@@ -102,7 +103,7 @@ const sendMessage = async (sessionId: number) => {
 const deleteSession = async (sessionId: number) => {
     deletingSessionId.value = sessionId;
     try {
-        await $fetch(`/api/debug/deepseek/sessions/${sessionId}`, {
+        await apiFetch(`/api/debug/deepseek/sessions/${sessionId}`, {
             method: "DELETE",
         });
 

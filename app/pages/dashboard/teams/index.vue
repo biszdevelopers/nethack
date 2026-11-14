@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { CreateTeamRequest } from "~~/shared/schemas";
 
@@ -41,7 +42,7 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
 
     try {
         await withLoadingIndicator(async () => {
-            await $fetch<CreateTeamResponse>("/api/teams", {
+            await apiFetch<CreateTeamResponse>("/api/teams", {
                 method: "POST",
                 body: { name },
                 query: { add: "true" },

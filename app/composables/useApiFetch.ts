@@ -7,7 +7,8 @@ export async function apiFetch<DataT = any>(
     request: Parameters<typeof $fetch>[0],
     options?: Parameters<typeof $fetch>[1],
 ): Promise<DataT> {
-    const api = tryUseNuxtApp()?.$api ?? $fetch;
+    const app = typeof tryUseNuxtApp === "function" ? tryUseNuxtApp() : null;
+    const api = app?.$api ?? $fetch;
     return unwrapApiResponseData<DataT>(await api<unknown>(request, options));
 }
 

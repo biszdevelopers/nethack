@@ -37,6 +37,17 @@ describe("useApiFetch", () => {
         expect(apiFetchMock).not.toHaveBeenCalled();
     });
 
+    it("falls back to the global fetch when no Nuxt app is available", async () => {
+        const payload = { id: 11 };
+        apiFetchMock.mockResolvedValue(payload);
+        vi.unstubAllGlobals();
+        vi.stubGlobal("$fetch", apiFetchMock);
+        const { apiFetch } = await import("~~/app/composables/useApiFetch");
+
+        await expect(apiFetch("/api/resource")).resolves.toEqual(payload);
+        expect(apiFetchMock).toHaveBeenCalledWith("/api/resource", undefined);
+    });
+
     it("unwraps standard API responses while forwarding fetch options", async () => {
         fetchMock.mockReturnValue({ data: { value: 42 } });
         const { useApiFetch } = await import("~~/app/composables/useApiFetch");
