@@ -26,10 +26,6 @@ export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUs
     });
 
     if (!options?.lazy && userID.value && !fetchResult.data.value) {
-        if (fetchResult.status.value === "idle") {
-            await fetchResult.refresh();
-        }
-
         if (fetchResult.status.value === "pending") {
             await new Promise<void>((resolve) => {
                 const stop = watch(fetchResult.status, (status) => {
@@ -39,6 +35,10 @@ export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUs
                     }
                 });
             });
+        }
+
+        if (userID.value && !fetchResult.data.value && !fetchResult.error.value) {
+            await fetchResult.refresh();
         }
     }
 
