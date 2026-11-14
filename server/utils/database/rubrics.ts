@@ -1,6 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { H3Event } from "h3";
-import type { RubricDefinition } from "~~/shared/rubric";
+import { withDefaultRubricCommentGuidance, type RubricDefinition } from "~~/shared/rubric";
 import { rubricTemplates, rubricVersions, seasons, teams } from "~~/server/database/schema";
 import { firstRow } from "./query";
 
@@ -75,7 +75,7 @@ export async function createRubricVersion(
             if (!sourceVersion) {
                 throw createError({ statusCode: 409, message: "Source season has no rubric" });
             }
-            definition = sourceVersion.definition;
+            definition = withDefaultRubricCommentGuidance(sourceVersion.definition);
             sourceTemplateId = sourceVersion.source_template_id;
         } else if (input.sourceTemplateId !== undefined) {
             const template = await firstRow(
@@ -88,7 +88,7 @@ export async function createRubricVersion(
             if (!template) {
                 throw createError({ statusCode: 404, message: "Rubric template not found" });
             }
-            definition = template.definition;
+            definition = withDefaultRubricCommentGuidance(template.definition);
         }
 
         if (!definition) {
