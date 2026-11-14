@@ -29,17 +29,17 @@ Debug file endpoints let authorized users upload and list static assets without 
 | `file`         | The file to upload                                  |
 | `mode` (query) | `static` → `/assets/uploads/`, `user` → `/userast/` |
 
-Uploads accept exactly one file part named `file`, with a maximum file size of 10 MiB. The request parser rejects extra fields/parts and caps multipart overhead at 64 KiB. Filenames are always replaced with random UUIDs. Allowed extensions are `png`, `jpg`, `jpeg`, `gif`, `webp`, `pdf`, `txt`, `md`, `json`, `zip`, and `mp4`; SVG is rejected. Raster images, PDF, ZIP, and MP4 signatures are checked against their extensions. The request is streamed to a temporary file, then published after the limits and content checks pass.
+Uploads accept exactly one file part named `file`, with a maximum file size of 10 MiB. The request parser rejects extra fields/parts and caps multipart overhead at 64 KiB. Stored names are SHA-256 content-addressed names with canonical extensions; identical bytes and extensions deduplicate within the same collection. Allowed extensions are `png`, `jpg`, `jpeg`, `gif`, `webp`, `pdf`, `txt`, `md`, `json`, `zip`, and `mp4`; SVG is rejected. Raster images, PDF, ZIP, and MP4 signatures are checked against their extensions. The request is streamed to a temporary file, then published after the limits and content checks pass.
 
 Response:
 
 ```json
 {
-    "permalink": "/assets/uploads/<uuid>.<extension>"
+    "permalink": "/assets/uploads/<sha256>.<extension>"
 }
 ```
 
-For `mode=user` the response path is `/userast/<uuid>.<extension>`. Files are stored under `ASSET_STORAGE_DIR/userassets`; static uploads are stored under `ASSET_STORAGE_DIR/assets/uploads`. Set `ASSET_STORAGE_DIR` to an absolute persistent directory outside the release tree. If omitted, the runtime uses the OS data directory under `basishacks/assets` (Linux default: `~/.local/share/basishacks/assets`). The file routes set `X-Content-Type-Options: nosniff`, a restrictive CSP, and attachment disposition for non-image/video content.
+For `mode=user` the response path is `/userast/<sha256>.<extension>`. Files are stored in the project-root `/assets/userassets` collection; static uploads are stored under project-root `/assets/assets/uploads`. These public permalink/debug uploads are pinned and are never automatically deleted because they may be referenced outside the database. Runtime uploads are separate from the committed static showcase in `public/assets`; see [Persistent upload storage](../deployment/security#persistent-upload-storage) for persistence, backups, profile deduplication, and cleanup behavior. The file routes set `X-Content-Type-Options: nosniff`, a restrictive CSP, and attachment disposition for non-image/video content.
 
 All cookie-authenticated mutations, including uploads, pass the global same-origin `Origin`/`Referer` check. Requests authenticated with an explicit bearer token do not use cookie-based CSRF protection. Debug routes always return 404 in production; `DISABLE_DEBUG_ROUTES=true` also disables them in non-production environments.
 
