@@ -60,6 +60,9 @@ const RELATIONSHIPS = [
     ["judging_drafts", "team_id", "teams", "id", false],
     ["judging_drafts", "judge_user_id", "users", "id", false],
     ["judging_drafts", "rubric_version_id", "rubric_versions", "id", false],
+    ["asset_references", "created_by", "users", "id", true],
+    ["asset_references", "collection", "asset_objects", "collection", false],
+    ["asset_references", "asset_path", "asset_objects", "asset_path", false],
 ];
 
 // The season's active rubric pointer is nullable during import; the rubric
