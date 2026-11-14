@@ -167,7 +167,10 @@ const targetColumns = (source: Database.Database) => {
                 ]),
             ];
         }
-        if (table === "teams" && !columns.includes("season_id")) columns.push("season_id");
+        if (table === "teams") {
+            if (!columns.includes("season_id")) columns.push("season_id");
+            if (!columns.includes("sourcing")) columns.push("sourcing");
+        }
         if (table === "team_scores")
             columns = [...new Set([...columns, "season_id", "rubric_version_id"])];
         if (columns.length === 0) columns = ["id"];
@@ -367,6 +370,30 @@ describe("SQLite importer source inspection", () => {
         source.close();
     });
 
+    it("normalizes seasonal epoch timestamps stored as zero-fraction strings", () => {
+        const source = createSource();
+        source.exec(`
+            UPDATE seasons SET
+                start_timestamp = '1780149600000.0',
+                end_timestamp = '1780581600000.0',
+                voting_start_timestamp = '1780840800000.0',
+                voting_end_timestamp = '1781186400000.0',
+                results_open_timestamp = '1785592800000.0'
+            WHERE id = 1;
+        `);
+
+        const info = validateSource(source, sourceTables(source));
+
+        expect(info.seasons[0]).toMatchObject({
+            start_timestamp: 1780149600000,
+            end_timestamp: 1780581600000,
+            voting_start_timestamp: 1780840800000,
+            voting_end_timestamp: 1781186400000,
+            results_open_timestamp: 1785592800000,
+        });
+        source.close();
+    });
+
     it("maps a legacy single-hackathon source to season one and validates timestamp forms", () => {
         const source = createSource("legacy");
         const info = validateSource(source, sourceTables(source));
@@ -378,6 +405,7 @@ describe("SQLite importer source inspection", () => {
         expect(info.targetCountExpectations.seasons).toBe(1);
         expect(normalizeLegacyTimestamp(10, "start_timestamp")).toBe(10);
         expect(normalizeLegacyTimestamp("-10", "start_timestamp")).toBe(-10);
+        expect(normalizeLegacyTimestamp("1780149600000.0", "start_timestamp")).toBe(1780149600000);
         expect(normalizeLegacyTimestamp("2026-01-01T00:00:00Z", "start_timestamp")).toBe(
             Date.parse("2026-01-01T00:00:00Z"),
         );
@@ -401,6 +429,12 @@ describe("SQLite importer source inspection", () => {
             normalizeLegacyTimestamp(Number.MAX_SAFE_INTEGER + 1, "start_timestamp"),
         ).toThrow("missing or invalid");
         expect(() => normalizeLegacyTimestamp("9007199254740992", "start_timestamp")).toThrow(
+            "valid epoch millisecond value or ISO date",
+        );
+        expect(() => normalizeLegacyTimestamp("1780149600000.5", "start_timestamp")).toThrow(
+            "valid epoch millisecond value or ISO date",
+        );
+        expect(() => normalizeLegacyTimestamp("not-a-date", "start_timestamp")).toThrow(
             "valid epoch millisecond value or ISO date",
         );
         expect(() => normalizeLegacyHackathonRow({ start_timestamp: 1 })).toThrow(
@@ -861,6 +895,7 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
 
     it("imports the checked SQLite fixture transactionally with mocked PostgreSQL only", async () => {
         const source = createSource();
+        source.exec("ALTER TABLE teams ADD COLUMN sourcing TEXT; UPDATE teams SET sourcing = NULL");
         const available = sourceTables(source);
         const sourceInfo = validateSource(source, available);
         sourceInfo.sourcePath = "verified-fixture.sqlite";
@@ -881,6 +916,10 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         expect(fake.sql.end).toHaveBeenCalledWith({ timeout: 5 });
         expect(fake.counts.seasons).toBe(1);
         expect(fake.counts.hackathon).toBe(1);
+        const teamInsert = fake.sql.unsafe.mock.calls.find(([statement]) =>
+            statement.startsWith('INSERT INTO "teams"'),
+        );
+        expect(teamInsert?.[1]).toEqual([3, 1, ""]);
         source.close();
     });
 
