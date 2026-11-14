@@ -69,6 +69,7 @@ async function expectResponsivePage(page: Page) {
 }
 
 async function expectTouchTarget(target: Locator) {
+    await expect(target).toBeVisible();
     const box = await target.boundingBox();
     expect(box).not.toBeNull();
     if (!box) throw new Error("The expected touch target is not visible.");
@@ -103,7 +104,10 @@ async function setSeasonCheckbox(page: Page, label: string, checked: boolean) {
         .getByRole("heading", { name: "Hackathon Configuration" })
         .locator("xpath=ancestor::section[1]");
     const checkbox = configuration.getByRole("checkbox", { name: label });
-    await expectTouchTarget(checkbox.locator("xpath=ancestor::label[1]"));
+    const checkboxId = await checkbox.getAttribute("id");
+    expect(checkboxId).toBeTruthy();
+    if (!checkboxId) throw new Error(`The ${label} checkbox has no associated label.`);
+    await expectTouchTarget(configuration.locator(`label[for="${checkboxId}"]`));
     if ((await checkbox.isChecked()) === checked) return;
 
     const saved = apiResponse(page, "/api/admin/hackathon", "PATCH");
@@ -138,12 +142,52 @@ async function createAndSubmitProject(
 
     const createButton = page.getByRole("button", { name: "Create", exact: true });
     await expectTouchTarget(createButton);
+    const teamCreation = page.waitForResponse(
+        (response) =>
+            new URL(response.url()).pathname === "/api/teams" &&
+            response.request().method() === "POST",
+    );
     await createButton.focus();
     await page.keyboard.press("Enter");
+    const teamResponse = await teamCreation;
+    expect(
+        teamResponse.ok(),
+        `team creation failed with HTTP ${teamResponse.status()}`,
+    ).toBeTruthy();
+    expect(new URL(teamResponse.url()).searchParams.get("add")).toBe("true");
+    const teamResponseBody = (await teamResponse.json()) as {
+        data?: { id: number; name: string };
+        id?: number;
+        name?: string;
+    };
+    const createdTeam = teamResponseBody.data ?? teamResponseBody;
+    expect(createdTeam.name).toBe(teamName);
+    const creatorMembership = await page.evaluate(async () => {
+        const readApiData = async (path: string) => {
+            const response = await fetch(path);
+            if (!response.ok) throw new Error(`${path} failed with HTTP ${response.status}`);
+            const payload = (await response.json()) as { data?: unknown };
+            return payload && typeof payload === "object" && "data" in payload
+                ? payload.data
+                : payload;
+        };
+        const session = (await readApiData("/api/auth/session")) as {
+            user?: { id: number };
+        };
+        if (!session.user?.id) throw new Error("The browser session did not include a user ID.");
+        const user = (await readApiData(`/api/users/${session.user.id}`)) as {
+            team?: { id: number; name: string } | null;
+        };
+        return user.team ? { id: user.team.id, name: user.team.name } : null;
+    });
+    expect(creatorMembership).toEqual({ id: createdTeam.id, name: teamName });
     await expect(page).toHaveURL((url) => url.pathname === "/dashboard");
 
     await page.goto("/dashboard/general");
     const nameInput = page.getByLabel("Project name");
+    await expect(nameInput, "team membership should unlock the project form").toBeVisible({
+        timeout: 15_000,
+    });
     const descriptionInput = page.getByLabel("Project description");
     await nameInput.fill(projectName);
     await descriptionInput.fill(
@@ -200,7 +244,18 @@ async function getTeamIdByProject(page: Page, projectName: string): Promise<numb
     const teams = await page.evaluate(async () => {
         const response = await fetch("/api/teams?season_id=1");
         if (!response.ok) throw new Error(`Could not load season teams: ${response.status}`);
-        return (await response.json()) as {
+        const result = (await response.json()) as {
+            data?: {
+                id: number;
+                project: { name: string };
+            }[];
+        };
+        if (!Array.isArray(result.data)) {
+            throw new Error(
+                "Could not load season teams: the response did not contain a team list.",
+            );
+        }
+        return result.data as {
             id: number;
             project: { name: string };
         }[];
@@ -368,6 +423,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         const firstPrompt = judge.page.getByRole("button", { name: "Strength + next step" });
         markProgress("saving and restoring the judge draft");
         await expectTouchTarget(firstPrompt);
+        await expect(firstPrompt).toBeEnabled();
         await firstPrompt.click();
         const commentInput = judge.page.getByLabel("Anonymous feedback and score rationale");
         await expect(commentInput).toHaveValue(/Strength I observed/);
@@ -438,7 +494,8 @@ test("participant, judge, and admin can complete the published scoring journey o
         await setSeasonCheckbox(admin.page, "Show Ranking", true);
 
         await participant.page.goto("/dashboard/results");
-        await expect(participant.page.getByText("Original average:")).toContainText("80/100");
+        const originalScore = participant.page.getByText("original score", { exact: true });
+        await expect(originalScore.locator("xpath=..")).toContainText("80/100");
         await expect(participant.page.getByText(/Curved display \(Strong uplift\):/)).toContainText(
             "86/100",
         );
