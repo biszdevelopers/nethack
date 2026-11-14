@@ -10,6 +10,8 @@ import {
     index,
     check,
     primaryKey,
+    foreignKey,
+    boolean,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { RubricDefinition } from "../../shared/rubric";
@@ -376,4 +378,54 @@ export const sqliteLegacyData = pgTable(
         payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     },
     (table) => [primaryKey({ columns: [table.table_name, table.row_key] })],
+);
+
+/** New content-addressed public uploads that the application can safely collect. */
+export const assetObjects = pgTable(
+    "asset_objects",
+    {
+        collection: text("collection").notNull(),
+        asset_path: text("asset_path").notNull(),
+        sha256: text("sha256").notNull(),
+        byte_size: bigint("byte_size", { mode: "number" }).notNull(),
+        pinned: boolean("pinned").notNull().default(false),
+        created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+        unreferenced_at: timestamp("unreferenced_at", { withTimezone: true }),
+    },
+    (table) => [
+        primaryKey({ columns: [table.collection, table.asset_path] }),
+        index("asset_objects_gc").on(table.unreferenced_at, table.collection, table.asset_path),
+        check(
+            "asset_objects_collection_check",
+            sql`${table.collection} IN ('assets', 'userassets')`,
+        ),
+        check("asset_objects_sha256_check", sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+        check("asset_objects_size_check", sql`${table.byte_size} >= 0`),
+        check(
+            "asset_objects_path_check",
+            sql`(${table.collection} = 'assets' AND ${table.asset_path} ~ ('^uploads/' || ${table.sha256} || '\\.[a-z0-9]+$')) OR (${table.collection} = 'userassets' AND ${table.asset_path} ~ ('^' || ${table.sha256} || '\\.[a-z0-9]+$'))`,
+        ),
+    ],
+);
+
+/** Explicit active permalink references; releasing one starts the seven-day GC grace period. */
+export const assetReferences = pgTable(
+    "asset_references",
+    {
+        id: text("id").primaryKey(),
+        collection: text("collection").notNull(),
+        asset_path: text("asset_path").notNull(),
+        reference_type: text("reference_type").notNull().default("permalink"),
+        created_by: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+        created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [
+        foreignKey({
+            columns: [table.collection, table.asset_path],
+            foreignColumns: [assetObjects.collection, assetObjects.asset_path],
+            name: "asset_references_object_fk",
+        }).onDelete("cascade"),
+        index("asset_references_object").on(table.collection, table.asset_path),
+        check("asset_references_type_check", sql`${table.reference_type} = 'permalink'`),
+    ],
 );
