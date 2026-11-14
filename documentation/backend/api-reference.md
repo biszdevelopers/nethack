@@ -441,13 +441,13 @@ Download an anonymized JSON snapshot or CSV export of the database.
 
 Upload a file to the static assets or user assets directory.
 
-| Field          | Details                                                            |
-| -------------- | ------------------------------------------------------------------ |
-| **Auth**       | Authenticated user with `dev_debug` permission or admin            |
-| **Body**       | `FormData` with `file` field                                       |
-| **Query**      | `mode` (`static` or `user`, required), `keepName` (`true`/`false`) |
-| **Response**   | `{ permalink: string }` — `/assets/<name>` or `/userast/<name>`    |
-| **Extensions** | png, jpg, jpeg, gif, webp, svg, pdf, txt, md, json, zip, mp4       |
+| Field | Details |
+| --- | --- |
+| **Auth** | Authenticated user with `dev_debug` permission or admin |
+| **Body** | `FormData` with `file` field |
+| **Query** | `mode` (`static` or `user`, required) |
+| **Response** | `{ permalink: string }` — content-addressed `/assets/<name>` or `/userast/<name>` |
+| **Extensions** | png, jpg, jpeg, gif, webp, pdf, txt, md, json, zip, mp4 |
 
 ### GET `/api/debug/files`
 
