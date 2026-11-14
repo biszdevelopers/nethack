@@ -28,9 +28,11 @@ bun run build
 bun run test
 
 # Start the server
-bun run start      # Bun runtime (uses start-fix.mjs)
+bun run start      # Uses Bun 1.3.14 when available; otherwise Node.js
 # or
-node start-fix.mjs # Node.js runtime
+npm run start      # Same runtime selector
+# or
+node start-fix.mjs # Explicitly uses Node.js
 ```
 
 ## Existing-database upgrade path
