@@ -42,6 +42,7 @@ async function expectResponsivePage(page: Page) {
     const originalViewport = page.viewportSize();
     try {
         for (const width of responsiveWidths) {
+            console.info(`[responsive-a11y] ${new URL(page.url()).pathname} ${width}px`);
             await page.setViewportSize({ width, height: 900 });
             const dimensions = await page.evaluate(() => ({
                 viewport: document.documentElement.clientWidth,
@@ -252,8 +253,14 @@ test("participant, judge, and admin can complete the published scoring journey o
     const admin = await newMobilePage(browser);
     const participant = await newMobilePage(browser);
     const judge = await newMobilePage(browser);
+    let progress = "opening the administrator session";
+    const markProgress = (stage: string) => {
+        progress = stage;
+        console.info(`[role-journey] ${stage}`);
+    };
 
     try {
+        markProgress("configuring the season and reusable rubric");
         await loginAs(admin.page, "admin@e2e.basishacks.invalid", "/developers/season");
         await expect(
             admin.page.getByRole("heading", { name: "Hackathon Configuration" }),
@@ -271,11 +278,14 @@ test("participant, judge, and admin can complete the published scoring journey o
 
         await setScoreCurve(admin.page, "Strong uplift");
         await setSeasonStatus(admin.page, "In Progress");
+        markProgress("creating the administrator project");
         await createAndSubmitProject(admin.page, adminTeam, adminProject);
 
+        markProgress("creating the participant project");
         await loginAs(participant.page, "participant@e2e.basishacks.invalid", "/dashboard/teams");
         await createAndSubmitProject(participant.page, participantTeam, participantProject, true);
 
+        markProgress("creating the judge project");
         await loginAs(judge.page, "judge@e2e.basishacks.invalid", "/dashboard/teams");
         await createAndSubmitProject(judge.page, judgeTeam, judgeProject);
 
@@ -288,6 +298,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         await setSeasonCheckbox(admin.page, "Judging Open", true);
         await expectResponsivePage(admin.page);
 
+        markProgress("submitting the participant peer vote");
         await participant.page.goto("/voting");
         await expect(participant.page.getByRole("heading", { name: "Peer voting" })).toBeVisible();
         const otherProjects = [adminProject, judgeProject];
@@ -326,11 +337,13 @@ test("participant, judge, and admin can complete the published scoring journey o
         await judge.page.getByRole("button", { name: /Continue judging/ }).click();
         await expect(judge.page).toHaveURL((url) => url.pathname === "/judging/continue");
         await expect(judge.page.getByRole("heading", { name: "Judge projects" })).toBeVisible();
+        markProgress("finding the administrator project in the judge queue");
         await navigateToProject(judge.page, adminProject);
         await expect(judge.page.getByRole("button", { name: "Next project" })).toBeEnabled();
         await expectResponsivePage(judge.page);
 
         const firstPrompt = judge.page.getByRole("button", { name: "Strength + next step" });
+        markProgress("saving and restoring the judge draft");
         await expectTouchTarget(firstPrompt);
         await firstPrompt.click();
         const commentInput = judge.page.getByLabel("Anonymous feedback and score rationale");
@@ -360,6 +373,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(commentInput).toHaveValue(comment);
 
         await judge.page.getByRole("button", { name: "Review evaluation" }).click();
+        markProgress("finalizing the administrator evaluation");
         await expect(
             judge.page.getByRole("heading", { name: "Review before you finalize" }),
         ).toBeVisible();
@@ -369,6 +383,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         await judge.page.getByRole("button", { name: "Finalize evaluation" }).click();
         expect((await firstEvaluation).ok()).toBeTruthy();
 
+        markProgress("finalizing the participant evaluation");
         await navigateToProject(judge.page, participantProject);
         const participantComment =
             "The helpful onboarding flow makes the main task easy to understand. Add one example so new users can get started faster.";
@@ -393,6 +408,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expect(participant.page.getByText("Judge feedback", { exact: true })).toHaveCount(0);
 
         await admin.page.goto("/developers/season");
+        markProgress("publishing results and checking competitor feedback");
         await setSeasonStatus(admin.page, "Finished");
         await setSeasonCheckbox(admin.page, "Results Published", true);
         await setSeasonCheckbox(admin.page, "Show Scores", true);
@@ -417,6 +433,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         await expectResponsivePage(participant.page);
 
         await admin.page.goto("/developers/teams");
+        markProgress("checking the administrator feedback view");
         await admin.page.getByPlaceholder("Filter names...").fill(participantTeam);
         const participantRow = admin.page.getByRole("row").filter({ hasText: participantTeam });
         await participantRow.getByRole("button", { name: "View", exact: true }).click();
@@ -435,6 +452,7 @@ test("participant, judge, and admin can complete the published scoring journey o
         ).toHaveCount(0);
         await expectResponsivePage(admin.page);
     } finally {
+        console.info(`[role-journey] cleanup after ${progress}`);
         await Promise.all([
             admin.context.close(),
             participant.context.close(),
