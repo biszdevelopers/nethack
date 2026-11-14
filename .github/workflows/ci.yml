@@ -137,6 +137,7 @@ jobs:
                   path: .tmp-playwright-results/
                   if-no-files-found: ignore
                   retention-days: 3
+                  include-hidden-files: true
 
             - name: Smoke test Bun and Node production startup
               run: |
