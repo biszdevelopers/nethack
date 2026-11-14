@@ -69,7 +69,6 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `CURRENT_URL_ORIGIN` | Required in production | Public HTTPS origin used to derive `/api/auth/basis/callback` and validate cookie-authenticated mutations. Use `http://localhost:3000` for local development |
 | `DEEPSEEK_API_KEY` | Optional | DeepSeek API key for AI chat features (debug routes only) |
 | `PORT` / `HOST` | Optional | Server port/host override (defaults: `3000` / `0.0.0.0`) |
-| `ASSET_STORAGE_DIR` | Optional | Persistent upload directory outside release artifacts (default `/var/lib/basishacks/assets`) |
 | `SQLITE_IMPORT_PATH` | Optional | SQLite backup path used only for the one-time SQLite-to-PostgreSQL import |
 | `RATE_LIMIT_GENERAL_MAX` | Optional | General API rate limit, requests per minute (default: `120`) |
 | `RATE_LIMIT_AUTH_MAX` | Optional | Authentication endpoint rate limit, attempts per minute (default: `20`) |
@@ -153,23 +152,24 @@ The Linux benchmark harness at `scripts/benchmark-vps.mjs` reports process RSS, 
 ## Building & Production
 
 ```bash
+git clone <repository-url> /opt/basishacks/current
+cd /opt/basishacks/current
+bun install --frozen-lockfile
+# Configure required production environment variables before starting.
 bun run build
-bun install --production --frozen-lockfile
-# Bash. In PowerShell, set $env:VPS_RELEASE_INCLUDE_NODE_MODULES = "1" first.
-VPS_RELEASE_INCLUDE_NODE_MODULES=1 bun run release:package
-cd release-package
 bun run db:migrate
-bun run start                        # Bun runtime
-node start-fix.mjs                   # Node.js runtime
+bun run start
+# Or use the supported Node.js runtime after building the same checkout:
+node start-fix.mjs
 ```
 
-The release package includes the Nuxt output, PostgreSQL migrations, migration and SQLite import tools, locked dependency metadata, and the production `node_modules` tree. Run the production install after the build, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while packaging. GitHub tag releases perform both steps automatically. The Node and Bun launchers use the same portable artifact.
+Keep the same checkout for `git pull`, build, and start so its ignored `/assets` upload directory persists. The optional release-packaging workflow is still available for archive-based deployments; when replacing a checkout, preserve or restore `/assets` first. Both Bun and Node.js run the same generated server.
 
-Place a reverse proxy (Nginx, Caddy) in front for TLS termination. Keep PostgreSQL and uploaded assets persistent and outside the versioned release directory. Hardened systemd examples for either runtime are available under [`deploy/systemd/`](deploy/systemd/).
+Place a reverse proxy (Nginx, Caddy) in front for TLS termination. Keep PostgreSQL data separately persistent. Runtime uploads live in the project-root `/assets` directory, which is gitignored: in-place `git pull`, build, and start deployments preserve it. Back it up separately, and preserve or restore it before serving after a re-clone. The committed showcase files in `public/assets` are separate from runtime uploads. Hardened systemd examples for either runtime are available under [`deploy/systemd/`](deploy/systemd/).
 
 For Nginx, include [`deploy/nginx/basishacks-request-limits.conf`](deploy/nginx/basishacks-request-limits.conf) inside the application site's `server {}` block. The app caps ordinary API request bodies at 1 MiB, lets the authorized profile handler read up to 10 MiB for profile-image updates, streams Graph webhook JSON through a 64 KiB limit, and rejects webhook batches when the configured state is unset. Multipart uploads have their own streamed file-size and overhead limits.
 
-Uploads use `ASSET_STORAGE_DIR` (default `/var/lib/basishacks/assets`) and are served from the persistent `assets` and `userassets` collections. During a SQLite cutover, copy the old release's `public/userassets` contents to `$ASSET_STORAGE_DIR/userassets` before switching releases. Multipart uploads are streamed with size and content checks; cookie-authenticated uploads require a same-origin request.
+Uploads are stored in project-root `/assets` under the `assets` and `userassets` collections; the static showcase under `public/assets` is not part of this storage. Profile images use SHA-256 content-addressed names under `/assets/userassets/profiles/`, so identical image bytes with the same canonical extension share one object. Cleanup considers only these managed profile objects, only after at least seven days, and removes one only after a PostgreSQL advisory-locked check confirms there are no profile-picture, profile-theme, or legacy OAuth application picture references. Public permalink/debug uploads and legacy non-hashed objects remain pinned and are never automatically deleted. Multipart uploads are streamed with size and content checks; cookie-authenticated uploads require a same-origin request.
 
 ## Deployment
 
@@ -180,7 +180,7 @@ Uploads use `ASSET_STORAGE_DIR` (default `/var/lib/basishacks/assets`) and are s
 
 ### GitHub tag releases
 
-Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It builds a VPS artifact with the Nuxt server, portable runtime dependency paths, PostgreSQL migrations, migration/import commands, and production dependencies installed from the lockfile. The workflow verifies the extracted archive under Node.js and Bun against PostgreSQL. Extract the archive on the target host, provide the required environment variables, and run commands from the extracted release directory. PostgreSQL stores application data; uploads live under the configured persistent asset directory and are not part of release artifacts.
+Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It builds a VPS artifact with the Nuxt server, portable runtime dependency paths, PostgreSQL migrations, migration/import commands, and production dependencies installed from the lockfile. The workflow verifies the extracted archive under Node.js and Bun against PostgreSQL. The recommended VPS flow is to keep a direct checkout and run `bun run build` followed by `bun run start`. If using the optional release archive, preserve or restore project-root `/assets` before serving; back it up separately from PostgreSQL. The committed showcase files in `public/assets` remain separate from runtime uploads.
 
 ## Project Structure
 
