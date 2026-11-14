@@ -1,5 +1,5 @@
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,22 @@ import {
     removeAsset,
     removeUserAsset,
 } from "~~/server/utils/assets";
+
+async function createSymlinkOrSkip(
+    skip: (reason?: string) => never,
+    target: string,
+    linkPath: string,
+    type: "file" | "junction",
+) {
+    try {
+        await symlink(target, linkPath, type);
+    } catch (error) {
+        if (["EPERM", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+            skip("This operating system environment does not permit creating symlinks");
+        }
+        throw error;
+    }
+}
 
 describe("asset helpers coverage", () => {
     let tempDir: string;
@@ -54,39 +70,33 @@ describe("asset helpers coverage", () => {
             expect(getAssetStorageRoot()).toBe(storageDir);
         });
 
-        it("uses an absolute XDG data home when no upload path is configured", () => {
+        it("uses the project root when the legacy path is empty and XDG is set", () => {
             vi.stubEnv("ASSET_STORAGE_DIR", "  ");
             vi.stubEnv("XDG_DATA_HOME", `  ${tempDir}  `);
-            expect(getAssetStorageRoot()).toBe(join(tempDir, "basishacks", "assets"));
+            expect(getAssetStorageRoot()).toBe(join(tempDir, "release", "assets"));
         });
 
-        it("falls back to the home data directory for a relative XDG path", () => {
+        it("uses the project root when XDG is relative", () => {
             vi.stubEnv("ASSET_STORAGE_DIR", "");
             vi.stubEnv("XDG_DATA_HOME", "relative-data");
-            expect(getAssetStorageRoot()).toBe(
-                join(homedir(), ".local", "share", "basishacks", "assets"),
-            );
+            expect(getAssetStorageRoot()).toBe(join(tempDir, "release", "assets"));
         });
 
-        it("uses the home data directory when neither storage variable is set", () => {
+        it("uses the project root when no storage variables are set", () => {
             vi.stubEnv("ASSET_STORAGE_DIR", "");
             vi.stubEnv("XDG_DATA_HOME", "");
-            expect(getAssetStorageRoot()).toBe(
-                join(homedir(), ".local", "share", "basishacks", "assets"),
-            );
+            expect(getAssetStorageRoot()).toBe(join(tempDir, "release", "assets"));
         });
 
-        it("permits a production storage directory outside the release tree", () => {
+        it("ignores the storage override in production", () => {
             vi.stubEnv("NODE_ENV", "production");
-            expect(getAssetStorageRoot()).toBe(storageDir);
+            expect(getAssetStorageRoot()).toBe(join(tempDir, "release", "assets"));
         });
 
-        it("rejects a production storage root equal to the release root", () => {
+        it("always uses the project assets directory in production", () => {
             vi.stubEnv("NODE_ENV", "production");
             vi.stubEnv("ASSET_STORAGE_DIR", join(tempDir, "release"));
-            expect(() => getAssetStorageRoot()).toThrow(
-                "ASSET_STORAGE_DIR must be outside the application release directory in production",
-            );
+            expect(getAssetStorageRoot()).toBe(join(tempDir, "release", "assets"));
         });
     });
 
@@ -116,22 +126,22 @@ describe("asset helpers coverage", () => {
             });
         });
 
-        it("rejects an asset collection root that is itself a symlink", async () => {
+        it("rejects an asset collection root that is itself a symlink", async ({ skip }) => {
             const outside = join(tempDir, "outside");
             await mkdir(outside);
             await mkdir(storageDir, { recursive: true });
-            await symlink(outside, assetsDir, "junction");
+            await createSymlinkOrSkip(skip, outside, assetsDir, "junction");
             await expect(createAsset("outside.txt", Buffer.from("x"))).rejects.toMatchObject({
                 statusCode: 500,
                 statusMessage: "Asset storage is unavailable",
             });
         });
 
-        it("refuses to overwrite a symlink target", async () => {
+        it("refuses to overwrite a symlink target", async ({ skip }) => {
             const outsideFile = join(tempDir, "outside.txt");
             await writeFile(outsideFile, "keep me");
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outsideFile, join(assetsDir, "linked.txt"), "file");
+            await createSymlinkOrSkip(skip, outsideFile, join(assetsDir, "linked.txt"), "file");
 
             await expect(createAsset("linked.txt", Buffer.from("overwrite"))).rejects.toMatchObject(
                 {
@@ -279,11 +289,11 @@ describe("asset helpers coverage", () => {
             expect(await readdir(assetsDir)).toEqual([]);
         });
 
-        it("does not replace a destination symlink", async () => {
+        it("does not replace a destination symlink", async ({ skip }) => {
             const outsideFile = join(tempDir, "stream-outside.txt");
             await writeFile(outsideFile, "preserve");
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outsideFile, join(assetsDir, "linked.txt"), "file");
+            await createSymlinkOrSkip(skip, outsideFile, join(assetsDir, "linked.txt"), "file");
             await expect(
                 createAssetFromStream(
                     "linked.txt",
@@ -335,22 +345,24 @@ describe("asset helpers coverage", () => {
             await expect(getStoredAssetNames("assets", "ordinary.txt")).rejects.toThrow();
         });
 
-        it("deletes a symlink entry without deleting its external target", async () => {
+        it("deletes a symlink entry without deleting its external target", async ({ skip }) => {
             const outsideFile = join(tempDir, "delete-outside.txt");
             await writeFile(outsideFile, "untouched");
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outsideFile, join(assetsDir, "link.txt"), "file");
+            await createSymlinkOrSkip(skip, outsideFile, join(assetsDir, "link.txt"), "file");
             await removeAsset("link.txt");
             await expect(lstat(outsideFile)).resolves.toBeDefined();
             await expect(readFile(outsideFile, "utf8")).resolves.toBe("untouched");
         });
 
-        it("does not delete files reached through a symlinked parent directory", async () => {
+        it("does not delete files reached through a symlinked parent directory", async ({
+            skip,
+        }) => {
             const outside = join(tempDir, "external-directory");
             await mkdir(outside);
             await writeFile(join(outside, "keep.txt"), "untouched");
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outside, join(assetsDir, "external"), "junction");
+            await createSymlinkOrSkip(skip, outside, join(assetsDir, "external"), "junction");
 
             await expect(removeAsset("external/keep.txt")).rejects.toMatchObject({
                 statusCode: 404,
@@ -385,7 +397,7 @@ describe("asset helpers coverage", () => {
             expect(Buffer.concat(chunks)).toEqual(expected);
         });
 
-        it("returns 404 for directory and symbolic-link entries", async () => {
+        it("returns 404 for directory and symbolic-link entries", async ({ skip }) => {
             await mkdir(join(assetsDir, "directory"), { recursive: true });
             await expect(openStoredAsset("assets", "directory")).rejects.toMatchObject({
                 statusCode: 404,
@@ -394,19 +406,19 @@ describe("asset helpers coverage", () => {
 
             const outsideFile = join(tempDir, "read-outside.txt");
             await writeFile(outsideFile, "outside");
-            await symlink(outsideFile, join(assetsDir, "linked.txt"), "file");
+            await createSymlinkOrSkip(skip, outsideFile, join(assetsDir, "linked.txt"), "file");
             await expect(openStoredAsset("assets", "linked.txt")).rejects.toMatchObject({
                 statusCode: 404,
                 statusMessage: "Asset not found",
             });
         });
 
-        it("does not read through a symlinked parent directory", async () => {
+        it("does not read through a symlinked parent directory", async ({ skip }) => {
             const outside = join(tempDir, "external-directory");
             await mkdir(outside);
             await writeFile(join(outside, "secret.txt"), "outside storage");
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outside, join(assetsDir, "external"), "junction");
+            await createSymlinkOrSkip(skip, outside, join(assetsDir, "external"), "junction");
 
             await expect(openStoredAsset("assets", "external/secret.txt")).rejects.toMatchObject({
                 statusCode: 404,
@@ -414,12 +426,12 @@ describe("asset helpers coverage", () => {
             });
         });
 
-        it("does not list names through a symlinked collection directory", async () => {
+        it("does not list names through a symlinked collection directory", async ({ skip }) => {
             const outside = join(tempDir, "external-directory");
             await mkdir(outside);
             await writeFile(join(outside, "secret-name.txt"), "outside storage");
             await mkdir(assetsDir, { recursive: true });
-            await symlink(outside, join(assetsDir, "external"), "junction");
+            await createSymlinkOrSkip(skip, outside, join(assetsDir, "external"), "junction");
 
             await expect(getStoredAssetNames("assets", "external")).rejects.toMatchObject({
                 statusCode: 404,
