@@ -79,6 +79,12 @@ export default defineEventHandler(
                 message: "This draft is pinned to another rubric.",
             });
         }
+        if (!currentDraft && season.rubric_version_id !== version.id) {
+            throw createError({
+                statusCode: 409,
+                message: "The rubric changed. Reload the project before saving a draft.",
+            });
+        }
         const track = version.definition.tracks[team.pathway ?? ""];
         if (!track)
             throw createError({ statusCode: 409, message: "No rubric track matches this project" });
