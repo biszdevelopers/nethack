@@ -24,7 +24,7 @@ if (status.value !== "pending" && status.value !== "idle") {
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
-const { data: adminData, refresh: refreshAdmin } = await useFetch("/api/admin/hackathon", {
+const { data: adminData, refresh: refreshAdmin } = await useApiFetch("/api/admin/hackathon", {
     server: false,
     $fetch: globalThis.$fetch,
 });
