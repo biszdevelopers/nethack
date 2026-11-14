@@ -208,7 +208,8 @@ basishacks-r2/
 │
 ├── database/                   # Drizzle schema and PostgreSQL migrations
 ├── documentation/              # VitePress documentation site
-├── public/                     # Static assets (fonts, images, uploads)
+├── public/                     # Committed static assets (fonts, images, showcase)
+├── assets/                     # Gitignored runtime uploads; preserve, restore, and back up separately
 └── scripts/                    # Build scripts
 ```
 
