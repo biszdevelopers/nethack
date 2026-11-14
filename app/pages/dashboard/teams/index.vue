@@ -44,7 +44,7 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
             await $fetch<CreateTeamResponse>("/api/teams", {
                 method: "POST",
                 body: { name },
-                query: { add: true },
+                query: { add: "true" },
             });
             await refresh();
             toast.add({
