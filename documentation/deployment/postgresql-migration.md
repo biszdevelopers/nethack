@@ -5,7 +5,7 @@ description: Prepare PostgreSQL, migrate an existing SQLite deployment safely, a
 
 # PostgreSQL and VPS Deployment
 
-Production and development use PostgreSQL through Drizzle ORM and the `postgres` driver. The SQLite adapter is no longer part of the application runtime. The supported production entry points are `bun run start` and `node start-fix.mjs`.
+Production and development use PostgreSQL through Drizzle ORM and the `postgres` driver. The SQLite adapter is no longer part of the application runtime. Use `bun run start` or, on Linux, `npm run start`; both select Bun 1.3.14 when installed and otherwise use Node.js 24 or newer. Run `node start-fix.mjs` to explicitly select Node.js.
 
 ## PostgreSQL configuration
 
