@@ -66,6 +66,39 @@ interface GetUserResponse extends APIUser {
 
 interface GetTeamResponse extends APITeam {}
 
+interface ScoreFeedbackCriterionResponse {
+    id: string;
+    name: string;
+    description?: string;
+    weight?: number;
+    minScore: number;
+    maxScore: number;
+}
+
+interface ScoreFeedbackEntryResponse {
+    reasoning: string;
+    rubric_name?: string;
+    rubric_version?: number;
+    track_name?: string;
+    normalized_score?: number;
+    scores?: Record<string, number>;
+    criteria?: ScoreFeedbackCriterionResponse[];
+    judge_id?: number;
+    judge_name?: string | null;
+}
+
+interface TeamScoreFeedbackResponse {
+    team_id: number;
+    season_id: number;
+    original_score: number | null;
+    displayed_score: number | null;
+    curve_preset: import("./score-curve").ScoreCurvePreset | null;
+    curve_label: string | null;
+    rank: number | null;
+    feedback_withheld_for_anonymity?: boolean;
+    feedback: ScoreFeedbackEntryResponse[];
+}
+
 interface PublicSeason {
     id: number;
     name: string;
