@@ -9,6 +9,7 @@ const props = defineProps<{
     scores: Record<string, number>;
     reasoning: string;
     submitting: boolean;
+    submitError?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -90,6 +91,16 @@ onMounted(() => nextTick(() => reviewHeading.value?.focus()));
             title="Final submission"
             description="After finalizing, you cannot change this evaluation. The team will not see your feedback until results are published, and your identity will not be shown."
             class="mt-5"
+        />
+
+        <UAlert
+            v-if="submitError"
+            color="error"
+            icon="i-lucide-circle-alert"
+            title="Could not submit evaluation"
+            :description="submitError"
+            class="mt-5"
+            role="alert"
         />
 
         <div class="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
