@@ -37,6 +37,7 @@ describe("useJudgingDraft action and recovery paths", () => {
         vi.setSystemTime(new Date("2026-11-12T12:00:00.000Z"));
         fetchMock.mockReset();
         vi.stubGlobal("$fetch", fetchMock);
+        vi.stubGlobal("tryUseNuxtApp", () => null);
         vi.stubGlobal("getErrorMessage", (error: unknown) =>
             error instanceof Error ? error.message : "Request failed",
         );
