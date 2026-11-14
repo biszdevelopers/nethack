@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, useTemplateRef } from "vue";
 import type { JudgingDraftStatus } from "~/composables/useJudgingDraft";
-import { isJudgeCommentReady, MIN_JUDGE_COMMENT_LENGTH } from "~~/shared/judge-comments";
+import {
+    DEFAULT_JUDGE_COMMENT_GUIDANCE,
+    isJudgeCommentReady,
+    MIN_JUDGE_COMMENT_LENGTH,
+    type JudgeCommentGuidance,
+} from "~~/shared/judge-comments";
 import type { RubricTrack } from "~~/shared/rubric";
 
 const props = defineProps<{
     team: APITeam;
     track: RubricTrack;
+    commentGuidance?: JudgeCommentGuidance;
+    commentIdentityError?: string | null;
     scores: Record<string, number>;
     reasoning: string;
     draftStatus: JudgingDraftStatus;
@@ -25,20 +32,7 @@ const emit = defineEmits<{
 
 const projectHeading = useTemplateRef<HTMLHeadingElement>("projectHeading");
 const reasoningInput = useTemplateRef<HTMLTextAreaElement>("reasoningInput");
-const commentPrompts = [
-    {
-        label: "Strength + next step",
-        value: "Strength I observed: {{describe a specific feature or decision}}\nNext step: {{suggest one concrete action and why it matters}}",
-    },
-    {
-        label: "What stood out",
-        value: "What stood out: {{describe a specific moment, feature, or result}}\nTo make it stronger: {{suggest one practical improvement}}",
-    },
-    {
-        label: "Technical feedback",
-        value: "Implementation strength: {{name a technical choice and its effect}}\nArea to explore next: {{suggest a useful test or refinement}}",
-    },
-];
+const commentGuidance = computed(() => props.commentGuidance ?? DEFAULT_JUDGE_COMMENT_GUIDANCE);
 const safeRepoUrl = computed(() => safeUrl(props.team.project.repo_url));
 const safeDemoUrl = computed(() => safeUrl(props.team.project.demo_url));
 const criterionControls = computed(() =>
@@ -67,6 +61,7 @@ const canReview = computed(
     () =>
         criteriaComplete.value &&
         reasoningComplete.value &&
+        !props.commentIdentityError &&
         props.draftReady &&
         props.draftStatus !== "loading",
 );
@@ -282,12 +277,14 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                     class="mb-4"
                 >
                     <template #description>
-                        <p>Make feedback specific, respectful, and focused on the project.</p>
+                        <p>{{ commentGuidance.introduction }}</p>
                         <ul class="mt-2 list-disc space-y-1 pl-5">
-                            <li>Describe a strength you observed and one actionable next step.</li>
-                            <li>Comment on the work, not the people or their background.</li>
-                            <li>Do not include your name or details that could identify you.</li>
-                            <li>Replace every double-braced example with your own observation.</li>
+                            <li
+                                v-for="(guideline, index) in commentGuidance.guidelines"
+                                :key="index"
+                            >
+                                {{ guideline }}
+                            </li>
                         </ul>
                         <p class="mt-2 font-medium">
                             Teams can read this comment anonymously after results are published.
@@ -301,17 +298,21 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                     {{ reasoning.trim().length }} characters · at least
                     {{ MIN_JUDGE_COMMENT_LENGTH }} required
                 </p>
-                <div class="mb-2 flex flex-wrap gap-2" aria-label="Editable comment prompts">
+                <div
+                    class="mb-2 flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Editable comment prompts"
+                >
                     <UButton
-                        v-for="prompt in commentPrompts"
-                        :key="prompt.label"
+                        v-for="template in commentGuidance.templates"
+                        :key="template.label"
                         variant="outline"
                         size="sm"
                         class="min-h-11"
                         :disabled="readOnly || !draftReady || draftStatus === 'loading'"
-                        @click="appendCommentPrompt(prompt.value)"
+                        @click="appendCommentPrompt(template.body)"
                     >
-                        {{ prompt.label }}
+                        {{ template.label }}
                     </UButton>
                 </div>
                 <textarea
@@ -320,12 +321,27 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                     :value="reasoning"
                     class="reasoning-input min-h-32 w-full resize-y rounded-xl border border-default bg-default px-3 py-3 text-base leading-relaxed"
                     placeholder="Describe the strengths and trade-offs behind your scores."
-                    :aria-describedby="`reasoning-${team.id}-hint`"
-                    :aria-invalid="reasoning.length > 0 && !reasoningComplete"
+                    :aria-describedby="
+                        commentIdentityError
+                            ? `reasoning-${team.id}-hint reasoning-${team.id}-identity-error`
+                            : `reasoning-${team.id}-hint`
+                    "
+                    :aria-invalid="
+                        (reasoning.length > 0 && !reasoningComplete) ||
+                        Boolean(commentIdentityError)
+                    "
                     maxlength="10000"
                     :disabled="readOnly || !draftReady || draftStatus === 'loading'"
                     @input="updateReasoning"
                 />
+                <p
+                    v-if="commentIdentityError"
+                    :id="`reasoning-${team.id}-identity-error`"
+                    class="mt-2 text-sm text-error"
+                    role="alert"
+                >
+                    {{ commentIdentityError }}
+                </p>
             </div>
         </section>
 
@@ -365,7 +381,7 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
             Review evaluation
         </UButton>
         <p
-            v-if="!readOnly && !canReview && draftStatus !== 'loading'"
+            v-if="!readOnly && !canReview && !commentIdentityError && draftStatus !== 'loading'"
             class="mt-2 text-sm text-muted"
         >
             Select a score for every criterion and write at least
