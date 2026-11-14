@@ -2,6 +2,8 @@
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
+useHead({ title: `Teams | ${WEBSITE_NAME}` });
+
 definePageMeta({
     layout: "developers-dashboard",
 });
@@ -35,7 +37,7 @@ type AdminTeamMember = {
 
 type AdminTeam = Team & { season_name: string | null; members: AdminTeamMember[] };
 
-const { data, status, refresh } = await useFetch<AdminTeam[]>("/api/admin/teams", {
+const { data, status, refresh } = await useApiFetch<AdminTeam[]>("/api/admin/teams", {
     server: false,
     lazy: true,
     default: () => [],
@@ -356,7 +358,12 @@ const paginationOptions = {
 
     <UModal v-model:open="feedbackModalOpen">
         <template #content>
-            <UCard class="max-h-[85dvh] w-full max-w-3xl overflow-y-auto">
+            <UCard
+                tabindex="0"
+                role="region"
+                aria-label="Judge feedback details"
+                class="max-h-[85dvh] w-full max-w-3xl overflow-y-auto"
+            >
                 <template #header>
                     <h3 class="text-base font-semibold">
                         Judge feedback
