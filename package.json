@@ -3,7 +3,7 @@
     "type": "module",
     "private": true,
     "scripts": {
-        "start": "bun start-fix.mjs",
+        "start": "sh scripts/start.sh",
         "build": "cross-env NODE_OPTIONS=--no-deprecation nuxt build",
         "prebuild": "node scripts/generate-icon-server-bundle.mjs",
         "refractor-artifact": "bash scripts/rewrite-build-paths.sh .output",
