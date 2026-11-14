@@ -7,6 +7,7 @@ import { getTeam } from "~~/server/utils/database/teams";
 import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { z } from "zod";
+import { resolveJudgeCommentGuidance } from "~~/shared/judge-comments";
 
 const ParamsSchema = z.object({ teamId: PositiveIntParam });
 
@@ -72,6 +73,7 @@ export default defineEventHandler(
                 version_id: version.id,
                 name: version.name,
                 tracks: version.definition.tracks,
+                commentGuidance: resolveJudgeCommentGuidance(version.definition.commentGuidance),
             },
             draft: draft
                 ? {
