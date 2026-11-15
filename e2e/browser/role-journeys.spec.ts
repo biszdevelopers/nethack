@@ -525,8 +525,8 @@ test("participant and admin complete mobile journeys while judging and review st
         await createAndSubmitProject(participant.page, participantTeam, participantProject, true);
 
         markProgress("creating the judge project");
-        await loginAs(judge.page, "judge@e2e.basishacks.invalid", "/dashboard/teams");
-        await createAndSubmitProject(judge.page, judgeTeam, judgeProject);
+        await loginAs(judgeTwo.page, "judge-two@e2e.basishacks.invalid", "/dashboard/teams");
+        await createAndSubmitProject(judgeTwo.page, judgeTeam, judgeProject);
 
         const adminTeamId = await getTeamIdByProject(admin.page, adminProject);
         const participantTeamId = await getTeamIdByProject(admin.page, participantProject);
