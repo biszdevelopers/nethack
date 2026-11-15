@@ -155,10 +155,11 @@ describe("basis-auth subject state", () => {
         ).rejects.toMatchObject({ statusCode: 401 });
     });
 
-    it("keeps development usable when the remote listener is not routable", async () => {
+    it("keeps a loopback instance usable when the remote listener is not routable", async () => {
         configureInternalApi();
         vi.resetModules();
-        vi.stubEnv("NODE_ENV", "development");
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://localhost:3000");
         const { assertAccessTokenActive } = await import("~~/server/utils/basis-auth-state");
         const now = Math.floor(Date.now() / 1000);
         vi.stubGlobal(

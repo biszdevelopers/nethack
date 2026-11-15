@@ -3,6 +3,7 @@ import { and, eq, gt, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import type { AccessTokenClaims } from "@basis/schema/auth";
 import { revokedAccessTokens, users } from "~~/server/database/schema";
 import { getBasisAuthConfig, getBasisAuthInternalConfig } from "./basis-auth";
+import { isLoopbackHttpOrigin } from "./environment-validation";
 import { firstRow } from "./database/query";
 
 /** Retention past a token's own expiry, leaving room for verifier clock tolerance. */
@@ -191,10 +192,16 @@ export async function assertAccessTokenActive(
     try {
         state = await loadBasisAuthSubjectState(claims.sub);
     } catch {
-        // Fail closed: an unreachable basis-auth must not vouch for the subject.
-        // A development machine may legitimately lack a route to the remote
-        // private listener, so only production treats that as a rejection.
-        if (process.env.NODE_ENV === "production") invalidAccessToken();
+        // Fail closed for a real deployment: an unreachable basis-auth must not
+        // vouch for the subject. A loopback instance is a development target
+        // even under NODE_ENV=production, so it keeps working without a route
+        // to the remote private listener.
+        if (
+            process.env.NODE_ENV === "production" &&
+            !isLoopbackHttpOrigin(process.env.CURRENT_URL_ORIGIN)
+        ) {
+            invalidAccessToken();
+        }
     }
     if (
         state?.disabled ||
