@@ -16,7 +16,7 @@ import {
     type TestContext,
 } from "./helpers";
 import { eq } from "drizzle-orm";
-import { users, teams, userPastTeams } from "~~/server/database/schema";
+import { users, teams, userPastTeams, teamScores, seasons } from "~~/server/database/schema";
 import { clearRateLimitHistory } from "~~/server/utils/rateLimit";
 
 let ctx: TestContext;
@@ -460,6 +460,32 @@ describe("DELETE /api/users", () => {
         await expect(deleteHandler(createEvent())).resolves.toEqual({
             message: "Deleted 1 user(s)",
         });
+    });
+
+    it("recomputes affected season scores after deleting a judge", async () => {
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
+        const judge = seedUser(ctx, { email: "judge2@basischina.com", role: "judge" });
+        const team = seedTeam(ctx, { project_submitted: 1 });
+        const seasonRow = ctx.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).get()!;
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: team.id,
+                judge_user_id: judge.id,
+                scores: JSON.stringify({ originality: 5 }),
+                reasoning: "Scored before deletion",
+                season_id: seasonRow.id,
+                rubric_version_id: seasonRow.rubric_version_id,
+            } as any)
+            .run();
+        mockBody.value = { ids: [judge.id] };
+
+        await expect(deleteHandler(createEvent())).resolves.toEqual({
+            message: "Deleted 1 user(s)",
+        });
+
+        const updatedTeam = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get()!;
+        expect(updatedTeam.score).toBe(0);
     });
 
     it("deletes users by IDs", async () => {

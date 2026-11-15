@@ -50,9 +50,9 @@ describe.skipIf(process.platform === "win32")("production runtime selector", () 
         expect(await readFile(logPath, "utf8")).toBe("bun:start-fix.mjs\n");
     });
 
-    it("falls back to Node when the installed Bun version is not 1.3.14", async () => {
+    it("falls back to Node when the installed Bun version predates 1.3", async () => {
         const directory = await createCommandDirectory({
-            bun: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'1.4.4\\n\'; else exit 23; fi\n',
+            bun: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'1.2.9\\n\'; else exit 23; fi\n',
             node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v24.0.0\\n\'; else printf \'node:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 24; fi\n',
         });
         const logPath = join(directory, "result.log");
@@ -61,6 +61,19 @@ describe.skipIf(process.platform === "win32")("production runtime selector", () 
 
         expect(result.status).toBe(24);
         expect(await readFile(logPath, "utf8")).toBe("node:start-fix.mjs\n");
+    });
+
+    it("accepts any Bun version from 1.3 onward", async () => {
+        const directory = await createCommandDirectory({
+            bun: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'1.4.4\\n\'; else printf \'bun:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 23; fi\n',
+            node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v24.0.0\\n\'; else exit 24; fi\n',
+        });
+        const logPath = join(directory, "result.log");
+
+        const result = runStartScript(directory, logPath);
+
+        expect(result.status).toBe(23);
+        expect(await readFile(logPath, "utf8")).toBe("bun:start-fix.mjs\n");
     });
 
     it("uses Node when Bun is not installed", async () => {
@@ -80,7 +93,7 @@ describe.skipIf(process.platform === "win32")("production runtime selector", () 
         const result = runStartScript(directory, join(directory, "result.log"));
 
         expect(result.status).toBe(127);
-        expect(result.stderr).toContain("Bun 1.3.14 or Node.js 24 or newer");
+        expect(result.stderr).toContain("Bun 1.3 or newer, or Node.js 24 or newer");
     });
 
     it("does not select Node versions below the supported minimum", async () => {
@@ -90,6 +103,6 @@ describe.skipIf(process.platform === "win32")("production runtime selector", () 
         const result = runStartScript(directory, join(directory, "result.log"));
 
         expect(result.status).toBe(127);
-        expect(result.stderr).toContain("Bun 1.3.14 or Node.js 24 or newer");
+        expect(result.stderr).toContain("Bun 1.3 or newer, or Node.js 24 or newer");
     });
 });

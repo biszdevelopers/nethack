@@ -48,7 +48,10 @@ vi.mock("~~/server/utils/database/seasons", () => ({
     getActiveSeason: mocks.getActiveSeason,
     getSeasonById: mocks.getSeasonById,
 }));
-vi.mock("~~/server/utils/scoring", () => ({ computeScores: mocks.computeScores }));
+vi.mock("~~/server/utils/scoring", () => ({
+    computeScores: mocks.computeScores,
+    calculateSeasonScores: vi.fn(),
+}));
 vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
 vi.mock("~~/server/utils/database/rubrics", () => ({
     resolveLiveRubricVersionId: async (
@@ -59,7 +62,16 @@ vi.mock("~~/server/utils/database/rubrics", () => ({
     getRubricVersionForSeason: mocks.getRubricVersionForSeason,
 }));
 
-const event = { context: { drizzle: { select: vi.fn() } } };
+const event = {
+    context: {
+        drizzle: {
+            select: vi.fn(),
+            selectDistinct: vi.fn(() => ({
+                from: () => ({ where: async () => [] }),
+            })),
+        },
+    },
+};
 let logout: (event: any) => Promise<unknown>;
 let deleteTeams: (event: any) => Promise<unknown>;
 let judgingRubric: (event: any) => Promise<unknown>;
@@ -89,6 +101,9 @@ beforeEach(() => {
     for (const mock of Object.values(mocks)) mock.mockReset();
     event.context.drizzle.select.mockReset();
     event.context.drizzle.select.mockReturnValue(rubricQuery);
+    (event.context.drizzle as any).selectDistinct = vi.fn(() => ({
+        from: () => ({ where: async () => [] }),
+    }));
     rubricQuery.from.mockReset().mockReturnValue(rubricQuery);
     rubricQuery.where.mockReset().mockReturnValue(rubricQuery);
     rubricQuery.limit.mockReset().mockReturnValue(rubricQuery);
@@ -160,6 +175,21 @@ describe("admin team deletion actions", () => {
         await expect(deleteTeams(event)).resolves.toEqual({ message: "Deleted 2 team(s)" });
         expect(globalThis.requireUser).toHaveBeenCalledWith(event, NethackPermissions.Teams.delete);
         expect(mocks.deleteTeams).toHaveBeenCalledWith(event, [3, 8]);
+    });
+
+    it("recomputes every affected season after deleting teams", async () => {
+        mockBody.value = { ids: [3] };
+        mocks.deleteTeams.mockResolvedValue(undefined);
+        (event.context.drizzle as any).selectDistinct = vi.fn(() => ({
+            from: () => ({ where: async () => [{ season_id: 5 }, { season_id: 6 }] }),
+        }));
+        const scoring = await import("~~/server/utils/scoring");
+
+        await deleteTeams(event);
+
+        expect(scoring.calculateSeasonScores).toHaveBeenCalledTimes(2);
+        expect(scoring.calculateSeasonScores).toHaveBeenCalledWith(event, 5, true);
+        expect(scoring.calculateSeasonScores).toHaveBeenCalledWith(event, 6, true);
     });
 
     it.each([undefined, { ids: [0] }, { ids: [1.5] }, { ids: "2" }])(
