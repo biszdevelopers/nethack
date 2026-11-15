@@ -24,7 +24,13 @@ export default defineEventHandler(
             `attachment; filename="basishacks-export.${query.format}"`,
         );
 
-        const stream = Readable.from(snapshotDatabaseExport(event.context.drizzle, query.format));
+        const stream = Readable.from(
+            snapshotDatabaseExport(
+                event.context.drizzle,
+                query.format,
+                await getLiveOverrides(event),
+            ),
+        );
         return sendStream(event, stream);
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );
