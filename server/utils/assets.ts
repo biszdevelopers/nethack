@@ -591,7 +591,7 @@ async function collectDirectoryWindow(
     return { names, cursorFound, entriesVisited, lastVisited };
 }
 
-async function collectDirectoryWindowUntil(
+export async function collectDirectoryWindowUntil(
     directory: string,
     lastName: string,
     limit: number,

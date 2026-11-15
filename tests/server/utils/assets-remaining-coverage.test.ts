@@ -226,6 +226,7 @@ vi.mock("node:fs", async (importOriginal) => {
 import { oauth2Applications, users } from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
 import {
+    collectDirectoryWindowUntil,
     collectOrphanProfileAssets,
     createAsset,
     createAssetFromStream,
@@ -1070,6 +1071,35 @@ describe("remaining asset utility behavior", () => {
         expect(first.entriesVisited).toBe(13);
         expect(second.entriesVisited).toBe(15);
         expect(filesystemFaults.opendirOrders.has(staging)).toBe(false);
+    });
+
+    it("stops the wrap scan when it reaches the stored cursor", async () => {
+        const directory = join(storageRoot, "cursor-scan");
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "a.tmp"), "a");
+        await writeFile(join(directory, "b.tmp"), "b");
+
+        const result = await collectDirectoryWindowUntil(
+            directory,
+            "b.tmp",
+            10,
+            100,
+            () => true,
+            new Set(),
+        );
+
+        expect(result.lastVisited).toBe("b.tmp");
+        expect(result.names).not.toContain("b.tmp");
+
+        const withoutCursor = await collectDirectoryWindowUntil(
+            directory,
+            "missing.tmp",
+            10,
+            100,
+            () => true,
+            new Set(),
+        );
+        expect(withoutCursor.names.length).toBeGreaterThan(0);
     });
 
     it("retains the prior cursor when the directory empties during the wrap scan", async () => {
