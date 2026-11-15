@@ -36,6 +36,11 @@ export default defineNuxtConfig({
         "@basis/schema/permissions": resolve(basisSchemaRoot, "permissions.ts"),
     },
     compatibilityDate: "2025-07-15",
+    runtimeConfig: {
+        public: {
+            siteOrigin: "",
+        },
+    },
     devtools: { enabled: false }, // keeps crasing
     modules: ["@nuxt/eslint", "@nuxt/ui", "@comark/vue"],
 
@@ -93,6 +98,9 @@ export default defineNuxtConfig({
         },
         "/fonts/**": {
             headers: { "Cache-Control": "public, max-age=31536000, immutable" },
+        },
+        "/docs/**": {
+            headers: { "Cache-Control": "private, no-store" },
         },
     },
     vite: {

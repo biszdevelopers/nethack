@@ -55,8 +55,8 @@ afterEach(() => {
 
 describe("database export route", () => {
     it.each([
-        ["json", "application/json; charset=utf-8", "basishacks-export.json"],
-        ["csv", "text/csv; charset=utf-8", "basishacks-export.csv"],
+        ["json", "application/json; charset=utf-8", "nethack-export.json"],
+        ["csv", "text/csv; charset=utf-8", "nethack-export.csv"],
     ])("streams a %s export with no-store headers", async (format, contentType, filename) => {
         mocks.query = { format };
         const event = { context: { drizzle: { database: true } } };

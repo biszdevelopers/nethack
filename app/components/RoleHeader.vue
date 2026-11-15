@@ -4,7 +4,7 @@
         :ui="{ title: 'min-h-11', toggle: 'min-h-11 min-w-11' }"
     >
         <template #title>
-            <span class="text-base text-primary sm:text-xl">basishacks_2026</span>
+            <span class="text-base text-primary sm:text-xl">{{ WEBSITE_NAME }}</span>
         </template>
 
         <UNavigationMenu :items="navItems" />

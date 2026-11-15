@@ -111,8 +111,8 @@ export function getBasisAuthCallbackUrl(): string {
 export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
     if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//"))
         return undefined;
-    const parsed = new URL(value, "https://basishacks.invalid");
-    return parsed.origin === "https://basishacks.invalid"
+    const parsed = new URL(value, "https://nethack.invalid");
+    return parsed.origin === "https://nethack.invalid"
         ? `${parsed.pathname}${parsed.search}${parsed.hash}`
         : undefined;
 }

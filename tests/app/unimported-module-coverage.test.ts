@@ -124,7 +124,7 @@ describe("application utility modules", () => {
     it("exports the website name constant", async () => {
         const { WEBSITE_NAME } = await import("~~/app/utils/consts");
 
-        expect(WEBSITE_NAME).toBe("basishacks");
+        expect(WEBSITE_NAME).toBe("nethack");
     });
 
     it("returns the app UI configuration from defineAppConfig", async () => {

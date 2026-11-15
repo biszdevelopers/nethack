@@ -14,8 +14,8 @@ describe("RoleHeader.vue", () => {
         expect(source).not.toContain("useUserSession()");
     });
 
-    it("renders the hackathon title basishacks_2026", () => {
-        expect(source).toContain("basishacks_2026");
+    it("renders the shared nethack brand constant", () => {
+        expect(source).toContain("{{ WEBSITE_NAME }}");
     });
 
     it("keeps the brand and mobile header controls usable on narrow touch screens", () => {

@@ -6,12 +6,12 @@ useHead({
 
 <template>
     <div class="max-w-3xl mx-auto px-4 py-12 space-y-8">
-        <h1 class="text-4xl font-bold">Contributing to basishacks</h1>
+        <h1 class="text-4xl font-bold">Contributing to nethack</h1>
 
         <section class="space-y-4">
             <h2 class="text-2xl font-semibold">Welcome</h2>
             <p>
-                Thank you for your interest in contributing to basishacks, the official platform for
+                Thank you for your interest in contributing to nethack, the official platform for
                 the BIBS-C Network Hackathon. This document outlines the expectations and processes
                 for any person wishing to contribute code, report issues, or otherwise help improve
                 the project.
@@ -27,7 +27,7 @@ useHead({
                     target="_blank"
                     class="text-primary underline"
                 >
-                    basishacks-r2 repository
+                    nethack repository
                 </ULink>
                 . Follow these guidelines when preparing your changes:
             </p>
@@ -154,7 +154,7 @@ useHead({
         <USeparator />
 
         <p class="text-sm text-ui-text-muted">
-            basishacks is maintained by the BISZ Developers' Club as part of the BIBS-C Network
+            nethack is maintained by the BISZ Developers' Club as part of the BIBS-C Network
             Hackathon.
         </p>
     </div>
