@@ -107,12 +107,6 @@ const createSource = (schema: "seasonal" | "legacy" = "seasonal", filename = ":m
     return db;
 };
 
-const inTemporaryDirectory = (action: (directory: string) => void) => {
-    const directory = mkdtempSync(resolve(tmpdir(), "basishacks-sqlite-import-"));
-    temporaryDirectories.push(directory);
-    action(directory);
-};
-
 const targetColumns = (source: Database.Database) => {
     const tables = new Map<string, Map<string, Record<string, unknown>>>();
     for (const table of IMPORT_TARGET_TABLES) {

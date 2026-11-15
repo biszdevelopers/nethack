@@ -1,12 +1,18 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { Agent as HttpAgent } from "node:http";
-import { isIP, type LookupAddress, type LookupFunction } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
+import type { LookupAddress } from "node:dns";
 import { Agent as HttpsAgent } from "node:https";
-import fetch from "node-fetch";
+import fetch, { type RequestInit as NodeRequestInit } from "node-fetch";
 import { URL } from "node:url";
 
 const MAX_REDIRECTS = 5;
 const MAX_EXTERNAL_HTML_BYTES = 15_000;
+
+/** node-fetch exposes a Node stream with destroy(); the DOM type omits it. */
+function destroyBody(body: unknown) {
+    (body as { destroy?: () => void } | null)?.destroy?.();
+}
 
 export function parseIpv4(ip: string): number[] | null {
     const parts = ip.split(".");
@@ -163,14 +169,18 @@ export async function fetchExternalHtml(urlString: string, init?: RequestInit): 
         const agent = createPinnedAgent(url, addresses);
         let response: Awaited<ReturnType<typeof fetch>>;
         try {
-            response = await fetch(current, { ...init, agent, redirect: "manual" });
+            response = await fetch(current, {
+                ...init,
+                agent,
+                redirect: "manual",
+            } as NodeRequestInit);
         } catch (error) {
             agent.destroy();
             throw error;
         }
 
         if (response.status >= 300 && response.status < 400) {
-            response.body?.destroy();
+            destroyBody(response.body);
             agent.destroy();
             const location = response.headers.get("location");
             if (!location) {
@@ -185,7 +195,7 @@ export async function fetchExternalHtml(urlString: string, init?: RequestInit): 
         }
 
         if (!response.ok) {
-            response.body?.destroy();
+            destroyBody(response.body);
             agent.destroy();
             return `Error: Failed to fetch. Status: ${response.status}`;
         }
@@ -213,7 +223,7 @@ export async function fetchExternalHtml(urlString: string, init?: RequestInit): 
                     // backing allocation when the source yields one very large chunk.
                     chunks.push(Buffer.from(chunk.subarray(0, remainingBytes)));
                     totalBytes = MAX_EXTERNAL_HTML_BYTES;
-                    body.destroy();
+                    destroyBody(body);
                     break;
                 }
 

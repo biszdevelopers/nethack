@@ -64,7 +64,7 @@ interface GetUserResponse extends APIUser {
     past_teams: APITeam[];
 }
 
-interface GetTeamResponse extends APITeam {}
+type GetTeamResponse = APITeam;
 
 interface ScoreFeedbackCriterionResponse {
     id: string;

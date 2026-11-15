@@ -62,7 +62,7 @@ export async function getTeamScoreFeedback(
     let total = 0;
     let validCount = 0;
     let unavailable = 0;
-    const feedback: Array<Record<string, unknown>> = [];
+    const feedback: ScoreFeedbackEntryResponse[] = [];
     for (const evaluation of evaluations) {
         const version = versionsById.get(evaluation.rubric_version_id);
         const track = team.pathway ? version?.definition.tracks[team.pathway] : undefined;

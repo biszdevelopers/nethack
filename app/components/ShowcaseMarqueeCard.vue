@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
     team: GetTeamResponse;
 }>();
 
@@ -36,7 +36,7 @@ const emit = defineEmits<{
                         :key="award.namespace"
                         class="flex flex-row gap-2"
                     >
-                        <AwardButton :award="award" size="sm"></AwardButton>
+                        <AwardButton :award="award" size="sm" />
                     </div>
                 </div>
             </div>

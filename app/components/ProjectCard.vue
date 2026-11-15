@@ -23,7 +23,7 @@ const safeDemoUrl = computed(() => safeUrl(team.value?.project.demo_url));
             <span v-else class="text-default text-sm">(No Team Name)</span>
             <div class="flex flex-row gap-2 mt-2">
                 <div v-for="award in team.awards" :key="award.namespace">
-                    <AwardButton :award="award" size="md"></AwardButton>
+                    <AwardButton :award="award" size="md" />
                 </div>
             </div>
         </template>

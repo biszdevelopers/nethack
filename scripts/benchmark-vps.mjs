@@ -154,7 +154,7 @@ async function sampleProcess() {
 async function requestTarget(target, targetIndex) {
     const started = performance.now();
     let status = 0;
-    let unexpected = false;
+    let unexpected;
     try {
         const response = await fetch(new URL(target.path, parsedBaseUrl), {
             method: (target.method ?? "GET").toUpperCase(),

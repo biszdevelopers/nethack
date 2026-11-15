@@ -23,7 +23,7 @@ describe("participant action paths", () => {
     it("collects the required AI-use disclosure with the project", () => {
         expect(projectForm).toContain('name="project.sourcing"');
         expect(projectForm).toContain("AI-use disclosure");
-        expect(projectForm).toContain("state.project.sourcing");
+        expect(projectForm).toContain("formState.project.sourcing");
     });
 
     it("gives peer-voting controls names, live scores, and 44px touch targets", () => {
@@ -76,9 +76,9 @@ describe("participant action paths", () => {
         );
         expect(autosave).toContain("if (!dirty.value || !defaultTeam)");
         expect(autosave).toContain('method: "PATCH"');
-        expect(autosave).toContain("demo_url: state.project.demo_url || null");
-        expect(autosave).toContain("repo_url: state.project.repo_url || null");
-        expect(autosave).toContain("sourcing: state.project.sourcing");
+        expect(autosave).toContain("demo_url: formState.project.demo_url || null");
+        expect(autosave).toContain("repo_url: formState.project.repo_url || null");
+        expect(autosave).toContain("sourcing: formState.project.sourcing");
         expect(autosave).toContain('autosaveStatus.value = "Auto-save failed"');
     });
 
@@ -138,7 +138,7 @@ describe("judge action paths", () => {
 
     it("requires valid scores, a complete comment, and a loaded draft before review", () => {
         expect(scoringCard).toContain("Number.isInteger(value)");
-        expect(scoringCard).toContain("value >= criterion.minScore && value <= criterion.maxScore");
+        expect(scoringCard).toContain("value >= criterion.minScore &&");
         expect(scoringCard).toContain("isJudgeCommentReady(props.reasoning)");
         expect(scoringCard).toContain("criteriaComplete.value &&");
         expect(scoringCard).toContain("reasoningComplete.value &&");

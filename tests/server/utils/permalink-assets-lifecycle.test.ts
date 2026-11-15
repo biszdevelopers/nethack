@@ -299,8 +299,7 @@ describe("managed permalink asset lifecycle", () => {
         const published = await publish(database, Buffer.from("late reference"));
         await releaseAssetReference(database, published.referenceId!, 9, false, new Date(0));
         const object = objects[0]!;
-        let racer: ReturnType<typeof fakeDatabase>;
-        racer = fakeDatabase({
+        const racer: ReturnType<typeof fakeDatabase> = fakeDatabase({
             beforeLock: () => {
                 racer.references.push({
                     id: "late-reference",

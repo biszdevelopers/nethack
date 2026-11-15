@@ -624,6 +624,7 @@ async function deleteSeason() {
                         >
                             <UFormField label="Status" name="status" class="w-full">
                                 <USelect
+                                    v-model="hackathonForm.status"
                                     :items="[
                                         { label: 'Not Started', value: 'not_started' },
                                         { label: 'In Progress', value: 'in_progress' },
@@ -631,11 +632,10 @@ async function deleteSeason() {
                                         { label: 'Finished', value: 'finished' },
                                         { label: 'Paused', value: 'paused' },
                                     ]"
-                                    v-model="hackathonForm.status"
                                     :disabled="configReadOnly"
-                                    @update:model-value="saveField('status')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @update:model-value="saveField('status')"
                                 />
                             </UFormField>
 
@@ -645,14 +645,14 @@ async function deleteSeason() {
                                 class="w-full"
                             >
                                 <UInput
+                                    v-model="hackathonForm.max_votes_per_user"
                                     type="number"
                                     name="max_votes_per_user"
-                                    v-model="hackathonForm.max_votes_per_user"
                                     min="0"
                                     max="100"
-                                    @change="saveField('max_votes_per_user')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('max_votes_per_user')"
                                 />
                             </UFormField>
 
@@ -674,11 +674,11 @@ async function deleteSeason() {
 
                             <UFormField label="Theme Name" name="theme_name" class="w-full">
                                 <UInput
-                                    name="theme_name"
                                     v-model="hackathonForm.theme_name"
-                                    @change="saveField('theme_name')"
+                                    name="theme_name"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('theme_name')"
                                 />
                             </UFormField>
 
@@ -688,12 +688,12 @@ async function deleteSeason() {
                                 class="w-full md:col-span-2"
                             >
                                 <UTextarea
-                                    name="theme_description"
                                     v-model="hackathonForm.theme_description"
+                                    name="theme_description"
                                     :rows="2"
-                                    @change="saveField('theme_description')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('theme_description')"
                                 />
                             </UFormField>
                         </fieldset>
@@ -708,23 +708,23 @@ async function deleteSeason() {
                         >
                             <UFormField label="Start" name="start_timestamp" class="w-full">
                                 <UInput
+                                    v-model="hackathonForm.start_timestamp"
                                     type="datetime-local"
                                     name="start_timestamp"
-                                    v-model="hackathonForm.start_timestamp"
-                                    @change="saveField('start_timestamp')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('start_timestamp')"
                                 />
                             </UFormField>
 
                             <UFormField label="End" name="end_timestamp" class="w-full">
                                 <UInput
+                                    v-model="hackathonForm.end_timestamp"
                                     type="datetime-local"
                                     name="end_timestamp"
-                                    v-model="hackathonForm.end_timestamp"
-                                    @change="saveField('end_timestamp')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('end_timestamp')"
                                 />
                             </UFormField>
 
@@ -734,12 +734,12 @@ async function deleteSeason() {
                                 class="w-full"
                             >
                                 <UInput
+                                    v-model="hackathonForm.voting_start_timestamp"
                                     type="datetime-local"
                                     name="voting_start_timestamp"
-                                    v-model="hackathonForm.voting_start_timestamp"
-                                    @change="saveField('voting_start_timestamp')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('voting_start_timestamp')"
                                 />
                             </UFormField>
 
@@ -749,12 +749,12 @@ async function deleteSeason() {
                                 class="w-full"
                             >
                                 <UInput
+                                    v-model="hackathonForm.voting_end_timestamp"
                                     type="datetime-local"
                                     name="voting_end_timestamp"
-                                    v-model="hackathonForm.voting_end_timestamp"
-                                    @change="saveField('voting_end_timestamp')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('voting_end_timestamp')"
                                 />
                             </UFormField>
 
@@ -764,12 +764,12 @@ async function deleteSeason() {
                                 class="w-full"
                             >
                                 <UInput
+                                    v-model="hackathonForm.results_open_timestamp"
                                     type="datetime-local"
                                     name="results_open_timestamp"
-                                    v-model="hackathonForm.results_open_timestamp"
-                                    @change="saveField('results_open_timestamp')"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @change="saveField('results_open_timestamp')"
                                 />
                             </UFormField>
                         </fieldset>
@@ -792,7 +792,9 @@ async function deleteSeason() {
                                     :disabled="scoreCurveSaving"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @update:model-value="saveScoreCurvePreset"
+                                    @update:model-value="
+                                        (value) => saveScoreCurvePreset(value as ScoreCurvePreset)
+                                    "
                                 />
                             </UFormField>
                             <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>

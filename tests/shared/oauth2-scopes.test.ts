@@ -166,20 +166,20 @@ describe("OAuth2Scopes", () => {
     });
 
     it("each scope has a description", () => {
-        for (const [key, meta] of Object.entries(OAuth2Scopes)) {
+        for (const [, meta] of Object.entries(OAuth2Scopes)) {
             expect(meta.description).toBeTruthy();
             expect(typeof meta.description).toBe("string");
         }
     });
 
     it("each scope has adminOnly boolean", () => {
-        for (const [key, meta] of Object.entries(OAuth2Scopes)) {
+        for (const [, meta] of Object.entries(OAuth2Scopes)) {
             expect(typeof meta.adminOnly).toBe("boolean");
         }
     });
 
     it("each scope has sensitive boolean", () => {
-        for (const [key, meta] of Object.entries(OAuth2Scopes)) {
+        for (const [, meta] of Object.entries(OAuth2Scopes)) {
             expect(typeof meta.sensitive).toBe("boolean");
         }
     });

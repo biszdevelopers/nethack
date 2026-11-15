@@ -23,7 +23,7 @@ useHead({
             <div
                 class="relative z-10 mx-auto flex min-h-[82vh] max-w-7xl flex-col justify-end px-6 py-16 sm:px-10 lg:px-16 lg:py-24"
             >
-                <div class="mb-auto flex items-center justify-between gap-4 pt-4"></div>
+                <div class="mb-auto flex items-center justify-between gap-4 pt-4" />
 
                 <div class="max-w-4xl">
                     <h1

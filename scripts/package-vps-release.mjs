@@ -60,7 +60,7 @@ const rewrittenImports = await relocateServerImports({
 });
 await mkdir(resolve(releaseRoot, ".output/tools"), { recursive: true });
 
-const buildOutput = await Bun.build({
+const buildOutput = await globalThis.Bun.build({
     entrypoints: [
         resolve(projectRoot, "scripts/db-migrate.ts"),
         resolve(projectRoot, "scripts/export-hackathon.ts"),

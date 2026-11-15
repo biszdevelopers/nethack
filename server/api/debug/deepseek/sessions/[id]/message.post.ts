@@ -258,7 +258,7 @@ export default defineEventHandler(
             event,
             DeepSeekSessionIdParams.parse,
         );
-        const { message, role, toolCallId, toolResult } = await readValidatedBody(
+        const { message, role, toolCallId } = await readValidatedBody(
             event,
             SendMessageRequest.parse,
         );
@@ -272,8 +272,6 @@ export default defineEventHandler(
                     statusMessage: "Session not found",
                 });
             }
-
-            const messages = getMessages(sessionId);
 
             // Handle user message or tool result
             if (role === "user") {
@@ -316,9 +314,6 @@ export default defineEventHandler(
                         tool_call_id: tc.id,
                         content: result,
                     } as any);
-
-                    const allMessages = getMessages(sessionId);
-                    //g(allMessages)
                 }
 
                 // Get updated messages and process again
@@ -327,7 +322,6 @@ export default defineEventHandler(
                 result = await processToolCalls(sessionId, allMessages, user);
             }
 
-            const finalSession = getDeepSeekSession(sessionId);
             const finalMessages = getMessages(sessionId);
 
             if (end) {

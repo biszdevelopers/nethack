@@ -90,7 +90,7 @@ describe("basis-auth authorization-code flow", () => {
         ["BASIS_AUTH_CLIENT_ID", "clientId"],
         ["BASIS_AUTH_CLIENT_SECRET", "clientSecret"],
     ])("requires %s", (environmentKey, configKey) => {
-        delete process.env[environmentKey];
+        Reflect.deleteProperty(process.env, environmentKey);
 
         expect(() => getBasisAuthConfig()).toThrow(
             `Missing basis-auth configuration: ${configKey}`,
@@ -194,7 +194,7 @@ describe("basis-auth authorization-code flow", () => {
         } finally {
             for (const key of environmentKeys) {
                 const value = originalEnvironment[key];
-                if (value === undefined) delete process.env[key];
+                if (value === undefined) Reflect.deleteProperty(process.env, key);
                 else process.env[key] = value;
             }
             process.env.BASIS_AUTH_ISSUER = "https://auth.example.test/";

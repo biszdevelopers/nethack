@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getTableName } from "drizzle-orm";
-import * as schema from "~~/server/database/schema";
+import type * as schema from "~~/server/database/schema";
 import { snapshotDatabaseExport } from "~~/server/utils/database-export";
 
 const leakedJudgeId = "judge-id-must-not-appear";

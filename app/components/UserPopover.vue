@@ -73,7 +73,7 @@
                             <UButton
                                 color="neutral"
                                 variant="ghost"
-                                :to="`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(hoveredUser.email)}`"
+                                :to="`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(hoveredUser.email ?? '')}`"
                                 target="_blank"
                                 class="w-full justify-start gap-2"
                                 aria-label="Chat on Teams"

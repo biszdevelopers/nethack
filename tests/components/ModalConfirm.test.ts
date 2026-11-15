@@ -15,7 +15,7 @@ describe("ModalConfirm.vue", () => {
     });
 
     it("declares an open model with defineModel", () => {
-        expect(source).toContain('defineModel("open"');
+        expect(source).toContain('defineModel<boolean>("open"');
     });
 
     it("has a default open value of false", () => {
@@ -33,16 +33,16 @@ describe("ModalConfirm.vue", () => {
 
     it("renders a color prop with default 'primary'", () => {
         expect(source).toContain("color:");
-        expect(source).toContain('default: "primary"');
+        expect(source).toContain('color: "primary"');
     });
 
     it("renders a colorSecond prop with default 'neutral'", () => {
         expect(source).toContain("colorSecond:");
-        expect(source).toContain('default: "neutral"');
+        expect(source).toContain('colorSecond: "neutral"');
     });
 
     it("provides a default click function that does nothing", () => {
-        expect(source).toContain("default: () => {}");
+        expect(source).toContain("click: () => {}");
     });
 
     it("uses UModal as the wrapper component", () => {

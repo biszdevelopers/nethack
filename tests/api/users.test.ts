@@ -125,7 +125,6 @@ describe("GET /api/users/:id", () => {
         mockParams.values["id"] = "9999";
 
         // getUser returns null → 404
-        const { requirePermission } = await import("~~/server/utils/auth");
 
         await expect(getHandler(createEvent())).rejects.toMatchObject({
             statusCode: 404,
@@ -486,6 +485,28 @@ describe("DELETE /api/users", () => {
 
         const updatedTeam = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get()!;
         expect(updatedTeam.score).toBe(0);
+    });
+
+    it("skips season recomputation for legacy scores without a season", async () => {
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
+        const judge = seedUser(ctx, { email: "legacy-judge@basischina.com", role: "judge" });
+        const team = seedTeam(ctx, { project_submitted: 1 });
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: team.id,
+                judge_user_id: judge.id,
+                scores: JSON.stringify({ originality: 5 }),
+                reasoning: "Imported score without a season",
+                season_id: null,
+            } as any)
+            .run();
+        mockBody.value = { ids: [judge.id] };
+
+        await expect(deleteHandler(createEvent())).resolves.toEqual({
+            message: "Deleted 1 user(s)",
+        });
+        expect(ctx.drizzle.select().from(teamScores).all()).toHaveLength(0);
     });
 
     it("deletes users by IDs", async () => {

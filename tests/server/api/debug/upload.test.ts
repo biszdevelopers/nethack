@@ -39,6 +39,6 @@ describe("debug upload endpoint", () => {
     it("whitelists passive file extensions and rejects active SVG content", () => {
         expect(parserSource).toContain("ALLOWED_EXTENSIONS");
         expect(parserSource).toContain("ALLOWED_EXTENSIONS.has(extension)");
-        expect(parserSource).not.toMatch(/\"\.svg\"/);
+        expect(parserSource).not.toMatch(/"\.svg"/);
     });
 });

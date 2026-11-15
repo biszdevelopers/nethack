@@ -50,7 +50,7 @@ describe("test metadata stream processor", () => {
     });
 
     it("prefers the passed-test count when the report includes it", async () => {
-        const log = vi.spyOn(console, "log").mockImplementation(() => {});
+        vi.spyOn(console, "log").mockImplementation(() => {});
         fsMocks.writeFileSync.mockClear();
 
         await run([

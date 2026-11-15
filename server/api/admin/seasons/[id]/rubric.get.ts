@@ -1,5 +1,5 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { asc, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam } from "~~/shared/schemas";

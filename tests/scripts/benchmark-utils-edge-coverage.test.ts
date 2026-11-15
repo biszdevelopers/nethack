@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { maximum, sampleAtInterval } from "../../scripts/benchmark-utils.mjs";
 
 describe("benchmark utility edge cases", () => {

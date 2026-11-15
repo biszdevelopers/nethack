@@ -181,9 +181,7 @@ describe("PATCH /api/users/:id", () => {
 
     it("allows an authenticated profile request above the general API limit", async () => {
         const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
-        const body = Buffer.from(
-            `{\"name\":\"Alice Updated\",\"padding\":\"${"x".repeat(1024 * 1024)}\"}`,
-        );
+        const body = Buffer.from(`{"name":"Alice Updated","padding":"${"x".repeat(1024 * 1024)}"}`);
         const event = createProfileRequest(body);
         mockParams.values["id"] = String(alice.id);
         mockSession.value = { user: { id: alice.id } };

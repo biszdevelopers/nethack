@@ -45,7 +45,6 @@ beforeEach(async () => {
 });
 
 declare global {
-    // eslint-disable-next-line no-var
     var __adminEvent: any;
 }
 

@@ -63,20 +63,20 @@ async function triggerAutosave() {
         await apiFetch(`/api/teams/${defaultTeam.id}`, {
             method: "PATCH",
             body: {
-                name: state.name,
-                pathway: state.pathway,
+                name: formState.name,
+                pathway: formState.pathway,
                 project: {
-                    name: state.project.name,
-                    description: state.project.description,
-                    demo_url: state.project.demo_url || null,
-                    repo_url: state.project.repo_url || null,
-                    sourcing: state.project.sourcing,
+                    name: formState.project.name,
+                    description: formState.project.description,
+                    demo_url: formState.project.demo_url || null,
+                    repo_url: formState.project.repo_url || null,
+                    sourcing: formState.project.sourcing,
                 },
             },
         });
         dirty.value = false;
         autosaveStatus.value = `Auto-saved at ${new Date().toLocaleTimeString()}`;
-    } catch (e) {
+    } catch {
         autosaveStatus.value = "Auto-save failed";
     }
 }
@@ -93,7 +93,7 @@ onUnmounted(() => {
     }
 });
 
-const state = reactive({
+const formState = reactive({
     name: "",
     pathway: "" as TeamPathway,
     project: {
@@ -105,6 +105,13 @@ const state = reactive({
     },
 });
 
+const pathway = computed<TeamPathway>({
+    get: () => formState.pathway,
+    set: (value) => {
+        formState.pathway = value;
+    },
+});
+
 let suppressDirty = false;
 
 watch(
@@ -112,20 +119,20 @@ watch(
     (value) => {
         if (!value) return;
         suppressDirty = true;
-        state.name = value.name;
-        state.pathway = value.pathway || pathwayOptions.value[0]?.value || "";
-        state.project.name = value.project.name;
-        state.project.description = value.project.description;
-        state.project.repo_url = value.project.repo_url || "";
-        state.project.demo_url = value.project.demo_url || "";
-        state.project.sourcing = value.project.sourcing || "";
+        formState.name = value.name;
+        formState.pathway = value.pathway || pathwayOptions.value[0]?.value || "";
+        formState.project.name = value.project.name;
+        formState.project.description = value.project.description;
+        formState.project.repo_url = value.project.repo_url || "";
+        formState.project.demo_url = value.project.demo_url || "";
+        formState.project.sourcing = value.project.sourcing || "";
         dirty.value = false;
     },
     { deep: true, immediate: true },
 );
 
 watch(
-    state,
+    formState,
     () => {
         if (suppressDirty) {
             suppressDirty = false;
@@ -139,9 +146,9 @@ watch(
 watch(
     pathwayOptions,
     (options) => {
-        if (!state.pathway && options.length > 0) {
+        if (!formState.pathway && options.length > 0) {
             suppressDirty = true;
-            state.pathway = options[0]!.value;
+            formState.pathway = options[0]!.value;
         }
     },
     { immediate: true },
@@ -178,13 +185,12 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
                 return;
             }
             if (!isSubmit) {
-                // @ts-ignore i dont know
-                res = await apiFetch(`/api/teams/${defaultTeam.id}`, {
+                res = await apiFetch<{ message: string }>(`/api/teams/${defaultTeam.id}`, {
                     method: "PATCH",
                     body: payload,
                 });
             } else {
-                res = await apiFetch(`/api/teams/${defaultTeam.id}/submit`, {
+                res = await apiFetch<{ message: string }>(`/api/teams/${defaultTeam.id}/submit`, {
                     method: "POST",
                     body: payload,
                 });
@@ -219,7 +225,7 @@ async function confirmSubmit() {
 <template>
     <UForm
         ref="formRef"
-        :state="state"
+        :state="formState"
         :schema="intent === 'save' ? UpdateTeamRequest : SubmitTeamRequest"
         :disabled="disabled"
         class="w-full space-y-4 mb-4"
@@ -227,7 +233,7 @@ async function confirmSubmit() {
     >
         <UFormField name="project.name" label="Project name" help="Make it sound even cooler!">
             <UInput
-                v-model="state.project.name"
+                v-model="formState.project.name"
                 class="min-h-11 w-full"
                 :maxlength="MAX_PROJECT_NAME_LENGTH"
             />
@@ -235,7 +241,7 @@ async function confirmSubmit() {
 
         <UFormField name="project.description" label="Project description">
             <UTextarea
-                v-model="state.project.description"
+                v-model="formState.project.description"
                 :rows="10"
                 class="w-full"
                 :maxlength="MAX_PROJECT_DESCRIPTION_LENGTH"
@@ -256,7 +262,7 @@ async function confirmSubmit() {
             help="Describe any AI tools you used and for which parts of the project. The rules require a comprehensive disclosure."
         >
             <UTextarea
-                v-model="state.project.sourcing"
+                v-model="formState.project.sourcing"
                 :rows="4"
                 class="w-full"
                 :maxlength="MAX_PROJECT_SOURCE_LENGTH"
@@ -265,7 +271,7 @@ async function confirmSubmit() {
 
         <UFormField name="project.demo_url" label="Demo URL">
             <UInput
-                v-model="state.project.demo_url"
+                v-model="formState.project.demo_url"
                 class="min-h-11 w-full"
                 :maxlength="MAX_URL_LENGTH"
             />
@@ -278,7 +284,7 @@ async function confirmSubmit() {
 
         <UFormField name="project.repo_url" label="Repository URL">
             <UInput
-                v-model="state.project.repo_url"
+                v-model="formState.project.repo_url"
                 class="min-h-11 w-full"
                 :maxlength="MAX_URL_LENGTH"
             />
@@ -306,7 +312,7 @@ async function confirmSubmit() {
 
         <UFormField name="pathway" label="Pathway">
             <URadioGroup
-                v-model="state.pathway"
+                v-model="pathway"
                 :items="pathwayOptions"
                 :disabled="disabled || rubricPending || pathwayOptions.length === 0"
                 class="min-h-11"

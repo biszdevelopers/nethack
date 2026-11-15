@@ -56,6 +56,7 @@ export async function createImportSmokeDatabase(
             if (/already exists/i.test(error?.message ?? "")) {
                 throw new Error(
                     `Output SQLite fixture already exists: ${resolvedOutputPath}. Remove it before recreating the fixture.`,
+                    { cause: error },
                 );
             }
             throw error;

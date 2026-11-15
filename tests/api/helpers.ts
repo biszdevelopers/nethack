@@ -170,12 +170,9 @@ export async function createTestContext(): Promise<TestContext> {
     sqlite.exec(initSQL);
     sqlite.exec(migrationSQL);
     const drizzleDb = await createDrizzle(sqlite);
-    let testDb: any;
-
-    // PostgreSQL transactions are asynchronous. Preserve the production
-    // callback shape in the legacy SQLite unit-test harness while keeping the
-    // underlying in-memory database transaction open until the callback ends.
-    testDb = new Proxy(drizzleDb as any, {
+    // PostgreSQL transactions are asynchronous; preserve the production
+    // callback shape while keeping the SQLite transaction open.
+    const testDb: any = new Proxy(drizzleDb as any, {
         get(target, property) {
             if (property === "transaction") {
                 return async (callback: (tx: unknown) => unknown) => {

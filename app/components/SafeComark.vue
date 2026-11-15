@@ -9,7 +9,7 @@ const slots = useSlots();
 const getNodeText = (node: VNode): string => {
     if (typeof node.children === "string") return node.children;
     if (Array.isArray(node.children)) {
-        return node.children.map((child) => getNodeText(child)).join("");
+        return node.children.map((child) => getNodeText(child as VNode)).join("");
     }
     return "";
 };

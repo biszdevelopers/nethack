@@ -257,7 +257,7 @@ function fakeDatabase() {
             from(table: unknown) {
                 return {
                     where(condition: unknown) {
-                        const query = dialect.sqlToQuery(condition as never);
+                        dialect.sqlToQuery(condition as never);
                         if (table !== users && table !== oauth2Applications) {
                             throw new Error("Unexpected table in asset reference query");
                         }

@@ -53,7 +53,7 @@ describe("useApiFetch", () => {
         const { useApiFetch } = await import("~~/app/composables/useApiFetch");
         const requestFetch = vi.fn();
 
-        const result = useApiFetch<{ value: number }>("/api/private", {
+        useApiFetch<{ value: number }>("/api/private", {
             $fetch: requestFetch,
             server: false,
         });

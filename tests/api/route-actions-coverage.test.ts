@@ -1,13 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NethackPermissions } from "~~/shared/permissions";
 import { DEFAULT_JUDGE_COMMENT_GUIDANCE } from "~~/shared/judge-comments";
-import {
-    mockBody,
-    mockParams,
-    mockQueryState,
-    resetMockState,
-    setupNitroGlobals,
-} from "~~/tests/api/helpers";
+import { mockBody, mockQueryState, resetMockState, setupNitroGlobals } from "~~/tests/api/helpers";
 
 const mocks = vi.hoisted(() => ({
     revokeBasisAuthToken: vi.fn(),

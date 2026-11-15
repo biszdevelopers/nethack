@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { DrizzleDatabase } from "~~/server/database";
 import { seedDefaultSeasonAndRubrics, seedHackathon } from "~~/server/database/migrate";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
-import { hackathon, rubricTemplates, rubricVersions, seasons } from "~~/server/database/schema";
+import type { seasons } from "~~/server/database/schema";
+import { hackathon, rubricTemplates, rubricVersions } from "~~/server/database/schema";
 
 type Table = typeof hackathon | typeof rubricTemplates | typeof rubricVersions | typeof seasons;
 type Row = Record<string, any>;

@@ -71,8 +71,6 @@ describe("SQLite import fixture database generator", () => {
     it("loads bun:sqlite through an injected module loader without opening a real database", async () => {
         let requestedModule;
         class FakeDatabase {
-            constructor() {}
-
             exec() {}
 
             close() {}

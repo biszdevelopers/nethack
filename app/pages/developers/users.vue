@@ -28,7 +28,10 @@ const columnFilters = ref([
 const columnVisibility = ref();
 const rowSelection = ref<Record<string, boolean>>({});
 
-type AdminUser = User & { past_team_ids: string | null; is_admin: boolean };
+type AdminUser = Omit<User, "is_admin"> & {
+    past_team_ids: string | null;
+    is_admin: boolean;
+};
 
 const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
     server: false,
@@ -287,7 +290,7 @@ const paginationOptions = {
                         variant="subtle"
                         icon="i-lucide-trash"
                         @click="modalOpen = true"
-                    ></UButton>
+                    />
 
                     <UDropdownMenu :items="displayColumnItems" :content="{ align: 'end' }">
                         <UButton

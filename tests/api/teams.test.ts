@@ -174,7 +174,8 @@ describe("GET /api/teams", () => {
         const otherJudge = seedUser(ctx, { email: "other-judge@basischina.com", role: "judge" });
         const firstTeam = seedTeam(ctx, { name: "First", project_submitted: 1 });
         const secondTeam = seedTeam(ctx, { name: "Second", project_submitted: 1 });
-        const thirdTeam = seedTeam(ctx, { name: "Third", project_submitted: 1 });
+        seedTeam(ctx, { name: "Third", project_submitted: 1 });
+
         ctx.drizzle.update(hackathon).set({ status: "voting" }).where(eq(hackathon.id, 1)).run();
         ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
         ctx.drizzle
@@ -907,7 +908,7 @@ describe("GET /api/teams/:id/users", () => {
         // The default active season (id=1) becomes inactive so we can create a
         // new active season; the legacy team belongs to the now-inactive season.
         ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
-        const newSeason = seedSeason(ctx, { name: "New Season", is_active: 1 });
+        seedSeason(ctx, { name: "New Season", is_active: 1 });
 
         const team = seedTeam(ctx, { name: "Legacy Team", season_id: 1 });
         const alice = seedUser(ctx, {

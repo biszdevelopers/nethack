@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-    CreateTeamQuery,
     GetTeamsQuery,
     CreateTeamRequest,
     UpdateTeamRequest,
@@ -32,9 +31,7 @@ import {
     ZeroToFive,
     ScoreValues,
     MAX_USER_NAME_LENGTH,
-    MAX_PROJECT_DESCRIPTION_LENGTH,
     MAX_PROJECT_SOURCE_LENGTH,
-    MAX_REASONING_LENGTH,
 } from "~~/shared/schemas";
 
 describe("CreateTeamRequest", () => {

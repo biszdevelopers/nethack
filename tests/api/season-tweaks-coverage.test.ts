@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockBody, mockParams, resetMockState, setupNitroGlobals } from "./helpers";
-import { UpdateSeasonTweaksRequest } from "~~/shared/schemas";
+
 import { NethackPermissions } from "~~/shared/permissions";
 
 let patchTweaksHandler: (event: unknown) => Promise<unknown>;

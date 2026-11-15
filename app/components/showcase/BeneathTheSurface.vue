@@ -96,7 +96,7 @@ const winners = computed(() => {
 });
 
 const root = ref<HTMLElement | null>(null);
-let media: { revert: () => void } | null = null;
+let media: { add: (...args: any[]) => void; revert: () => void } | null = null;
 let disposed = false;
 
 const pathwayLabel = (pathway: WinnerConfig["pathway"]) =>
@@ -104,14 +104,6 @@ const pathwayLabel = (pathway: WinnerConfig["pathway"]) =>
 
 const rankLabel = (rank: WinnerConfig["rank"]) =>
     rank === 1 ? "First place" : rank === 2 ? "Second place" : "Third place";
-
-const scrollToWinners = () => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document.querySelector("#winner-50")?.scrollIntoView({
-        behavior: reduceMotion ? "auto" : "smooth",
-        block: "start",
-    });
-};
 
 onMounted(async () => {
     const [{ gsap }, { ScrollTrigger }] = await Promise.all([
@@ -134,7 +126,7 @@ onMounted(async () => {
             isDesktop: "(min-width: 900px)",
             reduceMotion: "(prefers-reduced-motion: reduce)",
         },
-        (context) => {
+        (context: { conditions?: unknown }) => {
             const { isDesktop, reduceMotion } = context.conditions as {
                 isDesktop: boolean;
                 reduceMotion: boolean;

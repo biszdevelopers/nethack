@@ -33,7 +33,9 @@
         "db:import-sqlite:check": "bun scripts/import-sqlite-to-postgres.mjs --check-only",
         "benchmark:start": "node scripts/benchmark-startup.mjs",
         "benchmark:vps": "node scripts/benchmark-vps.mjs",
-        "db:studio": "drizzle-kit studio"
+        "db:studio": "drizzle-kit studio",
+        "lint": "eslint app server shared tests e2e scripts",
+        "typecheck": "nuxt typecheck"
     },
     "dependencies": {
         "@comark/vue": "^0.9.2",
@@ -104,7 +106,8 @@
         "cross-env": "^10.1.0",
         "drizzle-kit": "^0.31.11",
         "oxfmt": "^0.78.0",
-        "vitest": "^5.1.0"
+        "vitest": "^5.1.0",
+        "vue-tsc": "^3.3.14"
     },
     "patchedDependencies": {
         "@rollup/plugin-node-resolve@16.0.3": "patches/@rollup%2Fplugin-node-resolve@16.0.3.patch"

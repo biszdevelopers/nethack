@@ -1,6 +1,5 @@
-import { constants, lstatSync, realpathSync } from "node:fs";
+import { constants, lstatSync, realpathSync, createWriteStream } from "node:fs";
 import { link, lstat, mkdir, opendir, open, readdir, rename, rm } from "node:fs/promises";
-import { createWriteStream } from "node:fs";
 import {
     basename as fsBasename,
     dirname,
@@ -619,16 +618,12 @@ async function selectFairWindow(
     limit: number,
     isEligible: (name: string) => boolean,
     maxEntries: number,
-): { names: string[]; entriesVisited: number } {
+): Promise<{ names: string[]; entriesVisited: number }> {
     if (limit < 1 || maxEntries < 1) return { names: [], entriesVisited: 0 };
     const lastName = cursors.get(cursorKey);
-    let { names, cursorFound, entriesVisited, lastVisited } = await collectDirectoryWindow(
-        directory,
-        lastName,
-        limit,
-        maxEntries,
-        isEligible,
-    );
+    const window = await collectDirectoryWindow(directory, lastName, limit, maxEntries, isEligible);
+    const { names, cursorFound } = window;
+    let { entriesVisited, lastVisited } = window;
     if (!cursorFound) {
         cursors.delete(cursorKey);
         return { names: [], entriesVisited };
@@ -732,6 +727,7 @@ export async function collectOrphanProfileAssets(
         const id =
             stageMatch?.[0].slice(0, -".tmp".length) ??
             uploadMatch?.[0].slice(".upload-".length, -".tmp".length) ??
+            // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
             leaseMatch?.[0].slice(".lease-".length, -".tmp".length)!;
         const leaseName = `.staging/.lease-${id}.tmp`;
         if (await isAssetLeaseActive(collection, leaseName, now)) continue;
@@ -785,6 +781,7 @@ export async function collectOrphanProfileAssets(
             // patterns used to select these candidates.
             const id =
                 tempMatch?.[0].slice(".profile-".length, -".tmp".length) ??
+                // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
                 leaseMatch?.[0].slice(".profile-".length, -".lease".length)!;
             const leaseName = `profiles/.profile-${id}.lease`;
             if (await isAssetLeaseActive("userassets", leaseName, now)) continue;

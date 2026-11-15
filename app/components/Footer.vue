@@ -5,7 +5,7 @@
         <template #left>
             <div class="w-full flex flex-col gap-2">
                 <p class="text-muted text-xs inline-flex items-baseline gap-1">
-                    <UIcon name="i-lucide-copyright"></UIcon>
+                    <UIcon name="i-lucide-copyright" />
                     {{ new Date().getFullYear() }} BISZ Developers' Club, BINJ Hack Club
                 </p>
                 <ULink class="text-xs inline-flex items-center" to="/contributing" target="_blank">
@@ -251,7 +251,7 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { NethackPermissions } from "~~/shared/permissions";
 
-const { data: user, status } = await useApiUser({ lazy: true });
+const { status } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
 
 const isAdmin = computed(() => {

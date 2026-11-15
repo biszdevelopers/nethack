@@ -43,8 +43,7 @@ describe("nuxt production performance defaults", () => {
         expect(config.vite?.build?.target).toBe("es2020");
     });
 
-    it("configures @nuxt/fonts with display swap and preload", () => {
-        expect(config.fonts?.defaults?.display).toBe("swap");
+    it("configures @nuxt/fonts with preload and CSS variables", () => {
         expect(config.fonts?.defaults?.preload).toBe(true);
         expect(config.fonts?.processCSSVariables).toBe(true);
     });

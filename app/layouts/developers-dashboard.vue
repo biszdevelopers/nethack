@@ -75,8 +75,8 @@ const name = computed(() => user.value?.name || "Log In");
                         <span class="text-secondary bold">devs</span>
                     </ULink>
                     <UButton
-                        variant="ghost"
                         v-else-if="collapsed"
+                        variant="ghost"
                         class="bold glow text-primary mx-auto"
                         @click="() => void navigateTo('/')"
                     >
@@ -116,12 +116,12 @@ const name = computed(() => user.value?.name || "Log In");
                     color="neutral"
                     variant="ghost"
                     class="w-full"
-                    @click="() => void navigateTo('/profile')"
                     :block="collapsed"
+                    @click="() => void navigateTo('/profile')"
                 />
             </template>
         </UDashboardSidebar>
 
-        <slot></slot>
+        <slot />
     </UDashboardGroup>
 </template>

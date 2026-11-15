@@ -35,7 +35,7 @@ export default defineEventHandler(
 
         // Removed evaluations must not keep contributing to published scores/ranks.
         for (const { season_id } of affectedSeasons) {
-            await calculateSeasonScores(event, season_id, true);
+            if (season_id !== null) await calculateSeasonScores(event, season_id, true);
         }
 
         return { message: `Deleted ${body.ids.length} user(s)` };

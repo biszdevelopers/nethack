@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-    DEFAULT_RUBRIC_DEFINITION,
-    withDefaultRubricCommentGuidance,
-    type RubricDefinition,
-} from "~~/shared/rubric";
+import { DEFAULT_RUBRIC_DEFINITION, type RubricDefinition } from "~~/shared/rubric";
 import { createMockEvent } from "./helpers";
 
 const liveConfig = vi.hoisted(() => ({
@@ -40,7 +36,7 @@ const definition: RubricDefinition = {
         },
     },
 };
-const processed = withDefaultRubricCommentGuidance(definition);
+
 const liveRubric = { name: "Live rubric", ...definition };
 
 describe("live manifest rubric materialization", () => {

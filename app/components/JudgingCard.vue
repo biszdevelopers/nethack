@@ -52,7 +52,10 @@ const criteriaComplete = computed(() =>
     props.track.criteria.every((criterion) => {
         const value = props.scores[criterion.id];
         return (
-            Number.isInteger(value) && value >= criterion.minScore && value <= criterion.maxScore
+            typeof value === "number" &&
+            Number.isInteger(value) &&
+            value >= criterion.minScore &&
+            value <= criterion.maxScore
         );
     }),
 );
@@ -222,7 +225,7 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                                 :checked="scores[criterion.id] === score"
                                 :aria-label="`${score} of ${criterion.maxScore} for ${criterion.name}`"
                                 @change="setScore(criterion.id, score)"
-                            >
+                            />
                             <span aria-hidden="true">{{ score }}</span>
                         </label>
                     </div>
@@ -247,7 +250,7 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                             "
                             :disabled="readOnly || !draftReady || draftStatus === 'loading'"
                             @input="updateRangeScore(criterion.id, $event)"
-                        >
+                        />
                         <output
                             class="min-w-14 rounded-lg border border-default px-3 py-2 text-center font-semibold tabular-nums"
                             :for="`score-${team.id}-${criterion.id}`"

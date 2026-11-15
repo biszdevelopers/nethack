@@ -5,7 +5,6 @@ import {
     resetMockState,
     setupNitroGlobals,
     mockBody,
-    mockParams,
     seedHackathon,
     seedSeason,
     seedUser,
@@ -251,7 +250,7 @@ describe("GET /api/ballot", () => {
             pathway: "junior",
             season_id: season.id,
         });
-        const anotherTeam = seedTeam(ctx, {
+        seedTeam(ctx, {
             name: "Another Team",
             project_submitted: 1,
             pathway: "junior",

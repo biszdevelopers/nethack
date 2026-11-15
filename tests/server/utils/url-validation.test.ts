@@ -420,7 +420,11 @@ describe("fetchExternalHtml", () => {
         const options = fetchMock.mock.calls[0]![1] as {
             agent: {
                 options: {
-                    lookup: (hostname: string, options: object, callback: Function) => void;
+                    lookup: (
+                        hostname: string,
+                        options: object,
+                        callback: (...args: unknown[]) => void,
+                    ) => void;
                 };
             };
         };
@@ -457,7 +461,11 @@ describe("fetchExternalHtml", () => {
         const options = fetchMock.mock.calls[0]![1] as {
             agent: {
                 options: {
-                    lookup: (hostname: string, options: object, callback: Function) => void;
+                    lookup: (
+                        hostname: string,
+                        options: object,
+                        callback: (...args: unknown[]) => void,
+                    ) => void;
                 };
             };
         };

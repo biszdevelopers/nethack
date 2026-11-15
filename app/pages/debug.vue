@@ -279,7 +279,7 @@ definePageMeta({
     middleware: ["auth"],
 });
 
-const { user: me } = await useApiUser();
+await useApiUser();
 const { can } = useNethackPermissions();
 if (!can(NethackPermissions.all)) {
     throw await navigateTo("/");
@@ -433,9 +433,8 @@ const sendMessage = async (sessionId: number) => {
 
         // Update session with new messages
         const sessionIndex = sessions.value.findIndex((s) => s.id === sessionId);
-        if (sessionIndex != -1) {
-            sessions.value[sessionIndex].messages = response.allMessages;
-        }
+        const targetSession = sessions.value[sessionIndex];
+        if (targetSession) targetSession.messages = response.allMessages;
 
         sessionMessages.value[sessionId] = "";
     } catch (err: any) {
@@ -454,7 +453,7 @@ const deleteSession = async (sessionId: number) => {
         });
 
         sessions.value = sessions.value.filter((s) => s.id !== sessionId);
-        delete sessionMessages.value[sessionId];
+        Reflect.deleteProperty(sessionMessages.value, sessionId);
     } catch (err: any) {
         error.value = `Failed to delete session: ${err.message || "Unknown error"}`;
     } finally {

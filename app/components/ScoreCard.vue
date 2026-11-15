@@ -48,7 +48,7 @@
                         <div
                             class="flex flex-row items-center gap-2 rounded-lg bg-background/80 px-4 py-2 shadow-sm backdrop-blur-sm text-muted"
                         >
-                            <UIcon name="i-lucide-x"></UIcon>
+                            <UIcon name="i-lucide-x" />
                             <span>Not available</span>
                         </div>
                     </div>
@@ -81,7 +81,7 @@
                 />
                 <div class="flex flex-row gap-2">
                     <div v-for="award in team.awards" :key="award.namespace">
-                        <AwardButton :award="award" size="md"></AwardButton>
+                        <AwardButton :award="award" size="md" />
                     </div>
                 </div>
             </div>
@@ -90,7 +90,7 @@
             <div class="flex flex-col gap-2">
                 <UModal :title="team.name">
                     <UButton variant="link" class="min-h-11 text-xs">
-                        <UIcon name="i-lucide-file" class="text-xs"></UIcon>
+                        <UIcon name="i-lucide-file" class="text-xs" />
                         See Project Details
                     </UButton>
                     <template #body>
@@ -102,9 +102,9 @@
                     :to="`/seasons/${team.season_id}`"
                     class="inline-flex min-h-11 items-center gap-1 text-xs"
                 >
-                    <UIcon name="i-lucide-calendar" class="text-xs"></UIcon>
+                    <UIcon name="i-lucide-calendar" class="text-xs" />
                     See Season Details
-                    <UIcon name="i-lucide-arrow-right" class="text-xs"></UIcon>
+                    <UIcon name="i-lucide-arrow-right" class="text-xs" />
                 </ULink>
             </div>
         </template>
@@ -124,7 +124,7 @@ const seasonMeta = computed(() => {
     return {
         name: s?.name ?? `Season ${props.team.season_id}`,
         date: null,
-        resultsPublished: s?.results_published === 1 || s?.results_published === true,
+        resultsPublished: Boolean(s?.results_published),
     };
 });
 

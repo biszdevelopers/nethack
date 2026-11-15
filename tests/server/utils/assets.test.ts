@@ -452,7 +452,7 @@ describe("asset helpers", () => {
                 createAsset("race.txt", Buffer.from("recreated")),
             ]);
 
-            const data = await readdir(assetsDir);
+            await readdir(assetsDir);
             // At least one of the operations should have succeeded meaning the file may or may not exist
             // Both operations shouldn't throw
             expect(true).toBe(true);

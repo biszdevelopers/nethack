@@ -626,10 +626,6 @@ export async function ensureEmptyTarget(
     return existingUser ? { ...seedPlan, existingUser } : seedPlan;
 }
 
-// This map is assigned after opening SQLite so target compatibility checks can
-// fail before the PostgreSQL transaction writes any rows.
-const sourceColumnsForTargetCheck = new Map();
-
 /** Peer votes belong to the season they were cast in; SQLite sources predate that column. */
 export function peerVotingSeasonOverrides(seasonId) {
     return () => ({ season_id: seasonId });

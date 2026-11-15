@@ -68,7 +68,7 @@ function addTrack() {
 function removeTrack(trackId: string) {
     const tracks = { ...definition.value.tracks };
     if (Object.keys(tracks).length <= 1) return;
-    delete tracks[trackId];
+    Reflect.deleteProperty(tracks, trackId);
     definition.value = { ...definition.value, tracks };
 }
 
@@ -93,7 +93,7 @@ function addCriterion(trackId: string) {
     if (!track || track.criteria.length >= criterionLimit) return;
     const donor = track.criteria.reduce(
         (best, criterion) => (criterion.weight > best.weight ? criterion : best),
-        track.criteria[0],
+        track.criteria[0]!,
     );
     if (!donor || donor.weight <= 1) return;
 

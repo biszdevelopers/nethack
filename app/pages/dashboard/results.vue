@@ -6,7 +6,7 @@
     <h2 class="text-2xl bold">Current Results</h2>
 
     <div v-if="user?.team" class="mt-4">
-        <ScoreCard v-if="user?.team" :team="user.team"></ScoreCard>
+        <ScoreCard v-if="user?.team" :team="user.team" />
     </div>
     <p v-else class="text-muted">No scores for this season!</p>
 
@@ -18,7 +18,7 @@
         v-if="user?.past_teams?.length && user?.past_teams?.length > 0"
         class="flex flex-col gap-4 mt-4"
     >
-        <ScoreCard v-for="team in user.past_teams!" :key="team.id" :team="team"></ScoreCard>
+        <ScoreCard v-for="team in user.past_teams!" :key="team.id" :team="team" />
     </div>
     <p v-else class="text-muted">No scores for past seasons!</p>
 </template>

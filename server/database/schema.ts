@@ -12,6 +12,7 @@ import {
     primaryKey,
     foreignKey,
     boolean,
+    type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { RubricDefinition } from "../../shared/rubric";
@@ -227,9 +228,12 @@ export const seasons = pgTable(
             .default("original"),
         // The relationship is cyclic with rubric_versions.season_id, but both
         // rows are created in separate statements before the pointer is set.
-        rubric_version_id: integer("rubric_version_id").references(() => rubricVersions.id, {
-            onDelete: "restrict",
-        }),
+        rubric_version_id: integer("rubric_version_id").references(
+            (): AnyPgColumn => rubricVersions.id,
+            {
+                onDelete: "restrict",
+            },
+        ),
     },
     (table) => [
         uniqueIndex("idx_seasons_one_active")

@@ -146,6 +146,8 @@ The custom Nitro error-handler path is normalized to forward slashes in `nuxt.co
 bun run test            # full suite (also generates tests/.test-meta.json)
 bun run test:watch      # watch mode
 bun run test:coverage   # enforce 100% executable source coverage
+bun run lint            # ESLint across app, server, shared, tests, e2e, scripts
+bun run typecheck       # Nuxt/vue-tsc strict type check
 bun run test:e2e:oidc   # protocol and security tests for the isolated test issuer
 bunx playwright install chromium
 bun run build

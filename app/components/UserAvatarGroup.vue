@@ -1,8 +1,8 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
     users: Array<
         | {
-              id?: number | null;
+              id?: number;
               name?: string | null;
               email?: string;
               profile_picture?: string | null;
@@ -12,7 +12,6 @@ const props = defineProps<{
     >;
     size?: "3xs" | "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
     max?: number | string;
-    class?: any;
     ui?: any;
     developerMode?: boolean;
 }>();
@@ -20,7 +19,7 @@ const props = defineProps<{
 
 <template>
     <UPopover mode="hover" class="w-fit">
-        <UAvatarGroup :size="size" :max="max" :class="class" :ui="ui">
+        <UAvatarGroup :size="size" :max="max" :ui="ui">
             <UserAvatar v-for="(user, index) in users" :key="index" :user="user" :size="size" />
         </UAvatarGroup>
 

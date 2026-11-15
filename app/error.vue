@@ -1,3 +1,9 @@
+<script setup lang="ts">
+defineProps<{
+    error?: { statusCode?: number | string; message?: string } | null;
+}>();
+</script>
+
 <template>
     <UApp>
         <NuxtLoadingIndicator />
@@ -97,9 +103,3 @@
         </NuxtLayout>
     </UApp>
 </template>
-
-<script setup lang="ts">
-defineProps({
-    error: Object,
-});
-</script>

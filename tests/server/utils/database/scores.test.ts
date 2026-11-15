@@ -113,7 +113,7 @@ describe("scores database helpers", () => {
                 .prepare("INSERT INTO users(email, role) VALUES('judge2@example.com', 'judge')")
                 .run();
 
-            const scores1 = await createTeamScores(event, {
+            await createTeamScores(event, {
                 team_id: 1,
                 season_id: 42,
                 judge_user_id: 1,
@@ -121,7 +121,7 @@ describe("scores database helpers", () => {
                 reasoning: "Judge 1",
                 rubric_version_id: 1,
             });
-            const scores2 = await createTeamScores(event, {
+            await createTeamScores(event, {
                 team_id: 1,
                 season_id: 42,
                 judge_user_id: 2,

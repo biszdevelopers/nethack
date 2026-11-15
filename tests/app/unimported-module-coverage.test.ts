@@ -27,7 +27,7 @@ describe("application utility modules", () => {
     it("escapes all HTML metacharacters and preserves ordinary text", async () => {
         const { escapeHtml } = await import("~~/app/utils/sanitize");
 
-        expect(escapeHtml(`& < > \" '\nplain`)).toBe("&amp; &lt; &gt; &quot; &#39;\nplain");
+        expect(escapeHtml(`& < > " '\nplain`)).toBe("&amp; &lt; &gt; &quot; &#39;\nplain");
         expect(escapeHtml("")).toBe("");
     });
 

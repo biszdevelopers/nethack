@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useId } from "vue";
-import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
+import { SCORE_CURVE_PRESETS } from "~~/shared/score-curve";
 
 const props = withDefaults(
     defineProps<{

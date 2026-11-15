@@ -37,7 +37,6 @@ export async function testMicrosoftMeeting(token: string, target: string) {
             },
         });
 
-        const nextStatus = nextRes.status;
         const nextData = await nextRes.json();
         const nextValue = nextData.value || [];
         meetings.push(...nextValue);

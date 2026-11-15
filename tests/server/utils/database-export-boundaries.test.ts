@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableName } from "drizzle-orm";
-import * as schema from "~~/server/database/schema";
+import type * as schema from "~~/server/database/schema";
 import { snapshotDatabaseExport } from "~~/server/utils/database-export";
 
 function createDatabase(rowsByTable: Record<string, Record<string, unknown>[]>) {

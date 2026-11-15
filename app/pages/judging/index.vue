@@ -64,7 +64,9 @@ async function openQueue() {
             class="mb-6"
         >
             <template #actions>
-                <UButton variant="outline" class="min-h-11" @click="refresh">Try again</UButton>
+                <UButton variant="outline" class="min-h-11" @click="() => refresh()">
+                    Try again
+                </UButton>
             </template>
         </UAlert>
 

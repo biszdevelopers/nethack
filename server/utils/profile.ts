@@ -82,7 +82,7 @@ export async function fetchBasisAuthPicture(url: string, cacheKey?: string) {
             ?.trim()
             .toLowerCase();
         if (!response.ok || !contentType || !PROVIDER_IMAGE_TYPES.has(contentType)) {
-            response.body?.destroy();
+            (response.body as unknown as { destroy?: () => void } | null)?.destroy?.();
         } else {
             const bytes = Buffer.from(await response.arrayBuffer());
             if (bytes.length > 0) {

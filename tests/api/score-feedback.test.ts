@@ -9,7 +9,6 @@ import {
     seedHackathon,
     seedSeason,
     seedTeam,
-    seedTeamEvaluations,
     seedUser,
     setupNitroGlobals,
     type TestContext,
@@ -305,7 +304,7 @@ describe("GET /api/admin/teams/:id/scores", () => {
     });
 
     it("returns a null judge display name when the stored judge has no name", async () => {
-        const { team, judge } = await seedPublishedEvaluation();
+        const { judge } = await seedPublishedEvaluation();
         ctx.drizzle.update(users).set({ name: null }).where(eq(users.id, judge.id)).run();
         vi.mocked(globalThis.requireUser).mockResolvedValue({ id: 99, role: "admin" } as any);
 

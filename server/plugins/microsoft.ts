@@ -93,7 +93,7 @@ export async function getMSAccessToken() {
 export async function requestMicrosoft(
     endpoint: string,
     method: string = "GET",
-    body: string | Object | null = null,
+    body: string | object | null = null,
     retried: boolean = false,
 ) {
     const res = await fetch("https://graph.microsoft.com/v1.0" + endpoint, {
@@ -119,7 +119,7 @@ export async function requestMicrosoft(
 export async function requestUserMicrosoft(
     endpoint: string,
     method: string = "GET",
-    body: string | Object | null = null,
+    body: string | object | null = null,
     retried: boolean = false,
 ) {
     // Lazily initialize the user access token if missing

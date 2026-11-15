@@ -1,6 +1,5 @@
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile, readdir } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { readdir } from "node:fs/promises";
 
 const COUNTER_MAPS = ["s", "f", "b"];
 const ZERO_COUNTER_ALLOWLIST = new Set([

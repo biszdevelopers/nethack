@@ -132,8 +132,9 @@ export async function createRubricVersion(
                 ? (seasonQuery as any).for("update")
                 : seasonQuery,
         );
+
         if (!season) return null;
-        if (yamlRubric && season.is_active === 1) {
+        if (yamlRubric && (season as { is_active?: number }).is_active === 1) {
             throw createError({
                 statusCode: 409,
                 message: "Edit the rubric section of HACKATHON.yml to change the active rubric.",

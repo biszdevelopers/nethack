@@ -1,8 +1,4 @@
-import {
-    getChatbotWebhookId,
-    getMicrosoftWebhookState,
-    refreshChatbotWebhook,
-} from "~~/server/plugins/microsoft";
+import { getMicrosoftWebhookState, refreshChatbotWebhook } from "~~/server/plugins/microsoft";
 import { readLimitedJsonBody } from "~~/server/utils/limited-json-body";
 import { hasValidMicrosoftWebhookState } from "~~/server/utils/microsoft-webhook-security";
 import {
@@ -44,7 +40,7 @@ export default defineEventHandler(
             });
         }
 
-        const lifecycleEvent = value[0].lifecycleEvent;
+        const lifecycleEvent = value[0]?.lifecycleEvent;
         console.log("[MS Graph] Webhook lifecycle received");
 
         if (lifecycleEvent === "reauthorizationRequired") {

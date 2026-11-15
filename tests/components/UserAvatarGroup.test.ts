@@ -13,7 +13,7 @@ describe("UserAvatarGroup.vue", () => {
     });
 
     it("accepts users with an id field", () => {
-        expect(source).toContain("id?: number | null");
+        expect(source).toContain("id?: number");
     });
 
     it("shows the user id in grayed angle brackets beside the name in developer mode", () => {

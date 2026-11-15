@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { IconifyJSON } from "@iconify/types";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const basisSchemaRoot = resolve(projectRoot, "../basis-schema/src");
@@ -11,7 +12,7 @@ const iconServerBundlePath = resolve(
     projectRoot,
     "node_modules/.cache/basishacks-icon-server-bundle.json",
 );
-let iconServerCollections: unknown[];
+let iconServerCollections: IconifyJSON[];
 try {
     iconServerCollections = JSON.parse(readFileSync(iconServerBundlePath, "utf8"));
 } catch (error) {
@@ -60,7 +61,6 @@ export default defineNuxtConfig({
     fonts: {
         provider: "local",
         defaults: {
-            display: "swap",
             preload: true,
         },
         processCSSVariables: true,

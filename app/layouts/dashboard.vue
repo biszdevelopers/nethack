@@ -100,7 +100,7 @@ const items = ref<NavigationMenuItem[][]>([
                 class="lg:hidden flex gap-1 overflow-x-auto pb-2 -mx-4 px-4"
                 aria-label="Mobile navigation"
             >
-                <template v-for="group in items" :key="group">
+                <template v-for="(group, groupIndex) in items" :key="groupIndex">
                     <template v-for="item in group" :key="item.label">
                         <UBadge
                             v-if="item.to && item.type !== 'label'"

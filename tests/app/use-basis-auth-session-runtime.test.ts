@@ -55,7 +55,7 @@ it("uses the request-scoped fetch for the authenticated user request during SSR"
         error: ref(null),
     };
     const useFetch = vi.fn(
-        async (_url: unknown, options: { $fetch: unknown; transform: unknown }) => fetchResult,
+        async (_url: unknown, _options: { $fetch: unknown; transform: unknown }) => fetchResult,
     );
 
     vi.stubGlobal("useBasisAuthSession", () => ({ user: sessionUser, clear: vi.fn() }));

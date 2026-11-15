@@ -187,7 +187,7 @@ onMounted(() => {
                     />
                 </div>
 
-                <div class="flex gap-3 mt-4"></div>
+                <div class="flex gap-3 mt-4" />
             </UFormField>
         </UForm>
     </div>

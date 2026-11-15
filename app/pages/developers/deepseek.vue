@@ -117,7 +117,7 @@ const deleteSession = async (sessionId: number) => {
         });
 
         sessions.value = sessions.value.filter((s) => s.id !== sessionId);
-        delete sessionMessages.value[sessionId];
+        Reflect.deleteProperty(sessionMessages.value, sessionId);
 
         toast.add({
             title: "Session deleted",

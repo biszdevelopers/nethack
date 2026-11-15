@@ -28,7 +28,7 @@ describe("rubrics", () => {
         });
 
         it("each criterion has abbr, name, description, and weight", () => {
-            for (const [key, criterion] of Object.entries(junior)) {
+            for (const [, criterion] of Object.entries(junior)) {
                 expect(criterion).toHaveProperty("abbr");
                 expect(criterion).toHaveProperty("name");
                 expect(criterion).toHaveProperty("description");
@@ -92,7 +92,7 @@ describe("rubrics", () => {
         });
 
         it("each criterion has abbr, name, description, and weight", () => {
-            for (const [key, criterion] of Object.entries(senior)) {
+            for (const [, criterion] of Object.entries(senior)) {
                 expect(criterion).toHaveProperty("abbr");
                 expect(criterion).toHaveProperty("name");
                 expect(criterion).toHaveProperty("description");

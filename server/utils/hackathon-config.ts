@@ -139,7 +139,7 @@ async function refreshRemote(state: NonNullable<typeof remote>) {
             state.etag = response.headers.get("etag") ?? undefined;
             await writeCachedRemoteConfig(source);
         } else {
-            response.body?.destroy();
+            (response.body as unknown as { destroy?: () => void } | null)?.destroy?.();
         }
     } catch {
         // Keep the last successfully validated configuration during an outage.

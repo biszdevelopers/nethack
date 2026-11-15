@@ -187,6 +187,10 @@ bun run test:watch
 
 # Run tests with coverage
 bun run test:coverage
+
+# Lint and type-check
+bun run lint
+bun run typecheck
 ```
 
 These invoke `vitest run --pool=forks`, which resolves Nuxt's `~~/` and `~/` path aliases via `vitest.config.ts` and runs `tests/setup.ts` to populate in-memory SQLite databases. See the [Testing guide](/guide/testing) for more details on the coverage policy and excluded files.
