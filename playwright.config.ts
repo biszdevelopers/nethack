@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3005";
+const baseURL = process.env.PLAYWRIGHT_BASE_URL;
+if (!baseURL)
+    throw new Error("Set PLAYWRIGHT_BASE_URL in .env to the isolated loopback test origin.");
 
 export default defineConfig({
     testDir: "./e2e/browser",
@@ -26,7 +28,7 @@ export default defineConfig({
             NODE_ENV: "test",
             BASISHACKS_E2E: "1",
             PLAYWRIGHT_BASE_URL: baseURL,
-            DATABASE_URL: process.env.DATABASE_URL || "",
+            DATABASE_URL: process.env.BASISHACKS_E2E_DATABASE_URL || "",
             BASIS_AUTH_COOKIE_SECRET: "browser-e2e-cookie-secret-at-least-32-bytes",
             TRUSTED_PROXY_HOPS: "0",
             DISABLE_DEBUG_ROUTES: "1",

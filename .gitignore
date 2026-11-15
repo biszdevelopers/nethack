@@ -60,6 +60,11 @@ coverage
 .tmp-vitest/
 .tmp-playwright-results/
 .tmp-playwright-report/
+.tmp-playwright-browsers/
+.tmp-vitest-temp/
+.tmp-e2e-postgres/
+.tmp-sqlite-postgres-audit.json
+.tmp-postgres-*.dump
 
 # nyc test coverage
 .nyc_output
@@ -182,8 +187,13 @@ vite.config.ts.timestamp-*
 .vite/
 
 docs
+!server/routes/docs/
+!server/routes/docs/**
 .trae
 .agents
+/artifacts/board-demo/captures/
+/artifacts/board-demo/frames/
+/artifacts/board-demo/.render/
 basishacks.sqlite
 *.sqlite-shm
 *.sqlite-wal
