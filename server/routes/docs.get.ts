@@ -1,10 +1,5 @@
-import { setHeader } from "h3";
-import { readProtectedDocsFile } from "~~/server/utils/protected-docs";
+import { serveProtectedDocsFile } from "~~/server/utils/protected-docs";
 
 export default defineEventHandler(async (event) => {
-    const { body, contentType } = await readProtectedDocsFile(event, "");
-    setHeader(event, "Content-Type", contentType);
-    setHeader(event, "Cache-Control", "private, no-store");
-    setHeader(event, "X-Content-Type-Options", "nosniff");
-    return body;
+    return serveProtectedDocsFile(event, "");
 });

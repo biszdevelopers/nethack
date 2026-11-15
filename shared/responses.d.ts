@@ -133,6 +133,12 @@ interface PublicSeason {
     theme_description: string | null;
 }
 
+interface BoardApprovalResponse {
+    id: number;
+    board_approved_at: Date | null;
+    board_approved_by: number | null;
+}
+
 type CreateTeamResponse = APITeam;
 
 type GetTeamMembersResponse = {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NethackPermissions } from "~~/shared/permissions";
-import { readProtectedDocsFile } from "~~/server/utils/protected-docs";
+import { readProtectedDocsFile, serveProtectedDocsFile } from "~~/server/utils/protected-docs";
 
 const mockedRequireUser = vi.fn();
 let workingDirectory: string;
@@ -59,6 +59,18 @@ describe("private VitePress file serving", () => {
             contentType: "text/javascript; charset=utf-8",
         });
         expect(mockedRequireUser).toHaveBeenCalledTimes(2);
+    });
+
+    it("sets private response headers consistently for protected docs", async () => {
+        const setHeader = vi.fn();
+        const event = { context: {}, node: { res: { setHeader } } } as never;
+
+        const body = await serveProtectedDocsFile(event, "");
+
+        expect(body.toString()).toContain("docs home");
+        expect(setHeader).toHaveBeenCalledWith("Content-Type", "text/html; charset=utf-8");
+        expect(setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store");
+        expect(setHeader).toHaveBeenCalledWith("X-Content-Type-Options", "nosniff");
     });
 
     it.each(["../private.txt", "%2e%2e%2fprivate.txt", "assets\\..\\private.txt"])(

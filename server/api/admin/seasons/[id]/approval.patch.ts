@@ -45,6 +45,7 @@ export default defineEventHandler(
             });
 
         if (!updated) throw createError({ statusCode: 404, message: "Season not found" });
-        return updated;
+        const response: BoardApprovalResponse = updated;
+        return response;
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

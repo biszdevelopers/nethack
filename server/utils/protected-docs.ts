@@ -1,6 +1,6 @@
 import { access, realpath, readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { createError } from "h3";
+import { createError, setHeader } from "h3";
 import type { H3Event } from "h3";
 import { NethackPermissions } from "~~/shared/permissions";
 
@@ -97,4 +97,16 @@ export async function readProtectedDocsFile(
     }
 
     throw createError({ statusCode: 404, message: "Documentation page not found" });
+}
+
+/** Read and send one protected VitePress file with the cache and MIME headers used by every route. */
+export async function serveProtectedDocsFile(
+    event: H3Event,
+    requestedPath: string,
+): Promise<Buffer> {
+    const { body, contentType } = await readProtectedDocsFile(event, requestedPath);
+    setHeader(event, "Content-Type", contentType);
+    setHeader(event, "Cache-Control", "private, no-store");
+    setHeader(event, "X-Content-Type-Options", "nosniff");
+    return body;
 }
