@@ -28,7 +28,7 @@ bun run build
 bun run test
 
 # Start the server
-bun run start      # Uses Bun 1.3.14 when available; otherwise Node.js
+bun run start      # Uses Bun 1.3 or newer when available; otherwise Node.js
 # or
 npm run start      # Same runtime selector
 # or

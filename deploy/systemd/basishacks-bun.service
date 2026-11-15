@@ -12,7 +12,7 @@ EnvironmentFile=/etc/basishacks/basishacks.env
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=3000
-ExecStart=/usr/bin/bun run start
+ExecStart=/usr/bin/bun scripts/start-runtime.mjs
 Restart=on-failure
 RestartSec=3s
 TimeoutStopSec=30s

@@ -126,7 +126,7 @@ describe("VPS release package builder", () => {
         state.optionalDirectoriesExist = false;
         await run();
 
-        expect(state.cp).toHaveBeenCalledTimes(7);
+        expect(state.cp).toHaveBeenCalledTimes(8);
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "HACKATHON.yml"),
             resolve(projectRoot, "release-package/HACKATHON.yml"),
@@ -134,6 +134,10 @@ describe("VPS release package builder", () => {
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "scripts/start.sh"),
             resolve(projectRoot, "release-package/scripts/start.sh"),
+        );
+        expect(state.cp).toHaveBeenCalledWith(
+            resolve(projectRoot, "scripts/start-runtime.mjs"),
+            resolve(projectRoot, "release-package/scripts/start-runtime.mjs"),
         );
         expect(state.relocate).toHaveBeenCalledWith({
             serverDirectory: resolve(projectRoot, "release-package/.output/server"),
@@ -155,7 +159,10 @@ describe("VPS release package builder", () => {
             private: true,
             type: "module",
             engines: { node: ">=24" },
-            scripts: { start: "sh scripts/start.sh", "start:node": "node start-fix.mjs" },
+            scripts: {
+                start: "node scripts/start-runtime.mjs",
+                "start:node": "node start-fix.mjs",
+            },
         });
         expect(manifest.scripts["db:import-sqlite:check:node"]).toContain("--check-only");
     });

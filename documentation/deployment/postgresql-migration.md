@@ -5,7 +5,7 @@ description: Prepare PostgreSQL, migrate an existing SQLite deployment safely, a
 
 # PostgreSQL and VPS Deployment
 
-Production and development use PostgreSQL through Drizzle ORM and the `postgres` driver. The SQLite adapter is no longer part of the application runtime. Use `bun run start` or, on Linux, `npm run start`; both select Bun 1.3.14 when installed and otherwise use Node.js 24 or newer. Run `node start-fix.mjs` to explicitly select Node.js.
+Production and development use PostgreSQL through Drizzle ORM and the `postgres` driver. The SQLite adapter is no longer part of the application runtime. Use `bun run start` or, on Linux, `npm run start`; both select Bun 1.3 or newer when installed and otherwise use Node.js 24 or newer. Run `node start-fix.mjs` to explicitly select Node.js.
 
 ## PostgreSQL configuration
 
@@ -102,7 +102,7 @@ For a target that contains the pristine seed and exactly one basis-auth-linked u
 
 The VPS release bundle includes the importer and its runtime dependencies. Bun reads SQLite through its built-in driver; Node.js uses the packaged `better-sqlite3` dependency. Run the source-tree scripts with Bun (`bun scripts/...`); the packaged `.output/tools/*.mjs` commands support both Bun and Node.js.
 
-The importer preserves explicit IDs and records for teams, users, seasons, submissions, ballots, ballot scores, judge scores, peer-voting scores, legacy `sc_votes`, awards, OAuth application records, and historical team membership. It infers and persists a missing score `season_id` from its team's season (or the active/first season when a source team has no season ID), updates PostgreSQL serial sequences, creates one immutable `Imported legacy rubric` version per season, assigns legacy judge score rows to the version for their season, and writes removed SQLite-only fields (`users.role`, `users.age`, `oauth2_applications.proxy_microsoft`) and the legacy `judge_scores_migrate` artifact to `sqlite_legacy_data`. The CSV header row in that artifact is excluded; data-row counts are reported separately.
+The importer preserves explicit IDs and records for teams, users, seasons, submissions, ballots, ballot scores, judge scores, peer-voting scores, legacy `sc_votes`, awards, OAuth application records, and historical team membership. Legacy peer-voting rows predate the per-season ballot key, so the importer assigns them to the imported active season (or the first season when none is active). It infers and persists a missing score `season_id` from its team's season (or the active/first season when a source team has no season ID), updates PostgreSQL serial sequences, creates one immutable `Imported legacy rubric` version per season, assigns legacy judge score rows to the version for their season, and writes removed SQLite-only fields (`users.role`, `users.age`, `oauth2_applications.proxy_microsoft`) and the legacy `judge_scores_migrate` artifact to `sqlite_legacy_data`. The CSV header row in that artifact is excluded; data-row counts are reported separately.
 
 Season event timestamps accept ISO dates and safe epoch-millisecond values, including text serialized with a zero-only fractional part such as `1780149600000.0`; unsafe or genuinely fractional values are rejected instead of rounded. A missing or `NULL` season timestamp maps to `0`, the PostgreSQL schema's unset-time value. Missing or `NULL` team `sourcing` text maps to an empty string, matching the PostgreSQL column's not-null default.
 

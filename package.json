@@ -3,7 +3,7 @@
     "type": "module",
     "private": true,
     "scripts": {
-        "start": "sh scripts/start.sh",
+        "start": "node scripts/start-runtime.mjs",
         "build": "cross-env NODE_OPTIONS=--no-deprecation nuxt build",
         "prebuild": "node scripts/generate-icon-server-bundle.mjs",
         "dev": "cross-env NODE_OPTIONS=--no-deprecation nuxt dev",

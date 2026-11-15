@@ -1,108 +1,142 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { spawnSync } from "node:child_process";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+    parseRuntimeVersion,
+    probeVersion,
+    runIfDirect,
+    runStartSelector,
+    selectRuntime,
+    spawnRuntime,
+} from "../../scripts/start-runtime.mjs";
 
-const temporaryDirectories: string[] = [];
-const startScript = join(process.cwd(), "scripts", "start.sh");
-
-async function createCommandDirectory(commands: Record<string, string>) {
-    const directory = await mkdtemp(join(tmpdir(), "basishacks-start-selector-"));
-    temporaryDirectories.push(directory);
-    for (const [name, content] of Object.entries(commands)) {
-        const path = join(directory, name);
-        await writeFile(path, content, "utf8");
-        await chmod(path, 0o755);
-    }
-    return directory;
-}
-
-function runStartScript(path: string, logPath: string) {
-    return spawnSync("/bin/sh", [startScript], {
-        encoding: "utf8",
-        env: {
-            PATH: path,
-            START_SELECTOR_LOG: logPath,
-        },
+describe("startup runtime parsing", () => {
+    it.each([
+        ["1.3.14", { major: 1, minor: 3 }],
+        ["v24.0.0", { major: 24, minor: 0 }],
+        ["  2.1.0\n", { major: 2, minor: 1 }],
+    ])("parses %j", (value, expected) => {
+        expect(parseRuntimeVersion(value)).toEqual(expected);
     });
-}
 
-afterEach(async () => {
-    await Promise.all(
-        temporaryDirectories
-            .splice(0)
-            .map((directory) => rm(directory, { recursive: true, force: true })),
-    );
+    it.each([undefined, "", "bun", "1", "v"])("rejects %j", (value) => {
+        expect(parseRuntimeVersion(value)).toBeNull();
+    });
 });
 
-describe.skipIf(process.platform === "win32")("production runtime selector", () => {
-    it("uses the pinned Bun runtime when Bun 1.3.14 is installed", async () => {
-        const directory = await createCommandDirectory({
-            bun: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'1.3.14\\n\'; else printf \'bun:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 23; fi\n',
-            node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v24.0.0\\n\'; else printf \'node:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 24; fi\n',
-        });
-        const logPath = join(directory, "result.log");
-
-        const result = runStartScript(directory, logPath);
-
-        expect(result.status).toBe(23);
-        expect(await readFile(logPath, "utf8")).toBe("bun:start-fix.mjs\n");
+describe("startup runtime selection", () => {
+    it("prefers any Bun version at or above 1.3", () => {
+        expect(selectRuntime({ bunVersion: "1.3.0", nodeVersion: "v24.0.0" })).toBe("bun");
+        expect(selectRuntime({ bunVersion: "1.4.4" })).toBe("bun");
+        expect(selectRuntime({ bunVersion: "2.0.0" })).toBe("bun");
     });
 
-    it("falls back to Node when the installed Bun version predates 1.3", async () => {
-        const directory = await createCommandDirectory({
-            bun: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'1.2.9\\n\'; else exit 23; fi\n',
-            node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v24.0.0\\n\'; else printf \'node:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 24; fi\n',
-        });
-        const logPath = join(directory, "result.log");
-
-        const result = runStartScript(directory, logPath);
-
-        expect(result.status).toBe(24);
-        expect(await readFile(logPath, "utf8")).toBe("node:start-fix.mjs\n");
+    it("falls back to Node 24 or newer", () => {
+        expect(selectRuntime({ bunVersion: "1.2.9", nodeVersion: "v24.0.0" })).toBe("node");
+        expect(selectRuntime({ nodeVersion: "v26.1.0" })).toBe("node");
     });
 
-    it("accepts any Bun version from 1.3 onward", async () => {
-        const directory = await createCommandDirectory({
-            bun: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'1.4.4\\n\'; else printf \'bun:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 23; fi\n',
-            node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v24.0.0\\n\'; else exit 24; fi\n',
+    it("rejects older runtimes", () => {
+        expect(selectRuntime({})).toBeNull();
+        expect(selectRuntime({ nodeVersion: "v22.0.0" })).toBeNull();
+        expect(selectRuntime({ bunVersion: "0.8.0", nodeVersion: "v20.0.0" })).toBeNull();
+    });
+});
+
+describe("startup selector wiring", () => {
+    it("launches Bun when it is supported", () => {
+        const run = vi.fn(() => 23);
+        const exitCode = runStartSelector({
+            readVersion: (command) => (command === "bun" ? "1.3.14" : "v24.0.0"),
+            run,
         });
-        const logPath = join(directory, "result.log");
 
-        const result = runStartScript(directory, logPath);
-
-        expect(result.status).toBe(23);
-        expect(await readFile(logPath, "utf8")).toBe("bun:start-fix.mjs\n");
+        expect(exitCode).toBe(23);
+        expect(run).toHaveBeenCalledWith("bun", ["start-fix.mjs"]);
     });
 
-    it("uses Node when Bun is not installed", async () => {
-        const directory = await createCommandDirectory({
-            node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v24.0.0\\n\'; else printf \'node:%s\\n\' "$*" >> "$START_SELECTOR_LOG"; exit 24; fi\n',
+    it("launches Node when Bun is too old", () => {
+        const run = vi.fn(() => 24);
+        const exitCode = runStartSelector({
+            readVersion: (command) => (command === "bun" ? "1.2.9" : "v24.0.0"),
+            run,
         });
-        const logPath = join(directory, "result.log");
 
-        const result = runStartScript(directory, logPath);
-
-        expect(result.status).toBe(24);
-        expect(await readFile(logPath, "utf8")).toBe("node:start-fix.mjs\n");
+        expect(exitCode).toBe(24);
+        expect(run).toHaveBeenCalledWith("node", ["start-fix.mjs"]);
     });
 
-    it("reports an error when neither supported runtime is installed", async () => {
-        const directory = await createCommandDirectory({});
-        const result = runStartScript(directory, join(directory, "result.log"));
+    it("reports unsupported runtimes without launching anything", () => {
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const run = vi.fn();
 
-        expect(result.status).toBe(127);
-        expect(result.stderr).toContain("Bun 1.3 or newer, or Node.js 24 or newer");
+        const exitCode = runStartSelector({
+            readVersion: (command) => (command === "node" ? "v22.0.0" : undefined),
+            run,
+        });
+
+        expect(exitCode).toBe(127);
+        expect(stderr).toHaveBeenCalledWith(
+            "Start requires Bun 1.3 or newer, or Node.js 24 or newer.\n",
+        );
+        expect(run).not.toHaveBeenCalled();
     });
 
-    it("does not select Node versions below the supported minimum", async () => {
-        const directory = await createCommandDirectory({
-            node: '#!/bin/sh\nif [ "$1" = "--version" ]; then printf \'v22.0.0\\n\'; else exit 24; fi\n',
-        });
-        const result = runStartScript(directory, join(directory, "result.log"));
+    it("probes the real runtimes when no dependencies are injected", () => {
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const originalPath = process.env.PATH;
+        process.env.PATH = "";
+        try {
+            expect(runStartSelector()).toBe(127);
+            expect(stderr).toHaveBeenCalled();
+        } finally {
+            if (originalPath === undefined) delete process.env.PATH;
+            else process.env.PATH = originalPath;
+        }
+    });
 
-        expect(result.status).toBe(127);
-        expect(result.stderr).toContain("Bun 1.3 or newer, or Node.js 24 or newer");
+    it("reads a real runtime version and spawns a real command", () => {
+        expect(parseRuntimeVersion(probeVersion("node"))).not.toBeNull();
+        expect(spawnRuntime("node", ["--version"])).toBe(0);
+    });
+
+    it("reports a launch that cannot start as exit code 1", () => {
+        expect(spawnRuntime("basishacks-missing-runtime-xyz", [])).toBe(1);
+    });
+});
+
+describe("direct execution guard", () => {
+    it("runs only when the module is the process entry point", () => {
+        const run = vi.fn(() => 0);
+        const dependencies = { readVersion: () => "1.3.14", run };
+        const moduleUrl = pathToFileURL("/apps/scripts/start-runtime.mjs").href;
+        const entryPath = "/apps/scripts/start-runtime.mjs";
+
+        expect(runIfDirect(moduleUrl, undefined, dependencies)).toBeNull();
+        expect(runIfDirect(moduleUrl, "/apps/scripts/other.mjs", dependencies)).toBeNull();
+        expect(runIfDirect(moduleUrl, entryPath, dependencies)).toBe(0);
+        expect(run).toHaveBeenCalledWith("bun", ["start-fix.mjs"]);
+    });
+
+    it("sets the process exit code when the file is started directly", async () => {
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const originalPath = process.env.PATH;
+        const originalEntry = process.argv[1];
+        const originalExitCode = process.exitCode;
+        process.env.PATH = "";
+        process.argv[1] = resolve(process.cwd(), "scripts", "start-runtime.mjs");
+        vi.resetModules();
+        try {
+            await import("../../scripts/start-runtime.mjs");
+            expect(process.exitCode).toBe(127);
+            expect(stderr).toHaveBeenCalledWith(
+                "Start requires Bun 1.3 or newer, or Node.js 24 or newer.\n",
+            );
+        } finally {
+            process.exitCode = originalExitCode;
+            process.argv[1] = originalEntry;
+            if (originalPath === undefined) delete process.env.PATH;
+            else process.env.PATH = originalPath;
+        }
     });
 });

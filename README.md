@@ -175,7 +175,7 @@ bun run start
 # `bun run start` uses the configured `CURRENT_URL_ORIGIN` port and binds to
 # 127.0.0.1 when it is a loopback HTTP origin and no explicit values are set.
 # On Linux VPS hosts, `npm run start` uses the same POSIX runtime selector.
-# It prefers Bun 1.3.14 and falls back to Node.js 24 or newer.
+# It prefers Bun 1.3 or newer and falls back to Node.js 24 or newer.
 # To explicitly use Node.js after building the same checkout:
 node start-fix.mjs
 ```
@@ -192,12 +192,12 @@ Runtime files are stored in the project-root `/assets` directory. Profile images
 
 1. Build on the server: `bun run build`
 2. Set all required environment variables in the server environment
-3. Start with `bun run start` or, on Linux, `npm run start` (selects Bun 1.3.14 when available, otherwise Node.js 24 or newer), or use `node start-fix.mjs` to explicitly choose Node.js
+3. Start with `bun run start` or, on Linux, `npm run start` (selects Bun 1.3 or newer when available, otherwise Node.js 24 or newer), or use `node start-fix.mjs` to explicitly choose Node.js
 4. Reverse proxy with TLS in front (port defaults to `3000`)
 
 ### GitHub tag releases
 
-Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It builds a VPS artifact with the Nuxt server, portable runtime dependency paths, PostgreSQL migrations, migration/import commands, and production dependencies installed from the lockfile. The workflow verifies the extracted archive under Node.js and Bun against PostgreSQL. The recommended VPS flow is to keep a direct checkout and run `bun run build` followed by `bun run start`. If using the optional release archive, preserve or restore project-root `/assets` before serving; back it up separately from PostgreSQL. The committed showcase files in `public/assets` remain separate from runtime uploads.
+Pushing a tag beginning with `v` runs `.github/workflows/release.yml`. It runs the full test suite and the 100% coverage gate first, then builds a VPS artifact with the Nuxt server, portable runtime dependency paths, PostgreSQL migrations, migration/import commands, and production dependencies installed from the lockfile. The workflow verifies the extracted archive under Node.js and Bun against PostgreSQL. The recommended VPS flow is to keep a direct checkout and run `bun run build` followed by `bun run start`. If using the optional release archive, preserve or restore project-root `/assets` before serving; back it up separately from PostgreSQL. The committed showcase files in `public/assets` remain separate from runtime uploads.
 
 ## Project Structure
 
