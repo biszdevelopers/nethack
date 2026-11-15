@@ -31,7 +31,11 @@ const emit = defineEmits<{
                     <span v-else class="text-lg">Unranked</span>
                 </div>
                 <div class="flex flex-row gap-2">
-                    <div v-for="award in team.awards" class="flex flex-row gap-2">
+                    <div
+                        v-for="award in team.awards"
+                        :key="award.namespace"
+                        class="flex flex-row gap-2"
+                    >
                         <AwardButton :award="award" size="sm"></AwardButton>
                     </div>
                 </div>

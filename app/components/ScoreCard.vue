@@ -80,7 +80,7 @@
                     :show-rank="false"
                 />
                 <div class="flex flex-row gap-2">
-                    <div v-for="award in team.awards">
+                    <div v-for="award in team.awards" :key="award.namespace">
                         <AwardButton :award="award" size="md"></AwardButton>
                     </div>
                 </div>

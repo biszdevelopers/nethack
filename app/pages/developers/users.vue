@@ -191,7 +191,7 @@ const columns: TableColumn<AdminUser>[] = [
             if (!ids) return "-";
             const idList = ids
                 .split(",")
-                .map((s) => parseInt(s.trim()))
+                .map((s) => parseInt(s.trim(), 10))
                 .filter(Boolean);
             return h(
                 "div",
