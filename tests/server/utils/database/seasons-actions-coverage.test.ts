@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     getScoreRankVisibilityResolver,
@@ -190,9 +193,34 @@ describe("season visibility and action boundaries", () => {
 
 describe("live YAML season switching", () => {
     let event: Awaited<ReturnType<typeof createMockEvent>>;
+    let manifestDirectory: string;
 
     beforeEach(async () => {
+        manifestDirectory = mkdtempSync(join(tmpdir(), "basishacks-switching-"));
+        writeFileSync(
+            join(manifestDirectory, "HACKATHON.yml"),
+            `id: 1
+status: voting
+voting_enabled: 1
+results_published: 0
+show_scores: 0
+show_ranking: 0
+submitted_count: 0
+max_votes_per_user: 1
+judging_open: 1
+schedule_start: null
+schedule_end: null
+start_timestamp: 0
+end_timestamp: 0
+voting_start_timestamp: 0
+voting_end_timestamp: 0
+results_open_timestamp: 0
+theme_name: Live theme
+theme_description: Live description
+`,
+        );
         vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
+        vi.stubEnv("HACKATHON_CONFIG_PATH", join(manifestDirectory, "HACKATHON.yml"));
         event = await createMockEvent();
         event.context.drizzle
             .prepare(
@@ -203,6 +231,7 @@ describe("live YAML season switching", () => {
 
     afterEach(() => {
         vi.unstubAllEnvs();
+        rmSync(manifestDirectory, { recursive: true, force: true });
     });
 
     it("refuses to change live settings on the active season", async () => {

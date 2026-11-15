@@ -59,6 +59,23 @@ interface GetJudgingQueueResponse {
     total_pages: number;
 }
 
+interface JudgingHistoryItem {
+    team: APITeam;
+    rubric_name: string;
+    rubric_version: number;
+    track_name: string;
+    normalized_score: number;
+    scores: Record<string, number>;
+    criteria: ScoreFeedbackCriterionResponse[];
+    reasoning: string;
+}
+
+interface GetJudgingHistoryResponse {
+    season: { id: number; name: string };
+    items: JudgingHistoryItem[];
+    unavailable_evaluations: number;
+}
+
 interface GetUserResponse extends APIUser {
     team: APITeam | null;
     past_teams: APITeam[];

@@ -62,6 +62,10 @@ function formatTimestamp(ts: unknown): string {
     if (!Number.isFinite(num) || num <= 0) return "Not set";
     return new Date(num).toLocaleString();
 }
+/** Format a datetime-local form value so the overview matches the editable fields. */
+function formatFormTimestamp(value: unknown): string {
+    return formatTimestamp(datetimeToTs(String(value ?? "")));
+}
 
 async function downloadDatabase(format: "json" | "csv") {
     const blob = await apiFetch<Blob>(`/api/admin/database/export?format=${format}`, {
@@ -138,48 +142,28 @@ const scoreCurveItems = Object.entries(SCORE_CURVE_PRESETS).map(([value, preset]
     value,
 }));
 
-/** Populate form from a season row, skipping DB defaults so the global value shines through. */
-function restoreSeasonConfig(season: any) {
-    if (!season) return;
-    for (const key of allFieldKeys) {
-        const val = season[key];
-        if (val === undefined) continue;
-        if (val === null) {
-            hackathonForm[key] = "";
-            continue;
-        }
-        if (isDefaultValue(key, val)) continue;
-        hackathonForm[key] = tsKeys.includes(key) ? tsToDatetime(val) : val;
-    }
-}
-
-function isDefaultValue(key: string, val: any): boolean {
-    if (key === "status") return val === "not_started";
-    if (key === "max_votes_per_user") return val === 0;
-    if (boolKeys.has(key)) return val === 0;
-    if (tsKeys.includes(key)) return val === 0;
-    return false;
-}
-
-/** Initialize form from global values, then overlay the selected season's overrides. */
+/**
+ * Fill the form from the selected season's own stored settings. The live row
+ * is only a fallback when a field is absent, so two screens can never show
+ * different values for the same season.
+ */
 function applyConfig(seasonId: number | null) {
     const h = hackathon.value;
     if (!h) return;
 
-    const raw: Record<string, any> = {};
-    for (const key of allFieldKeys) {
-        const dbVal = (h as any)[key];
-        if (tsKeys.includes(key)) {
-            raw[key] = tsToDatetime(dbVal);
-        } else {
-            raw[key] = dbVal ?? "";
-        }
-    }
-    Object.assign(hackathonForm, raw);
+    const season =
+        seasonId === null ? null : (seasons.value?.find((row: any) => row.id === seasonId) ?? null);
+    const source = (season ?? h) as Record<string, unknown>;
 
-    if (seasonId !== null) {
-        const s = seasons.value?.find((s: any) => s.id === seasonId);
-        if (s) restoreSeasonConfig(s);
+    for (const key of allFieldKeys) {
+        const value = source[key];
+        if (tsKeys.includes(key)) {
+            hackathonForm[key] = tsToDatetime(value);
+        } else if (boolKeys.has(key) || key === "max_votes_per_user") {
+            hackathonForm[key] = Number(value ?? 0);
+        } else {
+            hackathonForm[key] = value ?? "";
+        }
     }
 
     formInitialized.value = true;
@@ -193,10 +177,15 @@ function normalize(key: string, val: any): any {
     return val;
 }
 
-/** Compare a normalized value against the global baseline, with type coercion.
- *  Returns false when baseline is undefined (field hasn't been loaded yet). */
+/** Compare a normalized value against the selected season, falling back to live settings. */
 function hasChanged(key: string, normalized: any): boolean {
-    const baseline = (hackathon.value as any)?.[key];
+    const seasonValue = selectedSeason.value
+        ? (selectedSeason.value as unknown as Record<string, unknown>)[key]
+        : undefined;
+    const baseline =
+        seasonValue !== undefined && seasonValue !== null
+            ? seasonValue
+            : (hackathon.value as any)?.[key];
     if (baseline === undefined) return false;
     if (boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)) {
         return Number(normalized) !== Number(baseline);
@@ -250,12 +239,14 @@ const tabItems = [
 ];
 
 // One-time initialization: wait for the live configuration, then select the
-// last (newest) season when one exists.
+// active season so edits always target what visitors see. Stored seasons remain
+// reachable through the season picker.
 watchEffect(() => {
     const h = hackathon.value;
     if (!h || formInitialized.value) return;
-    const last = seasons.value[seasons.value.length - 1];
-    selectedSeasonId.value = last?.id ?? null;
+    const active = seasons.value.find((season: Season) => season.is_active === 1);
+    const fallback = seasons.value[seasons.value.length - 1];
+    selectedSeasonId.value = active?.id ?? fallback?.id ?? null;
     applyConfig(selectedSeasonId.value);
 });
 
@@ -442,6 +433,34 @@ async function deleteSeason() {
                     </UBadge>
                 </div>
 
+                <UAlert
+                    v-if="selectedSeason && !selectedSeasonIsActive"
+                    color="warning"
+                    variant="subtle"
+                    icon="i-lucide-triangle-alert"
+                    title="You are editing a stored season, not the live event"
+                    :description="`Changes here save to ${selectedSeason.name} and do not affect the public site until you make it the active season.`"
+                >
+                    <template #actions>
+                        <UButton class="min-h-11" :loading="activating" @click="setActiveSeason">
+                            Make {{ selectedSeason.name }} live
+                        </UButton>
+                    </template>
+                </UAlert>
+
+                <UAlert
+                    v-else-if="selectedSeason"
+                    color="success"
+                    variant="subtle"
+                    icon="i-lucide-radio"
+                    title="These settings control the live site"
+                    :description="
+                        adminData?.configSource === 'remote'
+                            ? `These values are read-only for ${selectedSeason.name} because the live manifest is hosted remotely.`
+                            : `Status, voting, judging, and the schedule below apply immediately to ${selectedSeason.name}.`
+                    "
+                />
+
                 <UTabs
                     v-model="activeTab"
                     :items="tabItems"
@@ -471,22 +490,32 @@ async function deleteSeason() {
                                 <div class="flex justify-between gap-3">
                                     <dt class="text-ui-text-muted">Event</dt>
                                     <dd>
-                                        {{ formatTimestamp(hackathon?.start_timestamp) }} —
-                                        {{ formatTimestamp(hackathon?.end_timestamp) }}
+                                        {{ formatFormTimestamp(hackathonForm.start_timestamp) }} —
+                                        {{ formatFormTimestamp(hackathonForm.end_timestamp) }}
                                     </dd>
                                 </div>
                                 <div class="flex justify-between gap-3">
                                     <dt class="text-ui-text-muted">Voting</dt>
                                     <dd>
-                                        {{ formatTimestamp(hackathon?.voting_start_timestamp) }}
+                                        {{
+                                            formatFormTimestamp(
+                                                hackathonForm.voting_start_timestamp,
+                                            )
+                                        }}
                                         —
-                                        {{ formatTimestamp(hackathon?.voting_end_timestamp) }}
+                                        {{
+                                            formatFormTimestamp(hackathonForm.voting_end_timestamp)
+                                        }}
                                     </dd>
                                 </div>
                                 <div class="flex justify-between gap-3">
                                     <dt class="text-ui-text-muted">Results open</dt>
                                     <dd>
-                                        {{ formatTimestamp(hackathon?.results_open_timestamp) }}
+                                        {{
+                                            formatFormTimestamp(
+                                                hackathonForm.results_open_timestamp,
+                                            )
+                                        }}
                                     </dd>
                                 </div>
                             </dl>

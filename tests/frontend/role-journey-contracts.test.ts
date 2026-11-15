@@ -235,6 +235,64 @@ describe("judge action paths", () => {
     });
 });
 
+describe("judging history and workspace navigation", () => {
+    const historyPage = readSource("pages", "judging", "history", "[seasonId].vue");
+    const overview = readSource("pages", "judging", "index.vue");
+    const scoringCard = readSource("components", "JudgingCard.vue");
+    const queue = readSource("pages", "judging", "continue.vue");
+    const seasonAdmin = readSource("pages", "developers", "season.vue");
+
+    it("keeps past evaluations reachable after judging closes", () => {
+        expect(overview).not.toContain('hackathon.value?.status !== "voting"');
+        expect(overview).toContain("`/judging/history/${currentSummary.season_id}`");
+        expect(overview).toContain("`/judging/history/${season.season_id}`");
+        expect(overview).toContain("Judging is closed for the active season");
+    });
+
+    it("loads a read-only history scoped to the signed-in judge", () => {
+        expect(historyPage).toContain("`/api/judging/history/${seasonId}`");
+        expect(historyPage).toContain("This view is read-only.");
+        expect(historyPage).toContain("Your anonymous feedback");
+        expect(historyPage).toContain('to="/judging"');
+    });
+
+    it("moves every competitor-submittable detail and link into the left pane", () => {
+        expect(scoringCard.indexOf("Open repository")).toBeGreaterThanOrEqual(0);
+        expect(scoringCard.indexOf("Open repository")).toBeLessThan(
+            scoringCard.indexOf('class="judging-divider"'),
+        );
+        expect(scoringCard.indexOf("Team's AI-use statement")).toBeLessThan(
+            scoringCard.indexOf('class="judging-divider"'),
+        );
+    });
+
+    it("offers a draggable, keyboard-resizable divider between the panes", () => {
+        expect(scoringCard).toContain('role="separator"');
+        expect(scoringCard).toContain('aria-orientation="vertical"');
+        expect(scoringCard).toContain('@pointerdown="startResize"');
+        expect(scoringCard).toContain('@keydown="resizeWithKeyboard"');
+        expect(scoringCard).toContain("localStorage.setItem(SPLIT_STORAGE_KEY");
+        expect(scoringCard).toContain("basishacks:judging-split");
+    });
+
+    it("provides a project navigator with jump and filter controls", () => {
+        expect(queue).toContain("<USlideover");
+        expect(queue).toContain("async function jumpToProject");
+        expect(queue).toContain("navigatorFilters");
+        expect(queue).toContain("Next unscored");
+        expect(queue).toContain("Jump to any project in this season's judging queue.");
+    });
+
+    it("targets the active season and shows the same schedule on every tab", () => {
+        expect(seasonAdmin).toContain(
+            "seasons.value.find((season: Season) => season.is_active === 1)",
+        );
+        expect(seasonAdmin).toContain("formatFormTimestamp(hackathonForm.start_timestamp)");
+        expect(seasonAdmin).toContain("You are editing a stored season, not the live event");
+        expect(seasonAdmin).toContain("These settings control the live site");
+    });
+});
+
 describe("judge results and admin controls", () => {
     const feedback = readSource("components", "ScoreFeedbackPanel.vue");
     const seasonAdmin = readSource("pages", "developers", "season.vue");

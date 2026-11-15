@@ -143,12 +143,12 @@ Team management component for renaming, adding, and removing members.
 
 **File:** `app/components/JudgingCard.vue`
 
-Full-width workspace with a centered divider between the equal-width project details and scoring panes on wider screens. The panes scroll independently at tablet and desktop widths and stack on narrow screens.
+Full-width workspace that splits project details and scoring into two panes on wider screens. The divider between them is draggable with a pointer, adjustable with the arrow keys (Shift moves 10%, Home/End jump to the limits), resets on double-click or Enter, and remembers its position in local storage. The panes scroll independently and stack on narrow screens.
 
 **Scoring interface:**
 
-- Shows the project name, team name, track, safe-rendered description, and AI-use statement in the project pane.
-- Shows validated repository and demo links below Scoring Guidelines, followed by the rubric's configured integer ranges, criterion weights, and feedback form.
+- Shows the project name, team name, track, safe-rendered description, AI-use statement, and validated repository and demo links in the project pane.
+- Shows the rubric's configured integer ranges, criterion weights, and feedback form in the scoring pane.
 - Saves a recoverable draft, gives comment guidance and editable prompt templates, and opens the review dialog after saving.
 - Requires a specific anonymous comment; judges are told comments become visible after results are published and at least three judges have evaluated the team.
 

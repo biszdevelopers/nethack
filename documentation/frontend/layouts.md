@@ -66,7 +66,7 @@ Same header/footer structure as `default`, but **without** the inner padded cont
 
 A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
 
-**Used by:** `/judging/continue`, `/user/[id]` (the profile sets it programmatically via `setPageLayout`)
+**Used by:** `/judging/continue`, `/judging/history/:seasonId`, `/user/[id]` (the profile sets it programmatically via `setPageLayout`)
 
 Pages can set `hideFooter: true` in their page metadata. The judging workspace uses this setting.
 

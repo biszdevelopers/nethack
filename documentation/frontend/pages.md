@@ -173,22 +173,40 @@ Contributing guidelines and security disclosure policy. Contains commit guidelin
 
 **File:** `app/pages/judging/index.vue`
 
-Judge landing page. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled.
+Judge landing page. Protected by `auth` middleware and the judge assignment permission, so past evaluations stay reachable after the event closes.
 
 **Guards:**
 
-- Redirects to `/` if hackathon status is not `voting` or `judging_open` is disabled
-- Redirects to `/` if user lacks judge or admin permissions
+- Redirects to `/` if the user lacks judge or admin permissions
+- Judging actions are gated by the event status; the page itself stays available for history
 
 **Content:**
 
 - **Current evaluations** — shows judge-specific progress for submitted projects in the active season, with an accessible progress bar
-- **Continue judging** — opens the active queue when projects remain
-- **Past evaluations** — shows the judge's completed progress for prior seasons
+- **Continue judging** — opens the active queue when the event is in `voting` status with `judging_open` enabled
+- **Review your evaluations** — links to the active season's history when judging is closed
+- **Past evaluations** — shows the judge's completed progress for prior seasons; each card links to that season's read-only history
 
 The page omits unrelated event participation figures so judges can focus on their own workload.
 
 **Layout:** `default`
+
+### `/judging/history/:seasonId`
+
+**File:** `app/pages/judging/history/[seasonId].vue`
+
+Read-only review of the signed-in judge's finalized evaluations for one season. Protected by `auth` middleware and the judge assignment permission; it does not require judging to be open, so completed work remains reviewable after the event finishes.
+
+**Content:**
+
+- Left list of every evaluated project, selectable with Previous and Next controls
+- Project name, team, track, safe repository and demo links, description, and AI-use statement
+- The judge's weighted score, rubric name and version, per-criterion scores, and anonymous feedback
+- An alert when saved evaluations reference a rubric that is no longer available
+
+The page requests `GET /api/judging/history/:seasonId`; the response only contains the requesting judge's own evaluations.
+
+**Layout:** `fullwidth` with the footer hidden
 
 ### `/judging/continue`
 
@@ -199,12 +217,13 @@ Active judging interface. Protected by `auth` middleware. Accessible only by jud
 **Flow:**
 
 1. Loads the judge's pending projects from `/api/teams?judging=true`, their personal progress from `/api/ballot/summary`, and the active rubric from `/api/judging/rubric`.
-2. Shows one project at a time. Project details and the AI-use statement appear in the left pane. The right pane shows repository and demo links below Scoring Guidelines, followed by the rubric and feedback form. The panes fill the main canvas edge to edge, scroll independently on wider screens, and stack on mobile.
-3. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
-4. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores, and the page blocks leaving when unsaved changes cannot be saved.
-5. Opens the **Review before you finalize** dialog over the scoring workspace before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
+2. Shows one project at a time. Project details, repository and demo links, and the AI-use statement appear in the left pane. The right pane shows Scoring Guidelines, the rubric, and the feedback form. The divider between the panes is draggable with a pointer or the arrow keys and remembers its position; both panes scroll independently on wider screens and stack on mobile.
+3. The toolbar shows the project number, evaluated count, Previous and Next, **Next unscored**, and **All projects**. All projects opens a navigator listing every page of the queue with each project's scored state, plus filters for all, not scored, and scored projects.
+4. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
+5. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores, and the page blocks leaving when unsaved changes cannot be saved.
+6. Opens the **Review before you finalize** dialog over the scoring workspace before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
 
-Previous and Next appear above Scoring Guidelines and let judges move through the queue while retaining recoverable drafts. The interface is mobile-first, uses keyboard-operable score controls, and shows draft saving, validation, and submission states. Evaluation progress is shown on the judging overview.
+When every submitted project has been evaluated, the workspace stays open so judges can review their saved scores instead of being locked out. The interface is mobile-first, uses keyboard-operable score controls, and shows draft saving, validation, and submission states. Evaluation progress is shown on the judging overview.
 
 **Layout:** `fullwidth` with the footer hidden
 
@@ -331,11 +350,11 @@ Permission-gated, read-only listings of existing files and active permalink refe
 
 **File:** `app/pages/developers/season.vue`
 
-Hackathon Administration page (admin-only, hard 403 for non-admins). The page is split into tabs so no single scroll holds every control:
+Hackathon Administration page (admin-only, hard 403 for non-admins). The page is split into tabs so no single scroll holds every control. It opens on the active season and warns when a stored (non-live) season is selected, so settings never appear to apply while silently targeting an archived season.
 
-- **Overview** — theme, schedule, and the current visitor-facing toggles, with shortcuts to the editing tabs.
-- **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id`. A new season starts as a copy of the live settings so switching cannot blank the event.
-- **Event settings** — status, vote cap, voting/judging/results toggles, theme, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. A local `HACKATHON.yml` is written in place (comments preserved); a remote manifest is read-only and explains where to edit it. Other seasons keep their own editable stored settings.
+- **Overview** — theme, schedule, and the current visitor-facing toggles for the selected season, with shortcuts to the editing tabs. The schedule uses the same stored values as the editable fields.
+- **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id`. A new season starts as a copy of the live settings so switching cannot blank the event. A banner shows whether the selected season is live or stored, with a one-click activation action.
+- **Event settings** — status, vote cap, voting/judging/results toggles, theme, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. Each field is compared with the selected season's own value, not another season's. A local `HACKATHON.yml` is written in place (comments preserved); a remote manifest is read-only and explains where to edit it. Other seasons keep their own editable stored settings.
 - **Scoring** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version; the history shows which version is active. Organizers can copy a prior season, load its rubric to customize, and apply or copy reusable named templates. A track used by a submitted project must be reassigned before removal.
 - **Data** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
 

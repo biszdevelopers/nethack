@@ -110,7 +110,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 - If not logged in, redirects to `/api/login` with a `redirect` query parameter (external navigation)
 - Applied per-page via `definePageMeta({ middleware: 'auth' })` or `middleware: ['auth']`
 
-**Pages using this middleware:** `/profile`, `/voting`, `/judging`, `/judging/continue`, all `/dashboard/*` pages, `/debug`
+**Pages using this middleware:** `/profile`, `/voting`, `/judging`, `/judging/continue`, `/judging/history/:seasonId`, all `/dashboard/*` pages, `/debug`
 
 ## Utility Functions
 

@@ -9,9 +9,6 @@ definePageMeta({
 });
 
 const { data: hackathon } = await useApiFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
-if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
-    throw await navigateTo("/");
-}
 
 const { error: userError } = await useApiUser();
 const { can } = useNethackPermissions();
@@ -28,6 +25,9 @@ const {
 } = await useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false });
 
 const currentSummary = computed(() => summary.value?.current ?? null);
+const judgingOpen = computed(
+    () => hackathon.value?.status === "voting" && Boolean(hackathon.value.judging_open),
+);
 const summaryLoading = computed(
     () => summaryStatus.value === "idle" || summaryStatus.value === "pending",
 );
@@ -81,6 +81,7 @@ async function openQueue() {
                     </p>
                 </div>
                 <UButton
+                    v-if="judgingOpen"
                     class="min-h-11"
                     trailing-icon="i-lucide-arrow-right"
                     :disabled="!currentSummary"
@@ -88,7 +89,26 @@ async function openQueue() {
                 >
                     {{ hasRemainingProjects ? "Continue judging" : "Open judging queue" }}
                 </UButton>
+                <UButton
+                    v-else-if="currentSummary && currentSummary.scored_count > 0"
+                    class="min-h-11"
+                    variant="outline"
+                    trailing-icon="i-lucide-arrow-right"
+                    :to="`/judging/history/${currentSummary.season_id}`"
+                >
+                    Review your evaluations
+                </UButton>
             </div>
+
+            <UAlert
+                v-if="!judgingOpen && currentSummary"
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-lock-keyhole"
+                title="Judging is closed for the active season"
+                description="You can still read every evaluation you completed."
+                class="mb-3 max-w-xl"
+            />
 
             <div v-if="currentSummary" class="max-w-xl">
                 <JudgeProgressCard :season="currentSummary" />
@@ -115,11 +135,24 @@ async function openQueue() {
                 </p>
             </div>
             <div v-if="pastEvaluations.length" class="grid gap-3 sm:grid-cols-2">
-                <JudgeProgressCard
+                <NuxtLink
                     v-for="season in pastEvaluations"
                     :key="season.season_id"
-                    :season="season"
-                />
+                    :to="`/judging/history/${season.season_id}`"
+                    class="group block rounded-xl transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary hover:ring-2 hover:ring-primary"
+                >
+                    <JudgeProgressCard :season="season" />
+                    <span
+                        class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-primary"
+                    >
+                        View evaluations
+                        <UIcon
+                            name="i-lucide-arrow-right"
+                            aria-hidden="true"
+                            class="transition group-hover:translate-x-0.5"
+                        />
+                    </span>
+                </NuxtLink>
             </div>
             <p v-else class="rounded-xl border border-default p-4 text-sm text-muted">
                 Your completed evaluations from previous seasons will appear here.

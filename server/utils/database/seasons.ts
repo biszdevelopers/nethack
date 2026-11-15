@@ -3,7 +3,7 @@ import { eq, asc } from "drizzle-orm";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { getHackathon } from "./hackathon";
 import { firstRow } from "./query";
-import { hackathonUsesYaml } from "../hackathon-config";
+import { hackathonUsesYaml, writeHackathonConfig } from "../hackathon-config";
 
 /**
  * Per-season tweakable settings. In PostgreSQL rollback mode these fields
@@ -177,6 +177,13 @@ export async function updateSeasonTweaks(
 export async function setActiveSeason(event: H3Event, seasonId: number | null) {
     const currentLive = await getHackathon(event);
     const liveConfig = hackathonUsesYaml() ? currentLive : null;
+    const [previousActive] = await event.context.drizzle
+        .select({ id: seasons.id })
+        .from(seasons)
+        .where(eq(seasons.is_active, 1))
+        .limit(1);
+    let activationSettings: Record<string, unknown> | null = null;
+
     await event.context.drizzle.transaction(async (tx) => {
         let season: Season | undefined;
         if (seasonId !== null) {
@@ -217,7 +224,35 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
             if (!hackathonUsesYaml()) {
                 const tweaks = pickTweaks(season as unknown as Record<string, unknown>);
                 await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
+            } else if (season.is_active !== 1) {
+                // Activating in manifest mode must move the live values with it,
+                // otherwise the public site keeps reading the previous season.
+                const stored = pickSeasonConfig(season as unknown as Record<string, unknown>);
+                activationSettings = isUnconfiguredSeason(season) ? { ...stored, ...seed } : stored;
             }
         }
     });
+
+    if (activationSettings) {
+        try {
+            await writeHackathonConfig(activationSettings);
+        } catch (error) {
+            // The manifest is the source of truth in this mode, so restore the
+            // previous active season instead of reporting a switch that did not apply.
+            try {
+                await event.context.drizzle.transaction(async (tx) => {
+                    await tx.update(seasons).set({ is_active: 0 }).where(eq(seasons.is_active, 1));
+                    if (previousActive) {
+                        await tx
+                            .update(seasons)
+                            .set({ is_active: 1 })
+                            .where(eq(seasons.id, previousActive.id));
+                    }
+                });
+            } catch {
+                // Preserve the original activation failure for the caller.
+            }
+            throw error;
+        }
+    }
 }

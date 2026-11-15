@@ -216,6 +216,7 @@ export const PositiveIntParam = z.coerce.number().int().positive().finite();
 export const TeamIdParams = z.object({ id: PositiveIntParam });
 export const TeamUserParams = z.object({ id: PositiveIntParam, user: PositiveIntParam });
 export const UserIdParams = z.object({ id: PositiveIntParam });
+export const JudgingHistoryParams = z.object({ seasonId: PositiveIntParam });
 export const DeepSeekSessionIdParams = z.object({ id: PositiveIntParam });
 export const ApplicationIdParams = z.object({
     id: z.string().min(1).max(MAX_CLIENT_ID_LENGTH, "Invalid client_id"),

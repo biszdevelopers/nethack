@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { apiFetch } from "~~/app/composables/useApiFetch";
-import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
-import { createReusableTemplate } from "@vueuse/core";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import JudgingCard from "~/components/JudgingCard.vue";
 import JudgingReview from "~/components/JudgingReview.vue";
@@ -43,7 +42,6 @@ if (!can(NethackPermissions.Judging.assignmentsRead)) {
     throw await navigateTo("/");
 }
 
-const [DefineNavigation, ReuseNavigation] = createReusableTemplate();
 const queuePageSize = 20;
 const [queueFetch, summaryFetch, rubricFetch] = await Promise.all([
     useApiFetch<GetJudgingQueueResponse>(
@@ -57,6 +55,16 @@ const [queueFetch, summaryFetch, rubricFetch] = await Promise.all([
 ]);
 
 const queuePages = shallowRef<Record<number, JudgeQueueItem[]>>({});
+const pageRequests = new Map<number, Promise<JudgeQueueItem[]>>();
+const navigatorOpen = ref(false);
+const navigatorLoading = ref(false);
+const navigatorError = shallowRef<unknown>(null);
+const navigatorFilter = ref<"all" | "pending" | "evaluated">("all");
+const navigatorFilters = [
+    { value: "all", label: "All" },
+    { value: "pending", label: "Not scored" },
+    { value: "evaluated", label: "Scored" },
+] as const;
 const totalProjects = shallowRef(0);
 const totalPages = shallowRef(0);
 const navigationError = shallowRef<unknown>(null);
@@ -125,6 +133,26 @@ const activeProjectNumber = computed(
 );
 const hasPendingProjects = computed(
     () => submittedCount.value > 0 && scoredCount.value < submittedCount.value,
+);
+const navigatorPages = computed(() =>
+    Array.from({ length: totalPages.value }, (_, index) => {
+        const page = index + 1;
+        return { page, items: queuePages.value[page] ?? [] };
+    }),
+);
+const navigatorVisiblePages = computed(() =>
+    navigatorPages.value.map((group) => ({
+        page: group.page,
+        items: group.items
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) =>
+                navigatorFilter.value === "all"
+                    ? true
+                    : navigatorFilter.value === "evaluated"
+                      ? item.evaluated
+                      : !item.evaluated,
+            ),
+    })),
 );
 
 watch(
@@ -203,30 +231,41 @@ async function saveCurrentDraftBeforeNavigation() {
 async function getQueuePage(page: number) {
     const cached = queuePages.value[page];
     if (cached) return cached;
+    const pending = pageRequests.get(page);
+    if (pending) return pending;
 
-    const response = await apiFetch<GetJudgingQueueResponse>("/api/teams", {
+    const request = apiFetch<GetJudgingQueueResponse>("/api/teams", {
         query: { judging: true, page, page_size: queuePageSize },
-    });
-    queuePages.value = { ...queuePages.value, [page]: response.items };
-    totalProjects.value = response.total;
-    totalPages.value = response.total_pages;
-    return response.items;
+    })
+        .then((response) => {
+            queuePages.value = { ...queuePages.value, [page]: response.items };
+            totalProjects.value = response.total;
+            totalPages.value = response.total_pages;
+            return response.items;
+        })
+        .finally(() => {
+            pageRequests.delete(page);
+        });
+    pageRequests.set(page, request);
+    return request;
 }
 
-async function openPage(page: number, index: number) {
-    if (navigating.value || page < 1 || page > totalPages.value) return;
+async function openPage(page: number, index: number): Promise<boolean> {
+    if (navigating.value || page < 1 || page > totalPages.value) return false;
 
     navigating.value = true;
     try {
-        if (!(await saveCurrentDraftBeforeNavigation())) return;
+        if (!(await saveCurrentDraftBeforeNavigation())) return false;
         navigationError.value = null;
         const pageItems = await getQueuePage(page);
         const targetIndex = index < 0 ? pageItems.length - 1 : index;
-        if (targetIndex < 0 || targetIndex >= pageItems.length) return;
+        if (targetIndex < 0 || targetIndex >= pageItems.length) return false;
         currentPage.value = page;
         activeIndex.value = targetIndex;
+        return true;
     } catch (error) {
         navigationError.value = error;
+        return false;
     } finally {
         navigating.value = false;
     }
@@ -283,6 +322,46 @@ async function focusNextPending(startPage: number, startIndex: number) {
         }
     }
     return false;
+}
+
+async function loadAllQueuePages() {
+    const missing = navigatorPages.value
+        .filter((group) => queuePages.value[group.page] === undefined)
+        .map((group) => group.page);
+    if (missing.length === 0) {
+        navigatorError.value = null;
+        return;
+    }
+
+    navigatorLoading.value = true;
+    navigatorError.value = null;
+    try {
+        await Promise.all(missing.map((page) => getQueuePage(page)));
+    } catch (error) {
+        navigatorError.value = error;
+    } finally {
+        navigatorLoading.value = false;
+    }
+}
+
+async function openNavigator() {
+    navigatorOpen.value = true;
+    await loadAllQueuePages();
+}
+
+async function jumpToProject(page: number, index: number) {
+    if (await openPage(page, index)) navigatorOpen.value = false;
+}
+
+async function jumpToNextPending() {
+    if (navigating.value) return;
+    navigating.value = true;
+    try {
+        if (!(await saveCurrentDraftBeforeNavigation())) return;
+        await focusNextPending(currentPage.value, activeIndex.value + 1);
+    } finally {
+        navigating.value = false;
+    }
 }
 
 async function openReview(event: MouseEvent) {
@@ -417,37 +496,14 @@ onBeforeRouteLeave(async () => {
 <template>
     <div class="judging-workspace" :aria-busy="navigating || submitting">
         <h1 class="sr-only">Judge projects</h1>
-        <DefineNavigation>
-            <nav aria-label="Judging queue" class="mb-4 flex flex-wrap gap-2">
-                <UButton
-                    variant="outline"
-                    icon="i-lucide-arrow-left"
-                    class="min-h-11"
-                    aria-label="Previous project"
-                    :disabled="activeProjectNumber <= 1 || submitting || navigating"
-                    @click="openPreviousProject"
-                >
-                    Previous
-                </UButton>
-                <UButton
-                    variant="outline"
-                    trailing-icon="i-lucide-arrow-right"
-                    class="min-h-11"
-                    aria-label="Next project"
-                    :disabled="activeProjectNumber >= totalProjects || submitting || navigating"
-                    @click="openNextProject"
-                >
-                    Next
-                </UButton>
-            </nav>
-        </DefineNavigation>
+
         <UAlert
             v-if="queueError"
             color="error"
             icon="i-lucide-circle-alert"
             title="Could not load the judging queue"
             :description="getErrorMessage(queueError)"
-            class="mx-4 my-4 sm:mx-6"
+            class="m-4 sm:m-6"
         >
             <template #actions>
                 <UButton class="min-h-11" variant="outline" @click="retryQueue">Try again</UButton>
@@ -461,54 +517,110 @@ onBeforeRouteLeave(async () => {
             </p>
         </div>
 
-        <div v-else-if="!hasPendingProjects || totalProjects === 0" class="p-4 sm:p-6">
-            <UIcon
-                name="i-lucide-party-popper"
-                class="mb-3 size-8 text-primary"
-                aria-hidden="true"
-            />
-            <h2 class="text-2xl font-bold">You are all caught up</h2>
+        <div v-else-if="totalProjects === 0" class="p-4 sm:p-6">
+            <UIcon name="i-lucide-inbox" class="mb-3 size-8 text-primary" aria-hidden="true" />
+            <h2 class="text-2xl font-bold">No submitted projects yet</h2>
             <p class="mt-2 max-w-prose text-muted">
-                There are no projects waiting for your evaluation. Your progress will update if more
-                submissions become available.
+                Projects appear here as soon as teams submit them. This page updates when you
+                reload.
             </p>
             <UButton to="/judging" class="mt-5 min-h-11">Back to judging overview</UButton>
         </div>
 
         <template v-else-if="activeTeam">
-            <div v-if="!activeTrack" class="p-4 sm:p-6">
-                <ReuseNavigation />
-                <UAlert
-                    color="error"
-                    icon="i-lucide-triangle-alert"
-                    title="This project cannot be scored yet"
-                    description="Its judging track is missing from the active rubric. Contact an organizer so your work is not recorded incorrectly."
-                />
-            </div>
+            <div class="judging-workspace-body">
+                <div class="judging-toolbar">
+                    <div class="min-w-0">
+                        <p class="truncate text-sm text-muted">{{ activeTeam.name }}</p>
+                        <p class="font-semibold">
+                            Project {{ activeProjectNumber }} of {{ totalProjects }}
+                            <span class="ml-2 text-sm font-normal text-muted">
+                                {{ scoredCount }} evaluated
+                            </span>
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <UButton
+                            v-if="hasPendingProjects"
+                            variant="soft"
+                            icon="i-lucide-skip-forward"
+                            class="min-h-11"
+                            :disabled="navigating || submitting"
+                            @click="jumpToNextPending"
+                        >
+                            Next unscored
+                        </UButton>
+                        <UButton
+                            variant="outline"
+                            icon="i-lucide-layout-grid"
+                            class="min-h-11"
+                            @click="openNavigator"
+                        >
+                            All projects
+                        </UButton>
+                        <UButton
+                            variant="outline"
+                            icon="i-lucide-arrow-left"
+                            class="min-h-11"
+                            aria-label="Previous project"
+                            :disabled="activeProjectNumber <= 1 || submitting || navigating"
+                            @click="openPreviousProject"
+                        >
+                            Previous
+                        </UButton>
+                        <UButton
+                            trailing-icon="i-lucide-arrow-right"
+                            class="min-h-11"
+                            aria-label="Next project"
+                            :disabled="
+                                activeProjectNumber >= totalProjects || submitting || navigating
+                            "
+                            @click="openNextProject"
+                        >
+                            Next
+                        </UButton>
+                    </div>
+                </div>
 
-            <JudgingCard
-                v-else
-                :key="`score-${activeTeam.id}`"
-                :team="activeTeam"
-                :track="activeTrack"
-                :comment-guidance="activeCommentGuidance"
-                :comment-identity-error="commentIdentityError"
-                :scores="displayScores"
-                :reasoning="displayReasoning"
-                :draft-status="activeFinalized ? 'saved' : draftStatus"
-                :draft-error="activeFinalized ? null : draftErrorMessage"
-                :draft-ready="Boolean(activeFinalized) || draftLoaded"
-                :draft-saved-at="activeFinalized ? null : draftLastSavedAt"
-                :read-only="Boolean(activeFinalized)"
-                @score="updateScore"
-                @reasoning="updateReasoning"
-                @retry="retryDraft"
-                @review="openReview"
-            >
-                <template #navigation>
-                    <ReuseNavigation />
-                </template>
-            </JudgingCard>
+                <UAlert
+                    v-if="!hasPendingProjects"
+                    color="success"
+                    variant="subtle"
+                    icon="i-lucide-circle-check-big"
+                    title="Every submitted project has an evaluation"
+                    description="You can still open any project to review the scores and feedback you saved."
+                    class="mx-4 mt-3 sm:mx-6"
+                />
+
+                <div v-if="activeTrack" class="judging-split-host">
+                    <JudgingCard
+                        :key="`score-${activeTeam.id}`"
+                        :team="activeTeam"
+                        :track="activeTrack"
+                        :comment-guidance="activeCommentGuidance"
+                        :comment-identity-error="commentIdentityError"
+                        :scores="displayScores"
+                        :reasoning="displayReasoning"
+                        :draft-status="activeFinalized ? 'saved' : draftStatus"
+                        :draft-error="activeFinalized ? null : draftErrorMessage"
+                        :draft-ready="Boolean(activeFinalized) || draftLoaded"
+                        :draft-saved-at="activeFinalized ? null : draftLastSavedAt"
+                        :read-only="Boolean(activeFinalized)"
+                        @score="updateScore"
+                        @reasoning="updateReasoning"
+                        @retry="retryDraft"
+                        @review="openReview"
+                    />
+                </div>
+                <div v-else class="p-4 sm:p-6">
+                    <UAlert
+                        color="error"
+                        icon="i-lucide-triangle-alert"
+                        title="This project cannot be scored yet"
+                        description="Its judging track is missing from the active rubric. Contact an organizer so your work is not recorded incorrectly."
+                    />
+                </div>
+            </div>
 
             <JudgingReview
                 v-if="activeTrack"
@@ -524,12 +636,152 @@ onBeforeRouteLeave(async () => {
                 @finalize="finalizeEvaluation"
             />
         </template>
+
+        <div v-else class="p-4 sm:p-6">
+            <p class="text-muted">No project is selected.</p>
+            <UButton class="mt-3 min-h-11" @click="openNavigator">Choose a project</UButton>
+        </div>
+
+        <USlideover
+            v-model:open="navigatorOpen"
+            title="All projects"
+            description="Jump to any project in this season's judging queue."
+            side="right"
+            :ui="{ content: 'sm:max-w-md' }"
+        >
+            <template #body>
+                <p class="mb-3 text-sm text-muted">
+                    {{ scoredCount }} of {{ submittedCount }} submitted projects evaluated.
+                </p>
+                <div class="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter projects">
+                    <UButton
+                        v-for="filter in navigatorFilters"
+                        :key="filter.value"
+                        size="sm"
+                        class="min-h-11"
+                        :variant="navigatorFilter === filter.value ? 'solid' : 'outline'"
+                        @click="navigatorFilter = filter.value"
+                    >
+                        {{ filter.label }}
+                    </UButton>
+                </div>
+
+                <UAlert
+                    v-if="navigatorError"
+                    color="error"
+                    icon="i-lucide-circle-alert"
+                    title="Could not load every project"
+                    :description="getErrorMessage(navigatorError)"
+                >
+                    <template #actions>
+                        <UButton class="min-h-11" variant="outline" @click="loadAllQueuePages">
+                            Try again
+                        </UButton>
+                    </template>
+                </UAlert>
+
+                <p
+                    v-else-if="navigatorLoading"
+                    class="rounded-lg border border-default p-3 text-sm text-muted"
+                    aria-live="polite"
+                >
+                    Loading every project…
+                </p>
+
+                <template v-else>
+                    <section
+                        v-for="group in navigatorVisiblePages.filter(
+                            (group) => group.items.length > 0,
+                        )"
+                        :key="group.page"
+                        class="mb-4"
+                    >
+                        <h3 class="mb-2 text-sm font-semibold text-muted">
+                            Page {{ group.page }} of {{ totalPages }}
+                        </h3>
+                        <ul class="space-y-2">
+                            <li v-for="entry in group.items" :key="entry.item.team.id">
+                                <button
+                                    type="button"
+                                    class="flex min-h-11 w-full items-center gap-3 rounded-lg border p-2 text-left transition"
+                                    :class="
+                                        entry.item.team.id === activeTeam?.id
+                                            ? 'border-primary bg-primary/10'
+                                            : 'border-default hover:bg-elevated'
+                                    "
+                                    @click="jumpToProject(group.page, entry.index)"
+                                >
+                                    <span
+                                        class="flex size-8 shrink-0 items-center justify-center rounded-md border border-default text-sm font-semibold tabular-nums"
+                                    >
+                                        {{ (group.page - 1) * queuePageSize + entry.index + 1 }}
+                                    </span>
+                                    <span class="min-w-0 flex-1">
+                                        <span class="block truncate font-medium">
+                                            {{ entry.item.team.project.name }}
+                                        </span>
+                                        <span class="block truncate text-sm text-muted">
+                                            {{ entry.item.team.name }}
+                                        </span>
+                                    </span>
+                                    <UIcon
+                                        :name="
+                                            entry.item.evaluated
+                                                ? 'i-lucide-circle-check'
+                                                : 'i-lucide-circle-dashed'
+                                        "
+                                        class="size-5 shrink-0"
+                                        :class="
+                                            entry.item.evaluated ? 'text-success' : 'text-muted'
+                                        "
+                                        aria-hidden="true"
+                                    />
+                                    <span class="sr-only">
+                                        {{ entry.item.evaluated ? "Evaluated" : "Not evaluated" }}
+                                    </span>
+                                </button>
+                            </li>
+                        </ul>
+                    </section>
+                    <p
+                        v-if="navigatorVisiblePages.every((group) => group.items.length === 0)"
+                        class="rounded-lg border border-default p-3 text-sm text-muted"
+                    >
+                        No projects match this filter.
+                    </p>
+                </template>
+            </template>
+        </USlideover>
     </div>
 </template>
 
 <style scoped>
 .judging-workspace {
     min-width: 0;
+}
+
+.judging-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-block-end: 1px solid var(--ui-border);
+}
+
+@media (min-width: 48rem) {
+    .judging-workspace-body {
+        display: flex;
+        flex-direction: column;
+        height: calc(100dvh - var(--ui-header-height));
+        min-height: 16rem;
+    }
+
+    .judging-split-host {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

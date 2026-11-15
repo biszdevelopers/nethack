@@ -197,6 +197,18 @@ Finalize a judge's evaluation for an assigned project. New drafts and evaluation
 
 The active judging rubric and saved-draft rubric responses include the selected rubric version's `commentGuidance` object (`introduction`, `guidelines`, and `templates`). Older versions without this field use the built-in defaults. Organizers edit guidance by creating a new immutable rubric version.
 
+### GET `/api/judging/history/:seasonId`
+
+Read the signed-in judge's finalized evaluations for one season, including past seasons and the active season after judging closes. Only the requesting judge's evaluations are returned.
+
+| Field | Details |
+| --- | --- |
+| **Auth** | Judge with `nethack.Judging.assignmentsRead` |
+| **Params** | `seasonId` — positive integer |
+| **Response** | `GetJudgingHistoryResponse` — `{ season, items, unavailable_evaluations }` |
+| **Items** | `team` (`APITeam`), rubric name and version, track name, normalized weighted score, criterion scores, and anonymous feedback |
+| **Edge cases** | Returns `404` for an unknown season and an empty list when the judge has no evaluations. Evaluations whose saved rubric or score payload cannot be read are counted in `unavailable_evaluations` instead of failing the request |
+
 ### GET `/api/teams/:id/scores`
 
 Read feedback for a team you belong to now or belonged to previously. The response follows `TeamScoreFeedbackResponse`. The route returns 403 until the team's season publishes results. Comments are withheld until at least three judges have evaluated the team; while withheld, `feedback_withheld_for_anonymity` is `true` so the UI can explain the gate without returning the exact review count. Evaluations whose saved rubric or score payload cannot be read are skipped, and `unavailable_evaluations` reports how many were omitted so the remaining feedback and score stay usable. When comments are shown, the response contains comment text only and omits judge names and IDs, rubric and track metadata, individual score breakdowns, and stable evaluation ordering. The overall score additionally requires the season's `show_scores` setting, and rank requires `show_ranking`; both remain hidden until at least three judges have evaluated the team.
@@ -343,7 +355,7 @@ Get the currently active season (public).
 
 ### PATCH `/api/seasons/active`
 
-Set the active season. In YAML mode, the outgoing season's settings are captured from the current manifest.
+Set the active season. In YAML mode, the outgoing season's settings are captured from the current manifest, then the activated season's stored settings are written into a local manifest so the live site switches immediately. If that write fails, the previous active season is restored and the request fails.
 
 | Field          | Details                                                    |
 | -------------- | ---------------------------------------------------------- |

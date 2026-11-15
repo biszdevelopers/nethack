@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, useTemplateRef } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue";
 import type { JudgingDraftStatus } from "~/composables/useJudgingDraft";
 import {
     DEFAULT_JUDGE_COMMENT_GUIDANCE,
@@ -32,6 +32,12 @@ const emit = defineEmits<{
 
 const projectHeading = useTemplateRef<HTMLHeadingElement>("projectHeading");
 const reasoningInput = useTemplateRef<HTMLTextAreaElement>("reasoningInput");
+const splitRoot = useTemplateRef<HTMLElement>("splitRoot");
+const splitPercent = ref(50);
+const MIN_SPLIT = 25;
+const MAX_SPLIT = 75;
+const SPLIT_STORAGE_KEY = "basishacks:judging-split";
+let dragging = false;
 const commentGuidance = computed(() => props.commentGuidance ?? DEFAULT_JUDGE_COMMENT_GUIDANCE);
 const safeRepoUrl = computed(() => safeUrl(props.team.project.repo_url));
 const safeDemoUrl = computed(() => safeUrl(props.team.project.demo_url));
@@ -97,11 +103,82 @@ async function appendCommentPrompt(prompt: string) {
     reasoningInput.value?.setSelectionRange(nextValue.length, nextValue.length);
 }
 
-onMounted(() => nextTick(() => projectHeading.value?.focus()));
+function clampSplit(value: number) {
+    return Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, value));
+}
+
+function updateSplitFromPointer(event: PointerEvent) {
+    const root = splitRoot.value;
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    splitPercent.value = clampSplit(((event.clientX - rect.left) / rect.width) * 100);
+}
+
+function persistSplit() {
+    try {
+        localStorage.setItem(SPLIT_STORAGE_KEY, String(Math.round(splitPercent.value)));
+    } catch {
+        // Storage can be unavailable in private modes; the split still works.
+    }
+}
+
+function startResize(event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    dragging = true;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    updateSplitFromPointer(event);
+}
+
+function resizeWithPointer(event: PointerEvent) {
+    if (dragging) updateSplitFromPointer(event);
+}
+
+function stopResize(event: PointerEvent) {
+    if (!dragging) return;
+    dragging = false;
+    const handle = event.currentTarget as HTMLElement;
+    if (handle.hasPointerCapture?.(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId);
+    }
+    persistSplit();
+}
+
+function resizeWithKeyboard(event: KeyboardEvent) {
+    const step = event.shiftKey ? 10 : 2;
+    if (event.key === "ArrowLeft") splitPercent.value = clampSplit(splitPercent.value - step);
+    else if (event.key === "ArrowRight") splitPercent.value = clampSplit(splitPercent.value + step);
+    else if (event.key === "Home") splitPercent.value = MIN_SPLIT;
+    else if (event.key === "End") splitPercent.value = MAX_SPLIT;
+    else if (event.key === "Enter" || event.key === " ") splitPercent.value = 50;
+    else return;
+    event.preventDefault();
+    persistSplit();
+}
+
+function resetSplit() {
+    splitPercent.value = 50;
+    persistSplit();
+}
+
+onMounted(() => {
+    try {
+        const stored = Number(localStorage.getItem(SPLIT_STORAGE_KEY));
+        if (Number.isFinite(stored) && stored > 0) splitPercent.value = clampSplit(stored);
+    } catch {
+        // Storage can be unavailable; keep the default split.
+    }
+    void nextTick(() => projectHeading.value?.focus());
+});
+
+onBeforeUnmount(() => {
+    dragging = false;
+});
 </script>
 
 <template>
-    <div class="judging-split">
+    <div ref="splitRoot" class="judging-split" :style="{ '--judging-split': `${splitPercent}%` }">
         <section class="judging-pane project-pane" aria-labelledby="project-heading" tabindex="0">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="min-w-0">
@@ -140,17 +217,8 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                     <SafeComark>{{ team.project.sourcing }}</SafeComark>
                 </template>
             </UAlert>
-        </section>
 
-        <section class="judging-pane rubric-pane" aria-labelledby="rubric-heading" tabindex="0">
-            <slot name="navigation" />
-            <div class="mb-4">
-                <h3 id="rubric-heading" class="text-xl font-bold sm:text-2xl">
-                    Scoring Guidelines
-                </h3>
-            </div>
-
-            <div class="mb-4 flex flex-wrap gap-2">
+            <div class="flex flex-wrap gap-2">
                 <UButton
                     v-if="safeRepoUrl"
                     :href="safeRepoUrl"
@@ -178,6 +246,35 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
                 <p v-if="!safeRepoUrl && !safeDemoUrl" class="text-sm text-muted">
                     This project has no available repository or demo links.
                 </p>
+            </div>
+        </section>
+
+        <div
+            class="judging-divider"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the project details and scoring panes"
+            aria-valuemin="25"
+            aria-valuemax="75"
+            :aria-valuenow="Math.round(splitPercent)"
+            title="Drag to resize; use the arrow keys"
+            tabindex="0"
+            @pointerdown="startResize"
+            @pointermove="resizeWithPointer"
+            @pointerup="stopResize"
+            @pointercancel="stopResize"
+            @keydown="resizeWithKeyboard"
+            @dblclick="resetSplit"
+        >
+            <span class="judging-divider-grip" aria-hidden="true" />
+        </div>
+
+        <section class="judging-pane rubric-pane" aria-labelledby="rubric-heading" tabindex="0">
+            <slot name="navigation" />
+            <div class="mb-4">
+                <h3 id="rubric-heading" class="text-xl font-bold sm:text-2xl">
+                    Scoring Guidelines
+                </h3>
             </div>
 
             <div class="space-y-4">
@@ -385,6 +482,10 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
     display: grid;
 }
 
+.judging-divider {
+    display: none;
+}
+
 .judging-pane {
     min-width: 0;
     padding: clamp(1rem, 3vw, 2.5rem);
@@ -402,14 +503,35 @@ onMounted(() => nextTick(() => projectHeading.value?.focus()));
 
 @media (min-width: 48rem) {
     .judging-split {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        height: calc(100dvh - var(--ui-header-height));
+        grid-template-columns: var(--judging-split, 50%) 0.6rem minmax(0, 1fr);
+        height: 100%;
         min-height: 16rem;
     }
 
     .project-pane {
         border-block-end: 0;
-        border-inline-end: 1px solid var(--ui-border);
+    }
+
+    .judging-divider {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--ui-border);
+        cursor: col-resize;
+        touch-action: none;
+    }
+
+    .judging-divider:hover,
+    .judging-divider:focus-visible {
+        background: var(--ui-primary);
+        outline: none;
+    }
+
+    .judging-divider-grip {
+        width: 0.25rem;
+        height: 2.5rem;
+        border-radius: 999px;
+        background: var(--ui-bg);
     }
 
     .judging-pane {

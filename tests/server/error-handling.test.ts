@@ -28,6 +28,7 @@ const allApiFiles = [
     "server/api/ballot/index.get.ts",
     "server/api/ballot/index.post.ts",
     "server/api/ballot/summary.get.ts",
+    "server/api/judging/history/[seasonId].get.ts",
     "server/api/seasons/active.get.ts",
     "server/api/seasons/active.patch.ts",
     "server/api/seasons/index.get.ts",
