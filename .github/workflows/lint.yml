@@ -15,8 +15,8 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    linting:
-        name: ESLint and Oxfmt
+    formatting:
+        name: Oxfmt Format Check
         runs-on: ubuntu-latest
         timeout-minutes: 10
 
