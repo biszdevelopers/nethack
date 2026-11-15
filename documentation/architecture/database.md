@@ -88,6 +88,7 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 | `profile_picture` | `TEXT` | Basis-auth picture URL or legacy local asset path |
 | `auth_issuer` | `TEXT` | Linked basis-auth issuer |
 | `auth_subject` | `TEXT` | Linked basis-auth subject |
+| `tokens_valid_after` | `BIGINT` | Backchannel logout barrier in Unix seconds; tokens with `iat` at or before it are rejected |
 | `is_admin` | `INTEGER NOT NULL DEFAULT 0` | Locally promoted administrator flag; designated initial administrators are matched by email |
 
 ::: warning The legacy `role` column is retired. Authorization comes from the validated basis-auth `permissions` claim, the participant compatibility bundle, and the local administrator flag. :::
@@ -116,7 +117,17 @@ Individual project scores within a ballot. Scores must be 1–5 or null.
 
 **Unique constraint**: `(ballot_id, project_id)`
 
-Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they are not stored in PostgreSQL. The database contains application users and event data, not browser token sessions.
+Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they are not stored in PostgreSQL. The database contains application users and event data, not browser token sessions. Access-token revocations and logout barriers are the exception: they must survive restarts and be shared by every process.
+
+### `revoked_access_tokens`
+
+| Column        | Type               | Description                                        |
+| ------------- | ------------------ | -------------------------------------------------- |
+| `jti`         | `TEXT PRIMARY KEY` | Revoked access-token ID                            |
+| `valid_after` | `BIGINT NOT NULL`  | Unix seconds; the token is rejected at or after it |
+| `expires_at`  | `BIGINT`           | Signed token expiry in Unix seconds, used for cleanup |
+
+Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted after `expires_at` plus a five-minute tolerance, with a seven-day fallback for entries that have no known expiry.
 
 ### `oauth2_applications`
 

@@ -40,6 +40,8 @@ The following environment variables directly affect platform security and must b
 | `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates nethack at the basis-auth token endpoint |
 | `BASIS_AUTH_ISSUER` | Exact trusted issuer; HTTPS required in production except for loopback HTTP local testing | Discovery and issuer validation |
 | `BASIS_AUTH_RESOURCE` | Exact registered audience | Resource-token audience validation |
+| `BASIS_AUTH_RESOURCE_SECRET` | Provider-generated resource secret | Signs the backchannel webhook proof and authenticates private listener calls |
+| `BASIS_AUTH_INTERNAL_URL` | HTTP(S) origin of the private listener, default `http://127.0.0.1:3001` | Webhook verification and user-state checks |
 | `CURRENT_URL_ORIGIN` | Public HTTPS origin, without a path; loopback HTTP accepted only while bound to loopback | Callback URL and same-origin validation for cookie-authenticated mutations |
 | `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10). Forwarded client addresses are used only when the socket peer exists and the forwarded chain is valid. |
 | `MICROSOFT_TENANT_ID` | Valid Microsoft Entra ID tenant | Required for Microsoft Graph API integration |
@@ -117,6 +119,7 @@ Critical authentication configuration is validated at server startup in `server/
 | --- | --- | --- | --- |
 | `BASIS_AUTH_COOKIE_SECRET` | Must be set and at least 32 bytes (UTF-8 encoded) | `process.exit(1)` with fatal error message | Stderr warning, continues |
 | `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE` | All must be set | Fatal startup error when any is missing | Warning; login unavailable until configured |
+| `BASIS_AUTH_RESOURCE_SECRET`, `BASIS_AUTH_INTERNAL_URL` | Both must be set and the URL must be HTTP(S) | Fatal startup error | Warning; sign-in fails with `14408` until the backchannel is configured |
 | `MICROSOFT_*` env vars | All three must be set for Graph features | Warning if partially configured | Warning if partially configured |
 
 Resource access tokens are verified against basis-auth JWKS and are never signed by nethack.
@@ -228,8 +231,13 @@ Protected nethack APIs accept basis-auth access tokens with the following requir
 - **Type:** `at+jwt`
 - **Lifetime:** token must be unexpired
 - **Claims:** string `sub`, `client_id`, and `scope`
+- **Revocation:** the `jti` must not be deny-listed, `iat` must be after the subject's logout barrier, and the private listener must not report the subject as disabled
 
-Token verification uses `jose.jwtVerify()` and a remotely refreshed basis-auth JWKS. The stable `sub` is mapped through `users.auth_issuer` and `users.auth_subject`.
+Token verification uses `jose.jwtVerify()` and a remotely refreshed basis-auth JWKS. The stable `sub` is mapped through `users.auth_issuer` and `users.auth_subject`. Every rejected token returns the same public shape: HTTP `401`, `WWW-Authenticate: Bearer error="invalid_token"`, and the `Invalid access token` description.
+
+## Backchannel Logout
+
+basis-auth requires a verified backchannel logout URL for the resource before authorization-code sign-in works. `POST /api/auth/basis/backchannel` answers the webhook challenge, applies `logout_token` events, and denylists revoked access-token `jti` values. The receiver authenticates to the private listener with `BASIS_AUTH_RESOURCE_SECRET` and signs `HMAC-SHA256(challenge)`; it never trusts unsigned form fields. See [basis-auth Integration](/architecture/oauth2#backchannel-logout-and-revocation).
 
 ## PKCE Support
 

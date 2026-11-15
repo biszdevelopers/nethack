@@ -111,8 +111,10 @@ cp .env.example .env
 | `BASIS_AUTH_CLIENT_ID` | Registered confidential nethack client ID | Provider-generated value |
 | `BASIS_AUTH_CLIENT_SECRET` | Server-only nethack client secret | Provider-generated value |
 | `BASIS_AUTH_RESOURCE` | Resource audience registered for nethack | `devconnect://nethack.bisz.dev` |
+| `BASIS_AUTH_RESOURCE_SECRET` | Resource secret issued by basis-auth | Provider-generated value |
+| `BASIS_AUTH_INTERNAL_URL` | basis-auth private listener origin | `http://127.0.0.1:3001` |
 
-::: tip Login is delegated to basis-auth. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` for each environment. :::
+::: tip Login is delegated to basis-auth. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` for each environment. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/backchannel` as the resource's backchannel logout URL; sign-in fails with `14408 invalid_resource` while that URL is unverified. :::
 
 #### Generating a Session Password
 
@@ -205,6 +207,8 @@ BASIS_AUTH_ISSUER=http://localhost:3000
 BASIS_AUTH_CLIENT_ID=your_basis_auth_client_id
 BASIS_AUTH_CLIENT_SECRET=your_basis_auth_client_secret
 BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
+BASIS_AUTH_RESOURCE_SECRET=your_basis_auth_resource_secret
+BASIS_AUTH_INTERNAL_URL=http://127.0.0.1:3001
 
 # OPTIONAL - Live event configuration source: local | manifest URL | database
 YAML_SOURCE_HACKATHON=local
@@ -439,9 +443,19 @@ If the server logs `[MS Graph] MS Token Endpoint returned 401` or similar, the `
 
 ### basis-auth Configuration Missing
 
-The server validates `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, and `BASIS_AUTH_RESOURCE` at startup:
+The server validates `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE`, `BASIS_AUTH_RESOURCE_SECRET`, and `BASIS_AUTH_INTERNAL_URL` at startup:
 
-- **Production:** any missing value is fatal.
-- **Development/test:** missing values produce a warning; login remains unavailable until configured.
+- **Production:** any missing value, or an internal URL that is not HTTP(S), is fatal.
+- **Development/test:** missing values produce a warning; login and revocation state remain unavailable until configured.
 
-The client ID and secret come from basis-auth registration. The callback registered there must exactly match `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`.
+The client ID and secret come from basis-auth registration. The callback registered there must exactly match `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`. The resource secret comes from the resource Secret tab and is also used to sign the backchannel webhook proof.
+
+### Login Fails With "Unable to Login" or Error `14408`
+
+basis-auth refuses authorization-code sign-in while the resource has no verified backchannel logout URL. The authorize endpoint returns an `invalid_resource` error and the browser shows the generic login error page. Confirm the code by reading the `basis_bridge_error` cookie payload from the authorization response, for example:
+
+```bash
+curl -sD - -o /dev/null "https://auth.example.org/oauth/authorize?client_id=...&redirect_uri=...&response_type=code&scope=openid&resource=...&state=s&nonce=n&code_challenge=...&code_challenge_method=S256"
+```
+
+If the payload contains `"code":14408`, register and verify `${CURRENT_URL_ORIGIN}/api/auth/basis/backchannel` in the resource's Backchannel tab. The URL must be reachable from the basis-auth server, so a `localhost` development server cannot satisfy it for a remote issuer; register the deployed origin instead, then sign in locally. `14407` / `14501` mean the resource audience is not registered or not attached to the client, and `14100` means the redirect URI is not registered exactly.

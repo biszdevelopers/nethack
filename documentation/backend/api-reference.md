@@ -58,6 +58,19 @@ Validates the cookie-held access token and returns `{ user: { id }, expiresAt, p
 
 Attempts to revoke the stored refresh-token family, always clears the local session, and returns the canonical success envelope.
 
+### POST `/api/auth/basis/backchannel`
+
+The resource's backchannel logout receiver. basis-auth posts form-encoded events and verifies the URL before saving it.
+
+| Field | Details |
+| --- | --- |
+| **Auth** | basis-auth only; requests are rate limited per peer |
+| **Body** | `action=test&nonce&challenge`, `logout_token`, or `action=revoke_access_token&jti&valid_after&revocation_token` |
+| **Success** | `202` for a webhook challenge, `204` after a logout token or revocation is persisted |
+| **Errors** | `400` for a malformed challenge, an unverifiable event token, or a revocation token that does not match the form fields |
+
+A `logout_token` sets `users.tokens_valid_after` for its subject, which invalidates every local session that predates the logout. A revocation adds the signed `jti` to `revoked_access_tokens` from its signed `valid_after` time. The webhook proof is signed with `BASIS_AUTH_RESOURCE_SECRET` and posted to `/internal/backchannel/validate` after the `202` response.
+
 ::: info Retired endpoints The native `/.well-known/openid-configuration`, `/api/oauth2/*`, and `/api/applications/*` surfaces have been removed. Register and manage clients in basis-auth. :::
 
 ---
