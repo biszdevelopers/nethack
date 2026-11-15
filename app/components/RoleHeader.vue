@@ -105,7 +105,9 @@ const navItems = computed<NavigationMenuItem[]>(() => {
             icon: "i-material-symbols-star-rate",
         });
     }
-    if (can(NethackPermissions.Judging.assignmentsRead) && hackathon.value?.status === "voting") {
+    // Judges keep the Judging link outside the voting phase so completed
+    // evaluations stay reachable; the page itself handles the closed state.
+    if (can(NethackPermissions.Judging.assignmentsRead)) {
         links.push({
             label: "Judging",
             to: "/judging",

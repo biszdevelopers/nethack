@@ -358,7 +358,10 @@ async function jumpToNextPending() {
     navigating.value = true;
     try {
         if (!(await saveCurrentDraftBeforeNavigation())) return;
-        await focusNextPending(currentPage.value, activeIndex.value + 1);
+        const found = await focusNextPending(currentPage.value, activeIndex.value + 1);
+        // The only remaining project can be the one already open, which the
+        // forward scan deliberately skips; fall back to a full scan.
+        if (!found && !navigationError.value) await focusNextPending(1, 0);
     } finally {
         navigating.value = false;
     }

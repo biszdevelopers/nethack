@@ -87,92 +87,105 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
             color="error"
             variant="subtle"
             icon="i-material-symbols-error-rounded"
-            title="Error loading ballot"
+            title="Voting is not available"
             :description="fetchError"
             class="mb-4"
-        />
-
-        <p>Look through all the projects below.</p>
-
-        <p>
-            You have a total of 10 stars to distribute, with a maximum of 5 stars per project.
-            Therefore your stars are RARE so vote wisely!
-        </p>
-
-        <p>
-            Please make sure to provide reasoning for your votes to show love and support! You do
-            not have to provide reasoning for all the projects.
-        </p>
-
-        <div class="my-4">
-            <template v-for="(team, index) in projects" :key="team.id">
-                <VotingProjectCard
-                    :team="team"
-                    :score="state.scores[index] ?? 0"
-                    :can-increment="!submitted && (state.scores[index] ?? 0) < 5 && totalStars < 10"
-                    :can-decrement="!submitted && (state.scores[index] ?? 0) > 0"
-                    @increment="increment(index)"
-                    @decrement="decrement(index)"
-                />
+        >
+            <template #actions>
+                <UButton variant="outline" class="min-h-11" @click="() => refresh()">
+                    Try again
+                </UButton>
+                <UButton to="/" variant="ghost" class="min-h-11">Back to home</UButton>
             </template>
+        </UAlert>
 
-            <p v-if="projects.length === 0" class="text-muted">No eligible projects to vote on.</p>
-        </div>
+        <template v-else>
+            <p>Look through all the projects below.</p>
 
-        <h2 class="text-2xl mb-4 bold">Summary</h2>
+            <p>
+                You have a total of 10 stars to distribute, with a maximum of 5 stars per project.
+                Therefore your stars are RARE so vote wisely!
+            </p>
 
-        <UForm :state="state" :schema="SubmitVoteRequest" @submit="onSubmit">
-            <UCard variant="subtle">
-                <p v-if="submitted" class="mb-4 bold">You have voted already. Thank you!</p>
+            <p>
+                Please make sure to provide reasoning for your votes to show love and support! You
+                do not have to provide reasoning for all the projects.
+            </p>
 
-                <p class="flex items-center gap-2 mb-4">
-                    Total stars:
-                    <UIcon
-                        name="i-material-symbols-star-rate"
-                        size="1.2em"
-                        class="text-yellow-300"
+            <div class="my-4">
+                <template v-for="(team, index) in projects" :key="team.id">
+                    <VotingProjectCard
+                        :team="team"
+                        :score="state.scores[index] ?? 0"
+                        :can-increment="
+                            !submitted && (state.scores[index] ?? 0) < 5 && totalStars < 10
+                        "
+                        :can-decrement="!submitted && (state.scores[index] ?? 0) > 0"
+                        @increment="increment(index)"
+                        @decrement="decrement(index)"
                     />
-                    {{ totalStars }} / 10
+                </template>
+
+                <p v-if="projects.length === 0" class="text-muted">
+                    No eligible projects to vote on.
                 </p>
+            </div>
 
-                <div class="mb-4">
-                    <p class="text-sm text-muted mb-2">Your distribution:</p>
-                    <div class="grid grid-cols-[1fr_max-content] gap-x-4 gap-y-1 items-center">
-                        <template v-for="(team, index) in projects" :key="team.id">
-                            <span class="text-sm">{{ team.project.name }}</span>
-                            <span class="text-sm flex items-center gap-1 justify-end">
-                                <UIcon
-                                    name="i-material-symbols-star-rate"
-                                    size="1em"
-                                    class="text-yellow-300"
-                                />
-                                {{ state.scores[index] ?? 0 }}
-                            </span>
-                        </template>
+            <h2 class="text-2xl mb-4 bold">Summary</h2>
+
+            <UForm :state="state" :schema="SubmitVoteRequest" @submit="onSubmit">
+                <UCard variant="subtle">
+                    <p v-if="submitted" class="mb-4 bold">You have voted already. Thank you!</p>
+
+                    <p class="flex items-center gap-2 mb-4">
+                        Total stars:
+                        <UIcon
+                            name="i-material-symbols-star-rate"
+                            size="1.2em"
+                            class="text-yellow-300"
+                        />
+                        {{ totalStars }} / 10
+                    </p>
+
+                    <div class="mb-4">
+                        <p class="text-sm text-muted mb-2">Your distribution:</p>
+                        <div class="grid grid-cols-[1fr_max-content] gap-x-4 gap-y-1 items-center">
+                            <template v-for="(team, index) in projects" :key="team.id">
+                                <span class="text-sm">{{ team.project.name }}</span>
+                                <span class="text-sm flex items-center gap-1 justify-end">
+                                    <UIcon
+                                        name="i-material-symbols-star-rate"
+                                        size="1em"
+                                        class="text-yellow-300"
+                                    />
+                                    {{ state.scores[index] ?? 0 }}
+                                </span>
+                            </template>
+                        </div>
                     </div>
-                </div>
 
-                <UFormField name="reasoning" label="Your reasoning" class="mb-4">
-                    <UTextarea
-                        v-model="state.reasoning"
-                        placeholder="Please explain your reasoning, making sure to include details about every project!"
-                        class="w-full"
-                        :rows="5"
-                        :disabled="submitted"
-                        :maxlength="MAX_REASONING_LENGTH"
-                    />
-                </UFormField>
+                    <UFormField name="reasoning" label="Your reasoning" class="mb-4">
+                        <UTextarea
+                            v-model="state.reasoning"
+                            placeholder="Please explain your reasoning, making sure to include details about every project!"
+                            class="w-full"
+                            :rows="5"
+                            :disabled="submitted"
+                            :maxlength="MAX_REASONING_LENGTH"
+                        />
+                    </UFormField>
 
-                <UFormField v-if="!submitted">
-                    <UButton
-                        :disabled="totalStars !== 10 || projects.length === 0 || submitting"
-                        class="min-h-11"
-                        type="submit"
-                    >
-                        Submit
-                    </UButton>
-                </UFormField>
-            </UCard>
-        </UForm>
+                    <UFormField v-if="!submitted">
+                        <UButton
+                            :disabled="totalStars !== 10 || projects.length === 0 || submitting"
+                            class="min-h-11"
+                            type="submit"
+                        >
+                            Submit
+                        </UButton>
+                    </UFormField>
+                </UCard>
+            </UForm>
+        </template>
     </div>
 </template>

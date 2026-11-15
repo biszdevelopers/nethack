@@ -263,6 +263,7 @@ onBeforeUnmount(() => {
             @pointermove="resizeWithPointer"
             @pointerup="stopResize"
             @pointercancel="stopResize"
+            @lostpointercapture="stopResize"
             @keydown="resizeWithKeyboard"
             @dblclick="resetSplit"
         >
