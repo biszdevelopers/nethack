@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { jwtVerifyMock, createRemoteJWKSetMock, getUserBySubjectMock } = vi.hoisted(() => ({
-    jwtVerifyMock: vi.fn(),
-    createRemoteJWKSetMock: vi.fn(() => "jwks"),
-    getUserBySubjectMock: vi.fn(),
-}));
+const { jwtVerifyMock, createRemoteJWKSetMock, getUserBySubjectMock, assertActiveMock } =
+    vi.hoisted(() => ({
+        jwtVerifyMock: vi.fn(),
+        createRemoteJWKSetMock: vi.fn(() => "jwks"),
+        getUserBySubjectMock: vi.fn(),
+        assertActiveMock: vi.fn(),
+    }));
 
 vi.mock("jose", () => ({
     createRemoteJWKSet: createRemoteJWKSetMock,
@@ -19,6 +21,17 @@ vi.mock("~~/server/utils/basis-auth", () => ({
         resource: "devconnect://nethack.bisz.dev",
     }),
     getFreshBasisAuthUserSession: vi.fn(),
+}));
+
+vi.mock("~~/server/utils/basis-auth-state", () => ({
+    assertAccessTokenActive: assertActiveMock,
+    invalidAccessToken: () => {
+        throw (globalThis as any).createError({
+            statusCode: 401,
+            statusMessage: "invalid_token",
+            message: "Invalid access token",
+        });
+    },
 }));
 
 vi.mock("~~/server/utils/database/users", () => ({
@@ -48,6 +61,7 @@ const claims = {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    assertActiveMock.mockResolvedValue(undefined);
     vi.stubGlobal("createError", (input: any) => {
         const error = new Error(input.message);
         Object.assign(error, input);
@@ -62,7 +76,9 @@ describe("basis-auth access tokens", () => {
             payload: claims,
         });
 
-        await expect(verifyAccessToken("token")).resolves.toMatchObject({ sub: "user-1" });
+        await expect(verifyAccessToken("token", event())).resolves.toMatchObject({
+            sub: "user-1",
+        });
         expect(createRemoteJWKSetMock).toHaveBeenCalledWith(
             new URL("https://auth.example.test/oauth/jwks"),
         );
@@ -72,6 +88,12 @@ describe("basis-auth access tokens", () => {
             audience: "devconnect://nethack.bisz.dev",
             typ: "at+jwt",
         });
+        expect(assertActiveMock).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({
+                jti: "token-id",
+            }),
+        );
     });
 
     it.each([
@@ -80,24 +102,45 @@ describe("basis-auth access tokens", () => {
         { sub: "user-1", client_id: "portal" },
     ])("rejects an access token missing required claims", async (payload) => {
         jwtVerifyMock.mockResolvedValue({ payload });
-        await expect(verifyAccessToken("token")).rejects.toMatchObject({
+        await expect(verifyAccessToken("token", event())).rejects.toMatchObject({
             statusCode: 401,
             statusMessage: "invalid_token",
         });
+        expect(assertActiveMock).not.toHaveBeenCalled();
     });
 
     it("rejects invalid signatures, issuers, audiences, types, and expired tokens", async () => {
         jwtVerifyMock.mockRejectedValue(new Error("JWT verification failed"));
-        await expect(verifyAccessToken("token")).rejects.toMatchObject({ statusCode: 401 });
+        await expect(verifyAccessToken("token", event())).rejects.toMatchObject({
+            statusCode: 401,
+        });
+    });
+
+    it("rejects tokens revoked by the resource state check", async () => {
+        jwtVerifyMock.mockResolvedValue({ payload: claims });
+        assertActiveMock.mockRejectedValue(
+            (globalThis as any).createError({
+                statusCode: 401,
+                statusMessage: "invalid_token",
+                message: "Invalid access token",
+            }),
+        );
+
+        await expect(verifyAccessToken("token", event())).rejects.toMatchObject({
+            statusCode: 401,
+            statusMessage: "invalid_token",
+            message: "Invalid access token",
+        });
     });
 
     it("rejects an empty token before attempting configuration or signature checks", async () => {
-        await expect(verifyAccessToken("")).rejects.toMatchObject({
+        await expect(verifyAccessToken("", event())).rejects.toMatchObject({
             statusCode: 401,
             statusMessage: "invalid_token",
-            message: "Empty access token",
+            message: "Invalid access token",
         });
         expect(jwtVerifyMock).not.toHaveBeenCalled();
+        expect(assertActiveMock).not.toHaveBeenCalled();
     });
 
     it("maps the stable issuer and subject to the local user", async () => {
@@ -138,7 +181,7 @@ describe("OAuth2 bearer parsing", () => {
 
     it("rejects a bearer scheme without a token", () => {
         vi.mocked(getHeader).mockReturnValue("Bearer   ");
-        expect(() => extractBearerToken(event())).toThrow("Empty access token");
+        expect(() => extractBearerToken(event())).toThrow("Invalid access token");
     });
 
     it("verifies bearer tokens when the request carries an authorization header", async () => {
@@ -181,7 +224,7 @@ describe("OAuth2 bearer parsing", () => {
         await expect(verifyOAuth2JWT(event())).rejects.toMatchObject({
             statusCode: 401,
             statusMessage: "invalid_token",
-            message: "Missing or expired basis-auth token cookie",
+            message: "Invalid access token",
         });
         expect(jwtVerifyMock).not.toHaveBeenCalled();
     });

@@ -128,6 +128,9 @@ export const users = pgTable(
         profile_picture: text("profile_picture"),
         auth_issuer: text("auth_issuer"),
         auth_subject: text("auth_subject"),
+        // basis-auth backchannel logout barrier: tokens issued at or before this
+        // Unix second are rejected even if the cookie or token is still intact.
+        tokens_valid_after: bigint("tokens_valid_after", { mode: "number" }),
         is_admin: integer("is_admin").notNull().default(0),
     },
     (table) => [
@@ -471,4 +474,15 @@ export const assetReferences = pgTable(
         index("asset_references_object").on(table.collection, table.asset_path),
         check("asset_references_type_check", sql`${table.reference_type} = 'permalink'`),
     ],
+);
+
+/** Access tokens whose basis-auth refresh or logout already revoked them by `jti`. */
+export const revokedAccessTokens = pgTable(
+    "revoked_access_tokens",
+    {
+        jti: text("jti").primaryKey(),
+        valid_after: bigint("valid_after", { mode: "number" }).notNull(),
+        expires_at: bigint("expires_at", { mode: "number" }),
+    },
+    (table) => [index("revoked_access_tokens_expires_at").on(table.expires_at)],
 );

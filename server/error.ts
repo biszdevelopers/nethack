@@ -34,6 +34,9 @@ export default defineNitroErrorHandler((input, event) => {
     setResponseStatus(event, apiError.status);
     setResponseHeader(event, "cache-control", "no-store");
     setResponseHeader(event, "vary", "Accept");
+    if (apiError.error === "invalid_token") {
+        setResponseHeader(event, "www-authenticate", 'Bearer error="invalid_token"');
+    }
 
     if ((getRequestHeader(event, "accept") ?? "").includes("text/html")) {
         setResponseHeader(event, "content-type", "text/html; charset=utf-8");
