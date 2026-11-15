@@ -147,9 +147,10 @@ Full-width workspace that splits project details and scoring into two panes on w
 
 **Scoring interface:**
 
-- Shows the project name, team name, track, safe-rendered description, AI-use statement, and validated repository and demo links in the project pane.
+- Lists every competitor-submitted field in the project pane: team, pathway, project name, description, AI-use disclosure, repository, demo, and submission status. Missing fields are named explicitly (for example, "Alixa did not provide a project description") rather than leaving blank space.
 - Shows the rubric's configured integer ranges, criterion weights, and feedback form in the scoring pane.
 - Saves a recoverable draft, gives comment guidance and editable prompt templates, and opens the review dialog after saving.
+- A failed draft offers **Retry** and **Discard and reload**, so an unsavable draft cannot trap the judge on one project.
 - Requires a specific anonymous comment; judges are told comments become visible after results are published and at least three judges have evaluated the team.
 
 **Validation:** Validates against the immutable rubric version used for the season. Drafts use `/api/judging/drafts/:teamId`; final scores post to `/api/teams/:id/scores`.

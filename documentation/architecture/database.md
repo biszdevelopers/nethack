@@ -33,6 +33,9 @@ The legacy singleton (`id = 1`) is retained for export, import compatibility, an
 | `results_open_timestamp` | `BIGINT` | Results visibility timestamp in epoch milliseconds |
 | `theme_name` | `TEXT` | Hackathon theme name |
 | `theme_description` | `TEXT` | Hackathon theme description |
+| `live_overrides` | `JSONB` | Portal-managed operational switches that override `HACKATHON.yml` |
+
+Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, and `max_votes_per_user` are stored in `live_overrides` and applied on top of the manifest. Schedule, theme, and the rubric remain manifest-owned, so the operational switches keep working with a remote, read-only manifest.
 
 Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 

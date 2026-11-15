@@ -112,7 +112,10 @@ describe("live hackathon YAML", () => {
             context: {
                 drizzle: {
                     select: () => ({
-                        from: () => ({ orderBy: async () => [...rows] }),
+                        from: () => ({
+                            orderBy: async () => [...rows],
+                            limit: async () => [],
+                        }),
                     }),
                 },
             },

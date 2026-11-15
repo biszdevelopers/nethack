@@ -8,7 +8,7 @@ import {
     teams,
 } from "~~/server/database/schema";
 import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
-import { validateRubricScores } from "~~/shared/rubric";
+import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type NewTeamScore = Pick<
@@ -60,7 +60,7 @@ export async function createTeamScores(event: H3Event, scores: NewTeamScore): Pr
             throw createError({ statusCode: 409, message: "The selected rubric is unavailable." });
         }
 
-        const track = team.pathway ? version.definition.tracks[team.pathway] : undefined;
+        const track = getRubricTrack(version.definition, team.pathway);
         if (!track) {
             throw createError({
                 statusCode: 409,

@@ -2,6 +2,7 @@
 import { apiFetch } from "~~/app/composables/useApiFetch";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
+import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import AdminRubricManager from "~/components/admin/RubricManager.vue";
 definePageMeta({
     layout: "developers-dashboard",
@@ -26,6 +27,7 @@ if (status.value !== "pending" && status.value !== "idle") {
 // Data
 // ---------------------------------------------------------------------------
 const { data: adminData, refresh: refreshAdmin } = await useApiFetch("/api/admin/hackathon", {
+    lazy: true,
     server: false,
     $fetch: globalThis.$fetch,
 });
@@ -179,14 +181,18 @@ function normalize(key: string, val: any): any {
 
 /** Compare a normalized value against the selected season, falling back to live settings. */
 function hasChanged(key: string, normalized: any): boolean {
-    const seasonValue = selectedSeason.value
-        ? (selectedSeason.value as unknown as Record<string, unknown>)[key]
-        : undefined;
+    const season = selectedSeason.value;
+    const rawBaseline = season
+        ? (season as unknown as Record<string, unknown>)[key]
+        : (hackathon.value as any)?.[key];
+    if (rawBaseline === undefined) return false;
+    // A stored season's NULL means "empty", not "inherit the live value".
     const baseline =
-        seasonValue !== undefined && seasonValue !== null
-            ? seasonValue
-            : (hackathon.value as any)?.[key];
-    if (baseline === undefined) return false;
+        rawBaseline === null
+            ? boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)
+                ? 0
+                : ""
+            : rawBaseline;
     if (boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)) {
         return Number(normalized) !== Number(baseline);
     }
@@ -196,9 +202,21 @@ function hasChanged(key: string, normalized: any): boolean {
 /**
  * Save one field at a time. Sending only the field the organizer touched means
  * a stale form can never overwrite unrelated settings.
+ *
+ * Saves are serialized: a second quick edit waits for the first refresh, then
+ * re-reads the form so neither the server nor the visible form is left stale.
  */
-async function saveField(key: string) {
-    if (configReadOnly.value) return;
+let saveQueue: Promise<void> = Promise.resolve();
+
+function saveField(key: string) {
+    saveQueue = saveQueue.then(() => writeField(key)).catch(() => undefined);
+    return saveQueue;
+}
+
+async function writeField(key: string) {
+    if (configReadOnly.value && !(LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
+        return;
+    }
     const raw = hackathonForm[key];
     if (raw === undefined || raw === null) return;
     const value = normalize(key, raw);
@@ -269,17 +287,21 @@ const seasonItems = computed(() => [
 // ---------------------------------------------------------------------------
 const seasonNameForm = ref("");
 
-watch(selectedSeasonId, (id) => {
-    // Update season name
-    seasonNameForm.value = seasons.value?.find((s: any) => s.id === id)?.name ?? "";
-    scoreCurvePreset.value =
-        (seasons.value?.find((s: any) => s.id === id)?.score_curve_preset as
-            | ScoreCurvePreset
-            | undefined) ?? "original";
-    // Re-apply the full config (global + season overrides). When id is null,
-    // applyConfig skips the overlay, showing only the global hackathon values.
-    applyConfig(id);
-});
+watch(
+    selectedSeasonId,
+    (id) => {
+        // Update season name
+        seasonNameForm.value = seasons.value?.find((s: any) => s.id === id)?.name ?? "";
+        scoreCurvePreset.value =
+            (seasons.value?.find((s: any) => s.id === id)?.score_curve_preset as
+                | ScoreCurvePreset
+                | undefined) ?? "original";
+        // Re-apply the full config (global + season overrides). When id is null,
+        // applyConfig skips the overlay, showing only the global hackathon values.
+        applyConfig(id);
+    },
+    { immediate: true },
+);
 
 async function saveScoreCurvePreset(value: ScoreCurvePreset) {
     const seasonId = selectedSeasonId.value;
@@ -439,7 +461,11 @@ async function deleteSeason() {
                     variant="subtle"
                     icon="i-lucide-triangle-alert"
                     title="You are editing a stored season, not the live event"
-                    :description="`Changes here save to ${selectedSeason.name} and do not affect the public site until you make it the active season.`"
+                    :description="
+                        adminData?.configSource === 'remote'
+                            ? `Changes here save to ${selectedSeason.name}. Activating it applies its status and visibility switches immediately; schedule and theme stay under the remote manifest.`
+                            : `Changes here save to ${selectedSeason.name} and do not affect the public site until you make it the active season.`
+                    "
                 >
                     <template #actions>
                         <UButton class="min-h-11" :loading="activating" @click="setActiveSeason">
@@ -456,8 +482,8 @@ async function deleteSeason() {
                     title="These settings control the live site"
                     :description="
                         adminData?.configSource === 'remote'
-                            ? `These values are read-only for ${selectedSeason.name} because the live manifest is hosted remotely.`
-                            : `Status, voting, judging, and the schedule below apply immediately to ${selectedSeason.name}.`
+                            ? `Status, voting, judging, and visibility switches for ${selectedSeason.name} save to PostgreSQL and apply immediately. Schedule and theme come from the remote manifest.`
+                            : `Status, voting, judging, visibility switches, and the schedule below apply immediately to ${selectedSeason.name}.`
                     "
                 />
 
@@ -632,25 +658,25 @@ async function deleteSeason() {
                                 Saving...
                             </span>
                         </h2>
-                        <p v-if="configReadOnly" class="text-sm text-ui-text-muted">
-                            Live settings are read-only for a remote HACKATHON.yml. Edit the
-                            manifest where it is hosted, or pick another season to edit its stored
-                            settings.
-                        </p>
-                        <p v-else class="text-sm text-ui-text-muted">
-                            Changes save to
-                            {{
-                                adminData?.configSource === "local"
-                                    ? "HACKATHON.yml and the selected season"
-                                    : "the selected season"
-                            }}
-                            as you go.
+                        <p class="text-sm text-ui-text-muted">
+                            <template
+                                v-if="
+                                    selectedSeasonIsActive && adminData?.configSource === 'remote'
+                                "
+                            >
+                                Status and visibility changes save to PostgreSQL and apply
+                                immediately. Schedule and theme come from the remote HACKATHON.yml.
+                            </template>
+                            <template v-else-if="selectedSeasonIsActive">
+                                Status and visibility save to PostgreSQL; schedule and theme write
+                                to HACKATHON.yml and the selected season.
+                            </template>
+                            <template v-else>
+                                Changes save to the selected season as you go.
+                            </template>
                         </p>
 
-                        <fieldset
-                            :disabled="configReadOnly"
-                            class="grid grid-cols-1 md:grid-cols-2 gap-4"
-                        >
+                        <fieldset class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <UFormField label="Status" name="status" class="w-full">
                                 <USelect
                                     v-model="hackathonForm.status"
@@ -661,7 +687,6 @@ async function deleteSeason() {
                                         { label: 'Finished', value: 'finished' },
                                         { label: 'Paused', value: 'paused' },
                                     ]"
-                                    :disabled="configReadOnly"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @update:model-value="saveField('status')"
@@ -696,7 +721,6 @@ async function deleteSeason() {
                                     :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
                                     :true-value="1"
                                     :false-value="0"
-                                    :disabled="configReadOnly"
                                     @update:model-value="saveField(toggle.key)"
                                 />
                             </div>
@@ -705,6 +729,7 @@ async function deleteSeason() {
                                 <UInput
                                     v-model="hackathonForm.theme_name"
                                     name="theme_name"
+                                    :disabled="configReadOnly"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @change="saveField('theme_name')"
@@ -720,6 +745,7 @@ async function deleteSeason() {
                                     v-model="hackathonForm.theme_description"
                                     name="theme_description"
                                     :rows="2"
+                                    :disabled="configReadOnly"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @change="saveField('theme_description')"
@@ -730,6 +756,9 @@ async function deleteSeason() {
                         <h3 class="text-lg font-semibold pt-2">Schedule</h3>
                         <p class="text-sm text-ui-text-muted">
                             Times are shown in this browser's local time zone.
+                        </p>
+                        <p v-if="configReadOnly" class="text-sm text-ui-text-muted">
+                            Schedule is read-only from the remote manifest.
                         </p>
                         <fieldset
                             :disabled="configReadOnly"

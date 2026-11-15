@@ -136,7 +136,7 @@ List submitted teams for the active season, or filter by season.
 | Field | Details |
 | --- | --- |
 | **Auth** | Public for the normal listing; `judging=1` requires `nethack.Judging.assignmentsRead` |
-| **Query** | `judging` (if `1`, returns only submitted unjudged teams for the current judge); `season_id` (optional season filter) |
+| **Query** | `judging` (if `1`, returns submitted teams for the current judge, excluding the judge's own team); `season_id` (optional season filter) |
 | **Response** | `APITeam[]`; only teams with `project_submitted = 1` are public, ordered by team ID. In the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled |
 
 ### POST `/api/teams`
@@ -324,7 +324,7 @@ Submit peer voting ballot.
 
 ### GET `/api/ballot/summary`
 
-Developer endpoint returning per-season judging progress (project, submitted, and scored counts).
+Developer endpoint returning per-season judging progress (project, submitted, and scored counts). The judge's own team is excluded from all three counts so progress can reach completion.
 
 | Field        | Details                                                             |
 | ------------ | ------------------------------------------------------------------- |
@@ -355,7 +355,7 @@ Get the currently active season (public).
 
 ### PATCH `/api/seasons/active`
 
-Set the active season. In YAML mode, the outgoing season's settings are captured from the current manifest, then the activated season's stored settings are written into a local manifest so the live site switches immediately. If that write fails, the previous active season is restored and the request fails.
+Set the active season. The activated season's operational switches (status, voting, judging, results, visibility) are stored in PostgreSQL and apply immediately, even with a remote manifest. With a local manifest, its schedule and theme are also written into `HACKATHON.yml`; if that write fails, the previous active season is restored and the request fails. With a remote manifest, schedule and theme stay under the remote file.
 
 | Field          | Details                                                    |
 | -------------- | ---------------------------------------------------------- |
@@ -460,33 +460,33 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update stored settings for a season. With `YAML_SOURCE_HACKATHON=database` the change is written to PostgreSQL. With a local manifest the portal writes the change into `HACKATHON.yml` (keeping comments and the rubric) and mirrors it onto the active season, so live settings stay editable after a season is activated. A remote manifest is read-only and returns 409; historical and future seasons always keep their own editable stored settings.
+Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
-| **Auth**     | Admin                                                                      |
+| **Auth**     | Admin; a non-active `season_id` also requires the season-update permission |
 | **Body**     | Partial `AdminUpdateHackathonRequest` (all fields optional) + `season_id?` |
 | **Response** | `{ hackathon: Hackathon, seasons: Season[] }`                              |
 
 ### POST `/api/admin/seasons`
 
-Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty unless one is copied in the rubric editor.
+Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty unless one is copied in the rubric editor. Creating an already-active season additionally requires the season-activate permission.
 
-| Field        | Details                                |
-| ------------ | -------------------------------------- |
-| **Auth**     | Admin                                  |
-| **Body**     | `{ name: string, is_active?: 0 \| 1 }` |
-| **Response** | `{ seasons: Season[] }`                |
+| Field        | Details                                                            |
+| ------------ | ------------------------------------------------------------------ |
+| **Auth**     | Admin; `is_active: 1` also requires the season-activate permission |
+| **Body**     | `{ name: string, is_active?: 0 \| 1 }`                             |
+| **Response** | `{ seasons: Season[] }`                                            |
 
 ### PATCH `/api/admin/seasons`
 
-Rename, activate, or deactivate a season.
+Rename, activate, or deactivate a season. Any `is_active` change additionally requires the season-activate permission.
 
-| Field        | Details                                             |
-| ------------ | --------------------------------------------------- |
-| **Auth**     | Admin                                               |
-| **Body**     | `{ id: number, name?: string, is_active?: 0 \| 1 }` |
-| **Response** | `{ seasons: Season[] }`                             |
+| Field        | Details                                                           |
+| ------------ | ----------------------------------------------------------------- |
+| **Auth**     | Admin; `is_active` changes require the season-activate permission |
+| **Body**     | `{ id: number, name?: string, is_active?: 0 \| 1 }`               |
+| **Response** | `{ seasons: Season[] }`                                           |
 
 ### DELETE `/api/admin/seasons/[id]`
 

@@ -11,6 +11,9 @@ const sql = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
 try {
     const [row] = await sql`SELECT * FROM hackathon WHERE id = 1`;
     if (!row) throw new Error("PostgreSQL has no hackathon row with id 1.");
+    // The overrides column is a portal-only mirror; the row already carries the
+    // effective switches and the manifest schema does not accept this key.
+    const { live_overrides: _liveOverrides, ...settings } = row;
     for (const key of [
         "start_timestamp",
         "end_timestamp",
@@ -18,7 +21,7 @@ try {
         "voting_end_timestamp",
         "results_open_timestamp",
     ]) {
-        row[key] = Number(row[key]);
+        settings[key] = Number(settings[key]);
     }
     const [version] = await sql`
         SELECT rv.name, rv.definition
@@ -27,7 +30,7 @@ try {
         WHERE s.is_active = 1
     `;
     const yaml = stringify({
-        ...row,
+        ...settings,
         ...(version ? { rubric: { ...version.definition, name: version.name } } : {}),
     });
     parseHackathonConfig(yaml);

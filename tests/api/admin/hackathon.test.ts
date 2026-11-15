@@ -317,6 +317,24 @@ theme_description: null
         expect(readFileSync(manifestPath, "utf8")).toContain("Active theme");
     });
 
+    it("stores operational switches without rewriting the manifest", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        seedSeason(ctx);
+        mockBody.value = { status: "finished", voting_enabled: 0 };
+
+        const result = await patchHandler(createEvent());
+
+        expect(result.hackathon).toMatchObject({ status: "finished", voting_enabled: 0 });
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
+        expect(ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()).toMatchObject(
+            {
+                status: "finished",
+                voting_enabled: 0,
+                live_overrides: { status: "finished", voting_enabled: 0 },
+            },
+        );
+    });
+
     it("rejects live edits when the manifest is remote", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/HACKATHON.yml");

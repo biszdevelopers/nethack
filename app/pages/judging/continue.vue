@@ -41,6 +41,9 @@ if (userError.value) throw userError.value;
 if (!can(NethackPermissions.Judging.assignmentsRead)) {
     throw await navigateTo("/");
 }
+if (!can(NethackPermissions.Judging.scoresWriteAssigned)) {
+    throw await navigateTo("/judging");
+}
 
 const queuePageSize = 20;
 const [queueFetch, summaryFetch, rubricFetch] = await Promise.all([
@@ -77,6 +80,7 @@ let reviewTrigger: HTMLElement | null = null;
 const submissionError = shallowRef<string | null>(null);
 const finalized = shallowRef<Record<number, FinalizedEvaluation>>({});
 const scoredCount = shallowRef(0);
+let initialAutofocusDone = false;
 const toast = useToast();
 const draft = useJudgingDraft();
 const {
@@ -166,7 +170,21 @@ watch(
         const firstPending = response.items.findIndex((item) => !item.evaluated);
         activeIndex.value = Math.max(0, firstPending);
         navigationError.value = null;
-        if (firstPending < 0 && hasPendingProjects.value) void focusNextPending(1, 0);
+    },
+    { immediate: true },
+);
+// The queue and the progress summary load independently. Wait for both before
+// deciding whether to auto-advance to the first unscored project.
+watch(
+    [() => queueFetch.status.value, () => summaryFetch.status.value],
+    ([queueStatus, summaryStatus]) => {
+        if (initialAutofocusDone) return;
+        if (queueStatus !== "success" || summaryStatus !== "success") return;
+        if (!queueFetch.data.value || !summaryFetch.data.value) return;
+        initialAutofocusDone = true;
+        if (activeItem.value?.evaluated && hasPendingProjects.value) {
+            void focusNextPending(1, 0);
+        }
     },
     { immediate: true },
 );
@@ -210,6 +228,10 @@ async function retryDraft() {
     } catch {
         // The draft card exposes the recoverable error and keeps the entered values in memory.
     }
+}
+
+async function discardDraft() {
+    await draft.forceReload();
 }
 
 async function saveCurrentDraftBeforeNavigation() {
@@ -400,6 +422,38 @@ function returnToScoring() {
     step.value = "score";
 }
 
+async function recordFinalizedEvaluation(team: { id: number }) {
+    const scores = { ...draft.state.scores };
+    const reasoning = draft.state.reasoning;
+
+    finalized.value = {
+        ...finalized.value,
+        [team.id]: { scores, reasoning },
+    };
+    queuePages.value = {
+        ...queuePages.value,
+        [currentPage.value]: queue.value.map((item, index) =>
+            index === activeIndex.value
+                ? { ...item, evaluated: true, evaluation: { scores, reasoning } }
+                : item,
+        ),
+    };
+    scoredCount.value = Math.min(submittedCount.value, scoredCount.value + 1);
+
+    try {
+        await draft.clear(team.id);
+    } catch {
+        toast.add({
+            color: "warning",
+            title: "Evaluation submitted",
+            description: "Your score is final, but the saved draft could not be cleared.",
+        });
+    }
+
+    step.value = "score";
+    return focusNextPending(currentPage.value, activeIndex.value + 1);
+}
+
 async function finalizeEvaluation() {
     const team = activeTeam.value;
     if (!team || submitting.value || activeFinalized.value) return;
@@ -416,51 +470,28 @@ async function finalizeEvaluation() {
             },
         });
 
-        finalized.value = {
-            ...finalized.value,
-            [team.id]: {
-                scores: { ...draft.state.scores },
-                reasoning: draft.state.reasoning,
-            },
-        };
-        queuePages.value = {
-            ...queuePages.value,
-            [currentPage.value]: queue.value.map((item, index) =>
-                index === activeIndex.value
-                    ? {
-                          ...item,
-                          evaluated: true,
-                          evaluation: {
-                              scores: { ...draft.state.scores },
-                              reasoning: draft.state.reasoning,
-                          },
-                      }
-                    : item,
-            ),
-        };
-        scoredCount.value = Math.min(submittedCount.value, scoredCount.value + 1);
-
-        try {
-            await draft.clear(team.id);
-        } catch {
-            toast.add({
-                color: "warning",
-                title: "Evaluation submitted",
-                description: "Your score is final, but the saved draft could not be cleared.",
-            });
-        }
-
-        step.value = "score";
-        const foundNext = await focusNextPending(currentPage.value, activeIndex.value + 1);
+        const foundNext = await recordFinalizedEvaluation(team);
         if (!foundNext && !navigationError.value) {
             toast.add({ color: "success", title: "Evaluation submitted" });
         }
     } catch (error) {
-        submissionError.value = getErrorMessage(error);
+        const message = getErrorMessage(error);
+        // A committed submission whose response was lost returns 409 on retry.
+        if (message.includes("already scored")) {
+            const foundNext = await recordFinalizedEvaluation(team);
+            toast.add({
+                color: "success",
+                title: "Evaluation already recorded",
+                description: "The server had already saved this evaluation.",
+            });
+            if (foundNext) submissionError.value = null;
+            return;
+        }
+        submissionError.value = message;
         toast.add({
             color: "error",
             title: "Could not submit evaluation",
-            description: getErrorMessage(error),
+            description: message,
         });
     } finally {
         submitting.value = false;
@@ -612,6 +643,7 @@ onBeforeRouteLeave(async () => {
                         @score="updateScore"
                         @reasoning="updateReasoning"
                         @retry="retryDraft"
+                        @discard="discardDraft"
                         @review="openReview"
                     />
                 </div>

@@ -219,6 +219,30 @@ describe("GET /api/teams", () => {
         expect(secondPage.items.map((item: JudgeQueueItem) => item.team.name)).toEqual(["Third"]);
     });
 
+    it("excludes the judge's own team from the judging queue and totals", async () => {
+        const ownTeam = seedTeam(ctx, { name: "Own Team", project_submitted: 1 });
+        const otherTeam = seedTeam(ctx, { name: "Other Team", project_submitted: 1 });
+        const judge = seedUser(ctx, {
+            email: "self-judge@basischina.com",
+            role: "judge",
+            team_id: ownTeam.id,
+        });
+        ctx.drizzle
+            .update(hackathon)
+            .set({ status: "voting", judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+
+        mockSession.value = { user: { id: judge.id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 20 };
+
+        const result = await listHandler(createEvent());
+
+        expect(result.total).toBe(1);
+        expect(result.total_pages).toBe(1);
+        expect(result.items.map((item: JudgeQueueItem) => item.team.id)).toEqual([otherTeam.id]);
+    });
+
     it("keeps malformed, array, and nonnumeric historical evaluations visible without leaking payloads", async () => {
         const judge = seedUser(ctx, { email: "history-judge@basischina.com", role: "judge" });
         const invalidJsonTeam = seedTeam(ctx, { name: "Invalid JSON", project_submitted: 1 });

@@ -175,6 +175,14 @@ export function useJudgingDraft() {
         await load(currentTeamId, currentTrackKey, true);
     }
 
+    /** Discard unsaved input that the server will not accept and reload the draft. */
+    async function forceReload() {
+        if (currentTeamId === null) return;
+        dirty.value = false;
+        errorMessage.value = null;
+        await load(currentTeamId, currentTrackKey, true);
+    }
+
     async function clear(teamId: number) {
         await apiFetch(`/api/judging/drafts/${teamId}`, { method: "DELETE" });
         if (currentTeamId === teamId) {
@@ -217,6 +225,7 @@ export function useJudgingDraft() {
         markChanged,
         flush,
         retryLoad,
+        forceReload,
         clear,
         resetForCompletedProject,
     };

@@ -381,4 +381,38 @@ describe("useJudgingDraft action and recovery paths", () => {
         expect(draft.status.value).toBe("error");
         expect(draft.errorMessage.value).toBe("Load the judging rubric before saving a draft.");
     });
+
+    it("forceReload is a no-op before a project is loaded", async () => {
+        const draft = useJudgingDraft();
+
+        await draft.forceReload();
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(draft.status.value).toBe("saved");
+    });
+
+    it("forceReload discards unsaved input and refreshes the saved draft", async () => {
+        fetchMock.mockResolvedValueOnce(response(savedDraft())).mockResolvedValueOnce(
+            response(savedDraft({ scores: { originality: 5 } }), {
+                ...rubric,
+                version_id: 9,
+                name: "New rubric",
+            }),
+        );
+        const draft = useJudgingDraft();
+        await draft.load(65, "junior");
+
+        draft.state.scores.originality = 1;
+        draft.markChanged();
+        expect(draft.dirty.value).toBe(true);
+
+        await draft.forceReload();
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(draft.state.scores.originality).toBe(5);
+        expect(draft.dirty.value).toBe(false);
+        expect(draft.status.value).toBe("saved");
+        expect(draft.rubricVersionId.value).toBe(9);
+        expect(draft.errorMessage.value).toBeNull();
+    });
 });

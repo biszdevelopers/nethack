@@ -223,6 +223,39 @@ describe("seasons database helpers", () => {
             expect(oldSeason!.is_active).toBe(0);
         });
 
+        it("mirrors every activated season setting onto the live singleton", async () => {
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp) VALUES(1, 'not_started', 0, 0, 0, 0, 0)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO seasons(name, is_active, status, theme_name, judging_open, start_timestamp) VALUES('Old', 1, 'voting', 'Old theme', 1, 111)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO seasons(name, is_active, status, theme_name, judging_open, start_timestamp) VALUES('New', 0, 'finished', 'New theme', 0, 222)",
+                )
+                .run();
+
+            await setActiveSeason(event, 2);
+
+            const live = event.context.drizzle
+                .prepare(
+                    "SELECT status, theme_name, judging_open, start_timestamp FROM hackathon WHERE id = 1",
+                )
+                .first();
+
+            expect(live).toEqual({
+                status: "finished",
+                theme_name: "New theme",
+                judging_open: 0,
+                start_timestamp: 222,
+            });
+        });
+
         it("activates a season when no other season is active", async () => {
             event.context.drizzle
                 .prepare("INSERT INTO seasons(name, is_active) VALUES('Solo', 0)")

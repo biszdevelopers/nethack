@@ -28,6 +28,7 @@ const emit = defineEmits<{
     reasoning: [value: string];
     review: [event: MouseEvent];
     retry: [];
+    discard: [];
 }>();
 
 const projectHeading = useTemplateRef<HTMLHeadingElement>("projectHeading");
@@ -41,6 +42,9 @@ let dragging = false;
 const commentGuidance = computed(() => props.commentGuidance ?? DEFAULT_JUDGE_COMMENT_GUIDANCE);
 const safeRepoUrl = computed(() => safeUrl(props.team.project.repo_url));
 const safeDemoUrl = computed(() => safeUrl(props.team.project.demo_url));
+const hasDescription = computed(() => Boolean(props.team.project.description?.trim()));
+const hasSourcing = computed(() => Boolean(props.team.project.sourcing?.trim()));
+const teamLabel = computed(() => props.team.name?.trim() || "This team");
 const criterionControls = computed(() =>
     Object.fromEntries(
         props.track.criteria.map((criterion) => {
@@ -189,7 +193,7 @@ onBeforeUnmount(() => {
                         tabindex="-1"
                         class="mt-1 break-words text-2xl font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary sm:text-3xl"
                     >
-                        {{ team.project.name }}
+                        {{ team.project.name || "Untitled project" }}
                     </h2>
                 </div>
                 <UBadge
@@ -201,52 +205,96 @@ onBeforeUnmount(() => {
                 </UBadge>
             </div>
 
-            <SafeComark class="my-5 text-wrap leading-relaxed">
-                {{ team.project.description }}
-            </SafeComark>
-
-            <UAlert
-                v-if="team.project.sourcing"
-                icon="i-lucide-book-open"
-                color="info"
-                variant="subtle"
-                title="Team's AI-use statement"
-                class="mb-5"
-            >
-                <template #description>
-                    <SafeComark>{{ team.project.sourcing }}</SafeComark>
-                </template>
-            </UAlert>
-
-            <div class="flex flex-wrap gap-2">
-                <UButton
-                    v-if="safeRepoUrl"
-                    :href="safeRepoUrl"
-                    external
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    variant="subtle"
-                    icon="i-material-symbols-merge"
-                    class="min-h-11"
-                >
-                    Open repository
-                </UButton>
-                <UButton
-                    v-if="safeDemoUrl"
-                    :href="safeDemoUrl"
-                    external
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    variant="subtle"
-                    icon="i-material-symbols-play-arrow"
-                    class="min-h-11"
-                >
-                    Open demo
-                </UButton>
-                <p v-if="!safeRepoUrl && !safeDemoUrl" class="text-sm text-muted">
-                    This project has no available repository or demo links.
-                </p>
-            </div>
+            <dl class="mt-6 divide-y divide-default rounded-xl border border-default">
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Team</dt>
+                    <dd class="min-w-0">
+                        {{ team.name || "This team did not provide a team name." }}
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Pathway</dt>
+                    <dd class="min-w-0">{{ track.name }}</dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Project name</dt>
+                    <dd class="min-w-0">
+                        {{ team.project.name || `${teamLabel} did not provide a project name.` }}
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Project description</dt>
+                    <dd class="min-w-0">
+                        <SafeComark v-if="hasDescription" class="text-wrap leading-relaxed">
+                            {{ team.project.description }}
+                        </SafeComark>
+                        <p v-else class="text-sm text-muted">
+                            {{ teamLabel }} did not provide a project description.
+                        </p>
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">AI-use disclosure</dt>
+                    <dd class="min-w-0">
+                        <SafeComark v-if="hasSourcing" class="text-wrap leading-relaxed">
+                            {{ team.project.sourcing }}
+                        </SafeComark>
+                        <p v-else class="text-sm text-muted">
+                            {{ teamLabel }} did not provide an AI-use disclosure.
+                        </p>
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Repository</dt>
+                    <dd class="min-w-0">
+                        <UButton
+                            v-if="safeRepoUrl"
+                            :href="safeRepoUrl"
+                            external
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            variant="subtle"
+                            icon="i-material-symbols-merge"
+                            class="min-h-11"
+                        >
+                            Open repository
+                        </UButton>
+                        <p v-else class="text-sm text-muted">
+                            {{ teamLabel }} did not provide a repository link.
+                        </p>
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Demo</dt>
+                    <dd class="min-w-0">
+                        <UButton
+                            v-if="safeDemoUrl"
+                            :href="safeDemoUrl"
+                            external
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            variant="subtle"
+                            icon="i-material-symbols-play-arrow"
+                            class="min-h-11"
+                        >
+                            Open demo
+                        </UButton>
+                        <p v-else class="text-sm text-muted">
+                            {{ teamLabel }} did not provide a demo link.
+                        </p>
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Submission</dt>
+                    <dd class="min-w-0">
+                        {{
+                            team.project.submitted
+                                ? "Submitted for judging."
+                                : "This project has not been submitted."
+                        }}
+                    </dd>
+                </div>
+            </dl>
         </section>
 
         <div
@@ -454,6 +502,9 @@ onBeforeUnmount(() => {
                     </p>
                     <UButton size="sm" variant="outline" class="min-h-11" @click="emit('retry')">
                         Retry
+                    </UButton>
+                    <UButton size="sm" variant="ghost" class="min-h-11" @click="emit('discard')">
+                        Discard and reload
                     </UButton>
                 </div>
             </div>

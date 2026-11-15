@@ -1,5 +1,5 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
 import { GetTeamsQuery } from "~~/shared/schemas";
 import { teamScores, teams as teamsTable } from "~~/server/database/schema";
@@ -12,10 +12,8 @@ export default defineEventHandler(
         const query = await getValidatedQuery(event, GetTeamsQuery.parse);
 
         if (query.judging) {
-            const { id: userID } = await requireUser(
-                event,
-                NethackPermissions.Judging.assignmentsRead,
-            );
+            const judge = await requireUser(event, NethackPermissions.Judging.assignmentsRead);
+            const userID = judge.id;
 
             const hackathon = await getHackathon(event);
             if (!isJudgingOpen(hackathon)) {
@@ -42,9 +40,11 @@ export default defineEventHandler(
                 // Keep evaluated projects in their stable page positions. If the
                 // queue only contained unscored projects, submitting page 1 would
                 // shift every later page and could make a judge skip projects.
+                // Judges cannot score their own team, so it never enters the queue.
                 const where = and(
                     eq(teamsTable.season_id, season.id),
                     eq(teamsTable.project_submitted, 1),
+                    ne(teamsTable.id, judge.team_id ?? -1),
                 );
                 const [countRows, pageTeams] = await Promise.all([
                     event.context.drizzle.select({ total: count() }).from(teamsTable).where(where),
@@ -117,7 +117,7 @@ export default defineEventHandler(
                 } satisfies GetJudgingQueueResponse;
             }
 
-            const teams = await getSubmittedUnjudgedTeams(event, userID);
+            const teams = await getSubmittedUnjudgedTeams(event, userID, judge.team_id);
             const awardsByTeam = await getAwardsForTeams(
                 event,
                 teams.map((t) => t.id),
@@ -160,7 +160,7 @@ export default defineEventHandler(
                             visibility.showRanking &&
                             meetsAnonymityThreshold,
                     },
-                    awardsByTeam[team.id] ?? [],
+                    visibility.resultsPublished ? (awardsByTeam[team.id] ?? []) : [],
                 );
             });
         }

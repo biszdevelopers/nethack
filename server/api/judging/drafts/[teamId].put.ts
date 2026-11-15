@@ -3,7 +3,7 @@ import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam, SaveJudgingDraftRequest } from "~~/shared/schemas";
 import { judgingDrafts, rubricVersions, teamScores } from "~~/server/database/schema";
-import { validateRubricScores } from "~~/shared/rubric";
+import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { getTeam } from "~~/server/utils/database/teams";
 import { firstRow } from "~~/server/utils/database/query";
@@ -92,7 +92,7 @@ export default defineEventHandler(
                 message: "The rubric changed. Reload the project before saving a draft.",
             });
         }
-        const track = version.definition.tracks[team.pathway ?? ""];
+        const track = getRubricTrack(version.definition, team.pathway);
         if (!track)
             throw createError({ statusCode: 409, message: "No rubric track matches this project" });
         const issues = validateRubricScores(track, body.scores, { allowPartial: true });

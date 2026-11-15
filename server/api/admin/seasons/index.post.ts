@@ -14,6 +14,10 @@ export default defineEventHandler(
 
         const body = await readValidatedBody(event, CreateSeasonRequest.parse);
 
+        if (body.is_active === 1) {
+            await requireUser(event, NethackPermissions.Seasons.activate);
+        }
+
         // A new season starts as a copy of the live event so switching to it
         // never blanks the theme, schedule, or status by accident.
         const active = await getActiveSeason(event);

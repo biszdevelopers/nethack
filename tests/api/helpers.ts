@@ -138,6 +138,7 @@ const migrationSQL = `
   ALTER TABLE hackathon ADD COLUMN judging_open INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE hackathon ADD COLUMN schedule_start TEXT;
   ALTER TABLE hackathon ADD COLUMN schedule_end TEXT;
+  ALTER TABLE hackathon ADD COLUMN live_overrides TEXT NOT NULL DEFAULT '{}';
 
 `;
 

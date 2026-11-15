@@ -36,6 +36,11 @@ export default defineEventHandler(
             });
         }
 
+        // Switching the live season is a separate grant from editing seasons.
+        if (is_active !== undefined) {
+            await requireUser(event, NethackPermissions.Seasons.activate);
+        }
+
         try {
             if (Object.keys(updateFields).length > 0) {
                 await event.context.drizzle

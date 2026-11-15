@@ -1,9 +1,14 @@
 import type { H3Event } from "h3";
 import { eq, asc } from "drizzle-orm";
 import { hackathon, seasons } from "~~/server/database/schema";
+import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { getHackathon } from "./hackathon";
 import { firstRow } from "./query";
-import { hackathonUsesYaml, writeHackathonConfig } from "../hackathon-config";
+import {
+    getHackathonConfigSource,
+    hackathonUsesYaml,
+    writeHackathonConfig,
+} from "../hackathon-config";
 
 /**
  * Per-season tweakable settings. In PostgreSQL rollback mode these fields
@@ -174,7 +179,16 @@ export async function updateSeasonTweaks(
     });
 }
 
-export async function setActiveSeason(event: H3Event, seasonId: number | null) {
+let activationQueue: Promise<unknown> = Promise.resolve();
+
+/** Serialize activations so two admin requests cannot interleave their writes. */
+export function setActiveSeason(event: H3Event, seasonId: number | null) {
+    const run = activationQueue.then(() => activateSeason(event, seasonId));
+    activationQueue = run.catch(() => undefined);
+    return run;
+}
+
+async function activateSeason(event: H3Event, seasonId: number | null) {
     const currentLive = await getHackathon(event);
     const liveConfig = hackathonUsesYaml() ? currentLive : null;
     const [previousActive] = await event.context.drizzle
@@ -182,6 +196,7 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
         .from(seasons)
         .where(eq(seasons.is_active, 1))
         .limit(1);
+    const [previousLive] = await event.context.drizzle.select().from(hackathon).limit(1);
     let activationSettings: Record<string, unknown> | null = null;
 
     await event.context.drizzle.transaction(async (tx) => {
@@ -200,7 +215,7 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
         }
 
         if (liveConfig && season?.is_active !== 1) {
-            const { id, submitted_count, ...settings } = liveConfig;
+            const { id, submitted_count, live_overrides, ...settings } = liveConfig;
             await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));
         }
 
@@ -222,23 +237,37 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
             await tx.update(seasons).set({ is_active: 1 }).where(eq(seasons.id, seasonId));
 
             if (!hackathonUsesYaml()) {
-                const tweaks = pickTweaks(season as unknown as Record<string, unknown>);
-                await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
+                // The singleton feeds every public read in database mode, so it
+                // needs the activated season's full settings, not three tweaks.
+                const settings = pickSeasonConfig(season as unknown as Record<string, unknown>);
+                await tx.update(hackathon).set(settings).where(eq(hackathon.id, 1));
             } else if (season.is_active !== 1) {
-                // Activating in manifest mode must move the live values with it,
-                // otherwise the public site keeps reading the previous season.
+                // Activating in manifest mode must move the operational switches
+                // with it. PostgreSQL stores them so no manifest write is needed.
                 const stored = pickSeasonConfig(season as unknown as Record<string, unknown>);
                 activationSettings = isUnconfiguredSeason(season) ? { ...stored, ...seed } : stored;
+                const operationalOverrides = Object.fromEntries(
+                    Object.entries(activationSettings).filter(([key]) =>
+                        (LIVE_OVERRIDE_KEYS as readonly string[]).includes(key),
+                    ),
+                );
+                await tx
+                    .update(hackathon)
+                    .set({ ...activationSettings, live_overrides: operationalOverrides })
+                    .where(eq(hackathon.id, 1));
             }
         }
     });
 
-    if (activationSettings) {
+    // A remote manifest cannot be rewritten. The operational switches were
+    // already stored in PostgreSQL, so activation still applies them; only the
+    // manifest-owned schedule and theme stay under the remote file.
+    if (activationSettings && getHackathonConfigSource() === "local") {
         try {
             await writeHackathonConfig(activationSettings);
         } catch (error) {
-            // The manifest is the source of truth in this mode, so restore the
-            // previous active season instead of reporting a switch that did not apply.
+            // Restore the previous active season instead of reporting a switch
+            // whose manifest write did not apply.
             try {
                 await event.context.drizzle.transaction(async (tx) => {
                     await tx.update(seasons).set({ is_active: 0 }).where(eq(seasons.is_active, 1));
@@ -247,6 +276,10 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
                             .update(seasons)
                             .set({ is_active: 1 })
                             .where(eq(seasons.id, previousActive.id));
+                    }
+                    if (previousLive) {
+                        const { id, ...previousSettings } = previousLive;
+                        await tx.update(hackathon).set(previousSettings).where(eq(hackathon.id, 1));
                     }
                 });
             } catch {

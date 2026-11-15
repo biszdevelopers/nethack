@@ -183,6 +183,24 @@ describe("teams database helpers", () => {
             expect(teams[0]!.name).toBe("Team B");
         });
 
+        it("excludes the judge's own team from the queue", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO teams(name, season_id, project_submitted) VALUES('Own Team', 1, 1)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO teams(name, season_id, project_submitted) VALUES('Other Team', 1, 1)",
+                )
+                .run();
+
+            const teams = await getSubmittedUnjudgedTeams(event, 9, 1);
+
+            expect(teams.map((team) => team.name)).toEqual(["Other Team"]);
+        });
+
         it("returns an empty array when there is no active season", async () => {
             event.context.drizzle
                 .prepare(

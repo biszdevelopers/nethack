@@ -28,6 +28,7 @@ const currentSummary = computed(() => summary.value?.current ?? null);
 const judgingOpen = computed(
     () => hackathon.value?.status === "voting" && Boolean(hackathon.value.judging_open),
 );
+const canScore = computed(() => can(NethackPermissions.Judging.scoresWriteAssigned));
 const summaryLoading = computed(
     () => summaryStatus.value === "idle" || summaryStatus.value === "pending",
 );
@@ -81,7 +82,7 @@ async function openQueue() {
                     </p>
                 </div>
                 <UButton
-                    v-if="judgingOpen"
+                    v-if="judgingOpen && canScore"
                     class="min-h-11"
                     trailing-icon="i-lucide-arrow-right"
                     :disabled="!currentSummary"

@@ -131,9 +131,23 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                 </p>
             </div>
 
+            <UAlert
+                v-if="projects.length === 1"
+                color="neutral"
+                variant="subtle"
+                title="Not enough projects to vote on"
+                description="Peer voting needs at least two eligible projects so 10 stars can be distributed."
+                class="my-4"
+            />
+
             <h2 class="text-2xl mb-4 bold">Summary</h2>
 
-            <UForm :state="state" :schema="SubmitVoteRequest" @submit="onSubmit">
+            <UForm
+                v-if="projects.length >= 2"
+                :state="state"
+                :schema="SubmitVoteRequest"
+                @submit="onSubmit"
+            >
                 <UCard variant="subtle">
                     <p v-if="submitted" class="mb-4 bold">You have voted already. Thank you!</p>
 

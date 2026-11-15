@@ -75,7 +75,6 @@ const LEGACY_JUDGE_PERMISSIONS = [
     ...LEGACY_PARTICIPANT_PERMISSIONS,
     NethackPermissions.Judging.assignmentsRead,
     NethackPermissions.Judging.scoresWriteAssigned,
-    NethackPermissions.Judging.resultsRead,
 ] as const;
 
 export function expandLegacyNethackPermissions(

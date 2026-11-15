@@ -46,6 +46,7 @@ const hackathonRow = {
     results_open_timestamp: "1794767462000",
     theme_name: "Beneath The Surface",
     theme_description: "There is Something beneath the surface...",
+    live_overrides: { status: "finished" },
 };
 
 async function runScript(databaseUrl: string | undefined, output?: string) {
@@ -99,6 +100,7 @@ describe("hackathon manifest export script", { timeout: 30_000 }, () => {
         expect(contents).toContain("theme_name: Beneath The Surface");
         expect(contents).toContain("name: Imported rubric");
         expect(contents).toContain("start_timestamp: 1794667462000");
+        expect(contents).not.toContain("live_overrides");
         expect(end).toHaveBeenCalledOnce();
     });
 

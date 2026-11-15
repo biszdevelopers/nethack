@@ -210,9 +210,11 @@ describe("judge action paths", () => {
         );
         expect(finalize).toContain("await draft.flush()");
         expect(finalize).toContain("rubric_version_id: draft.rubricVersionId.value");
-        expect(finalize).toContain("await draft.clear(team.id)");
+        expect(judgingQueue).toContain("await draft.clear(team.id)");
+        expect(finalize).toContain("recordFinalizedEvaluation(team)");
+        expect(finalize).toContain('message.includes("already scored")');
         expect(finalize).toContain('title: "Evaluation submitted"');
-        expect(finalize).toContain(
+        expect(judgingQueue).toContain(
             "Your score is final, but the saved draft could not be cleared.",
         );
         expect(finalize).toContain('title: "Could not submit evaluation"');
@@ -256,14 +258,26 @@ describe("judging history and workspace navigation", () => {
         expect(historyPage).toContain('to="/judging"');
     });
 
-    it("moves every competitor-submittable detail and link into the left pane", () => {
-        expect(scoringCard.indexOf("Open repository")).toBeGreaterThanOrEqual(0);
+    it("shows every competitor-submittable detail in the left pane and marks blanks", () => {
+        expect(scoringCard.indexOf("Project description")).toBeLessThan(
+            scoringCard.indexOf('class="judging-divider"'),
+        );
+        expect(scoringCard.indexOf("AI-use disclosure")).toBeLessThan(
+            scoringCard.indexOf('class="judging-divider"'),
+        );
         expect(scoringCard.indexOf("Open repository")).toBeLessThan(
             scoringCard.indexOf('class="judging-divider"'),
         );
-        expect(scoringCard.indexOf("Team's AI-use statement")).toBeLessThan(
-            scoringCard.indexOf('class="judging-divider"'),
-        );
+        for (const blank of [
+            "did not provide a project description",
+            "did not provide an AI-use disclosure",
+            "did not provide a repository link",
+            "did not provide a demo link",
+        ]) {
+            expect(scoringCard).toContain(blank);
+        }
+        expect(historyPage).toContain("did not provide a project description");
+        expect(historyPage).toContain("did not provide a demo link");
     });
 
     it("offers a draggable, keyboard-resizable divider between the panes", () => {

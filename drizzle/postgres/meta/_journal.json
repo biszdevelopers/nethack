@@ -64,6 +64,13 @@
             "when": 1794708182426,
             "tag": "0008_normal_lenny_balinger",
             "breakpoints": true
+        },
+        {
+            "idx": 9,
+            "version": "7",
+            "when": 1794736648912,
+            "tag": "0009_great_santa_claus",
+            "breakpoints": true
         }
     ]
 }

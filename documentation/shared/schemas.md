@@ -31,7 +31,7 @@ All configurable length limits are defined as exported constants at the top of `
 | `MAX_REASONING_LENGTH` | 2,147,483,647 | `CreateTeamScoresRequest.reasoning`, `SubmitVoteRequest.reasoning` |
 | `MAX_SECRET_ABBREVIATED_LENGTH` | 16 | Abbreviated client secret display |
 | `MAX_REASONING_LENGTH` | 2000 | `CreateTeamScoresRequest.reasoning`, `SubmitVoteRequest.reasoning` |
-| `MAX_VOTE_SCORES` | 50 | `SubmitVoteRequest.scores` array length |
+| `MAX_VOTE_SCORES` | 200 | `SubmitVoteRequest.scores` array length |
 | `MAX_ELECTION_POSITIONS` | 20 | `ElectionVoteRequest.positions` array length |
 | `MAX_ELECTION_CANDIDATES` | 50 | `ElectionVoteRequest.positions[].candidates` array length |
 | `MAX_ELECTION_TITLE_LENGTH` | 128 | `ElectionVoteRequest.positions[].title` |

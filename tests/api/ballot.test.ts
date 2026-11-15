@@ -538,6 +538,29 @@ describe("GET /api/ballot/summary", () => {
         expect(result.past[0].season_id).toBe(pastSeason.id);
     });
 
+    it("excludes the judge's own team from progress counts", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx);
+        const season = seedSeason(ctx, { name: "Current" });
+        const ownTeam = seedTeam(ctx, {
+            name: "Own Team",
+            season_id: season.id,
+            project_submitted: 1,
+        });
+        seedTeam(ctx, { name: "Other Team", season_id: season.id, project_submitted: 1 });
+
+        const { requireUser } = await import("~~/server/utils/auth");
+        (requireUser as any).mockResolvedValue({ id: 1, role: "judge", team_id: ownTeam.id });
+
+        const result = await summaryHandler(createEvent());
+
+        expect(result.current).toMatchObject({
+            project_count: 1,
+            submitted_count: 1,
+            scored_count: 0,
+        });
+    });
+
     it("returns null current season when no season is active", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx);

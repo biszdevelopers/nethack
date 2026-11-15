@@ -1,7 +1,11 @@
 import { eq, inArray } from "drizzle-orm";
 import type { H3Event } from "h3";
 import { applyScoreCurve, isScoreCurvePreset, SCORE_CURVE_PRESETS } from "~~/shared/score-curve";
-import { calculateWeightedRubricScore, validateRubricScores } from "~~/shared/rubric";
+import {
+    calculateWeightedRubricScore,
+    getRubricTrack,
+    validateRubricScores,
+} from "~~/shared/rubric";
 import { rubricVersions, seasons, teamScores, users } from "~~/server/database/schema";
 import type { Team } from "~~/shared/database";
 import { firstRow } from "~~/server/utils/database/query";
@@ -65,7 +69,7 @@ export async function getTeamScoreFeedback(
     const feedback: ScoreFeedbackEntryResponse[] = [];
     for (const evaluation of evaluations) {
         const version = versionsById.get(evaluation.rubric_version_id);
-        const track = team.pathway ? version?.definition.tracks[team.pathway] : undefined;
+        const track = getRubricTrack(version?.definition, team.pathway);
         if (!version || !track) {
             unavailable += 1;
             continue;

@@ -3,6 +3,7 @@ import rubrics from "~~/shared/rubric";
 import {
     calculateWeightedRubricScore,
     DEFAULT_RUBRIC_DEFINITION,
+    getRubricTrack,
     type RubricTrack,
 } from "~~/shared/rubric";
 
@@ -138,6 +139,24 @@ describe("rubrics", () => {
             expect(senior.originality.abbr).toBe("ORG");
             expect(senior.originality.weight).toBe(10);
         });
+    });
+});
+
+describe("getRubricTrack", () => {
+    it("returns a configured track", () => {
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "junior")).toBe(
+            DEFAULT_RUBRIC_DEFINITION.tracks.junior,
+        );
+    });
+
+    it("returns undefined for null, unknown, and inherited property names", () => {
+        expect(getRubricTrack(undefined, "junior")).toBeUndefined();
+        expect(getRubricTrack(null, "junior")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, null)).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "missing")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "constructor")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "__proto__")).toBeUndefined();
     });
 });
 

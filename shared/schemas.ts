@@ -16,7 +16,7 @@ export const MAX_REDIRECT_URI_LENGTH = 2048;
 export const MAX_SCOPE_LENGTH = 128;
 export const MAX_SECRET_ABBREVIATED_LENGTH = 16;
 export const MAX_REASONING_LENGTH = 10_000;
-export const MAX_VOTE_SCORES = 50;
+export const MAX_VOTE_SCORES = 200;
 export const MAX_ELECTION_POSITIONS = 20;
 export const MAX_ELECTION_CANDIDATES = 50;
 export const MAX_ELECTION_TITLE_LENGTH = 128;
@@ -488,6 +488,28 @@ export const AdminUpdateHackathonRequest = z.object({
     theme_description: z.string().max(2000).nullable().optional(),
 });
 export type AdminUpdateHackathonRequest = z.infer<typeof AdminUpdateHackathonRequest>;
+
+/** Live event switches the portal keeps in PostgreSQL on top of HACKATHON.yml. */
+export const LIVE_OVERRIDE_KEYS = [
+    "status",
+    "voting_enabled",
+    "results_published",
+    "judging_open",
+    "show_scores",
+    "show_ranking",
+    "max_votes_per_user",
+] as const;
+
+export const LiveOverrides = AdminUpdateHackathonRequest.pick({
+    status: true,
+    voting_enabled: true,
+    results_published: true,
+    judging_open: true,
+    show_scores: true,
+    show_ranking: true,
+    max_votes_per_user: true,
+});
+export type LiveOverrides = z.infer<typeof LiveOverrides>;
 
 // ---------------------------------------------------------------------------
 // Admin – season management

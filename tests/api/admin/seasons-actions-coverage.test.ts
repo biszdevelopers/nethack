@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NethackPermissions } from "~~/shared/permissions";
 import { mockBody, resetMockState, setupNitroGlobals } from "~~/tests/api/helpers";
 
 const mocks = vi.hoisted(() => ({
@@ -80,6 +81,7 @@ describe("PATCH /api/admin/seasons action edges", () => {
         await patchHandler(event);
 
         expect(mocks.setActiveSeason).toHaveBeenCalledWith(event, 1);
+        expect(mocks.requireUser).toHaveBeenCalledWith(event, NethackPermissions.Seasons.activate);
     });
 
     it("deactivates the currently active season", async () => {
@@ -150,6 +152,7 @@ describe("POST /api/admin/seasons action edges", () => {
         await postHandler(event);
 
         expect(mocks.setActiveSeason).toHaveBeenCalledWith(event, 5);
+        expect(mocks.requireUser).toHaveBeenCalledWith(event, NethackPermissions.Seasons.activate);
     });
 
     it("does not activate when the insert returns no row", async () => {

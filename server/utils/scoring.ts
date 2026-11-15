@@ -1,6 +1,10 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { H3Event } from "h3";
-import { calculateWeightedRubricScore, validateRubricScores } from "~~/shared/rubric";
+import {
+    calculateWeightedRubricScore,
+    getRubricTrack,
+    validateRubricScores,
+} from "~~/shared/rubric";
 import { rubricVersions, teamScores, teams } from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
 
@@ -52,7 +56,7 @@ function scoreSavedEvaluation(
         });
     }
 
-    const track = team.pathway ? version.definition.tracks[team.pathway] : undefined;
+    const track = getRubricTrack(version.definition, team.pathway);
     if (!track) {
         throw createError({
             statusCode: 409,

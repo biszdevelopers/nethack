@@ -47,7 +47,7 @@ export default defineEventHandler(
         const withRank =
             privileged ||
             (visibility.resultsPublished && visibility.showRanking && meetsAnonymityThreshold);
-        const awards = await getAwards(event, id);
+        const awards = visibility.resultsPublished || privileged ? await getAwards(event, id) : [];
 
         return convertTeamToPublic(team, { withScore, withRank }, awards);
     }, DEFAULT_RATE_LIMIT_CONFIG),

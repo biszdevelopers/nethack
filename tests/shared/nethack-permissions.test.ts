@@ -43,6 +43,7 @@ describe("NethackPermissions", () => {
         expect(effective).toContain(NethackPermissions.Profile.updateSelf);
         expect(effective).toContain(NethackPermissions.Judging.assignmentsRead);
         expect(effective).toContain(NethackPermissions.Judging.scoresWriteAssigned);
+        expect(effective).not.toContain(NethackPermissions.Judging.resultsRead);
         expect(effective).not.toContain(NethackPermissions.Judging.resultsCompute);
     });
 

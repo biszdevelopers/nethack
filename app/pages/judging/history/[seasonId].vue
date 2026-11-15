@@ -41,6 +41,13 @@ const selectedIndex = computed(() =>
 );
 const selectedRepoUrl = computed(() => safeUrl(selectedItem.value?.team.project.repo_url));
 const selectedDemoUrl = computed(() => safeUrl(selectedItem.value?.team.project.demo_url));
+const selectedHasDescription = computed(() =>
+    Boolean(selectedItem.value?.team.project.description?.trim()),
+);
+const selectedHasSourcing = computed(() =>
+    Boolean(selectedItem.value?.team.project.sourcing?.trim()),
+);
+const selectedTeamLabel = computed(() => selectedItem.value?.team.name?.trim() || "This team");
 
 watch(
     items,
@@ -186,38 +193,108 @@ function selectRelative(offset: number) {
                 </div>
 
                 <h2 class="mt-3 break-words text-2xl font-bold">
-                    {{ selectedItem.team.project.name }}
+                    {{ selectedItem.team.project.name || "Untitled project" }}
                 </h2>
 
-                <div class="my-4 flex flex-wrap items-center gap-2">
-                    <UButton
-                        v-if="selectedRepoUrl"
-                        :href="selectedRepoUrl"
-                        external
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        variant="subtle"
-                        icon="i-material-symbols-merge"
-                        class="min-h-11"
-                    >
-                        Open repository
-                    </UButton>
-                    <UButton
-                        v-if="selectedDemoUrl"
-                        :href="selectedDemoUrl"
-                        external
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        variant="subtle"
-                        icon="i-material-symbols-play-arrow"
-                        class="min-h-11"
-                    >
-                        Open demo
-                    </UButton>
-                    <p v-if="!selectedRepoUrl && !selectedDemoUrl" class="text-sm text-muted">
-                        This project has no available repository or demo links.
-                    </p>
-                </div>
+                <dl class="my-4 divide-y divide-default rounded-xl border border-default">
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Team</dt>
+                        <dd class="min-w-0">
+                            {{ selectedItem.team.name || "This team did not provide a team name." }}
+                        </dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Pathway</dt>
+                        <dd class="min-w-0">{{ selectedItem.track_name }}</dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Project name</dt>
+                        <dd class="min-w-0">
+                            {{
+                                selectedItem.team.project.name ||
+                                `${selectedTeamLabel} did not provide a project name.`
+                            }}
+                        </dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Project description</dt>
+                        <dd class="min-w-0">
+                            <SafeComark
+                                v-if="selectedHasDescription"
+                                class="text-wrap leading-relaxed"
+                            >
+                                {{ selectedItem.team.project.description }}
+                            </SafeComark>
+                            <p v-else class="text-sm text-muted">
+                                {{ selectedTeamLabel }} did not provide a project description.
+                            </p>
+                        </dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">AI-use disclosure</dt>
+                        <dd class="min-w-0">
+                            <SafeComark
+                                v-if="selectedHasSourcing"
+                                class="text-wrap leading-relaxed"
+                            >
+                                {{ selectedItem.team.project.sourcing }}
+                            </SafeComark>
+                            <p v-else class="text-sm text-muted">
+                                {{ selectedTeamLabel }} did not provide an AI-use disclosure.
+                            </p>
+                        </dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Repository</dt>
+                        <dd class="min-w-0">
+                            <UButton
+                                v-if="selectedRepoUrl"
+                                :href="selectedRepoUrl"
+                                external
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                variant="subtle"
+                                icon="i-material-symbols-merge"
+                                class="min-h-11"
+                            >
+                                Open repository
+                            </UButton>
+                            <p v-else class="text-sm text-muted">
+                                {{ selectedTeamLabel }} did not provide a repository link.
+                            </p>
+                        </dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Demo</dt>
+                        <dd class="min-w-0">
+                            <UButton
+                                v-if="selectedDemoUrl"
+                                :href="selectedDemoUrl"
+                                external
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                variant="subtle"
+                                icon="i-material-symbols-play-arrow"
+                                class="min-h-11"
+                            >
+                                Open demo
+                            </UButton>
+                            <p v-else class="text-sm text-muted">
+                                {{ selectedTeamLabel }} did not provide a demo link.
+                            </p>
+                        </dd>
+                    </div>
+                    <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                        <dt class="text-sm font-semibold text-muted">Submission</dt>
+                        <dd class="min-w-0">
+                            {{
+                                selectedItem.team.project.submitted
+                                    ? "Submitted for judging."
+                                    : "This project was not marked as submitted."
+                            }}
+                        </dd>
+                    </div>
+                </dl>
 
                 <div class="rounded-xl bg-primary/10 p-4">
                     <p class="text-sm text-default">Your weighted score</p>
@@ -254,28 +331,6 @@ function selectRelative(offset: number) {
                         </div>
                     </dl>
                 </section>
-
-                <section class="mt-5" aria-labelledby="history-description-heading">
-                    <h3 id="history-description-heading" class="mb-2 font-semibold">
-                        Project description
-                    </h3>
-                    <SafeComark class="text-wrap leading-relaxed">
-                        {{ selectedItem.team.project.description }}
-                    </SafeComark>
-                </section>
-
-                <UAlert
-                    v-if="selectedItem.team.project.sourcing"
-                    icon="i-lucide-book-open"
-                    color="info"
-                    variant="subtle"
-                    title="Team's AI-use statement"
-                    class="mt-4"
-                >
-                    <template #description>
-                        <SafeComark>{{ selectedItem.team.project.sourcing }}</SafeComark>
-                    </template>
-                </UAlert>
 
                 <section class="mt-5" aria-labelledby="history-feedback-heading">
                     <h3 id="history-feedback-heading" class="mb-2 font-semibold">

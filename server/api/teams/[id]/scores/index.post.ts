@@ -1,6 +1,6 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { SubmitTeamScoresRequest, TeamIdParams } from "~~/shared/schemas";
-import { validateRubricScores } from "~~/shared/rubric";
+import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { getTeam } from "~~/server/utils/database/teams";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { rubricVersions } from "~~/server/database/schema";
@@ -74,7 +74,7 @@ export default defineEventHandler(
         if (!version) {
             throw createError({ status: 409, message: "The active season has no judging rubric." });
         }
-        const track = version.definition.tracks[team.pathway ?? ""];
+        const track = getRubricTrack(version.definition, team.pathway);
         if (!track) {
             throw createError({ status: 409, message: "No rubric track matches this project." });
         }

@@ -1,7 +1,8 @@
 import { NethackPermissions } from "~~/shared/permissions";
-import { AdminUpdateHackathonRequest } from "~~/shared/schemas";
+import { AdminUpdateHackathonRequest, LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
+import { getLiveOverrides } from "~~/server/utils/database/hackathon";
 import { getSeasons } from "~~/server/utils/database/seasons";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import {
@@ -47,30 +48,45 @@ export default defineEventHandler(
         const targetsLiveSettings = season_id === undefined || season_id === activeSeason?.id;
 
         if (hackathonUsesYaml() && targetsLiveSettings) {
-            // A local checkout's manifest is writable, so the portal stays
-            // usable after a season is activated. Remote manifests are not.
-            if (getHackathonConfigSource() !== "local") {
-                throw createError({
-                    statusCode: 409,
-                    message: "Edit the configured HACKATHON.yml to change live settings.",
-                });
+            const operational: Record<string, unknown> = {};
+            const statics: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(configFields)) {
+                if ((LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
+                    operational[key] = value;
+                } else {
+                    statics[key] = value;
+                }
             }
 
-            await writeHackathonConfig(configFields);
+            // Schedule and theme still come from the manifest; status and the
+            // visibility switches live in PostgreSQL, so they need no writable
+            // manifest and stay editable even when it is hosted remotely.
+            if (Object.keys(statics).length > 0) {
+                if (getHackathonConfigSource() !== "local") {
+                    throw createError({
+                        statusCode: 409,
+                        message:
+                            "Schedule and theme come from the remote HACKATHON.yml. Only status and visibility switches can change here.",
+                    });
+                }
+                await writeHackathonConfig(statics);
+            }
 
-            // Keep the database copies aligned for rollback and stored-season views.
+            const overrides = { ...(await getLiveOverrides(event)), ...operational };
             await event.context.drizzle
                 .update(hackathon)
-                .set(configFields)
+                .set({ ...statics, ...operational, live_overrides: overrides })
                 .where(eq(hackathon.id, 1));
             if (activeSeason) {
                 await event.context.drizzle
                     .update(seasons)
-                    .set(configFields)
+                    .set({ ...statics, ...operational })
                     .where(eq(seasons.id, activeSeason.id));
             }
         } else if (hackathonUsesYaml()) {
-            // Historical and future seasons keep editable stored settings.
+            // Historical and future seasons keep editable stored settings, but
+            // editing them is a season-level change, not a live-event change.
+            await requireUser(event, NethackPermissions.Seasons.update);
             const updatedSeasons = await event.context.drizzle
                 .update(seasons)
                 .set(configFields)
@@ -82,6 +98,9 @@ export default defineEventHandler(
         } else if (season_id !== undefined) {
             // Per-season save: write to the specified season,
             // and also to the global row if this is the active season
+            if (activeSeason?.id !== season_id) {
+                await requireUser(event, NethackPermissions.Seasons.update);
+            }
             const updatedSeasons = await event.context.drizzle
                 .update(seasons)
                 .set(configFields)

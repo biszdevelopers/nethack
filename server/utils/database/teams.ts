@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { eq, and, inArray, notExists, asc, sql } from "drizzle-orm";
+import { eq, and, inArray, notExists, asc, sql, ne } from "drizzle-orm";
 import {
     teams,
     teamScores,
@@ -53,6 +53,7 @@ export async function getAllTeams(event: H3Event): Promise<Team[]> {
 export async function getSubmittedUnjudgedTeams(
     event: H3Event,
     judgeUserID: number,
+    judgeTeamId: number | null = null,
 ): Promise<Team[]> {
     const activeSeason = await getActiveSeason(event);
     const seasonId = activeSeason?.id ?? -1;
@@ -66,7 +67,12 @@ export async function getSubmittedUnjudgedTeams(
         .select()
         .from(teams)
         .where(
-            and(eq(teams.season_id, seasonId), eq(teams.project_submitted, 1), notExists(subquery)),
+            and(
+                eq(teams.season_id, seasonId),
+                eq(teams.project_submitted, 1),
+                ne(teams.id, judgeTeamId ?? -1),
+                notExists(subquery),
+            ),
         )
         .then((rows) => rows as Team[]);
 }

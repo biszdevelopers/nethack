@@ -1,12 +1,46 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createMockEvent } from "./helpers";
-import { getHackathon, updateHackathon } from "~~/server/utils/database/hackathon";
+import {
+    getHackathon,
+    getLiveOverrides,
+    updateHackathon,
+} from "~~/server/utils/database/hackathon";
 
 describe("hackathon database helpers", () => {
     let event: Awaited<ReturnType<typeof createMockEvent>>;
 
     beforeEach(async () => {
         event = await createMockEvent();
+    });
+
+    describe("getLiveOverrides", () => {
+        it("returns validated portal switches and ignores invalid payloads", async () => {
+            await expect(getLiveOverrides(event)).resolves.toEqual({});
+
+            event.context.drizzle
+                .prepare(
+                    'INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp, live_overrides) VALUES(1, \'voting\', 0, 0, 0, 0, 0, \'{"status":"finished","voting_enabled":0,"show_scores":1}\')',
+                )
+                .run();
+
+            await expect(getLiveOverrides(event)).resolves.toEqual({
+                status: "finished",
+                voting_enabled: 0,
+                show_scores: 1,
+            });
+
+            event.context.drizzle
+                .prepare(
+                    'UPDATE hackathon SET live_overrides = \'{"status":"bogus","voting_enabled":9}\' WHERE id = 1',
+                )
+                .run();
+            await expect(getLiveOverrides(event)).resolves.toEqual({});
+
+            event.context.drizzle
+                .prepare("UPDATE hackathon SET live_overrides = '\"not-an-object\"' WHERE id = 1")
+                .run();
+            await expect(getLiveOverrides(event)).resolves.toEqual({});
+        });
     });
 
     describe("getHackathon", () => {

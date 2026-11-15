@@ -1,7 +1,11 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
 import { JudgingHistoryParams } from "~~/shared/schemas";
-import { calculateWeightedRubricScore, validateRubricScores } from "~~/shared/rubric";
+import {
+    calculateWeightedRubricScore,
+    getRubricTrack,
+    validateRubricScores,
+} from "~~/shared/rubric";
 import type { Team } from "~~/shared/database";
 import { rubricVersions, teamScores, teams as teamsTable } from "~~/server/database/schema";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
@@ -76,7 +80,7 @@ export default defineEventHandler(
                 row.rubric_version_id === null
                     ? undefined
                     : versionsById.get(row.rubric_version_id);
-            const track = row.team.pathway ? version?.definition.tracks[row.team.pathway] : null;
+            const track = getRubricTrack(version?.definition, row.team.pathway);
             const scores = parseStoredScores(row.scores);
             if (!version || !track || !scores || validateRubricScores(track, scores).length > 0) {
                 unavailable += 1;

@@ -43,6 +43,18 @@ export interface RubricScoreValidationOptions {
     allowPartial?: boolean;
 }
 
+/**
+ * Resolve a track by key without exposing inherited object properties such as
+ * `constructor` or `__proto__` when a legacy team stores an unusual pathway.
+ */
+export function getRubricTrack(
+    definition: RubricDefinition | null | undefined,
+    pathway: string | null | undefined,
+): RubricTrack | undefined {
+    if (!definition || !pathway || !Object.hasOwn(definition.tracks, pathway)) return undefined;
+    return definition.tracks[pathway];
+}
+
 /** Add legacy-compatible comment defaults when loading a rubric created before comment settings. */
 export function withDefaultRubricCommentGuidance(definition: RubricDefinition): RubricDefinition {
     return {

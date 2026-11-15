@@ -498,8 +498,8 @@ describe("SubmitVoteRequest", () => {
         ).toThrow("Stars must sum to 10");
     });
 
-    it("rejects more than 50 scores", () => {
-        const scores = Array(51).fill(0);
+    it("rejects more than 200 scores", () => {
+        const scores = Array(201).fill(0);
         scores[0] = 5;
         scores[1] = 5;
         expect(() =>

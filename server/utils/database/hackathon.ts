@@ -1,13 +1,30 @@
 import type { H3Event } from "h3";
 import { eq } from "drizzle-orm";
 import { hackathon } from "~~/server/database/schema";
+import { LiveOverrides } from "~~/shared/schemas";
 import { firstRow } from "./query";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
+
+/** Portal-managed switches that apply on top of a YAML manifest. */
+export async function getLiveOverrides(event: H3Event): Promise<LiveOverrides> {
+    const row = await firstRow(
+        event.context.drizzle
+            .select({ live_overrides: hackathon.live_overrides })
+            .from(hackathon)
+            .limit(1),
+    );
+    const parsed = LiveOverrides.safeParse(row?.live_overrides ?? {});
+    return parsed.success ? parsed.data : {};
+}
 
 export async function getHackathon(event: H3Event): Promise<Hackathon | null> {
     if (hackathonUsesYaml()) {
         const { rubric, ...settings } = await readHackathonConfig();
-        return settings;
+        // PostgreSQL owns the operational switches (status, voting, judging,
+        // results, score/rank visibility) so the portal never needs a writable
+        // manifest. Schedule, theme, and the rubric still come from the manifest.
+        const overrides = await getLiveOverrides(event);
+        return { ...settings, ...overrides, live_overrides: overrides };
     }
     const row = await firstRow(event.context.drizzle.select().from(hackathon).limit(1));
 
