@@ -59,11 +59,27 @@ const migrationSQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS sc_votes_user_id_unique ON sc_votes(user_id);
 
   CREATE TABLE IF NOT EXISTS peer_voting_scores (
-    user_id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    season_id INTEGER NOT NULL,
     score TEXT NOT NULL,
-    reasoning TEXT
+    reasoning TEXT,
+    PRIMARY KEY(user_id, season_id),
+    FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE
   );
-  CREATE UNIQUE INDEX IF NOT EXISTS peer_voting_scores_user_id_unique ON peer_voting_scores(user_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS peer_voting_scores_user_season_unique
+    ON peer_voting_scores(user_id, season_id);
+
+  CREATE TABLE IF NOT EXISTS team_invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL,
+    email TEXT NOT NULL,
+    invited_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE,
+    FOREIGN KEY(invited_by) REFERENCES users(id) ON DELETE SET NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS team_invites_team_email ON team_invites(team_id, email);
+  CREATE INDEX IF NOT EXISTS team_invites_email ON team_invites(email);
 
   CREATE TABLE IF NOT EXISTS team_awards (
     team_id INTEGER NOT NULL,
@@ -193,6 +209,7 @@ export function resetTestContext(ctx: TestContext): void {
     DELETE FROM rubric_versions;
     DELETE FROM rubric_templates;
     DELETE FROM peer_voting_scores;
+    DELETE FROM team_invites;
     DELETE FROM user_past_teams;
     DELETE FROM oauth2_applications;
     DELETE FROM users;
@@ -258,6 +275,7 @@ export function seedUser(
         role?: string;
         name?: string | null;
         team_id?: number | null;
+        is_admin?: number;
     } = {},
 ) {
     return ctx.drizzle
@@ -267,7 +285,7 @@ export function seedUser(
             role: overrides.role ?? "participant",
             name: overrides.name ?? "Test User",
             team_id: overrides.team_id ?? null,
-            is_admin: 0,
+            is_admin: overrides.is_admin ?? 0,
         } as any)
         .returning()
         .get();

@@ -11,7 +11,14 @@ describe("debug route lockdown middleware", () => {
 
     afterEach(() => vi.unstubAllEnvs());
 
-    const eventFor = (url: string) => ({ node: { req: { url } } });
+    const eventFor = (url: string) => ({
+        path: url.split("?", 1)[0],
+        context: {},
+        node: {
+            req: { url },
+            res: { setHeader: vi.fn(), getHeader: vi.fn() },
+        },
+    });
 
     it.each(["/api/debug", "/api/debug/files?sort=name", "/debug", "/debug/deepseek?tab=chat"])(
         "returns 404 for production debug route %s even without the explicit flag",
@@ -19,6 +26,20 @@ describe("debug route lockdown middleware", () => {
             vi.stubEnv("NODE_ENV", "production");
             vi.stubEnv("DISABLE_DEBUG_ROUTES", "");
             await expect(middleware(eventFor(url))).rejects.toMatchObject({ statusCode: 404 });
+        },
+    );
+
+    it.each(["/api/debug%2Ffiles", "/debug%2Fdeepseek"])(
+        "returns 404 for percent-encoded debug route %s",
+        async (url) => {
+            vi.stubEnv("NODE_ENV", "production");
+            const event = eventFor(url);
+
+            await expect(middleware(event)).rejects.toMatchObject({ statusCode: 404 });
+            expect(event.node.res.setHeader).toHaveBeenCalledWith(
+                "X-Content-Type-Options",
+                "nosniff",
+            );
         },
     );
 

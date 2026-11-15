@@ -101,6 +101,7 @@ beforeAll(async () => {
 
     vi.stubGlobal("getTeamsBySeason", teamsDb.getTeamsBySeason);
     vi.stubGlobal("getAllTeams", teamsDb.getAllTeams);
+    vi.stubGlobal("getPublicTeams", teamsDb.getPublicTeams);
     vi.stubGlobal("getSubmittedTeams", teamsDb.getSubmittedTeams);
     vi.stubGlobal("getSubmittedUnjudgedTeams", teamsDb.getSubmittedUnjudgedTeams);
 
@@ -404,6 +405,7 @@ describe("SQL injection in peer voting reasoning (direct DB helper)", () => {
 
         await upsertPeerVote(createEvent(), {
             user_id: 999,
+            season_id: 1,
             score: JSON.stringify({}),
             reasoning: sqlReasoning,
         });

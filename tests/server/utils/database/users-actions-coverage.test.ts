@@ -136,3 +136,57 @@ describe("existing basis-auth link update actions", () => {
         expect(created).toMatchObject({ is_admin: 1 });
     });
 });
+
+describe("concurrent basis-auth first logins", () => {
+    it("returns the winning row when the unique identity index rejects the race", async () => {
+        const event = await createMockEvent();
+        const identity = {
+            issuer: "https://auth.example.test",
+            subject: "racing-subject",
+            email: "racing@example.test",
+            name: "Racing Member",
+            picture: null,
+        };
+        const winner = await findOrLinkBasisAuthUser(event, identity);
+        const drizzle = new Proxy(event.context.drizzle, {
+            get(target, property) {
+                if (property === "transaction") {
+                    return async () => {
+                        throw Object.assign(new Error("duplicate key"), { code: "23505" });
+                    };
+                }
+                const value = Reflect.get(target, property, target);
+                return typeof value === "function" ? value.bind(target) : value;
+            },
+        });
+
+        const user = await findOrLinkBasisAuthUser({ context: { drizzle } } as any, identity);
+
+        expect(user.id).toBe(winner.id);
+    });
+
+    it("rethrows a unique violation when no linked row is visible", async () => {
+        const event = await createMockEvent();
+        const drizzle = new Proxy(event.context.drizzle, {
+            get(target, property) {
+                if (property === "transaction") {
+                    return async () => {
+                        throw Object.assign(new Error("duplicate key"), { code: "23505" });
+                    };
+                }
+                const value = Reflect.get(target, property, target);
+                return typeof value === "function" ? value.bind(target) : value;
+            },
+        });
+
+        await expect(
+            findOrLinkBasisAuthUser({ context: { drizzle } } as any, {
+                issuer: "https://auth.example.test",
+                subject: "missing-subject",
+                email: "missing@example.test",
+                name: null,
+                picture: null,
+            }),
+        ).rejects.toThrow("duplicate key");
+    });
+});

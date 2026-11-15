@@ -17,7 +17,7 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `name` | text | Display name |
 | `is_active` | integer | `1` for the single active season (partial unique index) |
 | `status` | text | `not_started`, `in_progress`, `voting`, `finished`, `paused` |
-| `voting_enabled` | integer | Toggle peer voting |
+| `voting_enabled` | integer | Toggle peer voting; ballots require `status = voting` and this flag set to `1` |
 | `judging_open` | integer | Toggle judge scoring |
 | `results_published` | integer | Publish results to participants |
 | `show_scores` | integer | Show scores to participants |

@@ -1,7 +1,8 @@
 import type { H3Event } from "h3";
 import { eq, and, asc, isNull } from "drizzle-orm";
-import { users, teams, userPastTeams } from "~~/server/database/schema";
-import { changedRows } from "./query";
+import { users, teams, userPastTeams, teamInvites, seasons } from "~~/server/database/schema";
+import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
+import { changedRows, firstRow } from "./query";
 
 export async function getTeamMembers(event: H3Event, teamID: number): Promise<User[]> {
     return event.context.drizzle.select().from(users).where(eq(users.team_id, teamID));
@@ -90,5 +91,150 @@ export async function addTeamMember(event: H3Event, teamID: number, userID: numb
             status: 404,
             message: "User not found or already in a team",
         });
+    }
+}
+
+export async function getTeamInvites(event: H3Event, teamID: number): Promise<TeamInvite[]> {
+    return event.context.drizzle
+        .select()
+        .from(teamInvites)
+        .where(eq(teamInvites.team_id, teamID))
+        .orderBy(asc(teamInvites.id));
+}
+
+export async function getInvitesForEmail(
+    event: H3Event,
+    email: string,
+): Promise<Array<Pick<TeamInvite, "id" | "team_id"> & { team_name: string }>> {
+    return event.context.drizzle
+        .select({
+            id: teamInvites.id,
+            team_id: teamInvites.team_id,
+            team_name: teams.name,
+        })
+        .from(teamInvites)
+        .innerJoin(teams, eq(teamInvites.team_id, teams.id))
+        .where(eq(teamInvites.email, email.trim().toLowerCase()))
+        .orderBy(asc(teamInvites.id));
+}
+
+export async function createTeamInvite(
+    event: H3Event,
+    teamID: number,
+    email: string,
+    invitedBy: number,
+) {
+    const created = await event.context.drizzle
+        .insert(teamInvites)
+        .values({
+            team_id: teamID,
+            email: email.trim().toLowerCase(),
+            invited_by: invitedBy,
+            created_at: new Date(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: teamInvites.id });
+
+    if (created.length === 0) {
+        throw createError({
+            statusCode: 409,
+            message: "That email already has an invitation for this team",
+        });
+    }
+}
+
+export async function deleteTeamInvite(event: H3Event, teamID: number, inviteID: number) {
+    const changed = await changedRows(
+        event.context.drizzle
+            .delete(teamInvites)
+            .where(and(eq(teamInvites.id, inviteID), eq(teamInvites.team_id, teamID)))
+            .returning({ id: teamInvites.id }),
+    );
+
+    if (changed === 0) {
+        throw createError({ statusCode: 404, message: "Invitation not found" });
+    }
+}
+
+/** Accept an invitation: the email must match, the team must be current, and it must not be full. */
+export async function acceptTeamInvite(
+    event: H3Event,
+    inviteID: number,
+    user: User,
+): Promise<Team> {
+    return event.context.drizzle.transaction(async (tx) => {
+        const invite = await firstRow(
+            tx.select().from(teamInvites).where(eq(teamInvites.id, inviteID)).limit(1),
+        );
+        if (!invite || invite.email !== user.email.trim().toLowerCase()) {
+            throw createError({ statusCode: 404, message: "Invitation not found" });
+        }
+
+        const team = await firstRow(
+            tx.select().from(teams).where(eq(teams.id, invite.team_id)).limit(1),
+        );
+        if (!team) {
+            throw createError({ statusCode: 404, message: "Invitation not found" });
+        }
+
+        const activeSeason = await firstRow(
+            tx.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1),
+        );
+        if (!activeSeason || team.season_id !== activeSeason.id) {
+            throw createError({
+                statusCode: 409,
+                message: "This invitation is for a season that has ended",
+            });
+        }
+        if (team.project_submitted) {
+            throw createError({
+                statusCode: 409,
+                message: "This team has already submitted its project",
+            });
+        }
+
+        if (user.team_id) {
+            const currentTeam = await firstRow(
+                tx
+                    .select()
+                    .from(teams)
+                    .where(and(eq(teams.id, user.team_id), eq(teams.season_id, activeSeason.id)))
+                    .limit(1),
+            );
+            if (currentTeam) {
+                throw createError({
+                    statusCode: 409,
+                    message: "You are already in a team",
+                });
+            }
+        }
+
+        const members = await tx.select().from(users).where(eq(users.team_id, team.id));
+        if (members.length >= MAX_TEAM_MEMBERS) {
+            throw createError({ statusCode: 409, message: "This team is full" });
+        }
+
+        await tx.update(users).set({ team_id: team.id }).where(eq(users.id, user.id));
+        await tx.delete(teamInvites).where(eq(teamInvites.email, invite.email));
+
+        return team as Team;
+    });
+}
+
+export async function declineTeamInvite(event: H3Event, inviteID: number, email: string) {
+    const changed = await changedRows(
+        event.context.drizzle
+            .delete(teamInvites)
+            .where(
+                and(
+                    eq(teamInvites.id, inviteID),
+                    eq(teamInvites.email, email.trim().toLowerCase()),
+                ),
+            )
+            .returning({ id: teamInvites.id }),
+    );
+
+    if (changed === 0) {
+        throw createError({ statusCode: 404, message: "Invitation not found" });
     }
 }

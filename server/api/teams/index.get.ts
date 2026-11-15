@@ -131,11 +131,10 @@ export default defineEventHandler(
                 ),
             );
         } else {
-            const seasonId = query.season_id ?? -1;
-            const teams =
-                seasonId === -1
-                    ? await getAllTeams(event)
-                    : await getTeamsBySeason(event, seasonId);
+            const teams = await getPublicTeams(
+                event,
+                query.season_id === undefined ? undefined : query.season_id,
+            );
             const awardsByTeam = await getAwardsForTeams(
                 event,
                 teams.map((t) => t.id),

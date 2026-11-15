@@ -6,7 +6,7 @@ import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateL
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
-        await requireUser(event, NethackPermissions.Debug.deepseekRead);
+        const user = await requireUser(event, NethackPermissions.Debug.deepseekRead);
 
         const { id: sessionId } = await getValidatedRouterParams(
             event,
@@ -16,7 +16,7 @@ export default defineEventHandler(
         try {
             const session = getDeepSeekSession(sessionId);
 
-            if (!session) {
+            if (!session || session.owner_user_id !== user.id) {
                 throw createError({
                     statusCode: 404,
                     statusMessage: "Session not found",

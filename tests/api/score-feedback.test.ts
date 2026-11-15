@@ -356,15 +356,12 @@ describe("anonymous score feedback calculation", () => {
         ).rejects.toMatchObject({ statusCode: 404, message: "Season not found." });
     });
 
-    it("fails closed when a scored team has no saved judging track", async () => {
+    it("degrades gracefully when a scored team has no saved judging track", async () => {
         const { team } = await seedPublishedEvaluation();
 
         await expect(
             getTeamScoreFeedback(createEvent() as any, { ...team, pathway: null } as any),
-        ).rejects.toMatchObject({
-            statusCode: 409,
-            message: "Saved score feedback is unavailable.",
-        });
+        ).resolves.toMatchObject({ unavailable_evaluations: 1, feedback: [] });
     });
 
     it("applies a configured display curve while preserving the original score", async () => {
@@ -403,16 +400,16 @@ describe("anonymous score feedback calculation", () => {
     it.each([
         ["malformed JSON", "{"],
         ["invalid JSON shape", "[]"],
-    ])("hides unavailable saved score details for %s", async (_label, scores) => {
+    ])("skips unavailable saved score details for %s", async (_label, scores) => {
         const { team } = await seedPublishedEvaluation();
         ctx.drizzle.update(teamScores).set({ scores }).where(eq(teamScores.team_id, team.id)).run();
 
-        await expect(getTeamScoreFeedback(createEvent() as any, team as any)).rejects.toMatchObject(
-            { statusCode: 409, message: "Saved score feedback is unavailable." },
-        );
+        await expect(
+            getTeamScoreFeedback(createEvent() as any, team as any),
+        ).resolves.toMatchObject({ unavailable_evaluations: 1, feedback: [] });
     });
 
-    it("fails closed when saved comments do not match their historical rubric", async () => {
+    it("skips saved comments that do not match their historical rubric", async () => {
         const { team } = await seedPublishedEvaluation();
         ctx.drizzle
             .update(teams)
@@ -422,13 +419,10 @@ describe("anonymous score feedback calculation", () => {
 
         await expect(
             getTeamScoreFeedback(createEvent() as any, { ...team, pathway: "unconfigured" }),
-        ).rejects.toMatchObject({
-            statusCode: 409,
-            message: "Saved score feedback is unavailable.",
-        });
+        ).resolves.toMatchObject({ unavailable_evaluations: 1, feedback: [] });
     });
 
-    it("fails closed when a stored criterion score is outside its historical range", async () => {
+    it("skips a stored criterion score outside its historical range", async () => {
         const { team } = await seedPublishedEvaluation();
         const invalidScores = Object.fromEntries(
             DEFAULT_RUBRIC_DEFINITION.tracks.junior.criteria.map((criterion) => [
@@ -442,9 +436,9 @@ describe("anonymous score feedback calculation", () => {
             .where(eq(teamScores.team_id, team.id))
             .run();
 
-        await expect(getTeamScoreFeedback(createEvent() as any, team as any)).rejects.toMatchObject(
-            { statusCode: 409, message: "Saved score feedback is unavailable." },
-        );
+        await expect(
+            getTeamScoreFeedback(createEvent() as any, team as any),
+        ).resolves.toMatchObject({ unavailable_evaluations: 1, feedback: [] });
     });
 
     it("anonymizes and shuffles multiple judge comments", async () => {

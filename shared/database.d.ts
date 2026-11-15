@@ -18,6 +18,7 @@ type TeamPathway = string;
 type HackathonBase = InferSelectModel<typeof schema.hackathon>;
 type TeamBase = InferSelectModel<typeof schema.teams>;
 type TeamScoresBase = InferSelectModel<typeof schema.teamScores>;
+type TeamInviteBase = InferSelectModel<typeof schema.teamInvites>;
 type UserBase = InferSelectModel<typeof schema.users>;
 type BallotBase = InferSelectModel<typeof schema.ballots>;
 type BallotScoreBase = InferSelectModel<typeof schema.ballotScores>;
@@ -38,6 +39,7 @@ export type BallotScore = BallotScoreBase;
 export type OAuth2Application = OAuth2ApplicationBase;
 export type Award = AwardBase;
 export type TeamAward = TeamAwardBase;
+export type TeamInvite = TeamInviteBase;
 export type PeerVotingScore = PeerVotingScoreBase;
 export type Season = Omit<SeasonBase, "score_curve_preset"> & {
     score_curve_preset: ScoreCurvePreset;
@@ -59,6 +61,7 @@ declare global {
     type OAuth2Application = OAuth2ApplicationBase;
     type Award = AwardBase;
     type TeamAward = TeamAwardBase;
+    type TeamInvite = TeamInviteBase;
     type PeerVotingScore = PeerVotingScoreBase;
     type Season = Omit<SeasonBase, "score_curve_preset"> & {
         score_curve_preset: ScoreCurvePreset;

@@ -60,20 +60,32 @@ export async function getTeamScoreFeedback(
     const judgesById = new Map(judges.map((judge) => [judge.id, judge]));
 
     let total = 0;
-    const feedback = evaluations.map((evaluation) => {
+    let validCount = 0;
+    let unavailable = 0;
+    const feedback: Array<Record<string, unknown>> = [];
+    for (const evaluation of evaluations) {
         const version = versionsById.get(evaluation.rubric_version_id);
         const track = team.pathway ? version?.definition.tracks[team.pathway] : undefined;
         if (!version || !track) {
-            throw createError({ statusCode: 409, message: "Saved score feedback is unavailable." });
+            unavailable += 1;
+            continue;
         }
 
-        const scores = parseScoreObject(evaluation.scores);
+        let scores: Record<string, number>;
+        try {
+            scores = parseScoreObject(evaluation.scores);
+        } catch {
+            unavailable += 1;
+            continue;
+        }
         if (validateRubricScores(track, scores).length > 0) {
-            throw createError({ statusCode: 409, message: "Saved score feedback is unavailable." });
+            unavailable += 1;
+            continue;
         }
 
         const exactNormalizedScore = calculateWeightedRubricScore(track, scores);
         total += exactNormalizedScore;
+        validCount += 1;
 
         const entry = {
             rubric_name: version.name,
@@ -84,14 +96,16 @@ export async function getTeamScoreFeedback(
             criteria: track.criteria,
             reasoning: evaluation.reasoning,
         };
-        return options.includeJudgeIdentity
-            ? {
-                  ...entry,
-                  judge_id: evaluation.judge_user_id,
-                  judge_name: judgesById.get(evaluation.judge_user_id)?.name ?? null,
-              }
-            : entry;
-    });
+        feedback.push(
+            options.includeJudgeIdentity
+                ? {
+                      ...entry,
+                      judge_id: evaluation.judge_user_id,
+                      judge_name: judgesById.get(evaluation.judge_user_id)?.name ?? null,
+                  }
+                : entry,
+        );
+    }
 
     // Do not expose stable judge ordering or identifiers in either feedback view.
     for (let index = feedback.length - 1; index > 0; index -= 1) {
@@ -99,10 +113,9 @@ export async function getTeamScoreFeedback(
         [feedback[index], feedback[swapIndex]] = [feedback[swapIndex]!, feedback[index]!];
     }
 
-    const rawScore =
-        evaluations.length > 0 ? Math.round(total / evaluations.length) : (team.score ?? null);
+    const rawScore = validCount > 0 ? Math.round(total / validCount) : (team.score ?? null);
     const feedbackWithheldForAnonymity =
-        options.publicView === true && evaluations.length < MIN_PUBLIC_FEEDBACK_REVIEWERS;
+        options.publicView === true && validCount < MIN_PUBLIC_FEEDBACK_REVIEWERS;
     const visibleFeedback = feedbackWithheldForAnonymity
         ? []
         : options.publicView === true
@@ -122,6 +135,7 @@ export async function getTeamScoreFeedback(
         curve_label: curvePreset === "original" ? null : SCORE_CURVE_PRESETS[curvePreset].label,
         rank: team.rank,
         feedback: visibleFeedback,
+        unavailable_evaluations: unavailable,
         ...(options.publicView === true
             ? { feedback_withheld_for_anonymity: feedbackWithheldForAnonymity }
             : {}),

@@ -556,13 +556,12 @@ export interface ProfileAssetGcResult {
     staleTemporaryFilesDeleted: number;
 }
 
-async function collectDirectoryWindow(
+export async function collectDirectoryWindow(
     directory: string,
     lastName: string | undefined,
     limit: number,
     maxEntries: number,
     isEligible: (name: string) => boolean,
-    excluded = new Set<string>(),
 ): Promise<{
     names: string[];
     cursorFound: boolean;
@@ -575,6 +574,7 @@ async function collectDirectoryWindow(
     let lastVisited: string | undefined;
     const entries = await opendir(directory);
     for await (const entry of entries) {
+        if (!isEligible(entry.name)) continue;
         entriesVisited += 1;
         lastVisited = entry.name;
         if (!cursorFound) {
@@ -582,11 +582,8 @@ async function collectDirectoryWindow(
             if (entriesVisited >= maxEntries) break;
             continue;
         }
-        if (isEligible(entry.name) && !excluded.has(entry.name)) {
-            names.push(entry.name);
-            if (names.length >= limit) break;
-        }
-        if (entriesVisited >= maxEntries) break;
+        names.push(entry.name);
+        if (names.length >= limit) break;
     }
     return { names, cursorFound, entriesVisited, lastVisited };
 }
@@ -595,7 +592,6 @@ export async function collectDirectoryWindowUntil(
     directory: string,
     lastName: string,
     limit: number,
-    maxEntries: number,
     isEligible: (name: string) => boolean,
     excluded: Set<string>,
 ): Promise<{ names: string[]; entriesVisited: number; lastVisited?: string }> {
@@ -604,14 +600,14 @@ export async function collectDirectoryWindowUntil(
     let lastVisited: string | undefined;
     const entries = await opendir(directory);
     for await (const entry of entries) {
+        if (!isEligible(entry.name)) continue;
         entriesVisited += 1;
         lastVisited = entry.name;
         if (entry.name === lastName) break;
-        if (isEligible(entry.name) && !excluded.has(entry.name)) {
+        if (!excluded.has(entry.name)) {
             names.push(entry.name);
             if (names.length >= limit) break;
         }
-        if (entriesVisited >= maxEntries) break;
     }
     return { names, entriesVisited, lastVisited };
 }
@@ -642,7 +638,6 @@ async function selectFairWindow(
             directory,
             lastName,
             limit - names.length,
-            maxEntries - entriesVisited,
             isEligible,
             new Set(names),
         );
@@ -979,13 +974,13 @@ async function createStreamAtPath(
     assertUploadTemporaryName(temporaryName);
     const temporaryPath = join(dirname(filePath), temporaryName ?? `.upload-${randomUUID()}.tmp`);
     let bytesWritten = 0;
-    let exceededLimit = false;
     const sizeGuard = new Transform({
         transform(chunk: Buffer | string, _encoding, callback) {
             bytesWritten += Buffer.byteLength(chunk);
             if (bytesWritten > maxBytes) {
-                exceededLimit = true;
-                callback();
+                // Abort the upload immediately instead of draining a body that
+                // can never be stored.
+                callback(createError({ statusCode: 413, statusMessage: "File too large" }));
                 return;
             }
             callback(null, chunk);
@@ -1039,9 +1034,6 @@ async function createStreamAtPath(
         const destination = createWriteStream(temporaryPath, { flags: "wx", mode: 0o640 });
         if (prefixGuard) await pipeline(input, prefixGuard, sizeGuard, destination);
         else await pipeline(input, sizeGuard, destination);
-        if (exceededLimit) {
-            throw createError({ statusCode: 413, statusMessage: "File too large" });
-        }
         if (overwriteExisting) {
             try {
                 const existing = await lstat(filePath);

@@ -182,8 +182,8 @@ URL validation is enforced at both layers to prevent SSRF and open redirect atta
 
 Three Nitro server middleware files run on every request:
 
-- **`security-headers.ts`** — Applies CSP, HSTS, `X-Frame-Options: DENY`, and other security headers to every response (pages and API).
-- **`debug-lockdown.ts`** — Returns 404 for `/api/debug/*` and `/debug*` routes when `DISABLE_DEBUG_ROUTES` is set.
+- **`security-headers.ts`** — Applies CSP, HSTS, `X-Frame-Options: DENY`, and other security headers to every response (pages and API) through the shared `server/utils/security-headers.ts` helper.
+- **`debug-lockdown.ts`** — Returns 404 for `/api/debug/*` and `/debug*` routes when `DISABLE_DEBUG_ROUTES` is set, including percent-encoded variants, and applies the baseline security headers to that 404.
 
 ### Startup environment validation
 

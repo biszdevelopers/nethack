@@ -1,12 +1,13 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { NethackPermissions } from "~~/shared/permissions";
+import { isVotingOpen } from "~~/server/utils/voting";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         const hackathon = await getHackathon(event);
-        if (hackathon?.status !== "voting") {
+        if (!isVotingOpen(hackathon)) {
             throw createError({
-                status: 409,
+                statusCode: 409,
                 message: "Peer voting is closed",
             });
         }
@@ -14,7 +15,7 @@ export default defineEventHandler(
         const user = await requireUser(event, NethackPermissions.Voting.readOwn);
         if (!user.team_id) {
             throw createError({
-                status: 403,
+                statusCode: 403,
                 message: "Only participants can vote",
             });
         }
@@ -22,7 +23,7 @@ export default defineEventHandler(
         const userTeam = await getTeam(event, user.team_id);
         if (!userTeam?.project_submitted) {
             throw createError({
-                status: 403,
+                statusCode: 403,
                 message: "Only participants with submitted projects can vote",
             });
         }
@@ -32,7 +33,7 @@ export default defineEventHandler(
             (p) => p.id !== user.team_id && p.pathway === userTeam.pathway,
         );
 
-        const peerVote = await getPeerVoteByUser(event, user.id);
+        const peerVote = await getPeerVoteByUser(event, user.id, userTeam.season_id);
 
         let scores: number[] = eligibleProjects.map(() => 0);
         let reasoning: string | null = null;

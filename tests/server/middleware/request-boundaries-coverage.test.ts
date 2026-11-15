@@ -21,6 +21,12 @@ describe("request middleware routing boundaries", () => {
         return { path, method, node: { req: request }, _requestBody: undefined };
     };
 
+    const debugEvent = (url: string) => ({
+        path: url.split("?", 1)[0],
+        context: {},
+        node: { req: { url }, res: { setHeader: vi.fn(), getHeader: vi.fn() } },
+    });
+
     it("does not buffer non-API requests or API requests using safe methods", async () => {
         const page = eventFor("/teams", "POST");
         const safeApi = eventFor("/api/teams", "GET");
@@ -48,12 +54,10 @@ describe("request middleware routing boundaries", () => {
     it("normalizes trailing slashes before blocking debug routes", async () => {
         vi.stubEnv("NODE_ENV", "production");
 
-        await expect(
-            debugLockdown({ node: { req: { url: "/api/debug/" } } }),
-        ).rejects.toMatchObject({
+        await expect(debugLockdown(debugEvent("/api/debug/"))).rejects.toMatchObject({
             statusCode: 404,
         });
-        await expect(debugLockdown({ node: { req: { url: "/debug/" } } })).rejects.toMatchObject({
+        await expect(debugLockdown(debugEvent("/debug/"))).rejects.toMatchObject({
             statusCode: 404,
         });
     });
@@ -61,10 +65,8 @@ describe("request middleware routing boundaries", () => {
     it("allows malformed and root request targets to continue to normal routing", async () => {
         vi.stubEnv("NODE_ENV", "production");
 
-        await expect(
-            debugLockdown({ node: { req: { url: "http://[" } } }),
-        ).resolves.toBeUndefined();
-        await expect(debugLockdown({ node: { req: { url: "/" } } })).resolves.toBeUndefined();
-        await expect(debugLockdown({ node: { req: { url: "" } } })).resolves.toBeUndefined();
+        await expect(debugLockdown(debugEvent("http://["))).resolves.toBeUndefined();
+        await expect(debugLockdown(debugEvent("/"))).resolves.toBeUndefined();
+        await expect(debugLockdown(debugEvent(""))).resolves.toBeUndefined();
     });
 });

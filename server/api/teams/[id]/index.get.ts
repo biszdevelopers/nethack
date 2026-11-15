@@ -30,6 +30,14 @@ export default defineEventHandler(
             event.context.oauth2?.permissions,
             NethackPermissions.Judging.resultsRead,
         );
+
+        // Draft submissions are private to the team and the judging staff.
+        if (!team.project_submitted && !isMember && !privileged) {
+            throw createError({
+                statusCode: 404,
+                message: "Team '" + id + "' does not exist",
+            });
+        }
         const withScore =
             privileged ||
             (isMember &&

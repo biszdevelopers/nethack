@@ -130,7 +130,7 @@ export default defineEventHandler(
             throw createError({ status: 403, message: "Cannot update other users" });
         }
 
-        return await withProfileUpdateCapacity(event, async () => {
+        return await withProfileUpdateCapacity(event, userID, async () => {
             event._requestBody = (await readLimitedRequestBody(
                 event,
                 MAX_PROFILE_UPDATE_BODY_BYTES,

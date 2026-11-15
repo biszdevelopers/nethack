@@ -5,8 +5,8 @@ import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateL
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
-        await requireUser(event, NethackPermissions.Debug.deepseekRead);
+        const user = await requireUser(event, NethackPermissions.Debug.deepseekRead);
 
-        return getAllSessions();
+        return getAllSessions(user.id);
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

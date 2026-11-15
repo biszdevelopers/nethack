@@ -6,7 +6,7 @@
 
 id: 1
 status: voting
-voting_enabled: 0
+voting_enabled: 1
 results_published: 0
 show_scores: 0
 show_ranking: 0

@@ -50,7 +50,13 @@ vi.mock("openai", () => ({
 const originalDeepSeekApiKey = process.env.DEEPSEEK_API_KEY;
 const messages: unknown[] = [];
 const testUser = { id: 29, email: "judge@example.com" };
-const session = { id: 41, sessionName: "Test session", userId: testUser.id };
+const session = {
+    id: 41,
+    sessionName: "Test session",
+    owner_user_id: testUser.id,
+    createdAt: 0,
+    messages: [],
+};
 const readBody = vi.fn(async (_event: unknown, parse: (body: unknown) => unknown) =>
     parse(mockBody.value),
 );
@@ -115,6 +121,7 @@ describe("DeepSeek session listing route", () => {
             event,
             NethackPermissions.Debug.deepseekRead,
         );
+        expect(mocks.getAllSessions).toHaveBeenCalledWith(testUser.id);
     });
 
     it("requires read permission before listing", async () => {
@@ -156,7 +163,7 @@ describe("DeepSeek session creation route", () => {
         mocks.createSession.mockReturnValue(created);
 
         await expect(create(event)).resolves.toBe(created);
-        expect(mocks.createSession).toHaveBeenCalledWith("My research");
+        expect(mocks.createSession).toHaveBeenCalledWith("My research", testUser.id);
     });
 
     it("maps storage failures to a generic server error", async () => {
@@ -201,6 +208,14 @@ describe("DeepSeek session read route", () => {
 
         await expect(get(event)).resolves.toBe(session);
         expect(mocks.getDeepSeekSession).toHaveBeenCalledWith(session.id);
+    });
+
+    it("hides a session owned by another operator", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        mockParams.values.id = String(session.id);
+        mocks.getDeepSeekSession.mockReturnValue({ ...session, owner_user_id: 999 });
+
+        await expect(get(event)).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it("preserves the not-found response", async () => {
@@ -277,6 +292,15 @@ describe("DeepSeek session deletion route", () => {
         expect(mocks.deleteSession).toHaveBeenCalledWith(session.id);
     });
 
+    it("does not delete a session owned by another operator", async () => {
+        mockParams.values.id = String(session.id);
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        mocks.getDeepSeekSession.mockReturnValue({ ...session, owner_user_id: 999 });
+
+        await expect(remove(event)).rejects.toMatchObject({ statusCode: 404 });
+        expect(mocks.deleteSession).not.toHaveBeenCalled();
+    });
+
     it("maps storage errors to a generic server response", async () => {
         mockParams.values.id = String(session.id);
         vi.spyOn(console, "error").mockImplementation(() => {});
@@ -335,6 +359,17 @@ describe("DeepSeek message route", () => {
 
         await expect(sendMessage(event)).rejects.toMatchObject({ name: "ZodError" });
         expect(mocks.getDeepSeekSession).not.toHaveBeenCalled();
+    });
+
+    it("does not send messages to another operator's session", async () => {
+        process.env.DEEPSEEK_API_KEY = "test-key";
+        mockParams.values.id = String(session.id);
+        mockBody.value = { message: "Hello", role: "user" };
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        mocks.getDeepSeekSession.mockReturnValue({ ...session, owner_user_id: 999 });
+
+        await expect(sendMessage(event)).rejects.toMatchObject({ statusCode: 404 });
+        expect(mocks.openAIOptions).not.toHaveBeenCalled();
     });
 
     it.each([

@@ -154,6 +154,33 @@ Junction table tracking which teams a user has belonged to historically.
 
 **Primary key**: `(user_id, team_id)`
 
+### `peer_voting_scores`
+
+Stores one peer ballot per user per season. The composite unique index lets a returning participant vote again in a new season without overwriting or destroying their historical ballot.
+
+| Column      | Type               | Description                            |
+| ----------- | ------------------ | -------------------------------------- |
+| `user_id`   | `INTEGER NOT NULL` | FK to `users.id` (ON DELETE CASCADE)   |
+| `season_id` | `INTEGER NOT NULL` | FK to `seasons.id` (ON DELETE CASCADE) |
+| `score`     | `TEXT NOT NULL`    | JSON object mapping team IDs to scores |
+| `reasoning` | `TEXT`             | Voter's reasoning                      |
+
+**Unique index**: `peer_voting_scores_user_season_unique (user_id, season_id)`
+
+### `team_invites`
+
+Pending team invitations. A member invites an email address; the recipient must accept before their `users.team_id` changes. Invitations are unique per team and email and cascade away with the team.
+
+| Column       | Type                   | Description                           |
+| ------------ | ---------------------- | ------------------------------------- |
+| `id`         | `SERIAL PRIMARY KEY`   | Invitation ID                         |
+| `team_id`    | `INTEGER NOT NULL`     | FK to `teams.id` (ON DELETE CASCADE)  |
+| `email`      | `TEXT NOT NULL`        | Lowercased recipient address          |
+| `invited_by` | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL) |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Invitation timestamp                  |
+
+Teams accept at most `MAX_TEAM_MEMBERS` (6) members plus pending invitations.
+
 ### `awards`
 
 Stores the award catalog. The namespace, display name, description, and icon are data managed in PostgreSQL rather than hard-coded in the application.

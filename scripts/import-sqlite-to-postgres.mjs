@@ -630,6 +630,11 @@ export async function ensureEmptyTarget(
 // fail before the PostgreSQL transaction writes any rows.
 const sourceColumnsForTargetCheck = new Map();
 
+/** Peer votes belong to the season they were cast in; SQLite sources predate that column. */
+export function peerVotingSeasonOverrides(seasonId) {
+    return () => ({ season_id: seasonId });
+}
+
 export async function insertRows(sql, tableName, rows, columnsByTable, overrides = () => ({})) {
     if (!rows.length) return 0;
     const targetColumns = columnsByTable.get(tableName);
@@ -895,6 +900,9 @@ export async function importToPostgres(
             }));
             await insertRows(tx, "hackathon", sourceInfo.hackathonRows, columnsByTable);
 
+            const tableOverrides = {
+                peer_voting_scores: peerVotingSeasonOverrides(activeSeasonId),
+            };
             for (const tableName of [
                 "ballots",
                 "ballot_scores",
@@ -911,6 +919,7 @@ export async function importToPostgres(
                         tableName,
                         rowsFromSource(source, tableName),
                         columnsByTable,
+                        tableOverrides[tableName],
                     );
                 }
             }

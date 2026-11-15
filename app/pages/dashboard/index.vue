@@ -20,6 +20,30 @@ if (error.value) {
     throw error.value;
 }
 
+const { data: inviteData, refresh: refreshInvites } =
+    await useApiFetch<GetUserInvitesResponse>("/api/team-invites");
+const toast = useToast();
+
+async function respondToInvite(inviteID: number, accept: boolean) {
+    try {
+        await withLoadingIndicator(async () => {
+            const { message } = await apiFetch(
+                `/api/team-invites/${inviteID}${accept ? "/accept" : ""}`,
+                { method: accept ? "POST" : "DELETE" },
+            );
+            toast.add({ color: "success", title: message });
+            await refreshInvites();
+            if (accept) await refresh();
+        });
+    } catch (e) {
+        toast.add({
+            color: "error",
+            title: accept ? "Failed to join the team" : "Failed to decline the invitation",
+            description: getErrorMessage(e),
+        });
+    }
+}
+
 const isDirty = ref(false);
 const confettiTriggered = ref(false);
 
@@ -192,8 +216,37 @@ const actions = ref([
                 <span class="bold">{{ data!.name || data!.email }}</span>
                 ! You don't have a team yet. You can
                 <ULink href="/dashboard/teams">create a team</ULink>
-                or ask a member from another team to add you!
+                or accept an invitation from another team!
             </p>
+
+            <UCard v-if="inviteData?.invites.length" variant="subtle" class="mb-4">
+                <h2 class="text-2xl bold mb-2">Pending invitations</h2>
+                <ul class="space-y-2">
+                    <li
+                        v-for="invite in inviteData.invites"
+                        :key="invite.id"
+                        class="flex flex-wrap items-center gap-2"
+                    >
+                        <span>
+                            You were invited to join
+                            <span class="bold">{{ invite.team_name }}</span>
+                        </span>
+                        <div class="flex-1" />
+                        <UButton class="min-h-11" @click="respondToInvite(invite.id, true)">
+                            Accept
+                        </UButton>
+                        <UButton
+                            color="neutral"
+                            variant="soft"
+                            class="min-h-11"
+                            @click="respondToInvite(invite.id, false)"
+                        >
+                            Decline
+                        </UButton>
+                    </li>
+                </ul>
+            </UCard>
+
             <p v-if="hackathon?.status === 'not_started'" class="mb-4">
                 (Don't worry though, you can also create or join a team during the hackathon :)
             </p>

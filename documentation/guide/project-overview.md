@@ -14,7 +14,7 @@ The platform manages the entire hackathon lifecycle:
 | Feature | Description |
 | --- | --- |
 | **Hackathon Management & Scheduling** | Control event state (`not_started`, `in_progress`, `voting`, `finished`, `paused`), schedule start and end times, and manage the event timeline. |
-| **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. |
+| **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. Invited users accept from their dashboard before they join. |
 | **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, and sourcing information. Submissions are accepted only during `not_started` or `in_progress` states. |
 | **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. |
 | **Judge Scoring** | Judges use season-specific, versioned weighted rubrics with track-specific criteria and integer score ranges. Guided comment prompts and templates help judges write useful anonymous feedback. |

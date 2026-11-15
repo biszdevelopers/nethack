@@ -37,27 +37,6 @@ import {
     MAX_REASONING_LENGTH,
 } from "~~/shared/schemas";
 
-describe("CreateTeamQuery", () => {
-    it("accepts add=true", () => {
-        const result = CreateTeamQuery.parse({ add: "true" });
-        expect(result.add).toBe(true);
-    });
-
-    it("accepts add=false", () => {
-        const result = CreateTeamQuery.parse({ add: "false" });
-        expect(result.add).toBe(false);
-    });
-
-    it("has add as undefined when missing", () => {
-        const result = CreateTeamQuery.parse({});
-        expect(result.add).toBeUndefined();
-    });
-
-    it("rejects add with an invalid value", () => {
-        expect(() => CreateTeamQuery.parse({ add: "yes" })).toThrow();
-    });
-});
-
 describe("CreateTeamRequest", () => {
     it("accepts a valid team name", () => {
         expect(() => CreateTeamRequest.parse({ name: "My Team" })).not.toThrow();

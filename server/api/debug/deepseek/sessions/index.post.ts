@@ -10,12 +10,12 @@ const CreateDeepSeekSessionRequest = z.object({
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
-        await requireUser(event, NethackPermissions.Debug.deepseekWrite);
+        const user = await requireUser(event, NethackPermissions.Debug.deepseekWrite);
 
         const { sessionName } = await readValidatedBody(event, CreateDeepSeekSessionRequest.parse);
 
         try {
-            const session = createSession(sessionName);
+            const session = createSession(sessionName, user.id);
             return session;
         } catch (error: any) {
             console.error("Error creating deepseek session:", error);

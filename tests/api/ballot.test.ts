@@ -92,7 +92,7 @@ describe("GET /api/ballot", () => {
 
     it("returns 403 when user has no team", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         seedSeason(ctx);
 
         vi.mocked(globalThis.requireUser).mockResolvedValue({
@@ -106,7 +106,7 @@ describe("GET /api/ballot", () => {
 
     it("returns eligible projects and scores for a voter", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -142,7 +142,7 @@ describe("GET /api/ballot", () => {
 
     it("never exposes persisted ranks before results are published", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
         const userTeam = seedTeam(ctx, {
             project_submitted: 1,
@@ -174,7 +174,7 @@ describe("GET /api/ballot", () => {
 
     it("returns 403 when user's team has not submitted a project", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -196,7 +196,7 @@ describe("GET /api/ballot", () => {
 
     it("falls back to zero scores when stored vote score is invalid JSON", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -216,7 +216,7 @@ describe("GET /api/ballot", () => {
 
         ctx.drizzle
             .insert(peerVotingScores)
-            .values({ user_id: 1, score: "not-json", reasoning: "Oops" })
+            .values({ user_id: 1, season_id: season.id, score: "not-json", reasoning: "Oops" })
             .run();
 
         vi.mocked(globalThis.requireUser).mockResolvedValue({
@@ -234,7 +234,7 @@ describe("GET /api/ballot", () => {
 
     it("restores scores from a previously submitted valid vote", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -262,6 +262,7 @@ describe("GET /api/ballot", () => {
             .insert(peerVotingScores)
             .values({
                 user_id: 1,
+                season_id: season.id,
                 score: JSON.stringify({ [otherTeam.id]: 7 }),
                 reasoning: "Good work.",
             })
@@ -279,6 +280,58 @@ describe("GET /api/ballot", () => {
         expect(result.reasoning).toBe("Good work.");
         expect(result.scores).toEqual([7, 0]);
     });
+
+    it("ignores a ballot cast in a previous season", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
+        const season = seedSeason(ctx);
+        const previousSeason = seedSeason(ctx, { name: "Previous Season", is_active: 0 });
+
+        const userTeam = seedTeam(ctx, {
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
+        seedUser(ctx, { email: "voter@basischina.com", team_id: userTeam.id });
+        seedTeam(ctx, {
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
+
+        ctx.drizzle
+            .insert(peerVotingScores)
+            .values({
+                user_id: 1,
+                season_id: previousSeason.id,
+                score: '{"1":10}',
+                reasoning: "Old ballot",
+            })
+            .run();
+
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            team_id: userTeam.id,
+            role: "participant",
+        });
+
+        const result = await getBallotHandler(createEvent());
+
+        expect(result.submitted).toBe(false);
+        expect(result.reasoning).toBeNull();
+        expect(result.scores).toEqual([0]);
+    });
+
+    it("keeps peer voting closed while the voting toggle is off", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 0 });
+        seedSeason(ctx);
+
+        await expect(getBallotHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "Peer voting is closed",
+        });
+    });
 });
 
 describe("POST /api/ballot", () => {
@@ -294,7 +347,7 @@ describe("POST /api/ballot", () => {
 
     it("returns 403 when user has no team", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         seedSeason(ctx);
 
         vi.mocked(globalThis.requireUser).mockResolvedValue({
@@ -308,7 +361,7 @@ describe("POST /api/ballot", () => {
 
     it("returns 403 when user's team has not submitted a project", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -330,7 +383,7 @@ describe("POST /api/ballot", () => {
 
     it("returns 403 when scores count does not match eligible projects", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -364,7 +417,7 @@ describe("POST /api/ballot", () => {
 
     it("submits a peer vote", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -408,7 +461,7 @@ describe("POST /api/ballot", () => {
 
     it("upserts when user has already voted", async () => {
         resetTestContext(ctx);
-        seedHackathon(ctx, { status: "voting" });
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
 
         const userTeam = seedTeam(ctx, {
@@ -429,7 +482,7 @@ describe("POST /api/ballot", () => {
         // Pre-seed a vote
         ctx.drizzle
             .insert(peerVotingScores)
-            .values({ user_id: 1, score: "{}", reasoning: "Already voted" })
+            .values({ user_id: 1, season_id: season.id, score: "{}", reasoning: "Already voted" })
             .run();
 
         vi.mocked(globalThis.requireUser).mockResolvedValue({

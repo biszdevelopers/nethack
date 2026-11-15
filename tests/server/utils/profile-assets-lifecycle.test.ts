@@ -561,7 +561,7 @@ describe("content-addressed profile asset lifecycle", () => {
         }
     });
 
-    it("limits actual directory entries visited even when no staging names are eligible", async () => {
+    it("ignores ineligible staging names when applying the scan budget", async () => {
         const stagingDirectory = join(storageRoot, "assets", ".staging");
         await mkdir(stagingDirectory, { recursive: true });
         await Promise.all(
@@ -574,8 +574,8 @@ describe("content-addressed profile asset lifecycle", () => {
         const first = await collectOrphanProfileAssets(database, { maxScanned: 8 });
         const second = await collectOrphanProfileAssets(database, { maxScanned: 8 });
 
-        expect(first.entriesVisited).toBe(8);
-        expect(second.entriesVisited).toBe(8);
+        expect(first.entriesVisited).toBe(0);
+        expect(second.entriesVisited).toBe(0);
         expect(first.staleTemporaryFilesDeleted + second.staleTemporaryFilesDeleted).toBe(0);
         expect(await readdir(stagingDirectory)).toHaveLength(40);
     });

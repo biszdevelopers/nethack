@@ -266,7 +266,7 @@ export default defineEventHandler(
         try {
             const session = getDeepSeekSession(sessionId);
 
-            if (!session) {
+            if (!session || session.owner_user_id !== user.id) {
                 throw createError({
                     statusCode: 404,
                     statusMessage: "Session not found",

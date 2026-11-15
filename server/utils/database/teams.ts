@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { eq, and, inArray, notExists, asc } from "drizzle-orm";
+import { eq, and, inArray, notExists, asc, sql } from "drizzle-orm";
 import {
     teams,
     teamScores,
@@ -122,6 +122,20 @@ export async function getTeamsBySeason(event: H3Event, seasonId: number): Promis
         .then((rows) => rows as Team[]);
 }
 
+/** Public listing: only submitted projects, in a stable order. */
+export async function getPublicTeams(event: H3Event, seasonId?: number): Promise<Team[]> {
+    const where =
+        seasonId === undefined
+            ? eq(teams.project_submitted, 1)
+            : and(eq(teams.season_id, seasonId), eq(teams.project_submitted, 1));
+    return event.context.drizzle
+        .select()
+        .from(teams)
+        .where(where)
+        .orderBy(asc(teams.id))
+        .then((rows) => rows as Team[]);
+}
+
 // --- Mutations ---
 
 export async function createTeam(event: H3Event, teamName: string): Promise<Team> {
@@ -131,6 +145,25 @@ export async function createTeam(event: H3Event, teamName: string): Promise<Team
         throw createError({
             status: 403,
             message: "No active season",
+        });
+    }
+
+    const duplicate = await firstRow(
+        event.context.drizzle
+            .select({ id: teams.id })
+            .from(teams)
+            .where(
+                and(
+                    eq(teams.season_id, seasonId),
+                    eq(sql`lower(${teams.name})`, teamName.trim().toLowerCase()),
+                ),
+            )
+            .limit(1),
+    );
+    if (duplicate) {
+        throw createError({
+            statusCode: 409,
+            message: "A team with that name already exists in this season",
         });
     }
 

@@ -221,11 +221,6 @@ export const ApplicationIdParams = z.object({
     id: z.string().min(1).max(MAX_CLIENT_ID_LENGTH, "Invalid client_id"),
 });
 
-export const CreateTeamQuery = z.object({
-    add: BooleanString.optional(),
-});
-export type CreateTeamQuery = z.infer<typeof CreateTeamQuery>;
-
 export const GetTeamsQuery = z.object({
     judging: BooleanString.optional(),
     season_id: z.coerce.number().int().positive().finite().optional(),
@@ -276,6 +271,18 @@ export const AddTeamMemberRequest = z.object({
     email: BasisEmail,
 });
 export type AddTeamMemberRequest = z.infer<typeof AddTeamMemberRequest>;
+
+/** Teams are capped so a single project cannot absorb the whole event. */
+export const MAX_TEAM_MEMBERS = 6;
+
+export const TeamInviteParams = z.object({
+    id: PositiveIntParam,
+    invite: PositiveIntParam,
+});
+export type TeamInviteParams = z.infer<typeof TeamInviteParams>;
+
+export const TeamInviteIdParams = z.object({ id: PositiveIntParam });
+export type TeamInviteIdParams = z.infer<typeof TeamInviteIdParams>;
 
 export const MAX_PROFILE_IMAGE_BYTES = 7 * 1024 * 1024; // Base64 JSON fits the app's 10 MiB profile body cap.
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];

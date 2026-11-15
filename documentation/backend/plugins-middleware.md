@@ -175,7 +175,7 @@ Manually polls chat messages via the delta endpoint (fallback for webhook failur
 
 **File:** `server/middleware/security-headers.ts`
 
-Applies a baseline set of HTTP security headers to every Nitro response (HTML pages, API JSON responses, and static assets). A server middleware is used instead of Nuxt `routeRules` so API routes receive the same headers as page routes without duplication.
+Applies a baseline set of HTTP security headers to every Nitro response (HTML pages, API JSON responses, and static assets). The header logic lives in `server/utils/security-headers.ts` and is reused by the debug lockdown so an early 404 still carries CSP, HSTS, and anti-sniffing headers. A server middleware is used instead of Nuxt `routeRules` so API routes receive the same headers as page routes without duplication.
 
 | Header | Value | Purpose |
 | --- | --- | --- |
@@ -211,7 +211,7 @@ frame-ancestors 'none'
 
 **File:** `server/middleware/debug-lockdown.ts`
 
-Runs on every request and returns `404 Not Found` for exact `/api/debug` and `/debug` route trees in production, regardless of `DISABLE_DEBUG_ROUTES` or route-level permission checks. In development and test environments, set `DISABLE_DEBUG_ROUTES` to `1`, `true`, `yes`, or `on` to disable those routes too. Matching uses the parsed URL pathname, so query strings cannot bypass the guard and similarly prefixed paths such as `/debugger` are not blocked.
+Runs on every request and returns `404 Not Found` for exact `/api/debug` and `/debug` route trees in production, regardless of `DISABLE_DEBUG_ROUTES` or route-level permission checks. In development and test environments, set `DISABLE_DEBUG_ROUTES` to `1`, `true`, `yes`, or `on` to disable those routes too. Matching uses the parsed, percent-decoded URL pathname, so query strings and encoded separators cannot bypass the guard and similarly prefixed paths such as `/debugger` are not blocked. The rejection applies the shared baseline security headers before throwing, so the 404 response is not missing CSP or anti-sniffing headers.
 
 | Path pattern           | Disabled response |
 | ---------------------- | ----------------- |

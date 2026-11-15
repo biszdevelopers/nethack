@@ -1,9 +1,11 @@
+import { applySecurityHeaders } from "~~/server/utils/security-headers";
+
 /** Reject debug utilities in production even when the explicit flag is absent. */
 export default defineEventHandler(async (event) => {
     const requestUrl = event.node.req.url || "/";
     let pathname: string;
     try {
-        pathname = new URL(requestUrl, "http://localhost").pathname;
+        pathname = decodeURIComponent(new URL(requestUrl, "http://localhost").pathname);
     } catch {
         return;
     }
@@ -19,5 +21,6 @@ export default defineEventHandler(async (event) => {
     const explicitlyDisabled = /^(1|true|yes|on)$/i.test(process.env.DISABLE_DEBUG_ROUTES ?? "");
     if (process.env.NODE_ENV !== "production" && !explicitlyDisabled) return;
 
+    applySecurityHeaders(event);
     throw createError({ statusCode: 404, statusMessage: "Not Found" });
 });

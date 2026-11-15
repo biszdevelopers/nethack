@@ -18,6 +18,8 @@ const exportTables = [
     ["peer_voting_scores", schema.peerVotingScores],
     ["team_awards", schema.teamAwards],
     ["awards", schema.awards],
+    ["asset_objects", schema.assetObjects],
+    ["asset_references", schema.assetReferences],
     ["user_past_teams", schema.userPastTeams],
     ["rubric_templates", schema.rubricTemplates],
     ["rubric_versions", schema.rubricVersions],

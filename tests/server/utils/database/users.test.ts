@@ -259,7 +259,7 @@ describe("users database helpers", () => {
                 .run();
             event.context.drizzle
                 .prepare(
-                    "INSERT INTO peer_voting_scores(user_id, score, reasoning) VALUES(1, '{}', 'nice')",
+                    "INSERT INTO peer_voting_scores(user_id, season_id, score, reasoning) VALUES(1, 1, '{}', 'nice')",
                 )
                 .run();
             event.context.drizzle

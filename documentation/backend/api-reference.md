@@ -131,25 +131,24 @@ Get a user's profile picture.
 
 ### GET `/api/teams`
 
-List all teams for the active season, or filter by season.
+List submitted teams for the active season, or filter by season.
 
 | Field | Details |
 | --- | --- |
 | **Auth** | Public for the normal listing; `judging=1` requires `nethack.Judging.assignmentsRead` |
 | **Query** | `judging` (if `1`, returns only submitted unjudged teams for the current judge); `season_id` (optional season filter) |
-| **Response** | `APITeam[]`; in the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled |
+| **Response** | `APITeam[]`; only teams with `project_submitted = 1` are public, ordered by team ID. In the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled |
 
 ### POST `/api/teams`
 
 Create a new team.
 
-| Field          | Details                                                       |
-| -------------- | ------------------------------------------------------------- |
-| **Auth**       | Current/past team member or all-permissions grant             |
-| **Validation** | `CreateTeamRequest` — `{ name: string }`                      |
-| **Query**      | `add` (if `true`, automatically adds the creator to the team) |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`       |
-| **Response**   | `APITeam`                                                     |
+| Field | Details |
+| --- | --- |
+| **Auth** | Current/past team member or all-permissions grant |
+| **Validation** | `CreateTeamRequest` — `{ name: string }` |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the creator is always added to the new team; team names are unique per season (case-insensitive, `409` on conflict) |
+| **Response** | `APITeam` |
 
 ### GET `/api/teams/:id`
 
@@ -158,6 +157,7 @@ Get a single team's details.
 | Field | Details |
 | --- | --- |
 | **Auth** | Public; optional authentication enables the caller's team membership to control score visibility |
+| **Privacy** | An unsubmitted team is only visible to its members and users with `nethack.Judging.resultsRead` or `nethack.all`; everyone else receives 404 |
 | **Response** | `APITeam`; a team member sees `score` only after results are published, at least three judges have evaluated the team, and its season's `show_scores` setting is enabled. Rank requires publication, at least three evaluations, and `show_ranking`. Users with `nethack.Judging.resultsRead` or `nethack.all` bypass these public visibility gates |
 
 ### PATCH `/api/teams/:id`
@@ -199,7 +199,7 @@ The active judging rubric and saved-draft rubric responses include the selected 
 
 ### GET `/api/teams/:id/scores`
 
-Read feedback for a team you belong to now or belonged to previously. The response follows `TeamScoreFeedbackResponse`. The route returns 403 until the team's season publishes results. Comments are withheld until at least three judges have evaluated the team; while withheld, `feedback_withheld_for_anonymity` is `true` so the UI can explain the gate without returning the exact review count. When comments are shown, the response contains comment text only and omits judge names and IDs, rubric and track metadata, individual score breakdowns, and stable evaluation ordering. The overall score additionally requires the season's `show_scores` setting, and rank requires `show_ranking`; both remain hidden until at least three judges have evaluated the team.
+Read feedback for a team you belong to now or belonged to previously. The response follows `TeamScoreFeedbackResponse`. The route returns 403 until the team's season publishes results. Comments are withheld until at least three judges have evaluated the team; while withheld, `feedback_withheld_for_anonymity` is `true` so the UI can explain the gate without returning the exact review count. Evaluations whose saved rubric or score payload cannot be read are skipped, and `unavailable_evaluations` reports how many were omitted so the remaining feedback and score stay usable. When comments are shown, the response contains comment text only and omits judge names and IDs, rubric and track metadata, individual score breakdowns, and stable evaluation ordering. The overall score additionally requires the season's `show_scores` setting, and rank requires `show_ranking`; both remain hidden until at least three judges have evaluated the team.
 
 ### GET `/api/admin/teams/:id/scores`
 
@@ -216,14 +216,60 @@ List current and past members of a team. The complete roster, including email ad
 
 ### POST `/api/teams/:id/users`
 
-Add a member to a team by email.
+Invite a person to a team by email. The invitation is stored in `team_invites`; the recipient must accept it from their dashboard before joining. Sending an invitation never changes the recipient's membership.
 
 | Field | Details |
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `AddTeamMemberRequest` — `{ email: string }` (must be a `@basischina.com` address) |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted; the team must have fewer than `MAX_TEAM_MEMBERS` (6) members and pending invitations; the target cannot be yourself, a designated/staff administrator, or someone already in an active-season team |
 | **Response** | `{ message: string }` |
+
+### GET `/api/teams/:id/invites`
+
+List pending invitations for a team. Email addresses are visible only to current members.
+
+| Field        | Details                                                   |
+| ------------ | --------------------------------------------------------- |
+| **Auth**     | Current team member                                       |
+| **Response** | `GetTeamInvitesResponse` — `{ invites: [{ id, email }] }` |
+
+### DELETE `/api/teams/:id/invites/:invite`
+
+Cancel a pending invitation. Only current team members may cancel.
+
+| Field        | Details               |
+| ------------ | --------------------- |
+| **Auth**     | Current team member   |
+| **Response** | `{ message: string }` |
+
+### GET `/api/team-invites`
+
+List invitations addressed to the authenticated user's email.
+
+| Field        | Details                                                                |
+| ------------ | ---------------------------------------------------------------------- |
+| **Auth**     | `nethack.Teams.membersAddOwn` (participant bundle)                     |
+| **Response** | `GetUserInvitesResponse` — `{ invites: [{ id, team_id, team_name }] }` |
+
+### POST `/api/team-invites/:id/accept`
+
+Accept an invitation addressed to the authenticated user's email. The team must belong to the active season, must not have submitted, and must not be full.
+
+| Field | Details |
+| --- | --- |
+| **Auth** | `nethack.Teams.membersAddOwn` |
+| **Response** | `{ message: string }` |
+| **Side effects** | Sets `users.team_id`, removes every invitation for that email, and records no history until the user leaves |
+
+### DELETE `/api/team-invites/:id`
+
+Decline an invitation addressed to the authenticated user's email.
+
+| Field        | Details                       |
+| ------------ | ----------------------------- |
+| **Auth**     | `nethack.Teams.membersAddOwn` |
+| **Response** | `{ message: string }`         |
 
 ### DELETE `/api/teams/:id/users/:user`
 
@@ -244,12 +290,13 @@ Remove a member from a team.
 
 Get the current user's ballot for peer voting.
 
-| Field           | Details                                                                    |
-| --------------- | -------------------------------------------------------------------------- |
-| **Auth**        | Current/past team member or all-permissions grant                          |
-| **Constraint**  | Hackathon status must be `voting`                                          |
-| **Response**    | `GetBallotResponse` — `{ submitted, projects, scores, reasoning }`         |
-| **Eligibility** | Projects are filtered to the same pathway and exclude the voter's own team |
+| Field            | Details                                                                      |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **Auth**         | Current/past team member or all-permissions grant                            |
+| **Constraint**   | Hackathon status must be `voting` and `voting_enabled` must be `1`           |
+| **Response**     | `GetBallotResponse` — `{ submitted, projects, scores, reasoning }`           |
+| **Eligibility**  | Projects are filtered to the same pathway and exclude the voter's own team   |
+| **Season scope** | Ballots are stored per season; a previous season's ballot never appears here |
 
 ### POST `/api/ballot`
 
@@ -259,9 +306,9 @@ Submit peer voting ballot.
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
 | **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }` |
-| **Constraint** | Hackathon status must be `voting`; number of scores must match eligible projects |
+| **Constraint** | Hackathon status must be `voting` and `voting_enabled` must be `1`; number of scores must match eligible projects |
 | **Response** | `{ message: string }` |
-| **Side effects** | Upserts a row in `peer_voting_scores` |
+| **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores` |
 
 ### GET `/api/ballot/summary`
 
@@ -485,9 +532,12 @@ Release one permalink reference by UUID. Only its owner or a user with `nethack.
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | POST | `/api/debug/deepseek/sessions` | `nethack.Debug.deepseekWrite` or `nethack.all` | Create a new chat session `{ sessionName }` |
+| GET | `/api/debug/deepseek/sessions` | `nethack.Debug.deepseekRead` or `nethack.all` | List the caller's sessions |
 | GET | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekRead` or `nethack.all` | Get session with messages |
 | DELETE | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekWrite` or `nethack.all` | Delete a session |
 | POST | `/api/debug/deepseek/sessions/:id/message` | `nethack.Debug.deepseekWrite` or `nethack.all` | Send a message `{ message, role?, toolCallId?, toolResult? }` |
+
+Sessions are owned by the operator who created them. Listing returns only that operator's sessions, and reading, deleting, or messaging another operator's session returns 404. These routes are disabled in production.
 
 ---
 

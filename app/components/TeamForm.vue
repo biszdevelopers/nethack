@@ -26,6 +26,33 @@ if (error.value) {
     throw error.value;
 }
 
+const {
+    data: invites,
+    error: invitesError,
+    refresh: refreshInvites,
+} = await useApiFetch<GetTeamInvitesResponse>(`/api/teams/${id}/invites`);
+if (invitesError.value) {
+    throw invitesError.value;
+}
+
+async function cancelInvite(inviteID: number) {
+    try {
+        await withLoadingIndicator(async () => {
+            const { message } = await apiFetch(`/api/teams/${id}/invites/${inviteID}`, {
+                method: "DELETE",
+            });
+            toast.add({ color: "success", title: message });
+            await refreshInvites();
+        });
+    } catch (e) {
+        toast.add({
+            color: "error",
+            title: "Failed to cancel invitation",
+            description: getErrorMessage(e),
+        });
+    }
+}
+
 const removeMemberMessage = (user: Pick<User, "id" | "name" | "email">) => {
     return `Are you sure you want to ${
         user.id === currentUser.value?.id ? "leave" : `remove ${user.name || user.email} from`
@@ -107,13 +134,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                 color: "success",
                 title: message,
             });
-            emit("refresh");
-            await refresh();
+            await refreshInvites();
         });
     } catch (e) {
         toast.add({
             color: "error",
-            title: "Failed to add member",
+            title: "Failed to send invitation",
             description: getErrorMessage(e),
         });
     } finally {
@@ -157,12 +183,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                 </template>
             </UModal>
 
-            <UModal title="Add team member">
+            <UModal title="Invite team member">
                 <UButton
                     :disabled="disabled"
                     variant="soft"
                     icon="i-material-symbols-person-add"
-                    aria-label="Add team member"
+                    aria-label="Invite team member"
                     class="min-h-11 min-w-11"
                 />
 
@@ -173,12 +199,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         class="space-y-2 w-full"
                         @submit="onSubmit($event, close)"
                     >
-                        <UFormField name="email" label="New member email">
+                        <UFormField name="email" label="Member email">
                             <UInput v-model="state.email" type="email" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
-                            <UButton variant="subtle" type="submit">Add</UButton>
+                            <UButton variant="subtle" type="submit">Invite</UButton>
                         </UFormField>
                     </UForm>
                 </template>
@@ -222,5 +248,28 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                 </UCard>
             </li>
         </ul>
+
+        <template v-if="invites?.invites.length">
+            <h3 class="text-xl bold mb-2">Pending invitations</h3>
+            <ul class="grid lg:grid-cols-2 gap-4 mb-4">
+                <li v-for="invite in invites.invites" :key="invite.id">
+                    <UCard variant="subtle">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span>{{ invite.email }}</span>
+                            <div class="flex-1" />
+                            <UButton
+                                :disabled="disabled"
+                                icon="i-material-symbols-close"
+                                color="warning"
+                                variant="soft"
+                                :aria-label="`Cancel invitation for ${invite.email}`"
+                                class="min-h-11 min-w-11"
+                                @click="cancelInvite(invite.id)"
+                            />
+                        </div>
+                    </UCard>
+                </li>
+            </ul>
+        </template>
     </div>
 </template>

@@ -29,10 +29,10 @@ describe("targeted accessibility regressions", () => {
         const source = readSource("app", "components", "TeamForm.vue");
 
         expect(source).toContain('aria-label="Rename team"');
-        expect(source).toContain('aria-label="Add team member"');
+        expect(source).toContain('aria-label="Invite team member"');
         expect(source).toContain("? 'Leave team'");
         expect(source).toContain("`Remove ${user.name || user.email} from team`");
-        expect(source.match(/class="min-h-11 min-w-11"/g)).toHaveLength(3);
+        expect(source.match(/class="min-h-11 min-w-11"/g)).toHaveLength(4);
     });
 
     it("labels the profile control for both signed-in and signed-out states", () => {

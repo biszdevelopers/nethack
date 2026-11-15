@@ -277,10 +277,33 @@ export const peerVotingScores = pgTable(
         user_id: integer("user_id")
             .notNull()
             .references(() => users.id, { onDelete: "cascade" }),
+        season_id: integer("season_id")
+            .notNull()
+            .references(() => seasons.id, { onDelete: "cascade" }),
         score: text("score").notNull(),
         reasoning: text("reasoning"),
     },
-    (table) => [uniqueIndex("peer_voting_scores_user_id_unique").on(table.user_id)],
+    (table) => [
+        uniqueIndex("peer_voting_scores_user_season_unique").on(table.user_id, table.season_id),
+    ],
+);
+
+/** A team invitation a member can send; the recipient must accept before joining. */
+export const teamInvites = pgTable(
+    "team_invites",
+    {
+        id: serial("id").primaryKey(),
+        team_id: integer("team_id")
+            .notNull()
+            .references(() => teams.id, { onDelete: "cascade" }),
+        email: text("email").notNull(),
+        invited_by: integer("invited_by").references(() => users.id, { onDelete: "set null" }),
+        created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [
+        uniqueIndex("team_invites_team_email").on(table.team_id, table.email),
+        index("team_invites_email").on(table.email),
+    ],
 );
 
 // ---------------------------------------------------------------------------

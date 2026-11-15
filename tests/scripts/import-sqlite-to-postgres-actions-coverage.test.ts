@@ -22,6 +22,7 @@ import {
     openSource,
     prepareLegacyColumnRows,
     prepareLegacyJudgeRows,
+    peerVotingSeasonOverrides,
     requireDatabaseUrl,
     rowsFromSource,
     runCli,
@@ -1513,5 +1514,10 @@ describe("SQLite importer command entry", () => {
         } finally {
             process.argv = originalArgv;
         }
+    });
+
+    it("assigns imported peer votes to the active season", () => {
+        const override = peerVotingSeasonOverrides(7);
+        expect(override({ user_id: 1 })).toEqual({ season_id: 7 });
     });
 });

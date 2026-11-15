@@ -169,14 +169,6 @@ Coerces string route params to positive integers. Used by:
 
 ## Team Schemas
 
-### `CreateTeamQuery`
-
-| Field | Type            | Constraints                                                 |
-| ----- | --------------- | ----------------------------------------------------------- |
-| `add` | `BooleanString` | Optional. If `true`, the creating user is added to the team |
-
-**API endpoint:** `POST /api/teams` (query parameter)
-
 ### `CreateTeamRequest`
 
 | Field  | Type       | Constraints     |

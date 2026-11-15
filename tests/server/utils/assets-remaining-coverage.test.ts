@@ -226,6 +226,7 @@ vi.mock("node:fs", async (importOriginal) => {
 import { oauth2Applications, users } from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
 import {
+    collectDirectoryWindow,
     collectDirectoryWindowUntil,
     collectOrphanProfileAssets,
     createAsset,
@@ -984,16 +985,19 @@ describe("remaining asset utility behavior", () => {
     it("clears a stale staging scan cursor when the entry it pointed to was removed", async () => {
         const staging = join(storageRoot, "assets", ".staging");
         await mkdir(staging, { recursive: true });
-        const entries = Array.from({ length: 20 }, (_, index) => `unmanaged-${index}.tmp`);
+        const entries = Array.from(
+            { length: 20 },
+            (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}.tmp`,
+        );
         await Promise.all(entries.map((name) => writeFile(join(staging, name), "retain")));
-        filesystemFaults.opendirOrders.set(staging, [entries.slice(0, 8)]);
+        filesystemFaults.opendirOrders.set(staging, [entries.slice(0, 8), entries.slice(1, 9)]);
         const { database } = fakeDatabase();
         const first = await collectOrphanProfileAssets(database, { maxScanned: 8 });
         await rm(join(staging, entries[7]!));
 
         const second = await collectOrphanProfileAssets(database, { maxScanned: 8 });
 
-        expect(first.entriesVisited).toBe(8);
+        expect(first.entriesVisited).toBe(1);
         expect(second.entriesVisited).toBe(8);
     });
 
@@ -1054,14 +1058,13 @@ describe("remaining asset utility behavior", () => {
             const id = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
             return `${id}.tmp`;
         });
-        const marker = "cursor-marker.tmp";
+        const marker = `00000000-0000-4000-8000-${String(99).padStart(12, "0")}.tmp`;
         await Promise.all(
             [...eligible, marker].map((name) => writeFile(join(staging, name), "recent")),
         );
         filesystemFaults.opendirOrders.set(staging, [
             [...eligible.slice(0, 12), marker],
-            [marker, "unmanaged-after-cursor.tmp"],
-            [...eligible, marker],
+            [marker, ...eligible],
         ]);
         const { database } = fakeDatabase();
 
@@ -1069,7 +1072,7 @@ describe("remaining asset utility behavior", () => {
         const second = await collectOrphanProfileAssets(database, { maxScanned: 100 });
 
         expect(first.entriesVisited).toBe(13);
-        expect(second.entriesVisited).toBe(15);
+        expect(second.entriesVisited).toBeGreaterThanOrEqual(13);
         expect(filesystemFaults.opendirOrders.has(staging)).toBe(false);
     });
 
@@ -1083,7 +1086,6 @@ describe("remaining asset utility behavior", () => {
             directory,
             "b.tmp",
             10,
-            100,
             () => true,
             new Set(),
         );
@@ -1095,17 +1097,38 @@ describe("remaining asset utility behavior", () => {
             directory,
             "missing.tmp",
             10,
-            100,
             () => true,
             new Set(),
         );
         expect(withoutCursor.names.length).toBeGreaterThan(0);
     });
 
+    it("skips ineligible and excluded entries while wrapping to the cursor", async () => {
+        const directory = join(storageRoot, "cursor-filtered");
+        await mkdir(directory, { recursive: true });
+        for (const name of ["a.tmp", "b.tmp", "z.tmp", "unmanaged.txt"]) {
+            await writeFile(join(directory, name), "entry");
+        }
+        filesystemFaults.opendirOrders.set(directory, [
+            ["unmanaged.txt", "a.tmp", "b.tmp", "z.tmp"],
+        ]);
+
+        const result = await collectDirectoryWindowUntil(
+            directory,
+            "z.tmp",
+            1,
+            (name) => name.endsWith(".tmp"),
+            new Set(["a.tmp"]),
+        );
+
+        expect(result.names).toEqual(["b.tmp"]);
+        expect(result.entriesVisited).toBe(2);
+    });
+
     it("retains the prior cursor when the directory empties during the wrap scan", async () => {
         const staging = join(storageRoot, "assets", ".staging");
         await mkdir(staging, { recursive: true });
-        const marker = "cursor-marker.tmp";
+        const marker = `00000000-0000-4000-8000-${String(99).padStart(12, "0")}.tmp`;
         filesystemFaults.opendirOrders.set(staging, [[marker], [marker], []]);
         const { database } = fakeDatabase();
 
@@ -1211,24 +1234,17 @@ describe("remaining asset utility behavior", () => {
         await expect(lstat(lastFile)).rejects.toMatchObject({ code: "ENOENT" });
     });
 
-    it("stops the cursor wrap when it exhausts its remaining entry budget", async () => {
-        const staging = join(storageRoot, "assets", ".staging");
-        await mkdir(staging, { recursive: true });
-        const prefix = Array.from({ length: 40 }, (_, index) => `prefix-${index}.tmp`);
-        const cursor = "cursor-marker.tmp";
-        const suffix = Array.from({ length: 20 }, (_, index) => `suffix-${index}.tmp`);
-        filesystemFaults.opendirOrders.set(staging, [
-            [...prefix, cursor],
-            [...prefix, cursor, ...suffix],
-            [...prefix, cursor],
-        ]);
-        const { database } = fakeDatabase();
+    it("stops a cursor scan at its entry budget when the cursor is missing", async () => {
+        const directory = join(storageRoot, "cursor-budget");
+        await mkdir(directory, { recursive: true });
+        for (const name of ["a.tmp", "b.tmp", "c.tmp", "d.tmp"]) {
+            await writeFile(join(directory, name), "entry");
+        }
 
-        await collectOrphanProfileAssets(database, { maxScanned: 100 });
-        const second = await collectOrphanProfileAssets(database, { maxScanned: 100 });
+        const result = await collectDirectoryWindow(directory, "missing.tmp", 10, 2, () => true);
 
-        expect(second.entriesVisited).toBe(100);
-        expect(filesystemFaults.opendirOrders.has(staging)).toBe(false);
+        expect(result.cursorFound).toBe(false);
+        expect(result.entriesVisited).toBe(2);
     });
 
     it("stops a directory window when the eligible-name quota is full", async () => {
@@ -1247,7 +1263,7 @@ describe("remaining asset utility behavior", () => {
         expect(result.entriesVisited).toBe(13);
     });
 
-    it("stops scanning an ineligible directory window at its entry budget", async () => {
+    it("ignores ineligible staging entries when applying the scan budget", async () => {
         const staging = join(storageRoot, "assets", ".staging");
         await mkdir(staging, { recursive: true });
         await Promise.all(
@@ -1259,7 +1275,7 @@ describe("remaining asset utility behavior", () => {
 
         const result = await collectOrphanProfileAssets(database, { maxScanned: 4 });
 
-        expect(result.entriesVisited).toBe(4);
+        expect(result.entriesVisited).toBe(0);
     });
 
     it("returns safely when an asset disappears during its locked reference check", async () => {

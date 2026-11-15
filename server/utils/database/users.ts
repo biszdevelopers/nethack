@@ -57,87 +57,109 @@ export async function findOrLinkBasisAuthUser(
         ...(initialAdmin ? { is_admin: 1 } : {}),
     };
 
-    return event.context.drizzle.transaction(async (tx) => {
-        const linked = await firstRow(
-            tx
-                .select()
-                .from(users)
-                .where(
-                    and(
-                        eq(users.auth_issuer, identity.issuer),
-                        eq(users.auth_subject, identity.subject),
-                    ),
-                )
-                .limit(1),
-        );
+    try {
+        return await event.context.drizzle.transaction(async (tx) => {
+            const linked = await firstRow(
+                tx
+                    .select()
+                    .from(users)
+                    .where(
+                        and(
+                            eq(users.auth_issuer, identity.issuer),
+                            eq(users.auth_subject, identity.subject),
+                        ),
+                    )
+                    .limit(1),
+            );
 
-        if (linked) {
-            const emailOwner = await firstRow(
+            if (linked) {
+                const emailOwner = await firstRow(
+                    tx
+                        .select()
+                        .from(users)
+                        .where(eq(sql`lower(${users.email})`, normalizedEmail))
+                        .limit(1),
+                );
+                if (emailOwner && emailOwner.id !== linked.id) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "The email belongs to another account",
+                    });
+                }
+
+                return (await firstRow(
+                    tx
+                        .update(users)
+                        .set({ email: normalizedEmail, ...profileUpdates })
+                        .where(eq(users.id, linked.id))
+                        .returning(),
+                ))!;
+            }
+
+            const emailMatch = await firstRow(
                 tx
                     .select()
                     .from(users)
                     .where(eq(sql`lower(${users.email})`, normalizedEmail))
                     .limit(1),
             );
-            if (emailOwner && emailOwner.id !== linked.id) {
+
+            if (emailMatch?.auth_subject || emailMatch?.auth_issuer) {
                 throw createError({
                     statusCode: 409,
-                    message: "The email belongs to another account",
+                    message: "The email is linked to another identity",
                 });
+            }
+
+            if (emailMatch) {
+                return (await firstRow(
+                    tx
+                        .update(users)
+                        .set({
+                            auth_issuer: identity.issuer,
+                            auth_subject: identity.subject,
+                            ...profileUpdates,
+                        })
+                        .where(eq(users.id, emailMatch.id))
+                        .returning(),
+                ))!;
             }
 
             return (await firstRow(
                 tx
-                    .update(users)
-                    .set({ email: normalizedEmail, ...profileUpdates })
-                    .where(eq(users.id, linked.id))
-                    .returning(),
-            ))!;
-        }
-
-        const emailMatch = await firstRow(
-            tx
-                .select()
-                .from(users)
-                .where(eq(sql`lower(${users.email})`, normalizedEmail))
-                .limit(1),
-        );
-
-        if (emailMatch?.auth_subject || emailMatch?.auth_issuer) {
-            throw createError({
-                statusCode: 409,
-                message: "The email is linked to another identity",
-            });
-        }
-
-        if (emailMatch) {
-            return (await firstRow(
-                tx
-                    .update(users)
-                    .set({
+                    .insert(users)
+                    .values({
+                        email: normalizedEmail,
+                        name: trimmedName,
+                        profile_picture: identity.picture,
                         auth_issuer: identity.issuer,
                         auth_subject: identity.subject,
-                        ...profileUpdates,
+                        is_admin: initialAdmin,
                     })
-                    .where(eq(users.id, emailMatch.id))
                     .returning(),
             ))!;
+        });
+    } catch (error) {
+        // Two simultaneous first logins can race the unique identity/email
+        // indexes. The loser re-reads the winner's committed row.
+        const code = (error as { code?: string }).code;
+        if (code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE") {
+            const existing = await firstRow(
+                event.context.drizzle
+                    .select()
+                    .from(users)
+                    .where(
+                        and(
+                            eq(users.auth_issuer, identity.issuer),
+                            eq(users.auth_subject, identity.subject),
+                        ),
+                    )
+                    .limit(1),
+            );
+            if (existing) return existing;
         }
-
-        return (await firstRow(
-            tx
-                .insert(users)
-                .values({
-                    email: normalizedEmail,
-                    name: trimmedName,
-                    profile_picture: identity.picture,
-                    auth_issuer: identity.issuer,
-                    auth_subject: identity.subject,
-                    is_admin: initialAdmin,
-                })
-                .returning(),
-        ))!;
-    });
+        throw error;
+    }
 }
 
 export async function getUserByBasisAuthSubject(

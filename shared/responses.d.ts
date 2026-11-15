@@ -96,6 +96,8 @@ interface TeamScoreFeedbackResponse {
     curve_label: string | null;
     rank: number | null;
     feedback_withheld_for_anonymity?: boolean;
+    /** Evaluations skipped because their saved rubric or scores could not be read. */
+    unavailable_evaluations: number;
     feedback: ScoreFeedbackEntryResponse[];
 }
 
@@ -122,6 +124,25 @@ type GetTeamMembersResponse = {
     name: string | null;
     team_id: number | null;
 }[];
+
+interface TeamInviteResponse {
+    id: number;
+    email: string;
+}
+
+type GetTeamInvitesResponse = {
+    invites: TeamInviteResponse[];
+};
+
+interface UserTeamInviteResponse {
+    id: number;
+    team_id: number;
+    team_name: string;
+}
+
+type GetUserInvitesResponse = {
+    invites: UserTeamInviteResponse[];
+};
 
 interface UpdateUserResponse {
     message: string;

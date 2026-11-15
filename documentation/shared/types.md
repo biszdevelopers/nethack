@@ -156,11 +156,24 @@ Per-team assignments are stored in `team_awards`.
 | `award`   | `string` | Award namespace from `awards.namespace`    |
 | `meta`    | `string` | JSON metadata stored as a non-empty string |
 
+### `TeamInvite`
+
+Pending invitation stored in `team_invites`.
+
+| Field        | Type     | Description                      |
+| ------------ | -------- | -------------------------------- |
+| `id`         | `number` | Invitation ID                    |
+| `team_id`    | `number` | Foreign key to the invited team  |
+| `email`      | `string` | Lowercased recipient address     |
+| `invited_by` | `number` | Foreign key to the inviting user |
+| `created_at` | `Date`   | Invitation timestamp             |
+
 ### `PeerVotingScore`
 
 | Field       | Type     | Description                            |
 | ----------- | -------- | -------------------------------------- |
 | `user_id`   | `number` | Foreign key to user                    |
+| `season_id` | `number` | Season the ballot was cast in          |
 | `score`     | `string` | JSON string of peer-voting allocations |
 | `reasoning` | `string` | Voter's written reasoning              |
 
@@ -273,6 +286,26 @@ type GetTeamMembersResponse = {
 ```
 
 An array of lightweight member objects.
+
+### `GetTeamInvitesResponse`
+
+```ts
+type GetTeamInvitesResponse = {
+    invites: { id: number; email: string }[];
+};
+```
+
+Pending invitations shown to current team members.
+
+### `GetUserInvitesResponse`
+
+```ts
+type GetUserInvitesResponse = {
+    invites: { id: number; team_id: number; team_name: string }[];
+};
+```
+
+Invitations addressed to the authenticated user's email.
 
 ### `UpdateUserResponse`
 
