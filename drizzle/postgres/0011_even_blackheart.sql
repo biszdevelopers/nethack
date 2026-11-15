@@ -1,0 +1,3 @@
+ALTER TABLE "seasons" ADD COLUMN "board_approved_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "seasons" ADD COLUMN "board_approved_by" integer;--> statement-breakpoint
+ALTER TABLE "seasons" ADD CONSTRAINT "seasons_board_approval_pair_check" CHECK (("seasons"."board_approved_at" IS NULL AND "seasons"."board_approved_by" IS NULL) OR ("seasons"."board_approved_at" IS NOT NULL AND "seasons"."board_approved_by" IS NOT NULL));

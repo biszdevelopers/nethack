@@ -132,6 +132,8 @@ describe("POST /api/admin/seasons action edges", () => {
             theme_name: "Live theme",
             score_curve_preset: "gentle",
             name: "New season",
+            is_active: 0,
+            is_blank_start: 0,
         });
     });
 
@@ -143,6 +145,8 @@ describe("POST /api/admin/seasons action edges", () => {
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.insertValues).toHaveBeenCalledWith({
             name: "Offline season",
+            is_active: 0,
+            is_blank_start: 0,
         });
     });
 
@@ -151,8 +155,24 @@ describe("POST /api/admin/seasons action edges", () => {
 
         await postHandler(event);
 
+        expect(mocks.insertValues).toHaveBeenCalledWith({
+            status: "voting",
+            theme_name: "Live theme",
+            score_curve_preset: "gentle",
+            name: "New season",
+            is_active: 0,
+            is_blank_start: 0,
+        });
         expect(mocks.setActiveSeason).toHaveBeenCalledWith(event, 5);
         expect(mocks.requireUser).toHaveBeenCalledWith(event, NethackPermissions.Seasons.activate);
+    });
+
+    it("does not create a blank season as active", async () => {
+        mockBody.value = { name: "Blank season", copy_live_settings: false, is_active: 1 };
+
+        await expect(postHandler(event)).rejects.toMatchObject({ statusCode: 409 });
+        expect(mocks.insertValues).not.toHaveBeenCalled();
+        expect(mocks.setActiveSeason).not.toHaveBeenCalled();
     });
 
     it("does not activate when the insert returns no row", async () => {

@@ -71,6 +71,20 @@
             "when": 1794736648912,
             "tag": "0009_great_santa_claus",
             "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1794743068575,
+            "tag": "0010_clear_puma",
+            "breakpoints": true
+        },
+        {
+            "idx": 11,
+            "version": "7",
+            "when": 1794745154133,
+            "tag": "0011_even_blackheart",
+            "breakpoints": true
         }
     ]
 }

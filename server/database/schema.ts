@@ -205,6 +205,11 @@ export const seasons = pgTable(
     {
         id: serial("id").primaryKey(),
         name: text("name").notNull().unique(),
+        is_blank_start: integer("is_blank_start").notNull().default(0),
+        board_approved_at: timestamp("board_approved_at", { withTimezone: true }),
+        // Keep the approver's user ID as historical evidence even if that
+        // account is later removed; this is not a live ownership relation.
+        board_approved_by: integer("board_approved_by"),
         is_active: integer("is_active").notNull().default(0),
         status: text("status").notNull().default("not_started"),
         voting_enabled: integer("voting_enabled").notNull().default(0),
@@ -246,6 +251,11 @@ export const seasons = pgTable(
             .on(table.is_active)
             .where(sql`${table.is_active} = 1`),
         check("seasons_is_active_check", sql`${table.is_active} IN (0, 1)`),
+        check("seasons_is_blank_start_check", sql`${table.is_blank_start} IN (0, 1)`),
+        check(
+            "seasons_board_approval_pair_check",
+            sql`(${table.board_approved_at} IS NULL AND ${table.board_approved_by} IS NULL) OR (${table.board_approved_at} IS NOT NULL AND ${table.board_approved_by} IS NOT NULL)`,
+        ),
         check(
             "seasons_score_curve_preset_check",
             sql`${table.score_curve_preset} IN ('original', 'gentle', 'moderate', 'strong')`,

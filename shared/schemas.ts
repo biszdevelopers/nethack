@@ -521,6 +521,7 @@ export const CreateSeasonRequest = z.object({
         .union([z.literal(0), z.literal(1)])
         .optional()
         .default(0),
+    copy_live_settings: z.boolean().optional().default(true),
 });
 export type CreateSeasonRequest = z.infer<typeof CreateSeasonRequest>;
 
@@ -530,3 +531,6 @@ export const UpdateSeasonRequest = z.object({
     is_active: z.union([z.literal(0), z.literal(1)]).optional(),
 });
 export type UpdateSeasonRequest = z.infer<typeof UpdateSeasonRequest>;
+
+export const UpdateSeasonApprovalRequest = z.object({ approved: z.boolean() });
+export type UpdateSeasonApprovalRequest = z.infer<typeof UpdateSeasonApprovalRequest>;

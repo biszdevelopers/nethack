@@ -76,7 +76,7 @@ async function downloadDatabase(format: "json" | "csv") {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `basishacks-export.${format}`;
+    link.download = `nethack-export.${format}`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -348,6 +348,46 @@ async function renameSeason() {
     }
 }
 
+const boardApprovalSaving = ref(false);
+const boardApprovalRecorded = computed(() =>
+    Boolean(selectedSeason.value?.board_approved_at && selectedSeason.value?.board_approved_by),
+);
+
+async function updateBoardApproval(approved: boolean) {
+    const season = selectedSeason.value;
+    if (!season || season.is_blank_start !== 1) return;
+    if (
+        !confirm(
+            approved
+                ? `Confirm that the board approved ${season.name}? This will be recorded with your administrator account and the current time.`
+                : `Revoke the recorded board approval for ${season.name}?`,
+        )
+    ) {
+        return;
+    }
+
+    boardApprovalSaving.value = true;
+    try {
+        await apiFetch(`/api/admin/seasons/${season.id}/approval`, {
+            method: "PATCH",
+            body: { approved },
+        });
+        await refreshAdmin();
+        toast.add({
+            title: approved ? "Board approval recorded." : "Board approval revoked.",
+            color: "success",
+        });
+    } catch (error) {
+        toast.add({
+            title: "Could not update board approval",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        boardApprovalSaving.value = false;
+    }
+}
+
 const activating = ref(false);
 
 async function setActiveSeason() {
@@ -377,14 +417,14 @@ async function setActiveSeason() {
 
 const creatingSeason = ref(false);
 
-async function createSeason() {
+async function createSeason(copyLiveSettings = true) {
     const name = prompt("New season name:");
     if (!name || !name.trim()) return;
     creatingSeason.value = true;
     try {
         const result = await apiFetch<{ seasons: Season[] }>("/api/admin/seasons", {
             method: "POST",
-            body: { name: name.trim() },
+            body: { name: name.trim(), copy_live_settings: copyLiveSettings },
         });
         await refreshAdmin();
         selectedSeasonId.value =
@@ -605,9 +645,17 @@ async function deleteSeason() {
                                 class="min-h-11"
                                 variant="outline"
                                 :loading="creatingSeason"
-                                @click="createSeason"
+                                @click="createSeason(true)"
                             >
                                 New season
+                            </UButton>
+                            <UButton
+                                class="min-h-11"
+                                variant="outline"
+                                :loading="creatingSeason"
+                                @click="createSeason(false)"
+                            >
+                                Blank season
                             </UButton>
                             <UButton
                                 v-if="selectedSeason && !selectedSeasonIsActive"
@@ -621,9 +669,53 @@ async function deleteSeason() {
                             </UButton>
                         </div>
                         <p class="text-sm text-ui-text-muted mt-3">
-                            A new season starts as a copy of the current live settings. Activating a
-                            season switches the public site, voting, and judging to it immediately.
+                            New season copies the current live settings; Blank season starts with
+                            event switches off and no theme, schedule, or rubric. A season must have
+                            event dates, voting dates, a theme, a rubric, and recorded board
+                            approval before activation. Activation switches the public site, voting,
+                            and judging immediately.
                         </p>
+                    </UCard>
+
+                    <UCard v-if="selectedSeason?.is_blank_start === 1">
+                        <template #header>
+                            <h2 class="font-semibold">Board approval</h2>
+                        </template>
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <div class="max-w-2xl text-sm text-ui-text-muted">
+                                <p>
+                                    R1 activation requires the board's approval in addition to its
+                                    theme, dates, and rubric. Record this only after approval has
+                                    been granted.
+                                </p>
+                                <p v-if="boardApprovalRecorded" class="mt-2">
+                                    Approval recorded by administrator #{{
+                                        selectedSeason.board_approved_by
+                                    }}
+                                    on
+                                    {{
+                                        new Date(
+                                            selectedSeason.board_approved_at!,
+                                        ).toLocaleString()
+                                    }}.
+                                </p>
+                                <p v-else class="mt-2">No board approval is recorded.</p>
+                            </div>
+                            <UButton
+                                class="min-h-11"
+                                :color="boardApprovalRecorded ? 'neutral' : 'primary'"
+                                :variant="boardApprovalRecorded ? 'outline' : 'solid'"
+                                :loading="boardApprovalSaving"
+                                :disabled="selectedSeasonIsActive"
+                                @click="updateBoardApproval(!boardApprovalRecorded)"
+                            >
+                                {{
+                                    boardApprovalRecorded
+                                        ? "Revoke board approval"
+                                        : "Record board approval"
+                                }}
+                            </UButton>
+                        </div>
                     </UCard>
 
                     <UCard v-if="selectedSeason">

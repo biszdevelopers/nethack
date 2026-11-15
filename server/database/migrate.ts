@@ -41,6 +41,35 @@ export async function seedHackathon(database: DrizzleDatabase): Promise<void> {
         .onConflictDoNothing({ target: hackathon.id });
 }
 
+/** Add the next event shell without carrying over live settings or a rubric. */
+export async function seedR1Season(database: DrizzleDatabase): Promise<void> {
+    await database
+        .insert(seasons)
+        .values({
+            name: "R1 2026–2027",
+            is_blank_start: 1,
+            is_active: 0,
+            status: "not_started",
+            voting_enabled: 0,
+            results_published: 0,
+            judging_open: 0,
+            show_scores: 0,
+            show_ranking: 0,
+            max_votes_per_user: 0,
+            schedule_start: null,
+            schedule_end: null,
+            start_timestamp: 0,
+            end_timestamp: 0,
+            voting_start_timestamp: 0,
+            voting_end_timestamp: 0,
+            results_open_timestamp: 0,
+            theme_name: null,
+            theme_description: null,
+            rubric_version_id: null,
+        })
+        .onConflictDoNothing({ target: seasons.name });
+}
+
 /** Seed a usable first season and attach immutable default rubric versions. */
 export async function seedDefaultSeasonAndRubrics(database: DrizzleDatabase): Promise<void> {
     await database.transaction(async (tx) => {
@@ -87,6 +116,9 @@ export async function seedDefaultSeasonAndRubrics(database: DrizzleDatabase): Pr
 
         const allSeasons = await tx.select().from(seasons).orderBy(asc(seasons.id));
         for (const season of allSeasons) {
+            // Blank shells deliberately have no default rubric. They become
+            // eligible for activation only after organizers configure one.
+            if (season.is_blank_start === 1 && season.rubric_version_id === null) continue;
             const pointedVersion = season.rubric_version_id
                 ? (
                       await tx
@@ -154,5 +186,6 @@ export async function createAndMigrateDatabase(database: DrizzleDatabase): Promi
     await migrateDatabase(database);
     await seedHackathon(database);
     await seedDefaultSeasonAndRubrics(database);
+    await seedR1Season(database);
     await seedInitialAdmins(database);
 }
