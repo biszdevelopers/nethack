@@ -54,6 +54,42 @@ export default defineNitroPlugin(() => {
         }
     }
 
+    // basis-auth requires a verified backchannel logout URL before sign-in
+    // works, and revocation events arrive through it. Without the private
+    // listener settings this resource cannot answer either.
+    const resourceSecret = process.env.BASIS_AUTH_RESOURCE_SECRET;
+    const internalUrl = process.env.BASIS_AUTH_INTERNAL_URL;
+    const missingBackchannel = [
+        !resourceSecret && "BASIS_AUTH_RESOURCE_SECRET",
+        !internalUrl && "BASIS_AUTH_INTERNAL_URL",
+    ]
+        .filter(Boolean)
+        .join(", ");
+    if (missingBackchannel) {
+        const message =
+            `Missing basis-auth backchannel configuration: ${missingBackchannel}. ` +
+            "Sign-in fails with 14408 until the resource has a verified logout URL.";
+        if (isProduction) {
+            console.error(`[FATAL] ${message}`);
+            process.exit(1);
+        } else {
+            console.warn(`[WARNING] ${message}`);
+        }
+    } else {
+        try {
+            const parsed = new URL(internalUrl!);
+            if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("protocol");
+        } catch {
+            const message = "BASIS_AUTH_INTERNAL_URL must be an HTTP or HTTPS URL.";
+            if (isProduction) {
+                console.error(`[FATAL] ${message}`);
+                process.exit(1);
+            } else {
+                console.warn(`[WARNING] ${message}`);
+            }
+        }
+    }
+
     if (isProduction) {
         const origin = process.env.CURRENT_URL_ORIGIN;
         const effectiveHost = process.env.NITRO_HOST || process.env.HOST;
