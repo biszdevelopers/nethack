@@ -603,14 +603,28 @@ test("participant and admin complete mobile journeys while judging and review st
             const projectBox = await projectPane.boundingBox();
             const rubricBox = await rubricPane.boundingBox();
             const mainBox = await judge.page.getByRole("main").boundingBox();
+            const divider = judge.page.getByRole("separator", {
+                name: "Resize the project details and scoring panes",
+            });
             if (!projectBox || !rubricBox || !mainBox)
                 throw new Error("Judging workspace is hidden");
+            await expect(divider).toBeVisible();
             expect(projectBox.x).toBe(0);
-            expect(projectBox.y).toBe(mainBox.y);
-            expect(projectBox.x + projectBox.width).toBeCloseTo(rubricBox.x, 0);
-            expect(rubricBox.x).toBeCloseTo(mainBox.x + mainBox.width / 2, 0);
+            expect(projectBox.y).toBeGreaterThan(mainBox.y);
+            expect(projectBox.x + projectBox.width).toBeLessThan(rubricBox.x);
+            expect(rubricBox.x).toBeGreaterThan(mainBox.x + mainBox.width / 2);
             expect(rubricBox.x + rubricBox.width).toBeCloseTo(mainBox.x + mainBox.width, 0);
             expect(rubricBox.y + rubricBox.height).toBeCloseTo(mainBox.y + mainBox.height, 0);
+
+            await divider.focus();
+            await divider.press("ArrowRight");
+            await expect
+                .poll(async () => (await projectPane.boundingBox())?.width ?? 0)
+                .toBeGreaterThan(projectBox.width);
+            const shiftedRubricBox = await rubricPane.boundingBox();
+            if (!shiftedRubricBox)
+                throw new Error("Judging rubric pane disappeared after resizing");
+            expect(shiftedRubricBox.x).toBeGreaterThan(rubricBox.x);
         } finally {
             await judge.page.setViewportSize({ width: 320, height: 900 });
         }
