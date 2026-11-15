@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { DEFAULT_RUBRIC_DEFINITION } from "../shared/rubric.ts";

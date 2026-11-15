@@ -31,7 +31,8 @@ jobs:
 
             - name: Checkout @basis/schema source
               run: |
-                  git clone --depth 1 https://github.com/biszdevelopers/basis-schema.git ../basis-schema
+                  git clone https://github.com/biszdevelopers/basis-schema.git ../basis-schema
+                  git -C ../basis-schema checkout 7aad59dae1550133ae0760cd26e91decce578f38
 
             - name: Cache Bun dependencies
               uses: actions/cache@v4
@@ -39,7 +40,7 @@ jobs:
                   path: |
                       ~/.bun/install/cache
                       node_modules
-                  key: ${{ runner.os }}-bun-${{ hashFiles('package.json', 'bun.lock') }}
+                  key: ${{ runner.os }}-bun-${{ hashFiles('package.json', 'bun.lock', 'patches/**', 'vendor/**') }}
                   restore-keys: |
                       ${{ runner.os }}-bun-
 

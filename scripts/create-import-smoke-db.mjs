@@ -39,18 +39,27 @@ export async function createImportSmokeDatabase(
     const { Database } = await dependencies.loadSQLite();
     const database = new Database(resolvedOutputPath);
     try {
-        database.exec(
-            buildSchema({
-                seasonTable,
-                teamSeasonColumn,
-                scoreIdentityColumn,
-                scoreSeasonColumn,
-                visibilityColumns,
-                initialHackathonInsert,
-                legacy,
-            }),
-        );
-        if (populate) database.exec(buildPopulation({ legacy }));
+        try {
+            database.exec(
+                buildSchema({
+                    seasonTable,
+                    teamSeasonColumn,
+                    scoreIdentityColumn,
+                    scoreSeasonColumn,
+                    visibilityColumns,
+                    initialHackathonInsert,
+                    legacy,
+                }),
+            );
+            if (populate) database.exec(buildPopulation({ legacy }));
+        } catch (error) {
+            if (/already exists/i.test(error?.message ?? "")) {
+                throw new Error(
+                    `Output SQLite fixture already exists: ${resolvedOutputPath}. Remove it before recreating the fixture.`,
+                );
+            }
+            throw error;
+        }
     } finally {
         database.close();
     }

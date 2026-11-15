@@ -48,7 +48,8 @@ jobs:
 
             - name: Checkout @basis/schema source
               run: |
-                  git clone --depth 1 https://github.com/biszdevelopers/basis-schema.git ../basis-schema
+                  git clone https://github.com/biszdevelopers/basis-schema.git ../basis-schema
+                  git -C ../basis-schema checkout 7aad59dae1550133ae0760cd26e91decce578f38
 
             # 2. Install dependencies cleanly using Bun
             - name: Install dependencies

@@ -146,6 +146,7 @@ bun run test            # full suite (also generates tests/.test-meta.json)
 bun run test:watch      # watch mode
 bun run test:coverage   # enforce 100% executable source coverage
 bun run test:e2e:oidc   # protocol and security tests for the isolated test issuer
+bunx playwright install chromium
 bun run build
 $env:DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/basishacks_e2e"
 bun run test:e2e        # Chromium role and responsive browser journeys
@@ -153,7 +154,7 @@ bun run test:e2e        # Chromium role and responsive browser journeys
 
 The canonical test count is stored in `tests/.test-meta.json` and displayed dynamically in the VitePress documentation. Coverage enforces 100% statements, branches, functions, and lines for instrumented `.js`, `.mjs`, and `.ts` files under `app/`, `server/`, `shared/`, and `scripts/`, plus the production launcher and Drizzle config. It verifies per-file counters and merges the client and server builds for compile-time branches. Vue single-file components and CSS are not runtime-instrumented; source-contract checks do not replace rendered browser journeys or viewport accessibility checks.
 
-Browser tests require a production build, Chromium installed for Playwright, and a dedicated PostgreSQL database whose name ends in `_e2e`. The harness refuses other database names, starts the built app and an isolated OIDC issuer on loopback, and never adds a production test-login route. CI creates the isolated database and installs Chromium on its temporary runner.
+Browser tests require a production build, Chromium installed for Playwright, and a dedicated PostgreSQL database named exactly `basishacks_e2e`. The harness refuses other database names, starts the built app and an isolated OIDC issuer on loopback, and never adds a production test-login route. CI creates the isolated database and installs Chromium on its temporary runner.
 
 Do **not** use `bun test` — it cannot resolve Nuxt path aliases. `bunfig.toml` redirects it to a guidance shim.
 

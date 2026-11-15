@@ -16,7 +16,7 @@ function finish(input: string) {
                 .map((assertion: any) => `${file.name} › ${assertion.fullName}`),
         );
         const meta = {
-            total: result.numTotalTests ?? 0,
+            total: result.numPassedTests ?? result.numTotalTests ?? 0,
             files: Array.isArray(result.testResults) ? result.testResults.length : 0,
             failed: result.numFailedTests ?? 0,
             generatedAt: new Date().toISOString(),

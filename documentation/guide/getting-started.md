@@ -101,7 +101,7 @@ Migrations are generated with Drizzle Kit:
 bun run db:generate
 ```
 
-The `db:migrate` script applies pending migrations via Drizzle Kit. In practice, the server also applies migrations automatically on startup, so manual runs are usually unnecessary:
+The `db:migrate` script applies the pending PostgreSQL migration files and then seeds the hackathon row, default season/rubric, and designated administrators. It uses the Drizzle migrator directly (not Drizzle Kit). In practice, the server also applies migrations automatically on startup, so manual runs are usually unnecessary:
 
 ```bash
 bun run db:migrate
@@ -165,14 +165,6 @@ Build the application for production:
 ```bash
 bun run build
 ```
-
-For artifacts built by GitHub Actions, rewrite the embedded checkout root for the production server before packaging:
-
-```bash
-bun run refractor-artifact
-```
-
-This replaces `/home/runner/work/basishacks-r2/basishacks-r2` with `/home/devleaderz/basishacks-r2` throughout `.output/`.
 
 Preview the production build:
 

@@ -2,8 +2,21 @@
 set -eu
 
 if command -v bun >/dev/null 2>&1; then
-    if bun_version="$(bun --version 2>/dev/null)" && [ "$bun_version" = "1.3.14" ]; then
-        exec bun start-fix.mjs
+    if bun_version="$(bun --version 2>/dev/null)"; then
+        bun_major="${bun_version%%.*}"
+        bun_rest="${bun_version#*.}"
+        bun_minor="${bun_rest%%.*}"
+        case "$bun_major" in
+            ""|*[!0-9]*) ;;
+            *)
+                case "$bun_minor" in
+                    ""|*[!0-9]*) bun_minor=0 ;;
+                esac
+                if [ "$bun_major" -gt 1 ] || { [ "$bun_major" -eq 1 ] && [ "$bun_minor" -ge 3 ]; }; then
+                    exec bun start-fix.mjs
+                fi
+                ;;
+        esac
     fi
 fi
 
@@ -25,5 +38,5 @@ if command -v node >/dev/null 2>&1; then
     esac
 fi
 
-printf '%s\n' 'Start requires Bun 1.3.14 or Node.js 24 or newer.' >&2
+printf '%s\n' 'Start requires Bun 1.3 or newer, or Node.js 24 or newer.' >&2
 exit 127

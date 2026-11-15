@@ -119,6 +119,43 @@ describe("SQLite import fixture database generator", () => {
         expect(fixture.state.closed).toBe(1);
     });
 
+    it("explains that a stale output fixture must be removed first", async () => {
+        class Database {
+            exec() {
+                throw new Error("table hackathon already exists");
+            }
+
+            close() {}
+        }
+
+        await expect(
+            createImportSmokeDatabase("stale.sqlite", [], {
+                loadSQLite: async () => ({ Database }),
+                resolvePath: (path) => path,
+            }),
+        ).rejects.toThrow(
+            "Output SQLite fixture already exists: stale.sqlite. Remove it before recreating the fixture.",
+        );
+    });
+
+    it("rethrows unexpected fixture failures unchanged", async () => {
+        const failure = {};
+        class Database {
+            exec() {
+                throw failure;
+            }
+
+            close() {}
+        }
+
+        await expect(
+            createImportSmokeDatabase("broken.sqlite", [], {
+                loadSQLite: async () => ({ Database }),
+                resolvePath: (path) => path,
+            }),
+        ).rejects.toBe(failure);
+    });
+
     it("populates the current schema with season history and representative relationships", async () => {
         const fixture = fakeDatabase();
         const result = await createImportSmokeDatabase(

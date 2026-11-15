@@ -49,6 +49,21 @@ describe("test metadata stream processor", () => {
         expect(log).toHaveBeenCalledWith("Test meta written: 12 tests, 2 files");
     });
 
+    it("prefers the passed-test count when the report includes it", async () => {
+        const log = vi.spyOn(console, "log").mockImplementation(() => {});
+        fsMocks.writeFileSync.mockClear();
+
+        await run([
+            '{"numTotalTests":10,"numPassedTests":8,"testResults":[{}],"numFailedTests":0}',
+        ]);
+
+        expect(JSON.parse(fsMocks.writeFileSync.mock.calls[0][1])).toMatchObject({
+            total: 8,
+            files: 1,
+            failed: 0,
+        });
+    });
+
     it("defaults absent counts and treats a non-array result list as zero files", async () => {
         const log = vi.spyOn(console, "log").mockImplementation(() => {});
         fsMocks.writeFileSync.mockClear();

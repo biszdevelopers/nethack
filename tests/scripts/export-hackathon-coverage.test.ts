@@ -94,9 +94,8 @@ describe("hackathon manifest export script", { timeout: 30_000 }, () => {
         await runScript("postgres://fixture@localhost/db", "exported.yml");
 
         expect(state.queries).toHaveLength(2);
-        const [path, contents, options] = writeFile.mock.calls[0]!;
+        const [path, contents] = writeFile.mock.calls[0]!;
         expect(path).toBe("exported.yml");
-        expect(options).toEqual({ flag: "wx" });
         expect(contents).toContain("theme_name: Beneath The Surface");
         expect(contents).toContain("name: Imported rubric");
         expect(contents).toContain("start_timestamp: 1794667462000");

@@ -31,7 +31,7 @@ try {
         ...(version ? { rubric: { ...version.definition, name: version.name } } : {}),
     });
     parseHackathonConfig(yaml);
-    await writeFile(output, yaml, { flag: "wx" });
+    await writeFile(output, yaml);
     console.info(`Exported the live hackathon configuration to ${output}.`);
 } finally {
     await sql.end();
