@@ -63,6 +63,10 @@ describe("application utility modules", () => {
 
         expect(getErrorMessage("plain message")).toBe("plain message");
         expect(getErrorMessage({ reason: "unknown" })).toBe("[object Object]");
+        expect(getErrorMessage(new Error("You cannot score your own team"))).toBe(
+            "You cannot score your own team",
+        );
+        expect(getErrorMessage(new Error(""))).toBe("Error");
 
         const apiError = new FetchError("request failed");
         Object.assign(apiError, {

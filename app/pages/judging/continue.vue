@@ -150,6 +150,19 @@ watch(
     { immediate: true },
 );
 watch(
+    () => summaryFetch.data.value,
+    () => {
+        if (!queueFetch.data.value || navigationError.value) return;
+        if (
+            queue.value.length > 0 &&
+            !queue.value.some((item) => !item.evaluated) &&
+            hasPendingProjects.value
+        ) {
+            void focusNextPending(1, 0);
+        }
+    },
+);
+watch(
     () => [activeTeam.value, activeTrack.value] as const,
     async ([team, track]) => {
         step.value = "score";

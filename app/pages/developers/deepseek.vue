@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { apiFetch } from "~~/app/composables/useApiFetch";
+import { onMounted } from "vue";
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -24,7 +25,15 @@ const sendingSessionId = ref<number | null>(null);
 const deletingSessionId = ref<number | null>(null);
 
 const roleValue = ref("user");
-const roleValues = ref(["user", "tool"]);
+const roleValues = ref(["user", "tool_result"]);
+
+onMounted(async () => {
+    try {
+        sessions.value = await apiFetch("/api/debug/deepseek/sessions");
+    } catch {
+        // Debug routes may be disabled in this environment.
+    }
+});
 
 const createSession = async () => {
     if (!newSessionName.value) return;
@@ -79,7 +88,7 @@ const sendMessage = async (sessionId: number) => {
             body: {
                 message,
                 role: roleValue.value,
-                toolId: toolCallId.value,
+                toolCallId: toolCallId.value,
             },
         });
 

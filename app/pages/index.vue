@@ -17,6 +17,11 @@ const votingEndDate = computed(() => new Date(hackathon.value.voting_end_timesta
 const resultsOpenDate = computed(() => new Date(hackathon.value.results_open_timestamp));
 
 const themeDescription = computed(() => hackathon.value.theme_description || "");
+const hasStart = computed(() => hackathon.value.start_timestamp > 0);
+const hasEnd = computed(() => hackathon.value.end_timestamp > 0);
+const hasVotingStart = computed(() => hackathon.value.voting_start_timestamp > 0);
+const hasVotingEnd = computed(() => hackathon.value.voting_end_timestamp > 0);
+const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0);
 </script>
 
 <template>
@@ -50,19 +55,19 @@ const themeDescription = computed(() => hackathon.value.theme_description || "")
             The website is currently under maintenance. Please check back later.
         </p>
         <ul v-else-if="status !== 'finished'" class="grid grid-cols-1 lg:grid-cols-2 mb-4 gap-4">
-            <li v-if="status === 'not_started'">
+            <li v-if="status === 'not_started' && hasStart">
                 <LargeCountdown :date="startDate" label="Hackathon starts" />
             </li>
-            <li v-if="status === 'not_started' || status === 'in_progress'">
+            <li v-if="(status === 'not_started' || status === 'in_progress') && hasEnd">
                 <LargeCountdown :date="endDate" label="Hackathon ends" />
             </li>
-            <li v-if="status === 'in_progress'">
+            <li v-if="status === 'in_progress' && hasVotingStart">
                 <LargeCountdown :date="votingStartDate" label="Voting starts" />
             </li>
-            <li v-if="status === 'voting'">
+            <li v-if="status === 'voting' && hasVotingEnd">
                 <LargeCountdown :date="votingEndDate" label="Voting ends" />
             </li>
-            <li v-if="status === 'voting'">
+            <li v-if="status === 'voting' && hasResultsOpen">
                 <LargeCountdown :date="resultsOpenDate" label="Results released" />
             </li>
         </ul>
@@ -76,23 +81,28 @@ const themeDescription = computed(() => hackathon.value.theme_description || "")
                 <ul class="mb-4 whitespace-pre-wrap">
                     <li>
                         {{ "" }}* Hackathon starts:{{ "  " }}
-                        <DateTime :date="startDate" />
+                        <DateTime v-if="hasStart" :date="startDate" />
+                        <span v-else>To be announced</span>
                     </li>
                     <li>
                         {{ "" }}* Hackathon ends:{{ "    " }}
-                        <DateTime :date="endDate" />
+                        <DateTime v-if="hasEnd" :date="endDate" />
+                        <span v-else>To be announced</span>
                     </li>
                     <li>
                         {{ "" }}* Voting starts:{{ "     " }}
-                        <DateTime :date="votingStartDate" />
+                        <DateTime v-if="hasVotingStart" :date="votingStartDate" />
+                        <span v-else>To be announced</span>
                     </li>
                     <li>
                         {{ "" }}* Voting ends:{{ "       " }}
-                        <DateTime :date="votingEndDate" />
+                        <DateTime v-if="hasVotingEnd" :date="votingEndDate" />
+                        <span v-else>To be announced</span>
                     </li>
                     <li>
                         {{ "" }}* Results released:{{ "  " }}
-                        <DateTime :date="resultsOpenDate" />
+                        <DateTime v-if="hasResultsOpen" :date="resultsOpenDate" />
+                        <span v-else>To be announced</span>
                     </li>
                 </ul>
             </template>
@@ -101,8 +111,12 @@ const themeDescription = computed(() => hackathon.value.theme_description || "")
         <!-- theme -->
         <h2 class="text-3xl bold mb-4 glow-sm">Theme</h2>
         <p v-if="!hackathon.theme_name" class="mb-4">
-            The theme of the hackathon will be revealed on
-            <DateTime class="bold" :date="startDate" />
+            The theme of the hackathon will be revealed
+            <template v-if="hasStart">
+                on
+                <DateTime class="bold" :date="startDate" />
+            </template>
+            <template v-else>soon</template>
             .
         </p>
         <template v-else>

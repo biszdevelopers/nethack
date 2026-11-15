@@ -23,6 +23,7 @@ export function getErrorMessage(e: unknown) {
             }
             return e.message;
         }
+        if (e instanceof Error && e.message) return e.message;
         return String(e);
     } catch (inner) {
         console.error("Error trying to get error message:", inner);

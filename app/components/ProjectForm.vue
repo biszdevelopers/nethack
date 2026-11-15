@@ -6,6 +6,7 @@ import {
     UpdateTeamRequest,
     MAX_PROJECT_NAME_LENGTH,
     MAX_PROJECT_DESCRIPTION_LENGTH,
+    MAX_PROJECT_SOURCE_LENGTH,
     MAX_URL_LENGTH,
 } from "~~/shared/schemas";
 
@@ -35,13 +36,14 @@ const pathwayOptions = computed(() =>
 );
 
 const toast = useToast();
+const dirty = ref(false);
 
 watch(
-    () => formRef.value?.dirty,
+    dirty,
     (value) => {
-        emit("dirty", value ?? true);
+        emit("dirty", value);
     },
-    { deep: true },
+    { immediate: true },
 );
 
 const intent = ref<"save" | "submit">("save");
@@ -51,7 +53,7 @@ let pendingSubmitEvent: FormSubmitEvent<UpdateTeamRequest | SubmitTeamRequest> |
 const autosaveStatus = ref("");
 
 async function triggerAutosave() {
-    if (!formRef.value?.dirty || !defaultTeam) {
+    if (!dirty.value || !defaultTeam) {
         // autosaveStatus.value = 'Synced with origin';
         return;
     }
@@ -68,9 +70,11 @@ async function triggerAutosave() {
                     description: state.project.description,
                     demo_url: state.project.demo_url || null,
                     repo_url: state.project.repo_url || null,
+                    sourcing: state.project.sourcing,
                 },
             },
         });
+        dirty.value = false;
         autosaveStatus.value = `Auto-saved at ${new Date().toLocaleTimeString()}`;
     } catch (e) {
         autosaveStatus.value = "Auto-save failed";
@@ -97,27 +101,48 @@ const state = reactive({
         description: "",
         repo_url: "",
         demo_url: "",
+        sourcing: "",
     },
 });
+
+let suppressDirty = false;
 
 watch(
     () => defaultTeam,
     (value) => {
         if (!value) return;
+        suppressDirty = true;
         state.name = value.name;
         state.pathway = value.pathway || pathwayOptions.value[0]?.value || "";
         state.project.name = value.project.name;
         state.project.description = value.project.description;
         state.project.repo_url = value.project.repo_url || "";
         state.project.demo_url = value.project.demo_url || "";
+        state.project.sourcing = value.project.sourcing || "";
+        dirty.value = false;
     },
     { deep: true, immediate: true },
 );
 
 watch(
+    state,
+    () => {
+        if (suppressDirty) {
+            suppressDirty = false;
+            return;
+        }
+        dirty.value = true;
+    },
+    { deep: true },
+);
+
+watch(
     pathwayOptions,
     (options) => {
-        if (!state.pathway && options.length > 0) state.pathway = options[0]!.value;
+        if (!state.pathway && options.length > 0) {
+            suppressDirty = true;
+            state.pathway = options[0]!.value;
+        }
     },
     { immediate: true },
 );
@@ -170,6 +195,7 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
             });
 
             autosaveStatus.value = `Saved at ${new Date().toLocaleTimeString()}`;
+            dirty.value = false;
         });
         emit("refresh");
     } catch (e) {
@@ -222,6 +248,19 @@ async function confirmSubmit() {
                 <p>* How to use it</p>
                 <p>* Technologies used (optional)</p>
             </template>
+        </UFormField>
+
+        <UFormField
+            name="project.sourcing"
+            label="AI-use disclosure"
+            help="Describe any AI tools you used and for which parts of the project. The rules require a comprehensive disclosure."
+        >
+            <UTextarea
+                v-model="state.project.sourcing"
+                :rows="4"
+                class="w-full"
+                :maxlength="MAX_PROJECT_SOURCE_LENGTH"
+            />
         </UFormField>
 
         <UFormField name="project.demo_url" label="Demo URL">

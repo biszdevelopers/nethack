@@ -117,6 +117,7 @@ const handleHover = async (isOpen: boolean) => {
             hoveredUser.value = props.user;
         }
     } catch (e) {
+        hasHovered.value = false;
         console.error("Failed to fetch user:", e);
     } finally {
         pending.value = false;

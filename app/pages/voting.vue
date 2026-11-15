@@ -19,6 +19,7 @@ const fetchError = computed(() => (error.value ? getErrorMessage(error.value) : 
 
 const projects = computed(() => data.value?.projects ?? []);
 const submitted = computed(() => data.value?.submitted ?? false);
+const submitting = ref(false);
 
 const state = reactive<SubmitVoteRequest>({
     scores: [],
@@ -46,11 +47,13 @@ function increment(index: number) {
 }
 
 async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
+    if (submitting.value) return;
     if (
         !confirm("Are you sure you want to submit the vote? You cannot edit them after submission.")
     )
         return;
 
+    submitting.value = true;
     try {
         await withLoadingIndicator(async () => {
             const res: any = await apiFetch(`/api/ballot`, {
@@ -69,6 +72,8 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
             title: "Failed to submit vote",
             description: getErrorMessage(e),
         });
+    } finally {
+        submitting.value = false;
     }
 }
 </script>
@@ -160,7 +165,7 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
 
                 <UFormField v-if="!submitted">
                     <UButton
-                        :disabled="totalStars !== 10 || projects.length === 0"
+                        :disabled="totalStars !== 10 || projects.length === 0 || submitting"
                         class="min-h-11"
                         type="submit"
                     >

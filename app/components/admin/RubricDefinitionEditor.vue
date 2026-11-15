@@ -61,7 +61,7 @@ function addTrack() {
             },
         ],
     };
-    definition.value = { tracks };
+    definition.value = { ...definition.value, tracks };
     selectedTrackId.value = id;
 }
 
@@ -69,7 +69,7 @@ function removeTrack(trackId: string) {
     const tracks = { ...definition.value.tracks };
     if (Object.keys(tracks).length <= 1) return;
     delete tracks[trackId];
-    definition.value = { tracks };
+    definition.value = { ...definition.value, tracks };
 }
 
 function renameTrackId(oldId: string, newId: string) {
@@ -84,7 +84,7 @@ function renameTrackId(oldId: string, newId: string) {
     for (const [id, track] of Object.entries(definition.value.tracks)) {
         tracks[id === oldId ? nextId : id] = track;
     }
-    definition.value = { tracks };
+    definition.value = { ...definition.value, tracks };
     selectedTrackId.value = nextId;
 }
 

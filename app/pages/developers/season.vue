@@ -65,7 +65,7 @@ async function downloadDatabase(format: "json" | "csv") {
     link.href = url;
     link.download = `basishacks-export.${format}`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 // All config fields — every field is per-season (saved with season_id)
@@ -196,19 +196,27 @@ function onFieldChange() {
         if (raw === undefined || raw === null) continue;
         const val = normalize(key, raw);
         if (typeof val === "number" && Number.isNaN(val)) continue;
+        if (!hasChanged(key, val)) continue;
         body[key] = val;
     }
+    if (Object.keys(body).length === 0) return;
     if (activeSeasonId.value !== null) body.season_id = activeSeasonId.value;
 
     // Chain onto the previous PATCH so they never race.
-    // Each PATCH carries every field, so even if the user changed
+    // Each PATCH carries every changed field, so even if the user changed
     // field A, then field B before the first PATCH finished, the
     // second PATCH will persist BOTH.
     saving.value = true;
     patchChain = patchChain
         .then(() => apiFetch("/api/admin/hackathon", { method: "PATCH", body }))
         .then(() => refreshAdmin())
-        .catch(() => {})
+        .catch((error) => {
+            toast.add({
+                title: "Could not save season settings",
+                description: getErrorMessage(error),
+                color: "error",
+            });
+        })
         .then(() => {
             saving.value = false;
         });

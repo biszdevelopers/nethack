@@ -39,7 +39,7 @@ type AdminTeamMember = {
 
 type AdminTeam = Team & { season_name: string | null; members: AdminTeamMember[] };
 
-const { data, status, refresh } = await useApiFetch<AdminTeam[]>("/api/admin/teams", {
+const { data, status, error, refresh } = await useApiFetch<AdminTeam[]>("/api/admin/teams", {
     server: false,
     lazy: true,
     default: () => [],
@@ -232,6 +232,11 @@ const currentPage = computed(
     () => (table.value?.tableApi?.getState()?.pagination?.pageIndex ?? 0) + 1,
 );
 
+const pageModel = computed({
+    get: () => currentPage.value,
+    set: (page: number) => table.value?.tableApi?.setPageIndex(page - 1),
+});
+
 const currentPageSize = computed(
     () => table.value?.tableApi?.getState()?.pagination?.pageSize ?? pagination.value.pageSize,
 );
@@ -290,6 +295,15 @@ const paginationOptions = {
                 </div>
             </div>
 
+            <UAlert
+                v-if="error"
+                color="error"
+                variant="soft"
+                class="mb-4"
+                title="Could not load teams"
+                :description="getErrorMessage(error)"
+            />
+
             <UTable
                 ref="table"
                 v-model:column-filters="columnFilters"
@@ -320,10 +334,9 @@ const paginationOptions = {
 
                 <div class="flex items-center gap-1.5">
                     <UPagination
-                        :default-page="currentPage"
+                        v-model:page="pageModel"
                         :items-per-page="currentPageSize"
                         :total="filteredRowCount"
-                        @update:page="(p: number) => table?.tableApi?.setPageIndex(p - 1)"
                     />
                 </div>
             </div>

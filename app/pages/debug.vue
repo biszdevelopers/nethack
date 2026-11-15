@@ -325,7 +325,7 @@ const sendingSessionId = ref<number | null>(null);
 const deletingSessionId = ref<number | null>(null);
 
 const roleValue = ref("user");
-const roleValues = ref(["user", "tool"]);
+const roleValues = ref(["user", "tool_result"]);
 
 // Existing file listings
 const loadFiles = async () => {
@@ -427,7 +427,7 @@ const sendMessage = async (sessionId: number) => {
             body: {
                 message,
                 role: roleValue.value,
-                toolId: toolCallId.value,
+                toolCallId: toolCallId.value,
             },
         });
 

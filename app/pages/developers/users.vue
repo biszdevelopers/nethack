@@ -30,7 +30,7 @@ const rowSelection = ref<Record<string, boolean>>({});
 
 type AdminUser = User & { past_team_ids: string | null; is_admin: boolean };
 
-const { data, status, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
+const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
     server: false,
     lazy: true,
     default: () => [],
@@ -241,6 +241,11 @@ const currentPage = computed(
     () => (table.value?.tableApi?.getState()?.pagination?.pageIndex ?? 0) + 1,
 );
 
+const pageModel = computed({
+    get: () => currentPage.value,
+    set: (page: number) => table.value?.tableApi?.setPageIndex(page - 1),
+});
+
 const currentPageSize = computed(
     () => table.value?.tableApi?.getState()?.pagination?.pageSize ?? pagination.value.pageSize,
 );
@@ -295,6 +300,15 @@ const paginationOptions = {
                 </div>
             </div>
 
+            <UAlert
+                v-if="error"
+                color="error"
+                variant="soft"
+                class="mb-4"
+                title="Could not load users"
+                :description="getErrorMessage(error)"
+            />
+
             <UTable
                 ref="table"
                 v-model:column-filters="columnFilters"
@@ -325,10 +339,9 @@ const paginationOptions = {
 
                 <div class="flex items-center gap-1.5">
                     <UPagination
-                        :default-page="currentPage"
+                        v-model:page="pageModel"
                         :items-per-page="currentPageSize"
                         :total="filteredRowCount"
-                        @update:page="(p: number) => table?.tableApi?.setPageIndex(p - 1)"
                     />
                 </div>
             </div>

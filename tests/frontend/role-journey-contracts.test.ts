@@ -20,6 +20,12 @@ describe("participant action paths", () => {
     const teamPage = readSource("pages", "dashboard", "teams", "index.vue");
     const confirmModal = readSource("components", "ModalConfirm.vue");
 
+    it("collects the required AI-use disclosure with the project", () => {
+        expect(projectForm).toContain('name="project.sourcing"');
+        expect(projectForm).toContain("AI-use disclosure");
+        expect(projectForm).toContain("state.project.sourcing");
+    });
+
     it("gives peer-voting controls names, live scores, and 44px touch targets", () => {
         expect(votingCard).toContain(':aria-label="`Remove a star from ${team.project.name}`"');
         expect(votingCard).toContain(':aria-label="`Add a star to ${team.project.name}`"');
@@ -47,7 +53,9 @@ describe("participant action paths", () => {
         expect(voting).toContain("(state.scores[index] ?? 0) > 0");
         expect(voting).toContain("state.scores = [...ballot.scores]");
         expect(voting).toContain("Math.min(5, (state.scores[index] ?? 0) + 1)");
-        expect(voting).toContain(':disabled="totalStars !== 10 || projects.length === 0"');
+        expect(voting).toContain(
+            ':disabled="totalStars !== 10 || projects.length === 0 || submitting"',
+        );
         expect(voting).toContain(':disabled="submitted"');
     });
 
@@ -66,10 +74,11 @@ describe("participant action paths", () => {
             "async function triggerAutosave",
             "let autosaveInterval",
         );
-        expect(autosave).toContain("if (!formRef.value?.dirty || !defaultTeam)");
+        expect(autosave).toContain("if (!dirty.value || !defaultTeam)");
         expect(autosave).toContain('method: "PATCH"');
         expect(autosave).toContain("demo_url: state.project.demo_url || null");
         expect(autosave).toContain("repo_url: state.project.repo_url || null");
+        expect(autosave).toContain("sourcing: state.project.sourcing");
         expect(autosave).toContain('autosaveStatus.value = "Auto-save failed"');
     });
 
@@ -253,6 +262,12 @@ describe("judge results and admin controls", () => {
         expect(feedback).toContain("Rank:");
         expect(feedback).toContain("admin && evaluation.normalized_score != null");
         expect(feedback).toContain('evaluation.scores[criterion.id] ?? "—"');
+    });
+
+    it("preserves rubric comment guidance when tracks are added, removed, or renamed", () => {
+        expect(
+            rubricEditor.match(/definition\.value = \{ \.\.\.definition\.value, tracks \}/g),
+        ).toHaveLength(3);
     });
 
     it("persists the admin score curve and restores the saved preset on failure", () => {
