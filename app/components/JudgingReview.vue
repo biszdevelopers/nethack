@@ -64,7 +64,7 @@ function focusReviewHeading(event: Event) {
                 class="overflow-y-auto p-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary sm:p-6"
             >
                 <div class="rounded-xl border border-default p-4">
-                    <p class="text-sm text-muted">
+                    <p class="text-sm text-default">
                         {{ team.name }}
                         <UBadge
                             variant="outline"
@@ -96,11 +96,11 @@ function focusReviewHeading(event: Event) {
                     >
                         <dt class="min-w-0 flex-1">
                             <span class="font-medium">{{ criterion.name }}</span>
-                            <span class="ml-2 text-sm text-muted">{{ criterion.weight }}%</span>
+                            <span class="ml-2 text-sm text-default">{{ criterion.weight }}%</span>
                         </dt>
                         <dd class="shrink-0 font-semibold tabular-nums">
                             {{ scores[criterion.id] }}
-                            <span class="font-normal text-muted">/{{ criterion.maxScore }}</span>
+                            <span class="font-normal text-default">/{{ criterion.maxScore }}</span>
                         </dd>
                     </div>
                 </dl>

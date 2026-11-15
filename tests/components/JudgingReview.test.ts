@@ -21,9 +21,6 @@ describe("JudgingReview.vue", () => {
 
     it("keeps preview copy readable on the tinted score panel", () => {
         expect(source).toContain("bg-primary/10");
-        expect(source).not.toContain('text-sm text-muted">Weighted score preview');
-        expect(source).not.toContain(
-            'text-sm text-muted">\n                        This is a normalized score',
-        );
+        expect(source).not.toContain("text-muted");
     });
 });

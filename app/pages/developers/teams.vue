@@ -340,7 +340,7 @@ const paginationOptions = {
                     </div>
                 </template>
 
-                <p class="text-muted">
+                <p class="text-default">
                     Are you sure you want to delete
                     <strong>{{ selectedRows.length }}</strong>
                     selected team(s)? This action cannot be undone.

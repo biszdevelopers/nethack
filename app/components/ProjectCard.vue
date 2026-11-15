@@ -17,10 +17,10 @@ const safeDemoUrl = computed(() => safeUrl(team.value?.project.demo_url));
     <UCard v-if="team" :description="team.name">
         <template #header>
             <h3 v-if="team.project.name" class="text-xl bold">{{ team.project.name }}</h3>
-            <h3 v-else class="text-muted">(No Project Name)</h3>
+            <h3 v-else class="text-default">(No Project Name)</h3>
             <span class="text-sm">Team:</span>
-            <span v-if="team && team.name" class="text-muted text-sm">{{ team.name }}</span>
-            <span v-else class="text-muted text-sm">(No Team Name)</span>
+            <span v-if="team && team.name" class="text-default text-sm">{{ team.name }}</span>
+            <span v-else class="text-default text-sm">(No Team Name)</span>
             <div class="flex flex-row gap-2 mt-2">
                 <div v-for="award in team.awards">
                     <AwardButton :award="award" size="md"></AwardButton>
@@ -32,7 +32,7 @@ const safeDemoUrl = computed(() => safeUrl(team.value?.project.demo_url));
             <SafeComark v-if="team.project.description" class="whitespace-pre-wrap">
                 {{ team.project.description }}
             </SafeComark>
-            <p v-else class="text-muted">(No Project Description)</p>
+            <p v-else class="text-default">(No Project Description)</p>
         </template>
 
         <template #footer>
