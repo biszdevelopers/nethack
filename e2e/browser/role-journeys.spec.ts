@@ -569,7 +569,7 @@ test("participant and admin complete mobile journeys while judging and review st
             participant.page.getByText("You have voted already. Thank you!"),
         ).toBeVisible();
 
-        await judge.page.goto("/judging");
+        await loginAs(judge.page, "judge@e2e.basishacks.invalid", "/judging");
         await expect(
             judge.page.getByRole("heading", { name: "Judging", exact: true }),
         ).toBeVisible();
