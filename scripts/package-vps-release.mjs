@@ -23,6 +23,7 @@ if (existsSync(releaseRoot)) {
 
 const builtServer = resolve(projectRoot, ".output/server/index.mjs");
 const migrationJournal = resolve(projectRoot, "drizzle/postgres/meta/_journal.json");
+const docsBuild = resolve(projectRoot, "documentation/.vitepress/dist");
 const includeProductionDependencies = process.env.VPS_RELEASE_INCLUDE_NODE_MODULES === "1";
 if (!existsSync(builtServer)) {
     throw new Error("Build the Nuxt application before packaging the VPS release.");
@@ -30,9 +31,13 @@ if (!existsSync(builtServer)) {
 if (!existsSync(migrationJournal)) {
     throw new Error("The PostgreSQL Drizzle migration journal is missing.");
 }
+if (!existsSync(resolve(docsBuild, "index.html"))) {
+    throw new Error("Build the protected VitePress docs before packaging the VPS release.");
+}
 
 await mkdir(releaseRoot, { recursive: true });
 await cp(resolve(projectRoot, ".output"), resolve(releaseRoot, ".output"), { recursive: true });
+await cp(docsBuild, resolve(releaseRoot, "docs"), { recursive: true });
 await cp(resolve(projectRoot, "drizzle/postgres"), resolve(releaseRoot, "drizzle/postgres"), {
     recursive: true,
 });
@@ -65,6 +70,7 @@ const buildOutput = await globalThis.Bun.build({
         resolve(projectRoot, "scripts/db-migrate.ts"),
         resolve(projectRoot, "scripts/export-hackathon.ts"),
         resolve(projectRoot, "scripts/import-sqlite-to-postgres.mjs"),
+        resolve(projectRoot, "scripts/audit-sqlite-postgres.mjs"),
     ],
     outdir: resolve(releaseRoot, ".output/tools"),
     target: "node",
@@ -114,6 +120,8 @@ const releaseManifest = {
         "db:import-sqlite:node": "node .output/tools/import-sqlite-to-postgres.mjs",
         "db:import-sqlite:check:node":
             "node .output/tools/import-sqlite-to-postgres.mjs --check-only",
+        "db:audit-sqlite": "bun .output/tools/audit-sqlite-postgres.mjs",
+        "db:audit-sqlite:node": "node .output/tools/audit-sqlite-postgres.mjs",
     },
 };
 
@@ -138,9 +146,11 @@ if (includeProductionDependencies) {
 
 for (const requiredPath of [
     ".output/server/index.mjs",
+    "docs/index.html",
     ".output/tools/db-migrate.mjs",
     ".output/tools/export-hackathon.mjs",
     ".output/tools/import-sqlite-to-postgres.mjs",
+    ".output/tools/audit-sqlite-postgres.mjs",
     "drizzle/postgres/meta/_journal.json",
     "start-fix.mjs",
     "HACKATHON.yml",

@@ -47,6 +47,13 @@ const links = [
         to: "/developers/season",
     },
     {
+        label: "Documentation",
+        description: "Internal operations and technical reference.",
+        icon: "i-lucide-book-open",
+        to: "/docs/",
+        external: true,
+    },
+    {
         label: "Users",
         description: "Search accounts, promote administrators, and remove users.",
         icon: "i-lucide-user",
@@ -137,7 +144,7 @@ function formatTimestamp(ts: unknown): string {
                     <h2 class="text-xl font-semibold">Manage</h2>
                     <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         <li v-for="link in links" :key="link.to">
-                            <ULink :to="link.to" class="block h-full">
+                            <ULink :to="link.to" :external="link.external" class="block h-full">
                                 <UCard class="h-full">
                                     <div class="flex items-start gap-3">
                                         <UIcon :name="link.icon" class="size-6 shrink-0" />

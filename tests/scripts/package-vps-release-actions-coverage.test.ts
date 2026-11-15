@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
     releaseExists: false,
     builtServerExists: true,
     journalExists: true,
+    docsBuildExists: true,
     optionalDirectoriesExist: true,
     sourceNodeModulesExist: true,
     missingReleasePath: undefined as string | undefined,
@@ -37,6 +38,8 @@ vi.mock("node:fs", () => ({
         if (normalized.endsWith(`/${outputDirectory}`)) return state.releaseExists;
         if (normalized.endsWith("/.output/server/index.mjs")) return state.builtServerExists;
         if (normalized.endsWith("/drizzle/postgres/meta/_journal.json")) return state.journalExists;
+        if (normalized.endsWith("/documentation/.vitepress/dist/index.html"))
+            return state.docsBuildExists;
         if (normalized.endsWith("/patches") || normalized.endsWith("/vendor"))
             return state.optionalDirectoriesExist;
         if (normalized.endsWith("node_modules")) return state.sourceNodeModulesExist;
@@ -76,6 +79,7 @@ describe("VPS release package builder", () => {
         state.releaseExists = false;
         state.builtServerExists = true;
         state.journalExists = true;
+        state.docsBuildExists = true;
         state.optionalDirectoriesExist = true;
         state.sourceNodeModulesExist = true;
         state.missingReleasePath = undefined;
@@ -113,20 +117,29 @@ describe("VPS release package builder", () => {
         expect(state.mkdir).not.toHaveBeenCalled();
     });
 
-    it("requires a production server build and migration journal", async () => {
+    it("requires production, migration, and protected documentation builds", async () => {
         state.builtServerExists = false;
         await expect(run()).rejects.toThrow("Build the Nuxt application");
 
         state.builtServerExists = true;
         state.journalExists = false;
         await expect(run()).rejects.toThrow("migration journal is missing");
+
+        state.journalExists = true;
+        state.docsBuildExists = false;
+        await expect(run()).rejects.toThrow("Build the protected VitePress docs");
     });
 
     it("copies the production release, rewrites Nitro imports, and emits runtime commands", async () => {
         state.optionalDirectoriesExist = false;
         await run();
 
-        expect(state.cp).toHaveBeenCalledTimes(8);
+        expect(state.cp).toHaveBeenCalledTimes(9);
+        expect(state.cp).toHaveBeenCalledWith(
+            resolve(projectRoot, "documentation/.vitepress/dist"),
+            resolve(projectRoot, "release-package/docs"),
+            { recursive: true },
+        );
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "HACKATHON.yml"),
             resolve(projectRoot, "release-package/HACKATHON.yml"),
