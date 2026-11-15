@@ -191,9 +191,7 @@ docs
 !server/routes/docs/**
 .trae
 .agents
-/artifacts/board-demo/captures/
-/artifacts/board-demo/frames/
-/artifacts/board-demo/.render/
+/artifacts/
 basishacks.sqlite
 *.sqlite-shm
 *.sqlite-wal
