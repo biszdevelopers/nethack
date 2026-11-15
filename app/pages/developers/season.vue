@@ -471,22 +471,22 @@ async function deleteSeason() {
                                 <div class="flex justify-between gap-3">
                                     <dt class="text-ui-text-muted">Event</dt>
                                     <dd>
-                                        {{ formatTimestamp(hackathonForm.start_timestamp) }} —
-                                        {{ formatTimestamp(hackathonForm.end_timestamp) }}
+                                        {{ formatTimestamp(hackathon?.start_timestamp) }} —
+                                        {{ formatTimestamp(hackathon?.end_timestamp) }}
                                     </dd>
                                 </div>
                                 <div class="flex justify-between gap-3">
                                     <dt class="text-ui-text-muted">Voting</dt>
                                     <dd>
-                                        {{ formatTimestamp(hackathonForm.voting_start_timestamp) }}
+                                        {{ formatTimestamp(hackathon?.voting_start_timestamp) }}
                                         —
-                                        {{ formatTimestamp(hackathonForm.voting_end_timestamp) }}
+                                        {{ formatTimestamp(hackathon?.voting_end_timestamp) }}
                                     </dd>
                                 </div>
                                 <div class="flex justify-between gap-3">
                                     <dt class="text-ui-text-muted">Results open</dt>
                                     <dd>
-                                        {{ formatTimestamp(hackathonForm.results_open_timestamp) }}
+                                        {{ formatTimestamp(hackathon?.results_open_timestamp) }}
                                     </dd>
                                 </div>
                             </dl>
