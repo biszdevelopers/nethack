@@ -7,7 +7,7 @@ export default defineEventHandler(
     applyRateLimit(async (event) => {
         await requireUser(event, NethackPermissions.Teams.list);
 
-        const results = event.context.drizzle
+        const results = await event.context.drizzle
             .select({
                 id: teams.id,
                 name: teams.name,
@@ -25,10 +25,9 @@ export default defineEventHandler(
             })
             .from(teams)
             .leftJoin(seasons, eq(teams.season_id, seasons.id))
-            .orderBy(teams.id)
-            .all();
+            .orderBy(teams.id);
 
-        const memberRows = event.context.drizzle
+        const memberRows = await event.context.drizzle
             .select({
                 id: users.id,
                 name: users.name,
@@ -38,8 +37,7 @@ export default defineEventHandler(
             })
             .from(users)
             .where(isNotNull(users.team_id))
-            .orderBy(users.id)
-            .all();
+            .orderBy(users.id);
 
         const membersByTeam = new Map<
             number,

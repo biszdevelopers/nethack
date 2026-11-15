@@ -34,8 +34,8 @@ describe("test framework smoke test", () => {
     it("null and undefined handling works", () => {
         expect(null).toBeNull();
         expect(undefined).toBeUndefined();
-        expect(null ?? "default").toBe("default");
-        expect(undefined ?? "default").toBe("default");
+        expect((null as string | null) ?? "default").toBe("default");
+        expect((undefined as string | undefined) ?? "default").toBe("default");
     });
 
     it("type coercion works as expected", () => {

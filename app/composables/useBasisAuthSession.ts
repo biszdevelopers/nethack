@@ -1,3 +1,5 @@
+import { apiFetch } from "~~/app/composables/useApiFetch";
+
 export interface BasisAuthBrowserSession {
     user: { id: number };
     permissions: string[];
@@ -37,7 +39,7 @@ export function useBasisAuthSession() {
 
     const clear = async () => {
         try {
-            await $fetch("/api/auth/logout", { method: "POST" });
+            await apiFetch("/api/auth/logout", { method: "POST" });
         } finally {
             reset();
         }

@@ -17,13 +17,10 @@
 
                 <template v-else-if="hoveredUser">
                     <div
-                        v-if="
-                            hoveredUser.profile_theme?.mode === 'url' &&
-                            hoveredUser.profile_theme.value
-                        "
+                        v-if="backgroundUrl"
                         class="h-24 w-full bg-cover bg-center rounded-t"
                         :style="{
-                            backgroundImage: `url(${hoveredUser.profile_theme.value.startsWith('http') ? hoveredUser.profile_theme.value : `/api/users/${hoveredUser.id}/profile_picture`})`,
+                            backgroundImage: `url(${backgroundUrl})`,
                         }"
                     />
                     <div class="flex items-center gap-3 p-3">
@@ -76,7 +73,7 @@
                             <UButton
                                 color="neutral"
                                 variant="ghost"
-                                :to="`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(hoveredUser.email)}`"
+                                :to="`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(hoveredUser.email ?? '')}`"
                                 target="_blank"
                                 class="w-full justify-start gap-2"
                                 aria-label="Chat on Teams"
@@ -93,6 +90,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import { WEBSITE_NAME } from "~/utils/consts";
 
 const props = defineProps<{
@@ -102,6 +100,7 @@ const props = defineProps<{
 
 const hasHovered = ref(false);
 const hoveredUser = ref<APIUser | null>(null);
+const backgroundUrl = computed(() => getProfileThemeUrl(hoveredUser.value?.profile_theme));
 const pending = ref(false);
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,11 +112,12 @@ const handleHover = async (isOpen: boolean) => {
     pending.value = true;
     try {
         if (typeof props.user === "number") {
-            hoveredUser.value = await $fetch<APIUser>(`/api/users/${props.user}`);
+            hoveredUser.value = await apiFetch<APIUser>(`/api/users/${props.user}`);
         } else {
             hoveredUser.value = props.user;
         }
     } catch (e) {
+        hasHovered.value = false;
         console.error("Failed to fetch user:", e);
     } finally {
         pending.value = false;

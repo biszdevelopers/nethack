@@ -1,15 +1,11 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
     team: GetTeamResponse;
 }>();
 
 const emit = defineEmits<{
     click: [];
 }>();
-
-const { data: members } = await useFetch<GetTeamMembersResponse>(
-    () => `/api/teams/${props.team.id}/users`,
-);
 </script>
 
 <template>
@@ -35,8 +31,12 @@ const { data: members } = await useFetch<GetTeamMembersResponse>(
                     <span v-else class="text-lg">Unranked</span>
                 </div>
                 <div class="flex flex-row gap-2">
-                    <div v-for="award in team.awards" class="flex flex-row gap-2">
-                        <AwardButton :award="award" size="sm"></AwardButton>
+                    <div
+                        v-for="award in team.awards"
+                        :key="award.namespace"
+                        class="flex flex-row gap-2"
+                    >
+                        <AwardButton :award="award" size="sm" />
                     </div>
                 </div>
             </div>
@@ -53,14 +53,7 @@ const { data: members } = await useFetch<GetTeamMembersResponse>(
         <p class="text-sm truncate mt-1">
             {{ team.project?.description || "(No Project Description)" }}
         </p>
-        <UserAvatarGroup
-            v-if="members && members.length > 0"
-            :users="members"
-            :max="5"
-            size="sm"
-            class="mt-3"
-        />
-        <p v-else class="text-muted text-sm mt-3">(No members)</p>
+        <p class="mt-3 text-sm text-muted">{{ team.name }}</p>
     </div>
 </template>
 

@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
+useHead({ title: `Teams | ${WEBSITE_NAME}` });
+
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 const UButton = resolveComponent("UButton");
@@ -14,6 +18,8 @@ const UserAvatarGroup = resolveComponent("UserAvatarGroup");
 const toast = useToast();
 const table = useTemplateRef<any>("table");
 const modalOpen = ref(false);
+const feedbackModalOpen = ref(false);
+const selectedFeedbackTeam = ref<AdminTeam | null>(null);
 
 const columnFilters = ref([
     {
@@ -33,7 +39,7 @@ type AdminTeamMember = {
 
 type AdminTeam = Team & { season_name: string | null; members: AdminTeamMember[] };
 
-const { data, status, refresh } = await useFetch<AdminTeam[]>("/api/admin/teams", {
+const { data, status, error, refresh } = await useApiFetch<AdminTeam[]>("/api/admin/teams", {
     server: false,
     lazy: true,
     default: () => [],
@@ -50,7 +56,7 @@ async function onDelete() {
     if (selectedIds.value.length === 0) return;
 
     try {
-        await $fetch("/api/admin/teams", {
+        await apiFetch("/api/admin/teams", {
             method: "DELETE",
             body: { ids: selectedIds.value },
         });
@@ -140,8 +146,24 @@ const columns: TableColumn<AdminTeam>[] = [
     },
     {
         accessorKey: "score",
-        header: "Score (/800)",
+        header: "Score (/100)",
         cell: ({ row }) => row.original.score ?? "-",
+    },
+    {
+        id: "score_feedback",
+        header: "Judge feedback",
+        cell: ({ row }) =>
+            h(UButton, {
+                label: "View",
+                icon: "i-lucide-message-square-text",
+                color: "neutral",
+                variant: "subtle",
+                class: "min-h-11",
+                onClick: () => {
+                    selectedFeedbackTeam.value = row.original;
+                    feedbackModalOpen.value = true;
+                },
+            }),
     },
     {
         accessorKey: "rank",
@@ -210,6 +232,11 @@ const currentPage = computed(
     () => (table.value?.tableApi?.getState()?.pagination?.pageIndex ?? 0) + 1,
 );
 
+const pageModel = computed({
+    get: () => currentPage.value,
+    set: (page: number) => table.value?.tableApi?.setPageIndex(page - 1),
+});
+
 const currentPageSize = computed(
     () => table.value?.tableApi?.getState()?.pagination?.pageSize ?? pagination.value.pageSize,
 );
@@ -268,6 +295,15 @@ const paginationOptions = {
                 </div>
             </div>
 
+            <UAlert
+                v-if="error"
+                color="error"
+                variant="soft"
+                class="mb-4"
+                title="Could not load teams"
+                :description="getErrorMessage(error)"
+            />
+
             <UTable
                 ref="table"
                 v-model:column-filters="columnFilters"
@@ -298,10 +334,9 @@ const paginationOptions = {
 
                 <div class="flex items-center gap-1.5">
                     <UPagination
-                        :default-page="currentPage"
+                        v-model:page="pageModel"
                         :items-per-page="currentPageSize"
                         :total="filteredRowCount"
-                        @update:page="(p: number) => table?.tableApi?.setPageIndex(p - 1)"
                     />
                 </div>
             </div>
@@ -318,7 +353,7 @@ const paginationOptions = {
                     </div>
                 </template>
 
-                <p class="text-muted">
+                <p class="text-default">
                     Are you sure you want to delete
                     <strong>{{ selectedRows.length }}</strong>
                     selected team(s)? This action cannot be undone.
@@ -332,6 +367,31 @@ const paginationOptions = {
                         <UButton color="error" @click="onDelete">Delete</UButton>
                     </div>
                 </template>
+            </UCard>
+        </template>
+    </UModal>
+
+    <UModal v-model:open="feedbackModalOpen">
+        <template #content>
+            <UCard
+                tabindex="0"
+                role="region"
+                aria-label="Judge feedback details"
+                class="max-h-[85dvh] w-full max-w-3xl overflow-y-auto"
+            >
+                <template #header>
+                    <h3 class="text-base font-semibold">
+                        Judge feedback
+                        <span v-if="selectedFeedbackTeam">
+                            · {{ selectedFeedbackTeam.project_name || selectedFeedbackTeam.name }}
+                        </span>
+                    </h3>
+                </template>
+                <ScoreFeedbackPanel
+                    v-if="selectedFeedbackTeam"
+                    :team-id="selectedFeedbackTeam.id"
+                    admin
+                />
             </UCard>
         </template>
     </UModal>

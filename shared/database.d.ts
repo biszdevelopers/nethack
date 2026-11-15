@@ -6,17 +6,19 @@
 
 import type { InferSelectModel } from "drizzle-orm";
 import type * as schema from "../server/database/schema";
+import type { ScoreCurvePreset } from "./score-curve";
 
 // Drizzle's InferSelectModel gives `string` for text columns, but we need
 // literal union types that match the SQL CHECK constraints to maintain
 // backward compatibility.
 type HackathonStatus = "not_started" | "in_progress" | "voting" | "finished" | "paused";
-type TeamPathway = "junior" | "senior";
+type TeamPathway = string;
 
 // Base types inferred from the Drizzle schema.
 type HackathonBase = InferSelectModel<typeof schema.hackathon>;
 type TeamBase = InferSelectModel<typeof schema.teams>;
 type TeamScoresBase = InferSelectModel<typeof schema.teamScores>;
+type TeamInviteBase = InferSelectModel<typeof schema.teamInvites>;
 type UserBase = InferSelectModel<typeof schema.users>;
 type BallotBase = InferSelectModel<typeof schema.ballots>;
 type BallotScoreBase = InferSelectModel<typeof schema.ballotScores>;
@@ -37,8 +39,11 @@ export type BallotScore = BallotScoreBase;
 export type OAuth2Application = OAuth2ApplicationBase;
 export type Award = AwardBase;
 export type TeamAward = TeamAwardBase;
+export type TeamInvite = TeamInviteBase;
 export type PeerVotingScore = PeerVotingScoreBase;
-export type Season = SeasonBase;
+export type Season = Omit<SeasonBase, "score_curve_preset"> & {
+    score_curve_preset: ScoreCurvePreset;
+};
 
 export type { HackathonStatus, TeamPathway };
 
@@ -47,7 +52,7 @@ export type { HackathonStatus, TeamPathway };
 // as global interfaces in this file).
 declare global {
     type Hackathon = Omit<HackathonBase, "status"> & { status: HackathonStatus };
-    type Team = Omit<TeamBase, "pathway"> & { pathway: TeamPathway };
+    type Team = Omit<TeamBase, "pathway"> & { pathway: TeamPathway | null };
     type TeamScores = TeamScoresBase;
     type User = UserBase;
     type BasisAuthSession = BasisAuthSessionBase;
@@ -56,8 +61,12 @@ declare global {
     type OAuth2Application = OAuth2ApplicationBase;
     type Award = AwardBase;
     type TeamAward = TeamAwardBase;
+    type TeamInvite = TeamInviteBase;
     type PeerVotingScore = PeerVotingScoreBase;
-    type Season = SeasonBase;
+    type Season = Omit<SeasonBase, "score_curve_preset"> & {
+        score_curve_preset: ScoreCurvePreset;
+    };
     type HackathonStatus = "not_started" | "in_progress" | "voting" | "finished" | "paused";
-    type TeamPathway = "junior" | "senior";
+    type TeamPathway = string;
+    type ScoreCurvePreset = import("./score-curve").ScoreCurvePreset;
 }

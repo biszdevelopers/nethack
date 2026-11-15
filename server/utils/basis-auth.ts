@@ -10,6 +10,12 @@ import {
     type BasisAuthUserSession,
     type StoredBasisAuthTokens,
 } from "~~/server/utils/basis-auth-session";
+import {
+    isLoopbackHost,
+    isLoopbackHttpOrigin,
+    isValidE2ELoopbackOrigin,
+} from "~~/server/utils/environment-validation";
+import { getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
@@ -18,7 +24,6 @@ export const BASIS_AUTH_REQUESTED_SCOPES = [
     "profile",
     "email",
     "offline_access",
-    "nethack.access",
 ] as const;
 
 export interface BasisAuthConfig {
@@ -50,6 +55,46 @@ export function getBasisAuthConfig(): BasisAuthConfig {
     } catch {
         throw createError({ statusCode: 500, message: "BASIS_AUTH_ISSUER must be a valid URL" });
     }
+    if (!["http:", "https:"].includes(issuer.protocol)) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER must use HTTP or HTTPS",
+        });
+    }
+    if (issuer.username || issuer.password) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER cannot contain credentials",
+        });
+    }
+    const isolatedE2EIssuer =
+        process.env.BASISHACKS_E2E === "1" &&
+        issuer.protocol === "http:" &&
+        issuer.hostname === "127.0.0.1" &&
+        Boolean(issuer.port) &&
+        issuer.pathname === "/" &&
+        !issuer.search &&
+        !issuer.hash &&
+        isValidE2ELoopbackOrigin(
+            process.env.CURRENT_URL_ORIGIN,
+            process.env.NITRO_HOST || process.env.HOST,
+            process.env.NITRO_PORT || process.env.PORT,
+            process.env.NITRO_UNIX_SOCKET,
+        );
+    if (
+        process.env.NODE_ENV === "production" &&
+        issuer.protocol !== "https:" &&
+        !(
+            isLoopbackHttpOrigin(config.issuer) &&
+            isLoopbackHost(process.env.NITRO_HOST || process.env.HOST)
+        ) &&
+        !isolatedE2EIssuer
+    ) {
+        throw createError({
+            statusCode: 500,
+            message: "BASIS_AUTH_ISSUER must use HTTPS in production",
+        });
+    }
     if (issuer.search || issuer.hash) {
         throw createError({
             statusCode: 500,
@@ -63,16 +108,13 @@ export function getBasisAuthCallbackUrl(): string {
     return new URL(BASIS_AUTH_CALLBACK_PATH, getPublicOrigin()).href;
 }
 
-export function sanitizePostLoginRedirect(value?: string): string | undefined {
-    if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
-    try {
-        const parsed = new URL(value, "https://basishacks.invalid");
-        return parsed.origin === "https://basishacks.invalid"
-            ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-            : undefined;
-    } catch {
+export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
+    if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//"))
         return undefined;
-    }
+    const parsed = new URL(value, "https://basishacks.invalid");
+    return parsed.origin === "https://basishacks.invalid"
+        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+        : undefined;
 }
 
 const discoveredConfigurations = new Map<string, Promise<oidc.Configuration>>();
@@ -169,7 +211,7 @@ export async function completeBasisAuthFlow(
     }
 
     const userInfo = await oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub);
-    if (typeof userInfo.email !== "string" || !userInfo.email) {
+    if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
     }
 
@@ -178,8 +220,10 @@ export async function completeBasisAuthFlow(
             issuer: config.issuer,
             subject: claims.sub,
             email: userInfo.email,
-            emailVerified: userInfo.email_verified === true,
             name: typeof userInfo.name === "string" ? userInfo.name : undefined,
+            picture:
+                getBasisAuthPictureUrl(claims.picture, config.issuer) ??
+                getBasisAuthPictureUrl(userInfo.picture, config.issuer),
         },
         tokens: normalizeTokenSet(tokens),
     };

@@ -1,5 +1,6 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { UpdateTeamRequest, TeamIdParams } from "~~/shared/schemas";
+import { getRubricVersionForSeason } from "~~/server/utils/database/rubrics";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 export default defineEventHandler(
@@ -32,6 +33,16 @@ export default defineEventHandler(
             });
         }
 
+        if (payload.pathway !== undefined) {
+            const rubric = await getRubricVersionForSeason(event, team.season_id);
+            if (!rubric || !Object.hasOwn(rubric.definition.tracks, payload.pathway)) {
+                throw createError({
+                    statusCode: 400,
+                    message: "Choose a track that is available for this season.",
+                });
+            }
+        }
+
         if (payload.name !== undefined) team.name = payload.name;
         if (payload.pathway !== undefined) team.pathway = payload.pathway;
         if (payload.project?.name !== undefined) team.project_name = payload.project.name;
@@ -43,7 +54,7 @@ export default defineEventHandler(
             team.project_repo_url = payload.project.repo_url;
         if (payload.project?.sourcing !== undefined) team.sourcing = payload.project.sourcing;
 
-        await updateTeam(event, team);
+        await updateTeam(event, team, { requireUnsubmitted: true });
 
         return { message: "Updated your team & project" };
     }, DEFAULT_RATE_LIMIT_CONFIG),

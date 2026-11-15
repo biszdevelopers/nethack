@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
 import rubrics from "~~/shared/rubric";
+import {
+    calculateWeightedRubricScore,
+    DEFAULT_RUBRIC_DEFINITION,
+    getRubricTrack,
+    type RubricTrack,
+} from "~~/shared/rubric";
 
 describe("rubrics", () => {
     it("has both junior and senior rubrics", () => {
@@ -23,7 +29,7 @@ describe("rubrics", () => {
         });
 
         it("each criterion has abbr, name, description, and weight", () => {
-            for (const [key, criterion] of Object.entries(junior)) {
+            for (const [, criterion] of Object.entries(junior)) {
                 expect(criterion).toHaveProperty("abbr");
                 expect(criterion).toHaveProperty("name");
                 expect(criterion).toHaveProperty("description");
@@ -87,7 +93,7 @@ describe("rubrics", () => {
         });
 
         it("each criterion has abbr, name, description, and weight", () => {
-            for (const [key, criterion] of Object.entries(senior)) {
+            for (const [, criterion] of Object.entries(senior)) {
                 expect(criterion).toHaveProperty("abbr");
                 expect(criterion).toHaveProperty("name");
                 expect(criterion).toHaveProperty("description");
@@ -133,5 +139,95 @@ describe("rubrics", () => {
             expect(senior.originality.abbr).toBe("ORG");
             expect(senior.originality.weight).toBe(10);
         });
+    });
+});
+
+describe("getRubricTrack", () => {
+    it("returns a configured track", () => {
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "junior")).toBe(
+            DEFAULT_RUBRIC_DEFINITION.tracks.junior,
+        );
+    });
+
+    it("returns undefined for null, unknown, and inherited property names", () => {
+        expect(getRubricTrack(undefined, "junior")).toBeUndefined();
+        expect(getRubricTrack(null, "junior")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, null)).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "missing")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "constructor")).toBeUndefined();
+        expect(getRubricTrack(DEFAULT_RUBRIC_DEFINITION, "__proto__")).toBeUndefined();
+    });
+});
+
+describe("weighted rubric scoring", () => {
+    it("keeps the default Junior scale normalized to 0 through 100", () => {
+        const track = DEFAULT_RUBRIC_DEFINITION.tracks.junior!;
+        const maximumScores = Object.fromEntries(
+            track.criteria.map((criterion) => [criterion.id, criterion.maxScore]),
+        );
+
+        expect(calculateWeightedRubricScore(track, maximumScores)).toBe(100);
+        expect(
+            calculateWeightedRubricScore(
+                track,
+                Object.fromEntries(track.criteria.map((criterion) => [criterion.id, 0])),
+            ),
+        ).toBe(0);
+    });
+
+    it("normalizes each criterion's integer scale before applying weights", () => {
+        const track: RubricTrack = {
+            name: "Prototype",
+            criteria: [
+                {
+                    id: "clarity",
+                    name: "Clarity",
+                    description: "How clearly the project solves a problem.",
+                    weight: 60,
+                    minScore: 1,
+                    maxScore: 10,
+                },
+                {
+                    id: "craft",
+                    name: "Craft",
+                    description: "How carefully the team built the project.",
+                    weight: 40,
+                    minScore: 1,
+                    maxScore: 5,
+                },
+            ],
+        };
+
+        expect(calculateWeightedRubricScore(track, { clarity: 6, craft: 1 })).toBeCloseTo(100 / 3);
+    });
+
+    it("preserves judge precision until the final team average", () => {
+        const track: RubricTrack = {
+            name: "Precision check",
+            criteria: [
+                {
+                    id: "score",
+                    name: "Score",
+                    description: "A wide integer range used to expose rounding behavior.",
+                    weight: 100,
+                    minScore: 0,
+                    maxScore: 10_000,
+                },
+            ],
+        };
+        const judgeScores = [51, 51, 10].map((score) =>
+            calculateWeightedRubricScore(track, { score }),
+        );
+
+        expect(
+            Math.round(judgeScores.reduce((sum, score) => sum + score, 0) / judgeScores.length),
+        ).toBe(0);
+        expect(
+            Math.round(
+                judgeScores.map(Math.round).reduce((sum, score) => sum + score, 0) /
+                    judgeScores.length,
+            ),
+        ).toBe(1);
     });
 });

@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
+import { onMounted } from "vue";
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 const toast = useToast();
@@ -22,14 +25,22 @@ const sendingSessionId = ref<number | null>(null);
 const deletingSessionId = ref<number | null>(null);
 
 const roleValue = ref("user");
-const roleValues = ref(["user", "tool"]);
+const roleValues = ref(["user", "tool_result"]);
+
+onMounted(async () => {
+    try {
+        sessions.value = await apiFetch("/api/debug/deepseek/sessions");
+    } catch {
+        // Debug routes may be disabled in this environment.
+    }
+});
 
 const createSession = async () => {
     if (!newSessionName.value) return;
 
     creatingSession.value = true;
     try {
-        const session = await $fetch<{
+        const session = await apiFetch<{
             id: number;
             sessionName: string;
             createdAt: number;
@@ -67,7 +78,7 @@ const sendMessage = async (sessionId: number) => {
 
     sendingSessionId.value = sessionId;
     try {
-        const response = await $fetch<{
+        const response = await apiFetch<{
             sessionId: number;
             userMessage: string;
             assistantMessage: string;
@@ -77,7 +88,7 @@ const sendMessage = async (sessionId: number) => {
             body: {
                 message,
                 role: roleValue.value,
-                toolId: toolCallId.value,
+                toolCallId: toolCallId.value,
             },
         });
 
@@ -101,12 +112,12 @@ const sendMessage = async (sessionId: number) => {
 const deleteSession = async (sessionId: number) => {
     deletingSessionId.value = sessionId;
     try {
-        await $fetch(`/api/debug/deepseek/sessions/${sessionId}`, {
+        await apiFetch(`/api/debug/deepseek/sessions/${sessionId}`, {
             method: "DELETE",
         });
 
         sessions.value = sessions.value.filter((s) => s.id !== sessionId);
-        delete sessionMessages.value[sessionId];
+        Reflect.deleteProperty(sessionMessages.value, sessionId);
 
         toast.add({
             title: "Session deleted",

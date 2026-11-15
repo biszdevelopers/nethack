@@ -63,13 +63,22 @@ const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
         <div class="flex items-center gap-4">
             <UButton
                 icon="i-material-symbols-stat-minus-1"
+                :aria-label="`Remove a star from ${team.project.name}`"
+                class="min-h-11 min-w-11"
                 :disabled="!canDecrement"
                 @click="emit('decrement')"
             />
             <UIcon name="i-material-symbols-star-rate" size="1.2em" class="text-yellow-300" />
-            <span>{{ score }} / 5</span>
+            <span
+                aria-live="polite"
+                :aria-label="`${score} of 5 stars assigned to ${team.project.name}`"
+            >
+                {{ score }} / 5
+            </span>
             <UButton
                 icon="i-material-symbols-stat-1"
+                :aria-label="`Add a star to ${team.project.name}`"
+                class="min-h-11 min-w-11"
                 :disabled="!canIncrement"
                 @click="emit('increment')"
             />

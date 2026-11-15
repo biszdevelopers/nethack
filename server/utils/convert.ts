@@ -15,12 +15,15 @@ function parseProfileTheme(input?: string): ProfileTheme {
     return { mode, value: rawValue };
 }
 
-export function convertUserToPublic(user: User): APIUser {
+export function convertUserToPublic(
+    user: User,
+    options: { includeEmail?: boolean; includeTeam?: boolean } = {},
+): APIUser {
     return {
         id: user.id,
-        email: user.email,
+        ...(options.includeEmail === false ? {} : { email: user.email }),
         name: user.name,
-        team_id: user.team_id,
+        ...(options.includeTeam === false ? {} : { team_id: user.team_id }),
         profile_theme: parseProfileTheme(user.profile_theme ?? undefined),
         profile_picture: user.profile_picture,
     };

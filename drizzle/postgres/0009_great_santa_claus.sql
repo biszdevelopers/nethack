@@ -1,0 +1,1 @@
+ALTER TABLE "hackathon" ADD COLUMN "live_overrides" jsonb DEFAULT '{}'::jsonb NOT NULL;

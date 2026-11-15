@@ -1,0 +1,32 @@
+{
+    "$schema": "./node_modules/oxfmt/configuration_schema.json",
+    "semi": true,
+    "singleQuote": false,
+    "tabWidth": 4,
+    "useTabs": false,
+    "trailingComma": "all",
+    "bracketSpacing": true,
+    "arrowParens": "always",
+    "printWidth": 100,
+    "endOfLine": "lf",
+    "proseWrap": "never",
+    "htmlWhitespaceSensitivity": "ignore",
+    "quoteProps": "as-needed",
+    "jsxSingleQuote": false,
+    "embeddedLanguageFormatting": "auto",
+    "singleAttributePerLine": false,
+    "sortPackageJson": false,
+    "ignorePatterns": [
+        "node_modules/",
+        "dist/",
+        "*.min.js",
+        "*.min.css",
+        ".DS_Store",
+        "Thumbs.db",
+        ".vscode/",
+        ".idea/",
+        "*.log",
+        "*.tmp",
+        "public"
+    ]
+}

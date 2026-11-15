@@ -1,0 +1,61 @@
+diff --git a/dist/cjs/index.js b/dist/cjs/index.js
+index 4047435046a30bede18b1b88a86310bf6180f24f..5299988257dbb090ee4a2d13da1eb1d7324bc829 100644
+--- a/dist/cjs/index.js
++++ b/dist/cjs/index.js
+@@ -4,7 +4,6 @@ Object.defineProperty(exports, '__esModule', { value: true });
+
+ var path = require('path');
+ var module$1 = require('module');
+-var deepMerge = require('deepmerge');
+ var isModule = require('is-module');
+ var fs = require('fs');
+ var util = require('util');
+@@ -1080,7 +1079,11 @@ const defaults = {
+ };
+ const nodeImportPrefix = /^node:/;
+
+-const DEFAULTS = deepFreeze(deepMerge({}, defaults));
++const DEFAULTS = deepFreeze(
++  Object.fromEntries(
++    Object.entries(defaults).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value])
++  )
++);
+
+ function nodeResolve(opts = {}) {
+   const { warnings } = handleDeprecatedOptions(opts);
+diff --git a/dist/es/index.js b/dist/es/index.js
+index 6c22eb316dfa46659051b84baca173ba8609081e..35c2ab3bc1ac0130efc68342fceeac10cbdff2bc 100644
+--- a/dist/es/index.js
++++ b/dist/es/index.js
+@@ -1,6 +1,5 @@
+ import path, { dirname, resolve, extname, normalize, sep } from 'path';
+ import { builtinModules } from 'module';
+-import deepMerge from 'deepmerge';
+ import isModule from 'is-module';
+ import fs, { realpathSync } from 'fs';
+ import { promisify } from 'util';
+@@ -1076,7 +1075,11 @@ const defaults = {
+ };
+ const nodeImportPrefix = /^node:/;
+
+-const DEFAULTS = deepFreeze(deepMerge({}, defaults));
++const DEFAULTS = deepFreeze(
++  Object.fromEntries(
++    Object.entries(defaults).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value])
++  )
++);
+
+ function nodeResolve(opts = {}) {
+   const { warnings } = handleDeprecatedOptions(opts);
+diff --git a/package.json b/package.json
+index 714bdd2c0ee3a3d393205bba59fdbed1b2db4712..8f23d106b41cfa49386942e67702b1a70f11c03a 100644
+--- a/package.json
++++ b/package.json
+@@ -48,7 +48,6 @@
+   "dependencies": {
+     "@rollup/pluginutils": "^5.0.1",
+     "@types/resolve": "1.20.2",
+-    "deepmerge": "^4.2.2",
+     "is-module": "^1.0.0",
+     "resolve": "^1.22.1"
+   },

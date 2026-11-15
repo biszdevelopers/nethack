@@ -32,8 +32,9 @@ The standard page layout used by most public pages.
 - `RoleHeader` — sticky navigation header with role-based menu items
 - Content wrapper — centered `div` with `max-w-7xl` (1280px). Fills full viewport width on screens under 1280px; centered above that.
 - `Footer` — site-wide footer with links and copyright
+- A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
 
-**Used by:** `/`, `/profile`, `/rules`, `/voting`, `/judging`, `/judging/continue`
+**Used by:** `/`, `/profile`, `/rules`, `/voting`, `/judging`
 
 ## default-background
 
@@ -63,7 +64,11 @@ Same header/footer structure as `default`, but **without** the inner padded cont
 └──────────────────────────────┘
 ```
 
-**Used by:** `/user/[id]` (set programmatically via `setPageLayout`)
+A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
+
+**Used by:** `/judging/continue`, `/judging/history/:seasonId`, `/user/[id]` (the profile sets it programmatically via `setPageLayout`)
+
+Pages can set `hideFooter: true` in their page metadata. The judging workspace uses this setting.
 
 ## fullwidth-nostick
 
@@ -123,6 +128,7 @@ Participant dashboard layout with a visible left sidebar containing the active p
 
 - On large screens, the sidebar is rendered as a fixed-width aside on the left and the main content fills the remaining width
 - On small screens, the sidebar stacks above the main content
+- A keyboard-visible skip link focuses the main landmark; mobile navigation links have 44px minimum touch height and visible keyboard focus.
 - A `UBanner` notification can appear on small screens with guidance about dashboard navigation
 
 **CSS:** Includes `metallic-gold`, `metallic-silver`, and `metallic-bronze` shimmer animations for season info display.
@@ -161,11 +167,13 @@ Mod portal layout using `UDashboardGroup` with a collapsible, resizable sidebar.
 
 **Navigation and access rules:**
 
-| Item                                        | Route           | Permission Required |
-| ------------------------------------------- | --------------- | ------------------- |
-| Home, Users, Teams, DeepSeek, Files, Season | `/developers/*` | Admin               |
+| Group  | Items               | Routes                                      | Permission Required |
+| ------ | ------------------- | ------------------------------------------- | ------------------- |
+| Event  | Overview, Hackathon | `/developers`, `/developers/season`         | Admin               |
+| People | Users, Teams        | `/developers/users`, `/developers/teams`    | Admin               |
+| Tools  | Files, DeepSeek     | `/developers/debug`, `/developers/deepseek` | Admin               |
 
-The retired application-management navigation is no longer present. All remaining developer routes require admin access.
+Groups render as labelled sections in the sidebar, so the portal stays scannable as it grows. The retired application-management navigation is no longer present. All remaining developer routes require admin access.
 
 **Used by:** `/developers`, `/developers/users`, `/developers/teams`, `/developers/deepseek`, `/developers/debug`, `/developers/season`
 

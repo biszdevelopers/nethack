@@ -13,8 +13,8 @@ import {
     seedTeam,
     type TestContext,
 } from "../../../helpers";
-import { users } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
+import { teamInvites, users } from "~~/server/database/schema";
 
 vi.mock("~~/server/utils/auth", () => ({
     requireUser: vi.fn((...args: any[]) => (globalThis as any).requireUser(...args)),
@@ -48,7 +48,9 @@ beforeAll(async () => {
     vi.stubGlobal("getActiveSeason", seasonsDb.getActiveSeason);
 
     const membersDb = await import("~~/server/utils/database/members");
-    vi.stubGlobal("addTeamMember", membersDb.addTeamMember);
+    vi.stubGlobal("getTeamMembers", membersDb.getTeamMembers);
+    vi.stubGlobal("getTeamInvites", membersDb.getTeamInvites);
+    vi.stubGlobal("createTeamInvite", membersDb.createTeamInvite);
 
     handler = (await import("~~/server/api/teams/[id]/users/index.post")).default;
 });
@@ -72,10 +74,10 @@ function createEvent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("POST /api/teams/:id/users", () => {
-    it("adds a user to the team by email", async () => {
+    it("creates a pending invitation instead of adding the user", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", name: "Owner", team_id: team.id });
-        const newMember = seedUser(ctx, {
+        const invitee = seedUser(ctx, {
             email: "newbie@basischina.com",
             name: "Newbie",
             team_id: null,
@@ -85,15 +87,33 @@ describe("POST /api/teams/:id/users", () => {
         mockParams.values["id"] = String(team.id);
         mockBody.value = { email: "newbie@basischina.com" };
 
-        const result = await handler(createEvent());
-
-        expect(result).toEqual({ message: "Added user to the team" });
-
-        const updated = ctx.drizzle.select().from(users).where(eq(users.id, newMember.id)).get();
-        expect(updated!.team_id).toBe(team.id);
+        await expect(handler(createEvent())).resolves.toEqual({ message: "Invitation sent" });
+        expect(ctx.drizzle.select().from(teamInvites).get()).toMatchObject({
+            team_id: team.id,
+            email: "newbie@basischina.com",
+        });
+        expect(
+            ctx.drizzle.select().from(users).where(eq(users.id, invitee.id)).get()!.team_id,
+        ).toBeNull();
     });
 
-    it("returns 404 when target user is not found", async () => {
+    it("returns 404 for a team from a previous season", async () => {
+        const pastSeason = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const staleTeam = seedTeam(ctx, { name: "Old team", season_id: pastSeason.id });
+        const owner = seedUser(ctx, {
+            email: "owner@basischina.com",
+            name: "Owner",
+            team_id: staleTeam.id,
+        });
+
+        mockSession.value = { user: { id: owner.id } };
+        mockParams.values["id"] = String(staleTeam.id);
+        mockBody.value = { email: "newbie@basischina.com" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("invites an email without an account", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
 
@@ -101,10 +121,7 @@ describe("POST /api/teams/:id/users", () => {
         mockParams.values["id"] = String(team.id);
         mockBody.value = { email: "nobody@basischina.com" };
 
-        await expect(handler(createEvent())).rejects.toMatchObject({
-            statusCode: 404,
-            message: "User not found",
-        });
+        await expect(handler(createEvent())).resolves.toEqual({ message: "Invitation sent" });
     });
 
     it("returns 403 when current user is not a team member", async () => {
@@ -136,7 +153,7 @@ describe("POST /api/teams/:id/users", () => {
 
         await expect(handler(createEvent())).rejects.toMatchObject({
             statusCode: 403,
-            message: "Cannot add members after hackathon has finished",
+            message: "Cannot invite members after the hackathon has finished",
         });
     });
 
@@ -154,7 +171,7 @@ describe("POST /api/teams/:id/users", () => {
 
         await expect(handler(createEvent())).rejects.toMatchObject({
             statusCode: 403,
-            message: "Cannot add members after hackathon has finished",
+            message: "Cannot invite members after the hackathon has finished",
         });
     });
 
@@ -168,7 +185,7 @@ describe("POST /api/teams/:id/users", () => {
 
         await expect(handler(createEvent())).rejects.toMatchObject({
             statusCode: 403,
-            message: "Cannot add members after project is submitted",
+            message: "Cannot invite members after the project is submitted",
         });
     });
 
@@ -191,7 +208,7 @@ describe("POST /api/teams/:id/users", () => {
         vi.stubGlobal("readValidatedBody", originalReadValidatedBody);
     });
 
-    it("returns 404 when addTeamMember fails (user already in a team)", async () => {
+    it("returns 409 when the target is already in a team", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         const otherTeam = seedTeam(ctx, { name: "Other Team" });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
@@ -206,33 +223,23 @@ describe("POST /api/teams/:id/users", () => {
         mockBody.value = { email: "taken@basischina.com" };
 
         await expect(handler(createEvent())).rejects.toMatchObject({
-            statusCode: 404,
-            message: "User not found or already in a team",
+            statusCode: 409,
+            message: "That user is already in a team",
         });
     });
 
-    it("allows adding members when hackathon status is not_started", async () => {
+    it("allows invitations when hackathon status is not_started", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "not_started" });
         const season = seedSeason(ctx);
 
         const team = seedTeam(ctx, { name: "PreHack Team", season_id: season.id });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
-        const newMember = seedUser(ctx, {
-            email: "early@basischina.com",
-            name: "Early",
-            team_id: null,
-        });
 
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
         mockBody.value = { email: "early@basischina.com" };
 
-        const result = await handler(createEvent());
-
-        expect(result).toEqual({ message: "Added user to the team" });
-
-        const updated = ctx.drizzle.select().from(users).where(eq(users.id, newMember.id)).get();
-        expect(updated!.team_id).toBe(team.id);
+        await expect(handler(createEvent())).resolves.toEqual({ message: "Invitation sent" });
     });
 });

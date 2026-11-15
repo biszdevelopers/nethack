@@ -13,35 +13,50 @@ if (status.value !== "idle" && status.value !== "pending") {
     }
 }
 
-const sidebarItems = computed<NavigationMenuItem[][]>(() => {
-    return [
-        [
-            { label: "Home", icon: "i-lucide-house", to: "/developers" },
-            { label: "Users", icon: "i-lucide-user", to: "/developers/users" },
-            { label: "Teams", icon: "i-lucide-users", to: "/developers/teams" },
-            { label: "DeepSeek", icon: "i-lucide-message-square", to: "/developers/deepseek" },
-            { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
-            {
-                label: "Season",
-                icon: "i-lucide-clock",
-                to: "/developers/season",
-            },
-        ],
-    ];
-});
+const sidebarGroups = computed<Array<{ id: string; label: string; items: NavigationMenuItem[] }>>(
+    () => [
+        {
+            id: "event",
+            label: "Event",
+            items: [
+                { label: "Overview", icon: "i-lucide-house", to: "/developers" },
+                { label: "Hackathon", icon: "i-lucide-flag", to: "/developers/season" },
+            ],
+        },
+        {
+            id: "people",
+            label: "People",
+            items: [
+                { label: "Users", icon: "i-lucide-user", to: "/developers/users" },
+                { label: "Teams", icon: "i-lucide-users", to: "/developers/teams" },
+            ],
+        },
+        {
+            id: "tools",
+            label: "Tools",
+            items: [
+                { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
+                {
+                    label: "DeepSeek",
+                    icon: "i-lucide-message-square",
+                    to: "/developers/deepseek",
+                },
+            ],
+        },
+    ],
+);
 
 const searchGroups = computed(() => [
     {
         id: "pages",
         label: "Pages",
-        items: sidebarItems.value.flat().flatMap((item: any) => [
-            { label: item.label, icon: item.icon, to: item.to },
-            ...(item.children?.map((child: any) => ({
-                label: `${item.label} / ${child.label}`,
-                icon: child.icon,
-                to: child.to,
-            })) ?? []),
-        ]),
+        items: sidebarGroups.value.flatMap((group) =>
+            group.items.map((item) => ({
+                label: `${group.label} / ${item.label}`,
+                icon: item.icon,
+                to: item.to,
+            })),
+        ),
     },
 ]);
 
@@ -53,15 +68,15 @@ const name = computed(() => user.value?.name || "Log In");
         <UDashboardSearch :groups="searchGroups" />
 
         <UDashboardSidebar collapsible resizable :ui="{ footer: 'border-t border-default' }">
-            <template #header="{ collapsed, collapse }">
+            <template #header="{ collapsed }">
                 <div class="flex items-center gap-1">
                     <ULink v-if="!collapsed" class="bold glow text-primary mx-auto" to="/">
                         {{ WEBSITE_NAME }}
                         <span class="text-secondary bold">devs</span>
                     </ULink>
                     <UButton
-                        variant="ghost"
                         v-else-if="collapsed"
+                        variant="ghost"
                         class="bold glow text-primary mx-auto"
                         @click="() => void navigateTo('/')"
                     >
@@ -73,19 +88,21 @@ const name = computed(() => user.value?.name || "Log In");
             <template #default="{ collapsed }">
                 <UDashboardSearchButton :collapsed="collapsed" class="mb-1" />
 
-                <UNavigationMenu
-                    :collapsed="collapsed"
-                    :items="sidebarItems[0]"
-                    orientation="vertical"
-                />
-
-                <UNavigationMenu
-                    v-if="sidebarItems[1]?.length"
-                    :collapsed="collapsed"
-                    :items="sidebarItems[1]"
-                    orientation="vertical"
-                    class="mt-auto"
-                />
+                <nav aria-label="Mod portal" class="space-y-3">
+                    <div v-for="group in sidebarGroups" :key="group.id" class="space-y-1">
+                        <p
+                            v-if="!collapsed"
+                            class="px-2 text-xs font-semibold uppercase tracking-wide text-ui-text-muted"
+                        >
+                            {{ group.label }}
+                        </p>
+                        <UNavigationMenu
+                            :collapsed="collapsed"
+                            :items="group.items"
+                            orientation="vertical"
+                        />
+                    </div>
+                </nav>
             </template>
 
             <template #footer="{ collapsed }">
@@ -99,12 +116,12 @@ const name = computed(() => user.value?.name || "Log In");
                     color="neutral"
                     variant="ghost"
                     class="w-full"
-                    @click="() => void navigateTo('/profile')"
                     :block="collapsed"
+                    @click="() => void navigateTo('/profile')"
                 />
             </template>
         </UDashboardSidebar>
 
-        <slot></slot>
+        <slot />
     </UDashboardGroup>
 </template>

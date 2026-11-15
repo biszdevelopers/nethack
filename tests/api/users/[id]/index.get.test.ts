@@ -71,7 +71,12 @@ describe("GET /api/users/:id", () => {
     });
 
     it("returns public view for another user", async () => {
-        const alice = seedUser(ctx, { email: "alice@basischina.com", name: "Alice" });
+        const team = seedTeam(ctx, { name: "Private Team" });
+        const alice = seedUser(ctx, {
+            email: "alice@basischina.com",
+            name: "Alice",
+            team_id: team.id,
+        });
         const bob = seedUser(ctx, { email: "bob@basischina.com", name: "Bob" });
 
         mockParams.values["id"] = String(alice.id);
@@ -81,9 +86,10 @@ describe("GET /api/users/:id", () => {
 
         expect(result).toMatchObject({
             id: alice.id,
-            email: "alice@basischina.com",
             name: "Alice",
         });
+        expect(result).not.toHaveProperty("email");
+        expect(result).not.toHaveProperty("team_id");
         expect(result).not.toHaveProperty("team");
         expect(result).not.toHaveProperty("past_teams");
     });
@@ -101,7 +107,7 @@ describe("GET /api/users/:id", () => {
 
         const result = await handler(createEvent());
 
-        expect(result).toMatchObject({ id: alice.id });
+        expect(result).toMatchObject({ id: alice.id, email: "alice@basischina.com" });
         expect(result.team).toMatchObject({ name: "Current Team" });
         expect(result.past_teams).toEqual([]);
     });

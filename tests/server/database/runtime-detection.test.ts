@@ -1,174 +1,104 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import Database from "better-sqlite3";
-import { sql } from "drizzle-orm";
-import * as schema from "~~/server/database/schema";
-import { createDrizzleDatabase, getDb } from "~~/server/database";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoisted mocks for the Bun branch. `vi.mock` is hoisted to the top of the
-// file, so the factories can only reference values created via `vi.hoisted`.
-// These stay dormant while `typeof Bun === 'undefined'` (the Node.js path
-// imports `better-sqlite3` and `drizzle-orm/better-sqlite3`, neither of which
-// is mocked here).
-const { bunDatabaseCtor, bunDrizzleResult } = vi.hoisted(() => ({
-    // Regular function (not arrow) so it can be invoked with `new Database(...)`.
-    bunDatabaseCtor: vi.fn(function () {
-        return {
-            exec: vi.fn(),
-            prepare: vi.fn().mockReturnValue({
-                run: vi.fn(),
-                all: vi.fn().mockReturnValue([]),
-                get: vi.fn().mockReturnValue(undefined),
+const { client, database, drizzleMock, postgresMock } = vi.hoisted(() => {
+    const client = {
+        begin: vi.fn(),
+        end: vi.fn().mockResolvedValue(undefined),
+    };
+    const database = { __postgresDrizzle: true };
+    return {
+        client,
+        database,
+        drizzleMock: vi.fn(() => database),
+        postgresMock: vi.fn(() => client),
+    };
+});
+
+vi.mock("postgres", () => ({ default: postgresMock }));
+vi.mock("drizzle-orm/postgres-js", () => ({ drizzle: drizzleMock }));
+
+import {
+    closeDatabase,
+    createDrizzleDatabase,
+    getDatabasePoolMax,
+    getDatabaseUrl,
+    getDb,
+} from "~~/server/database";
+
+const originalDatabaseUrl = process.env.DATABASE_URL;
+const originalPoolMax = process.env.DATABASE_POOL_MAX;
+
+describe("PostgreSQL database configuration", () => {
+    beforeEach(async () => {
+        await closeDatabase();
+        vi.clearAllMocks();
+        delete process.env.DATABASE_URL;
+        delete process.env.DATABASE_POOL_MAX;
+    });
+
+    afterEach(async () => {
+        await closeDatabase();
+        if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+        else process.env.DATABASE_URL = originalDatabaseUrl;
+        if (originalPoolMax === undefined) delete process.env.DATABASE_POOL_MAX;
+        else process.env.DATABASE_POOL_MAX = originalPoolMax;
+    });
+
+    it("requires a valid PostgreSQL URL and trims surrounding whitespace", () => {
+        expect(() => getDatabaseUrl()).toThrow(/DATABASE_URL is required/);
+
+        process.env.DATABASE_URL = "  sqlite:///tmp/basishacks.sqlite  ";
+        expect(() => getDatabaseUrl()).toThrow(/postgres/);
+
+        process.env.DATABASE_URL = "  postgresql://app:secret@localhost:5432/basishacks  ";
+        expect(getDatabaseUrl()).toBe("postgresql://app:secret@localhost:5432/basishacks");
+    });
+
+    it("defaults the pool to ten and accepts only bounded integer overrides", () => {
+        expect(getDatabasePoolMax()).toBe(10);
+
+        for (const value of ["2", "10", "64"]) {
+            process.env.DATABASE_POOL_MAX = value;
+            expect(getDatabasePoolMax()).toBe(Number(value));
+        }
+
+        for (const value of ["1", "65", "1.5", "many", ""]) {
+            process.env.DATABASE_POOL_MAX = value;
+            expect(() => getDatabasePoolMax()).toThrow(/DATABASE_POOL_MAX/);
+        }
+    });
+
+    it("creates one bounded postgres.js pool and shares its Drizzle instance", async () => {
+        process.env.DATABASE_URL = "postgres://app:secret@localhost:5432/basishacks";
+
+        const first = await createDrizzleDatabase();
+        const second = await getDb();
+
+        expect(first).toBe(database);
+        expect(second).toBe(first);
+        expect(postgresMock).toHaveBeenCalledTimes(1);
+        expect(postgresMock).toHaveBeenCalledWith(
+            process.env.DATABASE_URL,
+            expect.objectContaining({
+                max: 10,
+                idle_timeout: 20,
+                connect_timeout: 10,
+                prepare: false,
             }),
-        };
-    }),
-    bunDrizzleResult: { __bunDrizzle: true },
-}));
-
-vi.mock("bun:sqlite", () => ({ Database: bunDatabaseCtor }));
-vi.mock("drizzle-orm/bun-sqlite", () => ({
-    drizzle: vi.fn().mockReturnValue(bunDrizzleResult),
-}));
-
-// `createDrizzleDatabase` constructs its own connection from a file path, and
-// `migrateLegacySchema` assumes the legacy base tables already exist (it issues
-// `ALTER TABLE hackathon ...` before the Drizzle migration creates `hackathon`).
-// Pre-applying `sql/archive/init.sql` mirrors the real production bootstrap and
-// keeps the legacy repair step from throwing on a fresh database.
-const initSQL = readFileSync(resolve(process.cwd(), "sql", "archive", "init.sql"), "utf-8");
-
-let tmpDir: string;
-let dbPath: string;
-let db: ReturnType<typeof createDrizzleDatabase> extends Promise<infer T> ? T : never;
-
-beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "bh-rt-"));
-    dbPath = join(tmpDir, "test.sqlite");
-    const seed = new Database(dbPath);
-    seed.exec(initSQL);
-    seed.close();
-});
-
-afterEach(() => {
-    try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (db as any)?.$client?.close?.();
-    } catch {
-        // ignore — connection may already be closed
-    }
-    try {
-        rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-        // ignore cleanup failures (e.g. open handles on Windows)
-    }
-});
-
-describe("createDrizzleDatabase — Node.js / better-sqlite3 path", () => {
-    // Vitest runs under Node.js, so the `typeof Bun !== 'undefined'` check is
-    // false and the better-sqlite3 branch is exercised directly.
-
-    it("detects Node.js runtime (Bun global is undefined)", () => {
-        expect(typeof Bun).toBe("undefined");
-    });
-
-    it("returns a Drizzle instance exposing query builder methods", async () => {
-        db = await createDrizzleDatabase(dbPath);
-
-        expect(typeof db.select).toBe("function");
-        expect(typeof db.insert).toBe("function");
-        expect(typeof db.update).toBe("function");
-        expect(typeof db.delete).toBe("function");
-    });
-
-    it("returns a Drizzle instance exposing the transaction helper", async () => {
-        db = await createDrizzleDatabase(dbPath);
-
-        expect(typeof db.transaction).toBe("function");
-    });
-
-    it("runs migrations and seeds the hackathon singleton row", async () => {
-        db = await createDrizzleDatabase(dbPath);
-
-        const tables = db.all<{ name: string }>(
-            sql`SELECT name FROM sqlite_master WHERE type='table'`,
         );
-        expect(tables.map((t) => t.name)).toContain("hackathon");
-
-        const row = db.select().from(schema.hackathon).get();
-        expect(row).toBeDefined();
-        expect(row!.id).toBe(1);
-        expect(row!.status).toBe("not_started");
-
-        const award = db
-            .select()
-            .from(schema.awards)
-            .where(sql`${schema.awards.namespace} = 'perfect_score'`)
-            .get();
-        expect(award).toMatchObject({
-            name: "Flawless",
-            description: "Achieve a perfect score from all judges.",
-            icon: "i-lucide-gem",
-        });
+        expect(drizzleMock).toHaveBeenCalledTimes(1);
+        expect(drizzleMock).toHaveBeenCalledWith(
+            client,
+            expect.objectContaining({ schema: expect.any(Object) }),
+        );
     });
 
-    it("preserves a legacy awards catalog while adding namespace keys", async () => {
-        const legacy = new Database(dbPath);
-        legacy.exec(`
-          CREATE TABLE awards (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            description TEXT NOT NULL,
-            icon TEXT NOT NULL
-          );
-          INSERT INTO awards(name, description, icon)
-          VALUES ('Legacy Award', 'Legacy description', 'i-lucide-award');
-        `);
-        legacy.close();
+    it("closes the PostgreSQL pool during shutdown", async () => {
+        process.env.DATABASE_URL = "postgres://app:secret@localhost:5432/basishacks";
+        await createDrizzleDatabase();
 
-        db = await createDrizzleDatabase(dbPath);
+        await closeDatabase();
 
-        const legacyAward = db
-            .select()
-            .from(schema.awards)
-            .where(sql`${schema.awards.namespace} = 'legacy_1'`)
-            .get();
-        expect(legacyAward).toMatchObject({
-            name: "Legacy Award",
-            description: "Legacy description",
-            icon: "i-lucide-award",
-            color: "gold",
-        });
-    });
-});
-
-describe("createDrizzleDatabase — Bun / bun:sqlite path", () => {
-    const originalBun = (globalThis as { Bun?: unknown }).Bun;
-
-    afterEach(() => {
-        // Restore the Node.js runtime so subsequent tests take the better-sqlite3 branch.
-        (globalThis as { Bun?: unknown }).Bun = originalBun;
-    });
-
-    it("uses bun:sqlite + drizzle-orm/bun-sqlite when the Bun global is present", async () => {
-        // Pretend Bun is the active runtime so the dynamic-import branch resolves
-        // `bun:sqlite` and `drizzle-orm/bun-sqlite` (both mocked above).
-        (globalThis as { Bun?: unknown }).Bun = {};
-
-        bunDatabaseCtor.mockClear();
-        db = await createDrizzleDatabase(":memory:");
-
-        expect(bunDatabaseCtor).toHaveBeenCalledWith(":memory:");
-        expect(db).toBe(bunDrizzleResult);
-    });
-});
-
-describe("getDb", () => {
-    it("delegates to createDrizzleDatabase and returns a Drizzle instance", async () => {
-        db = await getDb(dbPath);
-
-        expect(typeof db.select).toBe("function");
-        expect(typeof db.insert).toBe("function");
+        expect(client.end).toHaveBeenCalledWith({ timeout: 5 });
     });
 });

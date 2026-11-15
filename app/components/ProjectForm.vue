@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import {
     SubmitTeamRequest,
     UpdateTeamRequest,
     MAX_PROJECT_NAME_LENGTH,
     MAX_PROJECT_DESCRIPTION_LENGTH,
+    MAX_PROJECT_SOURCE_LENGTH,
     MAX_URL_LENGTH,
 } from "~~/shared/schemas";
 
@@ -18,15 +20,30 @@ const emit = defineEmits<{
 }>();
 
 const formRef = useTemplateRef("formRef");
+const {
+    data: activeRubric,
+    pending: rubricPending,
+    error: rubricError,
+} = await useApiFetch<{
+    version_id: number;
+    tracks: Record<string, { name: string; criteria: unknown[] }>;
+}>("/api/seasons/active/rubric");
+const pathwayOptions = computed(() =>
+    Object.entries(activeRubric.value?.tracks ?? {}).map(([value, track]) => ({
+        label: track.name,
+        value,
+    })),
+);
 
 const toast = useToast();
+const dirty = ref(false);
 
 watch(
-    () => formRef.value?.dirty,
+    dirty,
     (value) => {
-        emit("dirty", value ?? true);
+        emit("dirty", value);
     },
-    { deep: true },
+    { immediate: true },
 );
 
 const intent = ref<"save" | "submit">("save");
@@ -36,28 +53,30 @@ let pendingSubmitEvent: FormSubmitEvent<UpdateTeamRequest | SubmitTeamRequest> |
 const autosaveStatus = ref("");
 
 async function triggerAutosave() {
-    if (!formRef.value?.dirty || !defaultTeam) {
+    if (!dirty.value || !defaultTeam) {
         // autosaveStatus.value = 'Synced with origin';
         return;
     }
 
     autosaveStatus.value = "Auto-saving...";
     try {
-        await $fetch(`/api/teams/${defaultTeam.id}`, {
+        await apiFetch(`/api/teams/${defaultTeam.id}`, {
             method: "PATCH",
             body: {
-                name: state.name,
-                pathway: state.pathway,
+                name: formState.name,
+                pathway: formState.pathway,
                 project: {
-                    name: state.project.name,
-                    description: state.project.description,
-                    demo_url: state.project.demo_url || null,
-                    repo_url: state.project.repo_url || null,
+                    name: formState.project.name,
+                    description: formState.project.description,
+                    demo_url: formState.project.demo_url || null,
+                    repo_url: formState.project.repo_url || null,
+                    sourcing: formState.project.sourcing,
                 },
             },
         });
+        dirty.value = false;
         autosaveStatus.value = `Auto-saved at ${new Date().toLocaleTimeString()}`;
-    } catch (e) {
+    } catch {
         autosaveStatus.value = "Auto-save failed";
     }
 }
@@ -74,29 +93,65 @@ onUnmounted(() => {
     }
 });
 
-const state = reactive({
+const formState = reactive({
     name: "",
-    pathway: "junior" as TeamPathway,
+    pathway: "" as TeamPathway,
     project: {
         name: "",
         description: "",
         repo_url: "",
         demo_url: "",
+        sourcing: "",
     },
 });
+
+const pathway = computed<TeamPathway>({
+    get: () => formState.pathway,
+    set: (value) => {
+        formState.pathway = value;
+    },
+});
+
+let suppressDirty = false;
 
 watch(
     () => defaultTeam,
     (value) => {
         if (!value) return;
-        state.name = value.name;
-        state.pathway = value.pathway || "junior";
-        state.project.name = value.project.name;
-        state.project.description = value.project.description;
-        state.project.repo_url = value.project.repo_url || "";
-        state.project.demo_url = value.project.demo_url || "";
+        suppressDirty = true;
+        formState.name = value.name;
+        formState.pathway = value.pathway || pathwayOptions.value[0]?.value || "";
+        formState.project.name = value.project.name;
+        formState.project.description = value.project.description;
+        formState.project.repo_url = value.project.repo_url || "";
+        formState.project.demo_url = value.project.demo_url || "";
+        formState.project.sourcing = value.project.sourcing || "";
+        dirty.value = false;
     },
     { deep: true, immediate: true },
+);
+
+watch(
+    formState,
+    () => {
+        if (suppressDirty) {
+            suppressDirty = false;
+            return;
+        }
+        dirty.value = true;
+    },
+    { deep: true },
+);
+
+watch(
+    pathwayOptions,
+    (options) => {
+        if (!formState.pathway && options.length > 0) {
+            suppressDirty = true;
+            formState.pathway = options[0]!.value;
+        }
+    },
+    { immediate: true },
 );
 
 async function onSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTeamRequest>) {
@@ -130,13 +185,12 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
                 return;
             }
             if (!isSubmit) {
-                // @ts-ignore i dont know
-                res = await $fetch(`/api/teams/${defaultTeam.id}`, {
+                res = await apiFetch<{ message: string }>(`/api/teams/${defaultTeam.id}`, {
                     method: "PATCH",
                     body: payload,
                 });
             } else {
-                res = await $fetch(`/api/teams/${defaultTeam.id}/submit`, {
+                res = await apiFetch<{ message: string }>(`/api/teams/${defaultTeam.id}/submit`, {
                     method: "POST",
                     body: payload,
                 });
@@ -147,6 +201,7 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
             });
 
             autosaveStatus.value = `Saved at ${new Date().toLocaleTimeString()}`;
+            dirty.value = false;
         });
         emit("refresh");
     } catch (e) {
@@ -170,7 +225,7 @@ async function confirmSubmit() {
 <template>
     <UForm
         ref="formRef"
-        :state="state"
+        :state="formState"
         :schema="intent === 'save' ? UpdateTeamRequest : SubmitTeamRequest"
         :disabled="disabled"
         class="w-full space-y-4 mb-4"
@@ -178,15 +233,15 @@ async function confirmSubmit() {
     >
         <UFormField name="project.name" label="Project name" help="Make it sound even cooler!">
             <UInput
-                v-model="state.project.name"
-                class="w-full"
+                v-model="formState.project.name"
+                class="min-h-11 w-full"
                 :maxlength="MAX_PROJECT_NAME_LENGTH"
             />
         </UFormField>
 
         <UFormField name="project.description" label="Project description">
             <UTextarea
-                v-model="state.project.description"
+                v-model="formState.project.description"
                 :rows="10"
                 class="w-full"
                 :maxlength="MAX_PROJECT_DESCRIPTION_LENGTH"
@@ -201,8 +256,25 @@ async function confirmSubmit() {
             </template>
         </UFormField>
 
+        <UFormField
+            name="project.sourcing"
+            label="AI-use disclosure"
+            help="Describe any AI tools you used and for which parts of the project. The rules require a comprehensive disclosure."
+        >
+            <UTextarea
+                v-model="formState.project.sourcing"
+                :rows="4"
+                class="w-full"
+                :maxlength="MAX_PROJECT_SOURCE_LENGTH"
+            />
+        </UFormField>
+
         <UFormField name="project.demo_url" label="Demo URL">
-            <UInput v-model="state.project.demo_url" class="w-full" :maxlength="MAX_URL_LENGTH" />
+            <UInput
+                v-model="formState.project.demo_url"
+                class="min-h-11 w-full"
+                :maxlength="MAX_URL_LENGTH"
+            />
 
             <template #help>
                 This should allow anyone can experience your project. For more information, please
@@ -211,30 +283,47 @@ async function confirmSubmit() {
         </UFormField>
 
         <UFormField name="project.repo_url" label="Repository URL">
-            <UInput v-model="state.project.repo_url" class="w-full" :maxlength="MAX_URL_LENGTH" />
+            <UInput
+                v-model="formState.project.repo_url"
+                class="min-h-11 w-full"
+                :maxlength="MAX_URL_LENGTH"
+            />
 
             <template #help>
                 Your project must be open source on
-                <ULink href="https://github.com" target="_blank">GitHub</ULink>
+                <ULink
+                    href="https://github.com"
+                    target="_blank"
+                    class="text-default underline underline-offset-2"
+                >
+                    GitHub
+                </ULink>
                 (preferred) or
-                <ULink href="https://gitee.com" target="_blank">Gitee</ULink>
+                <ULink
+                    href="https://gitee.com"
+                    target="_blank"
+                    class="text-default underline underline-offset-2"
+                >
+                    Gitee
+                </ULink>
                 .
             </template>
         </UFormField>
 
         <UFormField name="pathway" label="Pathway">
             <URadioGroup
-                v-model="state.pathway"
-                :items="[
-                    { label: 'Junior', value: 'junior' },
-                    { label: 'Senior', value: 'senior' },
-                ]"
+                v-model="pathway"
+                :items="pathwayOptions"
+                :disabled="disabled || rubricPending || pathwayOptions.length === 0"
+                class="min-h-11"
             />
 
             <template #help>
-                The junior pathway puts more emphasis on originality and creativity, while the
-                senior pathway more on problem-solving and impact. You may choose any pathway,
-                regardless of grade level.
+                <span v-if="rubricPending">Loading the season's available tracks…</span>
+                <span v-else-if="rubricError || pathwayOptions.length === 0">
+                    Tracks are unavailable right now. Your project is saved; try again shortly.
+                </span>
+                <span v-else>Choose the track that best matches your project's focus.</span>
             </template>
         </UFormField>
 
@@ -243,6 +332,7 @@ async function confirmSubmit() {
                 id="project-save"
                 :disabled="disabled"
                 variant="subtle"
+                class="min-h-11"
                 type="submit"
                 @click="intent = 'save'"
             >
@@ -252,6 +342,7 @@ async function confirmSubmit() {
             <UButton
                 id="project-submit"
                 :disabled="disabled"
+                class="min-h-11"
                 type="button"
                 @click="
                     intent = 'submit';

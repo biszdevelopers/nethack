@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+// Existing API fixtures exercise the retained PostgreSQL configuration mode.
+process.env.YAML_SOURCE_HACKATHON = "database";
+
 // Graph env vars used by server/plugins/microsoft.ts. These are read at module load time, so they
 // must be set before any test imports those modules. The values mirror the
 // previously hardcoded configuration so existing assertions still hold.
@@ -143,6 +146,8 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE seasons ADD COLUMN results_open_timestamp INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN theme_name TEXT;
     ALTER TABLE seasons ADD COLUMN theme_description TEXT;
+    ALTER TABLE seasons ADD COLUMN score_curve_preset TEXT NOT NULL DEFAULT 'original';
+    ALTER TABLE seasons ADD COLUMN rubric_version_id INTEGER;
 
     ALTER TABLE teams ADD COLUMN season_id INTEGER NOT NULL DEFAULT 1;
     CREATE INDEX IF NOT EXISTS teams_season ON teams (season_id);
@@ -159,18 +164,36 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
 
     ALTER TABLE users ADD COLUMN auth_issuer TEXT;
     ALTER TABLE users ADD COLUMN auth_subject TEXT;
+    ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
     CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
 
     ALTER TABLE team_scores ADD COLUMN season_id INTEGER;
+    ALTER TABLE team_scores ADD COLUMN rubric_version_id INTEGER;
 
     CREATE UNIQUE INDEX IF NOT EXISTS sc_votes_user_id_unique ON sc_votes(user_id);
 
     CREATE TABLE IF NOT EXISTS peer_voting_scores (
-      user_id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      season_id INTEGER NOT NULL,
       score TEXT NOT NULL,
-      reasoning TEXT
+      reasoning TEXT,
+      PRIMARY KEY(user_id, season_id),
+      FOREIGN KEY(season_id) REFERENCES seasons(id) ON DELETE CASCADE
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS peer_voting_scores_user_id_unique ON peer_voting_scores(user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS peer_voting_scores_user_season_unique
+      ON peer_voting_scores(user_id, season_id);
+
+    CREATE TABLE IF NOT EXISTS team_invites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id INTEGER NOT NULL,
+      email TEXT NOT NULL,
+      invited_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      FOREIGN KEY(invited_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS team_invites_team_email ON team_invites(team_id, email);
+    CREATE INDEX IF NOT EXISTS team_invites_email ON team_invites(email);
 
     CREATE TABLE IF NOT EXISTS team_awards (
       team_id INTEGER NOT NULL,
@@ -188,6 +211,38 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
       color TEXT NOT NULL DEFAULT 'gold'
     );
 
+    CREATE TABLE IF NOT EXISTS rubric_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      definition TEXT NOT NULL,
+      created_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS rubric_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id INTEGER NOT NULL,
+      version INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      definition TEXT NOT NULL,
+      source_template_id INTEGER,
+      created_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (season_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS judging_drafts (
+      team_id INTEGER NOT NULL,
+      judge_user_id INTEGER NOT NULL,
+      rubric_version_id INTEGER NOT NULL,
+      scores TEXT NOT NULL,
+      reasoning TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (team_id, judge_user_id)
+    );
+
     ALTER TABLE hackathon ADD COLUMN voting_enabled INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE hackathon ADD COLUMN results_published INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE hackathon ADD COLUMN show_scores INTEGER NOT NULL DEFAULT 0;
@@ -197,6 +252,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE hackathon ADD COLUMN judging_open INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE hackathon ADD COLUMN schedule_start TEXT;
     ALTER TABLE hackathon ADD COLUMN schedule_end TEXT;
+    ALTER TABLE hackathon ADD COLUMN live_overrides TEXT NOT NULL DEFAULT '{}';
 
   `);
 
@@ -209,13 +265,17 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
  */
 export function resetTestDatabase(wrapper: SQLiteDatabase): void {
     wrapper.exec(`
+    DELETE FROM judging_drafts;
     DELETE FROM sc_votes;
     DELETE FROM ballot_scores;
     DELETE FROM ballots;
     DELETE FROM team_scores;
     DELETE FROM team_awards;
     DELETE FROM awards;
+    DELETE FROM rubric_versions;
+    DELETE FROM rubric_templates;
     DELETE FROM peer_voting_scores;
+    DELETE FROM team_invites;
     DELETE FROM user_past_teams;
     DELETE FROM users;
     DELETE FROM oauth2_applications;

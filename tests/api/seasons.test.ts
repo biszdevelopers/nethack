@@ -71,6 +71,46 @@ describe("GET /api/seasons", () => {
         expect(result[0]).toHaveProperty("name", "Season 1");
         expect(result[1]).toHaveProperty("name", "Season 2");
     });
+
+    it("redacts unreleased themes and excludes organizer-only season fields", async () => {
+        seedSeason(ctx, {
+            name: "Future Season",
+            is_active: 0,
+            status: "not_started",
+            theme_name: "Unannounced theme",
+            theme_description: "Private details",
+            score_curve_preset: "strong",
+        });
+        seedSeason(ctx, {
+            name: "Paused Season",
+            is_active: 0,
+            status: "paused",
+            theme_name: "Paused theme",
+            theme_description: "Hidden while paused",
+        });
+        seedSeason(ctx, {
+            name: "Live Season",
+            is_active: 0,
+            status: "in_progress",
+            theme_name: "Published theme",
+            theme_description: "Published details",
+        });
+
+        const result = await listHandler(createEvent());
+        const futureSeason = result.find((season: PublicSeason) => season.name === "Future Season");
+        const pausedSeason = result.find((season: PublicSeason) => season.name === "Paused Season");
+        const liveSeason = result.find((season: PublicSeason) => season.name === "Live Season");
+
+        expect(futureSeason).toMatchObject({ theme_name: null, theme_description: null });
+        expect(pausedSeason).toMatchObject({ theme_name: null, theme_description: null });
+        expect(liveSeason).toMatchObject({
+            theme_name: "Published theme",
+            theme_description: "Published details",
+        });
+        expect(futureSeason).not.toHaveProperty("score_curve_preset");
+        expect(futureSeason).not.toHaveProperty("rubric_version_id");
+        expect(futureSeason).not.toHaveProperty("judging_open");
+    });
 });
 
 describe("GET /api/seasons/active", () => {

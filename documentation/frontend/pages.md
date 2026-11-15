@@ -5,7 +5,7 @@ description: File-based routes in the basishacks frontend — home, dashboard, v
 
 # Pages
 
-The basishacks frontend contains **27 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
+The basishacks frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
 
 ## Public Pages
 
@@ -37,17 +37,27 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 // No auth required
 ```
 
+### `/seasons/:id`
+
+**File:** `app/pages/seasons/[id].vue`
+
+Public season details page linked from team score cards. It shows the selected season's event dates, theme when it is available, current-season status, and navigation to other seasons. Invalid or unknown season IDs return a not-found page.
+
+**Layout:** `default`
+
 ### `/profile`
 
 **File:** `app/pages/profile.vue`
 
 User profile editing page. Protected by `auth` middleware.
 
+The page loads the signed-in user's API record through `useApiUser()`. This waits for the client-side session request and watches the session user ID so profile data loads after the cookie session becomes available during hydration.
+
 **Features:**
 
 - Displays greeting with user name or email
 - **Name editing** — text input validated by `UpdateUserRequest`
-- **Avatar upload** — `UFileUpload` with live preview via `UserAvatar`. Supports removing the current avatar. Converts uploaded files to base64 before sending.
+- **Avatar** — displays the basis-auth picture through `UserAvatar`. The image URL is synchronized at login.
 - **Profile theme image** — `UFileUpload` for background image. Displays the current theme as a CSS background. Affects the user's profile page (`/user/{id}`) and `UserPopover` card.
 - **Logout button** — clears the session and navigates to `/`
 
@@ -138,7 +148,7 @@ Peer voting page. Protected by `auth` middleware. Only accessible during the `vo
 
 **Flow:**
 
-1. Fetches ballot data from `/api/ballot`
+1. Fetches ballot data from `/api/ballot`. When voting is closed, the server's `403` is shown as a closed notice with retry and home actions; the voting form is not rendered.
 2. Displays eligible `VotingProjectCard` components in a grid
 3. User distributes **10 stars** among eligible projects (0–5 per project)
 4. Increment/decrement buttons with validation (total must equal 10)
@@ -163,35 +173,59 @@ Contributing guidelines and security disclosure policy. Contains commit guidelin
 
 **File:** `app/pages/judging/index.vue`
 
-Judge landing page. Protected by `auth` middleware. Accessible only by judges or admins during the `voting` status.
+Judge landing page. Protected by `auth` middleware and the judge assignment permission, so past evaluations stay reachable after the event closes.
 
 **Guards:**
 
-- Redirects to `/` if hackathon status is not `voting`
-- Redirects to `/` if user lacks judge or admin permissions
+- Redirects to `/` if the user lacks judge or admin permissions
+- Judging actions are gated by the event status; the page itself stays available for history
 
 **Content:**
 
-- Static summary of participation statistics
-- **Current Evaluations** section — shows `JudgeProgressCard` for the active season
-- **Past Evaluations** section — shows `JudgeProgressCard` entries for past seasons with at least one scored team
-- **Continue** button — navigates to `/judging/continue`
+- **Current evaluations** — shows judge-specific progress for submitted projects in the active season, with an accessible progress bar
+- **Continue judging** — opens the active queue when the event is in `voting` status with `judging_open` enabled
+- **Review your evaluations** — links to the active season's history when judging is closed
+- **Past evaluations** — shows the judge's completed progress for prior seasons; each card links to that season's read-only history
+
+The page omits unrelated event participation figures so judges can focus on their own workload.
 
 **Layout:** `default`
+
+### `/judging/history/:seasonId`
+
+**File:** `app/pages/judging/history/[seasonId].vue`
+
+Read-only review of the signed-in judge's finalized evaluations for one season. Protected by `auth` middleware and the judge assignment permission; it does not require judging to be open, so completed work remains reviewable after the event finishes.
+
+**Content:**
+
+- Left list of every evaluated project, selectable with Previous and Next controls
+- Project name, team, track, repository and demo links, description, and AI-use disclosure, each labeled; missing values are stated explicitly instead of being omitted
+- The judge's weighted score, rubric name and version, per-criterion scores, and anonymous feedback
+- An alert when saved evaluations reference a rubric that is no longer available
+
+The page requests `GET /api/judging/history/:seasonId`; the response only contains the requesting judge's own evaluations.
+
+**Layout:** `fullwidth` with the footer hidden
 
 ### `/judging/continue`
 
 **File:** `app/pages/judging/continue.vue`
 
-Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins during the `voting` status.
+Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled. Draft saves and final score submissions enforce the same gate on the server.
 
 **Flow:**
 
-1. Fetches teams for judging from `/api/teams?judging=1`
-2. Renders a `JudgingCard` for each team (project descriptions rendered via `SafeComark`)
-3. After scoring, refreshes the list
+1. Loads the judge's pending projects from `/api/teams?judging=true` (excluding the judge's own team), their personal progress from `/api/ballot/summary`, and the active rubric from `/api/judging/rubric`.
+2. Shows one project at a time. The project pane lists every competitor-submitted field: team, pathway, project name, project description, AI-use disclosure, repository, demo, and submission status. Missing values are named explicitly (for example, "Alixa did not provide a project description") rather than leaving blank space. The right pane shows Scoring Guidelines, the rubric, and the feedback form. The divider between the panes is draggable with a pointer or the arrow keys and remembers its position; both panes scroll independently on wider screens and stack on mobile.
+3. The toolbar shows the project number, evaluated count, Previous and Next, **Next unscored**, and **All projects**. All projects opens a navigator listing every page of the queue with each project's scored state, plus filters for all, not scored, and scored projects.
+4. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
+5. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores. If the server will never accept the draft (for example, judging closed or the rubric was replaced), **Discard and reload** replaces the unsaved text with the last saved draft so the judge is not trapped, and the page blocks leaving only when unsaved changes cannot be saved.
+6. Opens the **Review before you finalize** dialog over the scoring workspace before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
 
-**Layout:** `default`
+When every submitted project has been evaluated, the workspace stays open so judges can review their saved scores instead of being locked out. The interface is mobile-first, uses keyboard-operable score controls, and shows draft saving, validation, and submission states. Evaluation progress is shown on the judging overview.
+
+**Layout:** `fullwidth` with the footer hidden
 
 ## Dashboard Pages
 
@@ -274,7 +308,7 @@ Placeholder page for the presentation event. States that top 10 teams will be in
 
 **File:** `app/pages/developers/index.vue`
 
-Mod portal landing page. Shows a welcome message. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
+Mod portal landing page. Summarizes the live event — active season, status, theme, schedule, and the visitor-facing toggles — and links to each management area. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
 
 **Layout:** `developers-dashboard`
 
@@ -308,7 +342,7 @@ DeepSeek AI chat interface.
 
 **File:** `app/pages/developers/debug.vue`
 
-File upload and debug utilities. Permission-gated.
+Permission-gated, read-only listings of existing files and active permalink references.
 
 **Layout:** `developers-dashboard`
 
@@ -316,12 +350,13 @@ File upload and debug utilities. Permission-gated.
 
 **File:** `app/pages/developers/season.vue`
 
-Hackathon Administration page (admin-only, hard 403 for non-admins). Contains:
+Hackathon Administration page (admin-only, hard 403 for non-admins). The page is split into tabs so no single scroll holds every control. It opens on the active season and warns when a stored (non-live) season is selected, so settings never appear to apply while silently targeting an archived season.
 
-- **Season** — pick the season to manage and activate it (`PATCH /api/seasons/active`); "New Season" creates one via `POST /api/admin/seasons`.
-- **Season Name** — rename the selected season via `PATCH /api/admin/seasons`.
-- **Hackathon Configuration** — all settings are per-season (including score and rank visibility) and auto-save through `/api/admin/hackathon` with `season_id`. Editing the active season also syncs to the global `hackathon` row. No "Save" button; every field change is persisted via a serialized PATCH chain carrying all form fields, so no field is ever dropped and no two PATCHes race.
-- **Database Export** — download the SQLite database or a CSV snapshot via `GET /api/admin/database/export`.
+- **Overview** — theme, schedule, and the current visitor-facing toggles for the selected season, with shortcuts to the editing tabs. The schedule uses the same stored values as the editable fields.
+- **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id`. A new season starts as a copy of the live settings so switching cannot blank the event. A banner shows whether the selected season is live or stored, with a one-click activation action.
+- **Event settings** — status, vote cap, voting/judging/results toggles, theme, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. Status, voting, judging, results, and show-score/show-ranking are PostgreSQL overrides, so they can be switched even when the manifest is remote. Each field is compared with the selected season's own value, not another season's. Schedule and theme write to a local `HACKATHON.yml` (comments preserved); a remote manifest keeps those fields read-only and explains where to edit them. Other seasons keep their own editable stored settings.
+- **Scoring** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version; the history shows which version is active. Organizers can copy a prior season, load its rubric to customize, and apply or copy reusable named templates. A track used by a submitted project must be reassigned before removal.
+- **Data** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted, and the exported live settings include portal overrides.
 
 **Layout:** `developers-dashboard`
 
@@ -359,7 +394,7 @@ Redirects an authenticated user to their own profile page (`/user/{id}`). If the
 
 Admin-only debug page with two tabs:
 
-- **File Upload** — upload files to `/assets` or `/userast`, list uploaded files, and copy permalinks
+- **Existing Files** — browse existing files and active permalink references
 - **DeepSeek Chat** — create chat sessions, send messages, and delete sessions via `/api/debug/deepseek/sessions`
 
 Protected by `auth` middleware and an admin permission check.

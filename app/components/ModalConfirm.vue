@@ -8,6 +8,7 @@
         <template #footer="{ close }">
             <UButton
                 :color="color"
+                class="min-h-12"
                 @click="
                     click();
                     close();
@@ -15,28 +16,30 @@
             >
                 Confirm
             </UButton>
-            <UButton :color="colorSecond" variant="outline" @click="close">Cancel</UButton>
+            <UButton :color="colorSecond" variant="outline" class="min-h-12" @click="close">
+                Cancel
+            </UButton>
         </template>
     </UModal>
 </template>
 
 <script setup lang="ts">
-const isOpen = defineModel("open", { default: false });
+const isOpen = defineModel<boolean>("open", { default: false });
 
-const props = defineProps({
-    color: {
-        type: String,
-        default: "primary",
+type ButtonColor = "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral";
+
+withDefaults(
+    defineProps<{
+        color?: ButtonColor;
+        colorSecond?: ButtonColor;
+        click?: () => void;
+    }>(),
+    {
+        color: "primary",
+        colorSecond: "neutral",
+        click: () => {},
     },
-    click: {
-        type: Function,
-        default: () => {},
-    },
-    colorSecond: {
-        type: String,
-        default: "neutral",
-    },
-});
+);
 
 //console.log(props.click)
 </script>

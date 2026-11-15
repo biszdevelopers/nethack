@@ -16,7 +16,7 @@ Before you begin, ensure you have the following installed:
 | Requirement | Minimum Version | Notes                                       |
 | ----------- | --------------- | ------------------------------------------- |
 | **Node.js** | >= v24          | Required by the runtime and tooling         |
-| **Bun**     | Latest          | Preferred package manager; `npm` also works |
+| **Bun**     | 1.3.14          | Supported package manager; `npm` also works |
 | **Git**     | Any recent      | For cloning the repository                  |
 
 ### Installing Bun
@@ -63,11 +63,10 @@ cd basishacks-r2
 Install all project dependencies using Bun:
 
 ```bash
-(cd ../basis-schema && bun link)
 bun i
 ```
 
-The [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) checkout must remain beside `basishacks-r2`. The Nuxt and Vitest configurations resolve its source from `../basis-schema`, while Bun uses the registered package link.
+The [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) checkout must remain beside `basishacks-r2`. The Nuxt and Vitest configurations resolve its source from `../basis-schema`; no Bun link is required. Use Bun 1.3.14 to install from the committed lockfile.
 
 If you prefer npm:
 
@@ -79,9 +78,7 @@ npm install
 
 ## Initialize the Database
 
-The local development environment uses SQLite with Drizzle ORM. The driver is selected automatically based on your runtime: `bun:sqlite` under Bun, or `better-sqlite3` under Node.js.
-
-Migrations and seeding run **automatically** when the Nitro dev server starts via the `init-database.ts` plugin, which calls `createDrizzleDatabase()` in `server/database/index.ts`. That helper selects the runtime's native SQLite driver, then runs `createAndMigrateDatabase()` from `server/database/migrate.ts` to apply pending migrations and seed the default hackathon row.
+Development, CI, and production use PostgreSQL through Drizzle ORM and the `postgres` driver. Set `DATABASE_URL` before starting Nuxt. The `init-database.ts` plugin creates the bounded connection pool, applies migrations under an advisory lock, and seeds the default hackathon row.
 
 To manually initialize the database:
 
@@ -89,15 +86,11 @@ To manually initialize the database:
 bun run db:migrate
 ```
 
-This runs Drizzle Kit migrations, which create all required tables: `hackathon`, `teams`, `team_scores`, `users`, `ballots`, `ballot_scores`, `oauth2_applications`, `seasons`, `awards`, `team_awards`, `peer_voting_scores`, and `user_past_teams`.
+This applies the pending PostgreSQL migrations. Migrations also run automatically at server startup.
 
-### Seed the Hackathon Row
+### Load live hackathon configuration
 
-The `hackathon` table requires a single row with `id = 1` that controls the global event state. `seedHackathon()` in `server/database/migrate.ts` automatically inserts this row when the dev server starts. If you need to manually seed it, connect to the SQLite database directly:
-
-```bash
-sqlite3 database/basishacks.sqlite "INSERT INTO hackathon VALUES(1, 'not_started', 0, 0, 0, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, NULL, NULL) ON CONFLICT DO NOTHING"
-```
+The app reads `HACKATHON.yml` from the checkout by default. Set `YAML_SOURCE_HACKATHON` to an assets server origin or manifest URL to load a remote file. The seeded PostgreSQL singleton is retained for compatibility and rollback.
 
 ### Apply Migrations
 
@@ -108,7 +101,7 @@ Migrations are generated with Drizzle Kit:
 bun run db:generate
 ```
 
-The `db:migrate` script applies pending migrations via Drizzle Kit. In practice, the server also applies migrations automatically on startup, so manual runs are usually unnecessary:
+The `db:migrate` script applies the pending PostgreSQL migration files and then seeds the hackathon row, default season/rubric, and designated administrators. It uses the Drizzle migrator directly (not Drizzle Kit). In practice, the server also applies migrations automatically on startup, so manual runs are usually unnecessary:
 
 ```bash
 bun run db:migrate
@@ -125,8 +118,14 @@ cp .env.example .env
 At minimum, set the following:
 
 ```bash
+# REQUIRED - PostgreSQL connection for development, CI, and production
+DATABASE_URL=postgresql://basishacks:secret@127.0.0.1:5432/basishacks
+
+# OPTIONAL - Bounded pool size (default 10, range 2-64)
+DATABASE_POOL_MAX=10
+
 # REQUIRED - Session encryption key. Must be at least 32 bytes.
-NUXT_SESSION_PASSWORD=your_random_string_at_least_32_bytes_long
+BASIS_AUTH_COOKIE_SECRET=your_random_string_at_least_32_bytes_long
 
 # REQUIRED - basis-auth confidential client configuration
 BASIS_AUTH_ISSUER=http://localhost:3000
@@ -167,14 +166,6 @@ Build the application for production:
 bun run build
 ```
 
-For artifacts built by GitHub Actions, rewrite the embedded checkout root for the production server before packaging:
-
-```bash
-bun run refractor-artifact
-```
-
-This replaces `/home/runner/work/basishacks-r2/basishacks-r2` with `/home/devleaderz/basishacks-r2` throughout `.output/`.
-
 Preview the production build:
 
 ```bash
@@ -196,6 +187,10 @@ bun run test:watch
 
 # Run tests with coverage
 bun run test:coverage
+
+# Lint and type-check
+bun run lint
+bun run typecheck
 ```
 
 These invoke `vitest run --pool=forks`, which resolves Nuxt's `~~/` and `~/` path aliases via `vitest.config.ts` and runs `tests/setup.ts` to populate in-memory SQLite databases. See the [Testing guide](/guide/testing) for more details on the coverage policy and excluded files.
@@ -226,17 +221,7 @@ Once the server is running, follow these steps to log in for the first time:
 
 ### Gaining Admin Access
 
-New users are assigned the `participant` role by default. To elevate your permissions for development:
-
-1. Open the SQLite database directly:
-    ```bash
-    sqlite3 database/basishacks.sqlite
-    ```
-2. Update your user's role:
-    ```sql
-    UPDATE users SET role = 'admin' WHERE email = 'your@basischina.com';
-    ```
-3. Refresh the browser. You should now have access to admin features and the mod portal.
+Authorization comes from validated basis-auth token permissions. Ask the basis-auth operator to grant the development account `nethack.all`; local database edits do not grant admin access. Refresh the browser session after the permission change.
 
 ## Verify Everything Works
 

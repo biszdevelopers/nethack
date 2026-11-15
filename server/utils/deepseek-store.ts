@@ -8,6 +8,8 @@ import type { ChatCompletionMessage } from "openai/resources/index.mjs";
 interface ChatSession {
     id: number;
     sessionName: string;
+    /** Owning user id; 0 only appears in direct store tests. */
+    owner_user_id: number;
     createdAt: number;
     messages: ChatCompletionMessage[];
 }
@@ -28,7 +30,7 @@ function sweepExpiredSessions() {
     }
 }
 
-export function createSession(sessionName: string): ChatSession {
+export function createSession(sessionName: string, ownerUserId = 0): ChatSession {
     // Sweep expired sessions periodically and enforce max sessions
     if (sessions.size >= MAX_SESSIONS) {
         sweepExpiredSessions();
@@ -50,6 +52,7 @@ export function createSession(sessionName: string): ChatSession {
     const session: ChatSession = {
         id,
         sessionName,
+        owner_user_id: ownerUserId,
         createdAt: Math.floor(Date.now() / 1000),
         messages: [],
     };
@@ -61,8 +64,11 @@ export function getDeepSeekSession(sessionId: number): ChatSession | undefined {
     return sessions.get(sessionId);
 }
 
-export function getAllSessions(): ChatSession[] {
-    return Array.from(sessions.values());
+export function getAllSessions(ownerUserId?: number): ChatSession[] {
+    const all = Array.from(sessions.values());
+    return ownerUserId === undefined
+        ? all
+        : all.filter((session) => session.owner_user_id === ownerUserId);
 }
 
 export function deleteSession(sessionId: number): boolean {

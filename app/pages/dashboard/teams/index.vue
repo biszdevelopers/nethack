@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { CreateTeamRequest } from "~~/shared/schemas";
 
@@ -17,7 +18,9 @@ const state = reactive({
 });
 
 const { data, error, refresh } = await useApiUser();
-const { data: hackathon, error: hackathonError } = await useFetch("/api/seasons/active");
+const { data: hackathon, error: hackathonError } = await useApiFetch("/api/seasons/active", {
+    $fetch: globalThis.$fetch,
+});
 if (hackathonError.value) {
     throw hackathonError.value;
 }
@@ -39,11 +42,11 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
 
     try {
         await withLoadingIndicator(async () => {
-            await $fetch<CreateTeamResponse>("/api/teams", {
+            await apiFetch<CreateTeamResponse>("/api/teams", {
                 method: "POST",
                 body: { name },
-                query: { add: true },
             });
+            await refresh();
             toast.add({
                 color: "success",
                 title: "Your team is created",
@@ -73,11 +76,11 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
             @submit="onSubmit"
         >
             <UFormField name="name" label="Team name">
-                <UInput v-model="state.name" />
+                <UInput v-model="state.name" class="min-h-11 w-full" />
             </UFormField>
 
             <UFormField>
-                <UButton type="submit">Create</UButton>
+                <UButton type="submit" class="min-h-11">Create</UButton>
             </UFormField>
         </UForm>
     </div>

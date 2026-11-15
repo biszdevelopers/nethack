@@ -1,5 +1,6 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
+import { getHackathonConfigSource } from "~~/server/utils/hackathon-config";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -8,6 +9,11 @@ export default defineEventHandler(
         const hackathonRow = await getHackathon(event);
         const allSeasons = await getSeasons(event);
 
-        return { hackathon: hackathonRow, seasons: allSeasons };
+        const source = getHackathonConfigSource();
+        return {
+            hackathon: hackathonRow,
+            seasons: allSeasons,
+            configSource: source === "local" || source === "database" ? source : "remote",
+        };
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

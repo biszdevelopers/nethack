@@ -11,36 +11,15 @@ The platform includes a set of development and AI utilities gated by developer p
 
 ## Debug File Utilities
 
-Debug file endpoints let authorized users upload and list static assets without going through the normal project-submission flow.
-
-### Endpoints
+Debug uploads have been retired. Existing files remain accessible at their original `/assets/uploads/*` and `/userast/*` URLs. The application no longer schedules cleanup of debug permalink files.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/upload` | `dev_debug` or admin | Upload a file to `public/assets/` or `public/userassets/` |
-| GET | `/api/debug/files` | `portal.debug.view` or admin | List uploaded assets |
+| GET | `/api/debug/files` | `nethack.Debug.filesRead` or `nethack.all` | List existing files in the static and top-level user asset collections |
+| GET | `/api/assets/references` | Authenticated user; `nethack.all` lists all owners | List the caller's active references with pagination |
+| DELETE | `/api/assets/references/:referenceId` | Reference owner or `nethack.all` | Remove the reference record while preserving the file |
 
-### Upload Request
-
-`POST /api/debug/upload` accepts `multipart/form-data`:
-
-| Field              | Description                                                                |
-| ------------------ | -------------------------------------------------------------------------- |
-| `file`             | The file to upload                                                         |
-| `mode` (query)     | `static` → `public/assets/`, `user` → `public/userassets/`                 |
-| `keepName` (query) | `true` to keep the original filename, otherwise a random name is generated |
-
-Allowed extensions: `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `pdf`, `txt`, `md`, `json`, `zip`, `mp4`.
-
-Response:
-
-```json
-{
-    "permalink": "/assets/<filename>"
-}
-```
-
-For `mode=user` the response path is `/userast/<filename>` even though the file is written to `public/userassets/`. The helpers in `server/utils/assets.ts` validate filenames to prevent path traversal and create parent directories as needed.
+Debug routes return 404 in production. Set `DISABLE_DEBUG_ROUTES=true` to disable them in non-production environments. Where debug routes are enabled, the retired `POST /api/debug/upload` route responds with 410 for requests that pass the global middleware.
 
 ---
 
@@ -65,10 +44,10 @@ This prevents the server from crashing at startup when the key is not provided.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| POST | `/api/debug/deepseek/sessions` | `dev_deepseek` | Create a new chat session |
-| GET | `/api/debug/deepseek/sessions/:id` | `portal.deepseek.view` | Get session and messages |
-| DELETE | `/api/debug/deepseek/sessions/:id` | `dev_deepseek` | Delete a session |
-| POST | `/api/debug/deepseek/sessions/:id/message` | `dev_deepseek` | Send a message and run tools |
+| POST | `/api/debug/deepseek/sessions` | `nethack.Debug.deepseekWrite` or `nethack.all` | Create a new chat session |
+| GET | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekRead` or `nethack.all` | Get session and messages |
+| DELETE | `/api/debug/deepseek/sessions/:id` | `nethack.Debug.deepseekWrite` or `nethack.all` | Delete a session |
+| POST | `/api/debug/deepseek/sessions/:id/message` | `nethack.Debug.deepseekWrite` or `nethack.all` | Send a message and run tools |
 
 The message endpoint also calls `requireUser` so the current user row can be injected into the system prompt.
 
@@ -121,31 +100,13 @@ Tool results are appended to the session as `role: 'tool'` messages and the conv
 
 ### UI
 
-The mod portal page `/developers/deepseek` provides the chat UI. It is gated by `portal.deepseek.view` or admin.
+The mod portal page `/developers/deepseek` provides the chat UI and is available to admins through the developers dashboard. Its API calls use the route-level permissions listed above.
 
 ---
 
-## Microsoft Teams Chatbot
+## Microsoft Teams Integration
 
-The chatbot endpoints integrate with Microsoft Graph to send and receive Teams chat messages.
-
-### Endpoints
-
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| GET | `/api/chatbot/message` | OAuth2 JWT with `chat.readwrite` scope | Sends a test rich-text message to a hard-coded admin user |
-| GET | `/api/chatbot/index` | None | Empty placeholder / health-check endpoint |
-
-### `/api/chatbot/message`
-
-This endpoint demonstrates the Microsoft Graph proxy:
-
-1. Authenticates with an OAuth2 Bearer token using `withOAuth2JWT`.
-2. Requires the `chat.readwrite` scope.
-3. Creates or reuses a 1:1 direct chat with a target user via `createOrGetExistingDirectChat`.
-4. Sends a rich HTML message with `sendRichChatMessage`.
-
-The underlying Graph API calls live in `server/plugins/microsoft.ts` and are centralized for auditability.
+The unused test-message and anonymous no-op routes have been removed. Microsoft Graph webhook notifications continue to use the validated routes below; application login remains independent from Graph.
 
 ### Webhooks
 
@@ -168,14 +129,14 @@ See [Plugins & Middleware](./plugins-middleware) for subscription creation and r
 
 ## Permissions
 
-| Permission             | Allows                                        |
-| ---------------------- | --------------------------------------------- |
-| `dev_debug`            | Direct access to debug API routes             |
-| `portal.debug.view`    | View the Debug Files page in the mod portal   |
-| `dev_deepseek`         | Direct access to DeepSeek API routes          |
-| `portal.deepseek.view` | View the DeepSeek chat page in the mod portal |
+| Permission                    | Allows                                                  |
+| ----------------------------- | ------------------------------------------------------- |
+| `nethack.Debug.filesRead`     | List uploaded filenames and permalink references        |
+| `nethack.Debug.filesWrite`    | Legacy file-write permission retained for compatibility |
+| `nethack.Debug.deepseekRead`  | Read DeepSeek sessions and messages                     |
+| `nethack.Debug.deepseekWrite` | Create, update, and delete DeepSeek sessions            |
 
-Admins implicitly have all of the above.
+`nethack.all` grants all of these permissions.
 
 ---
 
@@ -188,7 +149,5 @@ Admins implicitly have all of the above.
 - `server/api/debug/deepseek/sessions/[id]/message.post.ts`
 - `server/api/debug/upload.post.ts`
 - `server/api/debug/files.get.ts`
-- `server/api/chatbot/message.get.ts`
-- `server/api/chatbot/index.get.ts`
 - `app/pages/developers/deepseek.vue`
 - `app/pages/developers/debug.vue`

@@ -85,7 +85,7 @@ const WINNERS: readonly WinnerConfig[] = [
     },
 ] as const;
 
-const { data: teams, error } = await useFetch<GetTeamResponse[]>("/api/teams?season_id=1");
+const { data: teams, error } = await useApiFetch<GetTeamResponse[]>("/api/teams?season_id=1");
 
 const winners = computed(() => {
     const byId = new Map((teams.value ?? []).map((team) => [team.id, team]));
@@ -96,7 +96,7 @@ const winners = computed(() => {
 });
 
 const root = ref<HTMLElement | null>(null);
-let media: { revert: () => void } | null = null;
+let media: { add: (...args: any[]) => void; revert: () => void } | null = null;
 let disposed = false;
 
 const pathwayLabel = (pathway: WinnerConfig["pathway"]) =>
@@ -104,14 +104,6 @@ const pathwayLabel = (pathway: WinnerConfig["pathway"]) =>
 
 const rankLabel = (rank: WinnerConfig["rank"]) =>
     rank === 1 ? "First place" : rank === 2 ? "Second place" : "Third place";
-
-const scrollToWinners = () => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document.querySelector("#winner-50")?.scrollIntoView({
-        behavior: reduceMotion ? "auto" : "smooth",
-        block: "start",
-    });
-};
 
 onMounted(async () => {
     const [{ gsap }, { ScrollTrigger }] = await Promise.all([
@@ -134,7 +126,7 @@ onMounted(async () => {
             isDesktop: "(min-width: 900px)",
             reduceMotion: "(prefers-reduced-motion: reduce)",
         },
-        (context) => {
+        (context: { conditions?: unknown }) => {
             const { isDesktop, reduceMotion } = context.conditions as {
                 isDesktop: boolean;
                 reduceMotion: boolean;
@@ -359,9 +351,10 @@ onUnmounted(() => {
                             </template>
                         </UModal>
                         <UButton
-                            v-if="winner.team.project.repo_url"
-                            :href="winner.team.project.repo_url"
+                            v-if="safeUrl(winner.team.project.repo_url)"
+                            :href="safeUrl(winner.team.project.repo_url)"
                             target="_blank"
+                            rel="noopener noreferrer"
                             external
                             color="neutral"
                             variant="outline"
@@ -514,7 +507,6 @@ onUnmounted(() => {
                 <i />
                 <i />
             </div>
-            <p>Expedition complete · Six signals recovered</p>
             <h2>The surface looks different once you know what lies beneath.</h2>
             <UButton
                 to="/showcase"

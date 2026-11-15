@@ -6,7 +6,7 @@ import { writeBasisAuthFlowTransaction } from "~~/server/utils/basis-auth-sessio
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         if (event.node?.res) setResponseHeader(event, "cache-control", "no-store");
-        const redirect = sanitizePostLoginRedirect(getQuery(event).redirect as string | undefined);
+        const redirect = sanitizePostLoginRedirect(getQuery(event).redirect);
         const authorizationUrl = await beginBasisAuthFlow(redirect);
 
         writeBasisAuthFlowTransaction(event, authorizationUrl.transaction);

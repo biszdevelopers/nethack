@@ -1,7 +1,10 @@
-import { apiResponseSchema } from "@basis/schema/api";
 import { z } from "zod";
 
-const responseSchema = apiResponseSchema({ data: z.unknown() });
+const responseSchema = z.object({
+    status: z.number().int().min(100).max(599),
+    code: z.union([z.string().min(1), z.number().int()]),
+    data: z.unknown(),
+});
 const marker = Symbol.for("basishacks.api-fetch");
 
 export default defineNuxtPlugin(() => {

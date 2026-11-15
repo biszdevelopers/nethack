@@ -130,6 +130,15 @@ describe("getAllSessions", () => {
         expect(result).toHaveLength(1);
         expect(result[0].sessionName).toBe("Lonely Session");
     });
+
+    it("filters sessions by owner", () => {
+        createSession("Mine", 7);
+        createSession("Theirs", 8);
+
+        expect(getAllSessions(7).map((session) => session.sessionName)).toEqual(["Mine"]);
+        expect(getAllSessions(8).map((session) => session.sessionName)).toEqual(["Theirs"]);
+        expect(getAllSessions(9)).toEqual([]);
+    });
 });
 
 // ---------------------------------------------------------------------------

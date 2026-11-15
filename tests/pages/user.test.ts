@@ -8,8 +8,10 @@ const source = readFileSync(
 );
 
 describe("User index page", () => {
-    it("redirects unauthenticated users to login and throws navigation", () => {
-        expect(source).toContain('throw await navigateTo("/login")');
+    it("refreshes the session and redirects unauthenticated users to the login endpoint", () => {
+        expect(source).toContain('middleware: "auth"');
+        expect(source).toContain("/api/login?redirect=");
+        expect(source).toContain("external: true");
         expect(source).toContain('throw await navigateTo("/user/" + userID.value)');
     });
 });

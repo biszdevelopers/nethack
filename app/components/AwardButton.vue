@@ -5,7 +5,7 @@
             :icon="props.award.icon"
             variant="subtle"
             :color="convertColor(props.award)"
-        ></UButton>
+        />
         <template #content>
             <div class="flex flex-col gap-1">
                 <p class="text-sm font-bold">{{ props.award.name }}</p>

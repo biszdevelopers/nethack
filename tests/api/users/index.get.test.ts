@@ -7,8 +7,10 @@ import {
     seedHackathon,
     seedSeason,
     seedUser,
+    seedTeam,
     type TestContext,
 } from "~~/tests/api/helpers";
+import { userPastTeams } from "~~/server/database/schema";
 
 let ctx: TestContext;
 let listHandler: any;
@@ -60,5 +62,23 @@ describe("GET /api/users", () => {
         expect(result[0]).toHaveProperty("team_id");
         expect(result[0]).toHaveProperty("profile_theme");
         expect(result[0]).toHaveProperty("profile_picture");
+    });
+
+    it("lists every past team id for each user", async () => {
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 1, role: "admin" });
+        const alice = seedUser(ctx, { email: "alice@basischina.com" });
+        const first = seedTeam(ctx, { name: "First" });
+        const second = seedTeam(ctx, { name: "Second" });
+        ctx.drizzle
+            .insert(userPastTeams)
+            .values([
+                { user_id: alice.id, team_id: first.id },
+                { user_id: alice.id, team_id: second.id },
+            ] as any)
+            .run();
+
+        const result = await listHandler(createEvent());
+
+        expect(result[0].past_team_ids).toBe(`${first.id},${second.id}`);
     });
 });

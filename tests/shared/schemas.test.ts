@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-    CreateTeamQuery,
     GetTeamsQuery,
     CreateTeamRequest,
     UpdateTeamRequest,
@@ -32,31 +31,8 @@ import {
     ZeroToFive,
     ScoreValues,
     MAX_USER_NAME_LENGTH,
-    MAX_PROJECT_DESCRIPTION_LENGTH,
     MAX_PROJECT_SOURCE_LENGTH,
-    MAX_REASONING_LENGTH,
 } from "~~/shared/schemas";
-
-describe("CreateTeamQuery", () => {
-    it("accepts add=true", () => {
-        const result = CreateTeamQuery.parse({ add: "true" });
-        expect(result.add).toBe(true);
-    });
-
-    it("accepts add=false", () => {
-        const result = CreateTeamQuery.parse({ add: "false" });
-        expect(result.add).toBe(false);
-    });
-
-    it("has add as undefined when missing", () => {
-        const result = CreateTeamQuery.parse({});
-        expect(result.add).toBeUndefined();
-    });
-
-    it("rejects add with an invalid value", () => {
-        expect(() => CreateTeamQuery.parse({ add: "yes" })).toThrow();
-    });
-});
 
 describe("CreateTeamRequest", () => {
     it("accepts a valid team name", () => {
@@ -98,8 +74,9 @@ describe("UpdateTeamRequest", () => {
         expect(() => UpdateTeamRequest.parse({})).not.toThrow();
     });
 
-    it("rejects an invalid pathway", () => {
-        expect(() => UpdateTeamRequest.parse({ pathway: "intermediate" })).toThrow();
+    it("accepts a configurable track key and rejects malformed track keys", () => {
+        expect(() => UpdateTeamRequest.parse({ pathway: "intermediate" })).not.toThrow();
+        expect(() => UpdateTeamRequest.parse({ pathway: "Bad Track" })).toThrow();
     });
 
     it("accepts a valid project update", () => {
@@ -159,10 +136,12 @@ describe("UpdateTeamRequest", () => {
         ).toThrow();
     });
 
-    it("accepts long sourcing notes (MAX is now Integer.MAX_VALUE)", () => {
+    it("enforces the sourcing notes size limit", () => {
         expect(() =>
-            UpdateTeamRequest.parse({ project: { sourcing: "A".repeat(5000) } }),
-        ).not.toThrow();
+            UpdateTeamRequest.parse({
+                project: { sourcing: "A".repeat(MAX_PROJECT_SOURCE_LENGTH + 1) },
+            }),
+        ).toThrow();
     });
 });
 
@@ -292,7 +271,7 @@ describe("SubmitTeamRequest", () => {
         ).toThrow();
     });
 
-    it("accepts long sourcing notes in submission (MAX now Integer.MAX_VALUE)", () => {
+    it("enforces the sourcing notes size limit in submission", () => {
         expect(() =>
             SubmitTeamRequest.parse({
                 pathway: "junior",
@@ -301,10 +280,10 @@ describe("SubmitTeamRequest", () => {
                     description: "A".repeat(30),
                     demo_url: "https://example.com",
                     repo_url: "https://github.com/user/repo",
-                    sourcing: "A".repeat(5000),
+                    sourcing: "A".repeat(MAX_PROJECT_SOURCE_LENGTH + 1),
                 },
             }),
-        ).not.toThrow();
+        ).toThrow();
     });
 });
 
@@ -358,46 +337,17 @@ describe("UpdateUserRequest", () => {
             type: "image/png",
         });
         expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).toThrow(
-            "smaller than 10 MB",
+            "smaller than 7 MB",
         );
     });
 
-    it("rejects a profile_theme_image File with an invalid type", () => {
+    it("accepts GIF profile theme images because the uploader supports them", () => {
         const file = new File([new Uint8Array([1, 2, 3])], "theme.gif", { type: "image/gif" });
-        expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).toThrow(
-            "valid image file",
-        );
+        expect(() => UpdateUserRequest.parse({ profile_theme_image: file })).not.toThrow();
     });
 
-    it("accepts an avatar as null", () => {
-        expect(() => UpdateUserRequest.parse({ avatar: null })).not.toThrow();
-    });
-
-    it("accepts an avatar as a data string", () => {
-        expect(() =>
-            UpdateUserRequest.parse({ avatar: "data:image/png;base64,abc" }),
-        ).not.toThrow();
-    });
-
-    it("accepts an avatar as a valid File", () => {
-        const file = new File([new Uint8Array([1, 2, 3])], "avatar.png", { type: "image/png" });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).not.toThrow();
-    });
-
-    it("rejects an avatar File that is too large", () => {
-        const file = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "avatar.png", {
-            type: "image/png",
-        });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("smaller than 10 MB");
-    });
-
-    it("rejects an avatar File with an invalid type", () => {
-        const file = new File([new Uint8Array([1, 2, 3])], "avatar.gif", { type: "image/gif" });
-        expect(() => UpdateUserRequest.parse({ avatar: file })).toThrow("valid image file");
-    });
-
-    it("rejects an avatar that is not a data string, null, or File", () => {
-        expect(() => UpdateUserRequest.parse({ avatar: "not-data-or-file" })).toThrow();
+    it("ignores the retired avatar field", () => {
+        expect(UpdateUserRequest.parse({ avatar: "data:image/png;base64,abc" })).toEqual({});
     });
 
     it("rejects a name longer than MAX_USER_NAME_LENGTH characters", () => {
@@ -548,8 +498,8 @@ describe("SubmitVoteRequest", () => {
         ).toThrow("Stars must sum to 10");
     });
 
-    it("rejects more than 50 scores", () => {
-        const scores = Array(51).fill(0);
+    it("rejects more than 200 scores", () => {
+        const scores = Array(201).fill(0);
         scores[0] = 5;
         scores[1] = 5;
         expect(() =>
@@ -946,6 +896,12 @@ describe("GetTeamsQuery", () => {
         expect(result.season_id).toBe(1);
     });
 
+    it("accepts a bounded judging page", () => {
+        const result = GetTeamsQuery.parse({ judging: "true", page: "2", page_size: "25" });
+        expect(result.page).toBe(2);
+        expect(result.page_size).toBe(25);
+    });
+
     it("accepts an empty query", () => {
         const result = GetTeamsQuery.parse({});
         expect(result.judging).toBeUndefined();
@@ -958,6 +914,12 @@ describe("GetTeamsQuery", () => {
 
     it("rejects a non-positive season_id", () => {
         expect(() => GetTeamsQuery.parse({ season_id: "0" })).toThrow();
+    });
+
+    it("rejects unbounded or invalid judging pagination", () => {
+        expect(() => GetTeamsQuery.parse({ page: "0" })).toThrow();
+        expect(() => GetTeamsQuery.parse({ page_size: "51" })).toThrow();
+        expect(() => GetTeamsQuery.parse({ page: "1.5" })).toThrow();
     });
 });
 
@@ -1296,6 +1258,14 @@ describe("ProjectUrl", () => {
 
     it("accepts an empty string", () => {
         expect(() => ProjectUrl.parse("")).not.toThrow();
+    });
+
+    it.each([
+        "javascript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "https://user:password@example.com/path",
+    ])("rejects unsafe external URL %s", (value) => {
+        expect(() => ProjectUrl.parse(value)).toThrow();
     });
 
     it("accepts a URL with subdomain", () => {
@@ -1741,12 +1711,6 @@ describe("UpdateUserRequest - additional", () => {
         expect(() => UpdateUserRequest.parse({ name: "John O'Brien-Smith" })).not.toThrow();
     });
 
-    it("accepts both profile_theme_image and avatar set to null", () => {
-        expect(() =>
-            UpdateUserRequest.parse({ profile_theme_image: null, avatar: null }),
-        ).not.toThrow();
-    });
-
     it("accepts a name as an empty string", () => {
         expect(() => UpdateUserRequest.parse({ name: "" })).not.toThrow();
     });
@@ -1754,12 +1718,6 @@ describe("UpdateUserRequest - additional", () => {
     it("accepts a profile_theme_image as a data JPEG URL", () => {
         expect(() =>
             UpdateUserRequest.parse({ profile_theme_image: "data:image/jpeg;base64,xyz" }),
-        ).not.toThrow();
-    });
-
-    it("accepts an avatar as a data JPEG URL", () => {
-        expect(() =>
-            UpdateUserRequest.parse({ avatar: "data:image/jpeg;base64,xyz" }),
         ).not.toThrow();
     });
 

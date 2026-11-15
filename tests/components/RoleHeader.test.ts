@@ -18,6 +18,12 @@ describe("RoleHeader.vue", () => {
         expect(source).toContain("basishacks_2026");
     });
 
+    it("keeps the brand and mobile header controls usable on narrow touch screens", () => {
+        expect(source).toContain("text-base text-primary sm:text-xl");
+        expect(source).toContain("min-h-11 min-w-11");
+        expect(source).toContain(":ui=\"{ link: 'min-h-11' }\"");
+    });
+
     it("includes a Home navigation item", () => {
         expect(source).toContain("Home");
         expect(source).toContain('to: "/"');
@@ -39,9 +45,11 @@ describe("RoleHeader.vue", () => {
         expect(source).toContain('to: "/voting"');
     });
 
-    it("conditionally shows Judging when judging access is granted during voting", () => {
+    it("shows Judging whenever judging access is granted, including after the event", () => {
         expect(source).toContain("can(NethackPermissions.Judging.assignmentsRead)");
         expect(source).toContain('to: "/judging"');
+        expect(source).not.toMatch(/can\(NethackPermissions\.Judging\.assignmentsRead\)\s*&&/);
+        expect(source).toContain("Judges keep the Judging link outside the voting phase");
     });
 
     it("includes a UColorModeButton for theme toggling", () => {

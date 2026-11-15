@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { AddTeamMemberRequest, UpdateTeamRequest } from "~~/shared/schemas";
 
@@ -20,9 +21,36 @@ const {
     data: users,
     error,
     refresh,
-} = await useFetch<GetTeamMembersResponse>(`/api/teams/${id}/users`);
+} = await useApiFetch<GetTeamMembersResponse>(`/api/teams/${id}/users`);
 if (error.value) {
     throw error.value;
+}
+
+const {
+    data: invites,
+    error: invitesError,
+    refresh: refreshInvites,
+} = await useApiFetch<GetTeamInvitesResponse>(`/api/teams/${id}/invites`);
+if (invitesError.value) {
+    throw invitesError.value;
+}
+
+async function cancelInvite(inviteID: number) {
+    try {
+        await withLoadingIndicator(async () => {
+            const { message } = await apiFetch(`/api/teams/${id}/invites/${inviteID}`, {
+                method: "DELETE",
+            });
+            toast.add({ color: "success", title: message });
+            await refreshInvites();
+        });
+    } catch (e) {
+        toast.add({
+            color: "error",
+            title: "Failed to cancel invitation",
+            description: getErrorMessage(e),
+        });
+    }
 }
 
 const removeMemberMessage = (user: Pick<User, "id" | "name" | "email">) => {
@@ -38,7 +66,7 @@ const removeMemberMessage = (user: Pick<User, "id" | "name" | "email">) => {
 async function removeUser(user: Pick<User, "id" | "name" | "email">) {
     try {
         await withLoadingIndicator(async () => {
-            const { message } = await $fetch(`/api/teams/${id}/users/${user.id}`, {
+            const { message } = await apiFetch(`/api/teams/${id}/users/${user.id}`, {
                 method: "DELETE",
             });
             toast.add({
@@ -68,7 +96,7 @@ const nameState = reactive({
 async function onNameSubmit(event: FormSubmitEvent<UpdateTeamRequest>, close: () => void) {
     try {
         await withLoadingIndicator(async () => {
-            const { message } = await $fetch(`/api/teams/${id}`, {
+            const { message } = await apiFetch(`/api/teams/${id}`, {
                 method: "PATCH",
                 body: event.data,
             });
@@ -98,7 +126,7 @@ const state = reactive({
 async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () => void) {
     try {
         await withLoadingIndicator(async () => {
-            const { message } = await $fetch(`/api/teams/${id}/users`, {
+            const { message } = await apiFetch(`/api/teams/${id}/users`, {
                 method: "POST",
                 body: event.data,
             });
@@ -106,13 +134,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                 color: "success",
                 title: message,
             });
-            emit("refresh");
-            await refresh();
+            await refreshInvites();
         });
     } catch (e) {
         toast.add({
             color: "error",
-            title: "Failed to add member",
+            title: "Failed to send invitation",
             description: getErrorMessage(e),
         });
     } finally {
@@ -134,6 +161,8 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                     :disabled="disabled"
                     variant="soft"
                     icon="i-material-symbols-drive-file-rename-outline"
+                    aria-label="Rename team"
+                    class="min-h-11 min-w-11"
                 />
 
                 <template #body="{ close }">
@@ -144,7 +173,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         @submit="onNameSubmit($event, close)"
                     >
                         <UFormField name="name" label="New name">
-                            <UInput v-model="nameState.name" class="w-full" />
+                            <UInput v-model="nameState.name" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
@@ -154,8 +183,14 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                 </template>
             </UModal>
 
-            <UModal title="Add team member">
-                <UButton :disabled="disabled" variant="soft" icon="i-material-symbols-person-add" />
+            <UModal title="Invite team member">
+                <UButton
+                    :disabled="disabled"
+                    variant="soft"
+                    icon="i-material-symbols-person-add"
+                    aria-label="Invite team member"
+                    class="min-h-11 min-w-11"
+                />
 
                 <template #body="{ close }">
                     <UForm
@@ -164,12 +199,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                         class="space-y-2 w-full"
                         @submit="onSubmit($event, close)"
                     >
-                        <UFormField name="email" label="New member email">
-                            <UInput v-model="state.email" type="email" class="w-full" />
+                        <UFormField name="email" label="Member email">
+                            <UInput v-model="state.email" type="email" class="min-h-11 w-full" />
                         </UFormField>
 
                         <UFormField>
-                            <UButton variant="subtle" type="submit">Add</UButton>
+                            <UButton variant="subtle" type="submit">Invite</UButton>
                         </UFormField>
                     </UForm>
                 </template>
@@ -196,6 +231,12 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                                 icon="i-material-symbols-delete"
                                 color="warning"
                                 variant="soft"
+                                :aria-label="
+                                    user.id === currentUser?.id
+                                        ? 'Leave team'
+                                        : `Remove ${user.name || user.email} from team`
+                                "
+                                class="min-h-11 min-w-11"
                             />
 
                             <template #content>
@@ -207,5 +248,28 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                 </UCard>
             </li>
         </ul>
+
+        <template v-if="invites?.invites.length">
+            <h3 class="text-xl bold mb-2">Pending invitations</h3>
+            <ul class="grid lg:grid-cols-2 gap-4 mb-4">
+                <li v-for="invite in invites.invites" :key="invite.id">
+                    <UCard variant="subtle">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span>{{ invite.email }}</span>
+                            <div class="flex-1" />
+                            <UButton
+                                :disabled="disabled"
+                                icon="i-material-symbols-close"
+                                color="warning"
+                                variant="soft"
+                                :aria-label="`Cancel invitation for ${invite.email}`"
+                                class="min-h-11 min-w-11"
+                                @click="cancelInvite(invite.id)"
+                            />
+                        </div>
+                    </UCard>
+                </li>
+            </ul>
+        </template>
     </div>
 </template>

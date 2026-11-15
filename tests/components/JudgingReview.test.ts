@@ -1,0 +1,26 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const source = readFileSync(
+    resolve(import.meta.dirname, "..", "..", "app", "components", "JudgingReview.vue"),
+    "utf-8",
+);
+
+describe("JudgingReview.vue", () => {
+    it("shows the selected score and configured maximum for each criterion", () => {
+        expect(source).toContain("{{ scores[criterion.id] }}");
+        expect(source).toContain("/{{ criterion.maxScore }}");
+    });
+
+    it("explains anonymous feedback publication and requires an explicit finalize action", () => {
+        expect(source).toContain("Teams can see the feedback after results");
+        expect(source).toContain("your identity will not be shown");
+        expect(source).toContain("Finalize evaluation");
+    });
+
+    it("keeps preview copy readable on the tinted score panel", () => {
+        expect(source).toContain("bg-primary/10");
+        expect(source).not.toContain("text-muted");
+    });
+});

@@ -93,6 +93,7 @@ export default defineConfig({
                     text: "Deployment & Operations",
                     items: [
                         { text: "Security", link: "/deployment/security" },
+                        { text: "PostgreSQL & VPS", link: "/deployment/postgresql-migration" },
                         { text: "Rate Limiting", link: "/deployment/rate-limiting" },
                         { text: "Performance", link: "/deployment/performance" },
                     ],

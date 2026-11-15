@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { Readable } from "node:stream";
 import {
     createTestContext,
     resetTestContext,
@@ -36,6 +37,7 @@ vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
     DEFAULT_RATE_LIMIT_CONFIG: { maxRequests: 6000, windowMs: 60 * 1000 },
     VOTE_RATE_LIMIT_CONFIG: { maxRequests: 600, windowMs: 60 * 1000 },
+    UPLOAD_RATE_LIMIT_CONFIG: { maxRequests: 100, windowMs: 60 * 1000 },
 }));
 
 const SQL_METACHARACTERS = [
@@ -99,6 +101,7 @@ beforeAll(async () => {
 
     vi.stubGlobal("getTeamsBySeason", teamsDb.getTeamsBySeason);
     vi.stubGlobal("getAllTeams", teamsDb.getAllTeams);
+    vi.stubGlobal("getPublicTeams", teamsDb.getPublicTeams);
     vi.stubGlobal("getSubmittedTeams", teamsDb.getSubmittedTeams);
     vi.stubGlobal("getSubmittedUnjudgedTeams", teamsDb.getSubmittedUnjudgedTeams);
 
@@ -122,8 +125,18 @@ afterEach(() => {
 });
 
 function createEvent(overrides: Record<string, unknown> = {}) {
+    const body = Buffer.from(JSON.stringify(mockBody.value ?? {}));
+    const request = Object.assign(Readable.from([body]), {
+        headers: {
+            "content-length": String(body.byteLength),
+            "content-type": "application/json",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+    });
+
     return {
         context: { drizzle: ctx.drizzle },
+        node: { req: request, res: { headersSent: false, setHeader() {} } },
         ...overrides,
     };
 }
@@ -392,6 +405,7 @@ describe("SQL injection in peer voting reasoning (direct DB helper)", () => {
 
         await upsertPeerVote(createEvent(), {
             user_id: 999,
+            season_id: 1,
             score: JSON.stringify({}),
             reasoning: sqlReasoning,
         });
@@ -417,8 +431,16 @@ describe("SQL injection in judge scores reasoning (direct DB helper)", () => {
 
         await createTeamScores(createEvent(), {
             team_id: team.id,
+            season_id: 1,
             judge_user_id: 1,
-            scores: JSON.stringify({ originality: 4 }),
+            rubric_version_id: 1,
+            scores: JSON.stringify({
+                originality: 4,
+                presentation: 3,
+                technicality: 4,
+                theme: 3,
+                impact: 4,
+            }),
             reasoning: sqlReasoning,
         });
 
@@ -843,7 +865,7 @@ describe("URL injection in project fields", () => {
 });
 
 describe("pathway field injection", () => {
-    it("accepts invalid pathway value when mock bypasses Zod validation", async () => {
+    it("rejects a pathway that has no rubric track when validation is bypassed", async () => {
         const team = seedTeam(ctx, { name: "PathTeam" });
         seedUser(ctx, { email: "path@basischina.com", team_id: team.id });
 
@@ -851,11 +873,13 @@ describe("pathway field injection", () => {
         mockParams.values["id"] = String(team.id);
         mockBody.value = { pathway: "' OR 1=1 --" };
 
-        // In real execution Zod would reject this; the test mock bypasses validation
-        await updateTeamHandler(createEvent());
+        await expect(updateTeamHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "Choose a track that is available for this season.",
+        });
 
         const row = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
-        expect(row!.pathway).toBeDefined();
+        expect(row!.pathway).toBeNull();
     });
 });
 

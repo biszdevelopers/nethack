@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
+import { isInitialAdminEmail } from "~~/shared/permissions";
 definePageMeta({
     layout: "developers-dashboard",
+    middleware: ["auth"],
 });
 
 const UserAvatar = resolveComponent("UserAvatar");
@@ -25,9 +28,12 @@ const columnFilters = ref([
 const columnVisibility = ref();
 const rowSelection = ref<Record<string, boolean>>({});
 
-type AdminUser = User & { past_team_ids: string | null };
+type AdminUser = Omit<User, "is_admin"> & {
+    past_team_ids: string | null;
+    is_admin: boolean;
+};
 
-const { data, status, refresh } = await useFetch<AdminUser[]>("/api/users", {
+const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
     server: false,
     lazy: true,
     default: () => [],
@@ -44,7 +50,7 @@ async function onDelete() {
     if (selectedIds.value.length === 0) return;
 
     try {
-        await $fetch("/api/users", {
+        await apiFetch("/api/users", {
             method: "DELETE",
             body: { ids: selectedIds.value },
         });
@@ -65,6 +71,28 @@ async function onDelete() {
         });
     } finally {
         modalOpen.value = false;
+    }
+}
+
+async function toggleAdmin(user: AdminUser) {
+    if (isInitialAdminEmail(user.email)) return;
+    try {
+        await apiFetch(`/api/users/${user.id}/admin`, {
+            method: "PATCH",
+            body: { is_admin: !user.is_admin },
+        });
+        toast.add({
+            title: user.is_admin ? "Administrator removed" : "Administrator added",
+            description: user.email,
+            color: "success",
+        });
+        await refresh();
+    } catch (e: any) {
+        toast.add({
+            title: "Failed to update administrator",
+            description: e?.data?.message || e?.message || "Try again.",
+            color: "error",
+        });
     }
 }
 
@@ -133,6 +161,27 @@ const columns: TableColumn<AdminUser>[] = [
         },
     },
     {
+        id: "is_admin",
+        header: "Admin",
+        cell: ({ row }) =>
+            h(UButton, {
+                size: "xs",
+                variant: "soft",
+                color: isInitialAdminEmail(row.original.email)
+                    ? "neutral"
+                    : row.original.is_admin
+                      ? "error"
+                      : "primary",
+                label: isInitialAdminEmail(row.original.email)
+                    ? "Initial admin"
+                    : row.original.is_admin
+                      ? "Demote"
+                      : "Promote",
+                disabled: isInitialAdminEmail(row.original.email),
+                onClick: () => toggleAdmin(row.original),
+            }),
+    },
+    {
         accessorKey: "team_id",
         header: "Team ID",
         cell: ({ row }) => row.original.team_id ?? "-",
@@ -145,7 +194,7 @@ const columns: TableColumn<AdminUser>[] = [
             if (!ids) return "-";
             const idList = ids
                 .split(",")
-                .map((s) => parseInt(s.trim()))
+                .map((s) => parseInt(s.trim(), 10))
                 .filter(Boolean);
             return h(
                 "div",
@@ -195,6 +244,11 @@ const currentPage = computed(
     () => (table.value?.tableApi?.getState()?.pagination?.pageIndex ?? 0) + 1,
 );
 
+const pageModel = computed({
+    get: () => currentPage.value,
+    set: (page: number) => table.value?.tableApi?.setPageIndex(page - 1),
+});
+
 const currentPageSize = computed(
     () => table.value?.tableApi?.getState()?.pagination?.pageSize ?? pagination.value.pageSize,
 );
@@ -236,7 +290,7 @@ const paginationOptions = {
                         variant="subtle"
                         icon="i-lucide-trash"
                         @click="modalOpen = true"
-                    ></UButton>
+                    />
 
                     <UDropdownMenu :items="displayColumnItems" :content="{ align: 'end' }">
                         <UButton
@@ -248,6 +302,15 @@ const paginationOptions = {
                     </UDropdownMenu>
                 </div>
             </div>
+
+            <UAlert
+                v-if="error"
+                color="error"
+                variant="soft"
+                class="mb-4"
+                title="Could not load users"
+                :description="getErrorMessage(error)"
+            />
 
             <UTable
                 ref="table"
@@ -279,10 +342,9 @@ const paginationOptions = {
 
                 <div class="flex items-center gap-1.5">
                     <UPagination
-                        :default-page="currentPage"
+                        v-model:page="pageModel"
                         :items-per-page="currentPageSize"
                         :total="filteredRowCount"
-                        @update:page="(p: number) => table?.tableApi?.setPageIndex(p - 1)"
                     />
                 </div>
             </div>
@@ -299,7 +361,7 @@ const paginationOptions = {
                     </div>
                 </template>
 
-                <p class="text-muted">
+                <p class="text-default">
                     Are you sure you want to delete
                     <strong>{{ selectedRows.length }}</strong>
                     selected user(s)? This action cannot be undone.

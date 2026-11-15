@@ -8,7 +8,9 @@ useHead({
     title: `Dashboard | ${WEBSITE_NAME}`,
 });
 
-const { data: hackathon, error: hackathonError } = await useFetch("/api/seasons/active");
+const { data: hackathon, error: hackathonError } = await useApiFetch("/api/seasons/active", {
+    $fetch: globalThis.$fetch,
+});
 if (hackathonError.value) {
     throw hackathonError.value;
 }
@@ -18,147 +20,29 @@ if (error.value) {
     throw error.value;
 }
 
-const isDirty = ref(false);
-const confettiTriggered = ref(false);
+const { data: inviteData, refresh: refreshInvites } =
+    await useApiFetch<GetUserInvitesResponse>("/api/team-invites");
+const toast = useToast();
 
-const rankColorClass = computed(() => {
-    const rank = data.value?.team?.rank;
-    if (rank == 1) return "text-yellow-400";
-    if (rank == 2) return "text-gray-300";
-    if (rank == 3) return "text-orange-600";
-    return "text-ui-text";
-});
-
-const rankMetallicClass = computed(() => {
-    const rank = data.value?.team?.rank;
-    if (rank == 1) return "metallic-gold";
-    if (rank == 2) return "metallic-silver";
-    if (rank == 3) return "metallic-bronze";
-    return "";
-});
-
-function confettiPride(confetti: any, color: Array<string>) {
-    const end = Date.now() + 1 * 1000;
-    (function frame() {
-        confetti({
-            particleCount: 3,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0, y: 1 },
-            colors: color,
+async function respondToInvite(inviteID: number, accept: boolean) {
+    try {
+        await withLoadingIndicator(async () => {
+            const { message } = await apiFetch(
+                `/api/team-invites/${inviteID}${accept ? "/accept" : ""}`,
+                { method: accept ? "POST" : "DELETE" },
+            );
+            toast.add({ color: "success", title: message });
+            await refreshInvites();
+            if (accept) await refresh();
         });
-        confetti({
-            particleCount: 3,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1, y: 1 },
-            colors: color,
+    } catch (e) {
+        toast.add({
+            color: "error",
+            title: accept ? "Failed to join the team" : "Failed to decline the invitation",
+            description: getErrorMessage(e),
         });
-
-        if (Date.now() < end) {
-            requestAnimationFrame(frame);
-        }
-    })();
-}
-
-function confettiFireworks(confetti: any, color: Array<string>) {
-    const duration = 3 * 1000;
-    const animationEnd = Date.now() + duration;
-    const defaults = { startVelocity: 20, spread: 360, ticks: 60, zIndex: 0, colors: color };
-
-    function randomInRange(min: number, max: number) {
-        return Math.random() * (max - min) + min;
-    }
-
-    var interval = setInterval(function () {
-        const timeLeft = animationEnd - Date.now();
-
-        if (timeLeft <= 0) {
-            return clearInterval(interval);
-        }
-
-        const particleCount = 100;
-        // since particles fall down, start a bit higher than random
-        confetti({
-            ...defaults,
-            particleCount,
-            origin: { x: randomInRange(0.1, 0.9), y: randomInRange(0.2, 0.9) },
-        });
-        //confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
-    }, 500);
-}
-
-function triggerConfetti(force: boolean = false) {
-    const rank = data.value?.team?.rank;
-    if (!rank || rank > 10 || confettiTriggered.value) return;
-
-    confettiTriggered.value = true;
-
-    import("canvas-confetti").then((confettiModule) => {
-        const confetti = (config: any) => {
-            sessionStorage.setItem("confettiShown", "true"); // Set a flag in session storage to indicate confetti has been shown
-
-            confettiModule.default({
-                ...config,
-            });
-        };
-
-        // go Buckeyes!
-
-        if (rank === 1) {
-            confettiPride(confetti, ["#FFD700", "#FFA500", "#FFFF00"]);
-            confettiFireworks(confetti, ["#FFD700", "#FFA500", "#FFFF00"]);
-        } else if (rank === 2) {
-            confettiPride(confetti, ["#C0C0C0", "#E8E8E8", "#D3D3D3"]);
-            confettiFireworks(confetti, ["#C0C0C0", "#E8E8E8", "#D3D3D3"]);
-        } else if (rank === 3) {
-            confettiPride(confetti, ["#CD7F32", "#B87333", "#A0522D"]);
-            confettiFireworks(confetti, ["#CD7F32", "#B87333", "#A0522D"]);
-        } else if (rank <= 10) {
-            confettiPride(confetti, ["#FF0000", "#00FF00", "#0000FF"]);
-        }
-    });
-}
-
-// onMounted(() => {
-//   triggerConfetti()
-// })
-
-async function refreshData() {
-    await withLoadingIndicator(async () => {
-        await refresh();
-    });
-    isDirty.value = false;
-}
-
-function dateUpdated(dirty: boolean) {
-    isDirty.value = dirty;
-}
-
-onBeforeRouteLeave(() => {
-    if (isDirty.value && !confirm("You have unsaved changes. Are you sure you want to leave?")) {
-        return abortNavigation();
-    }
-});
-
-function beforeUnload(event: BeforeUnloadEvent) {
-    if (isDirty.value) {
-        event.preventDefault();
-        event.returnValue = true;
     }
 }
-
-watch(isDirty, (value) => {
-    if (value) {
-        window.addEventListener("beforeunload", beforeUnload);
-    } else {
-        window.removeEventListener("beforeunload", beforeUnload);
-    }
-});
-
-onUnmounted(() => {
-    window.removeEventListener("beforeunload", beforeUnload);
-});
 
 const actions = ref([
     {
@@ -190,8 +74,37 @@ const actions = ref([
                 <span class="bold">{{ data!.name || data!.email }}</span>
                 ! You don't have a team yet. You can
                 <ULink href="/dashboard/teams">create a team</ULink>
-                or ask a member from another team to add you!
+                or accept an invitation from another team!
             </p>
+
+            <UCard v-if="inviteData?.invites.length" variant="subtle" class="mb-4">
+                <h2 class="text-2xl bold mb-2">Pending invitations</h2>
+                <ul class="space-y-2">
+                    <li
+                        v-for="invite in inviteData.invites"
+                        :key="invite.id"
+                        class="flex flex-wrap items-center gap-2"
+                    >
+                        <span>
+                            You were invited to join
+                            <span class="bold">{{ invite.team_name }}</span>
+                        </span>
+                        <div class="flex-1" />
+                        <UButton class="min-h-11" @click="respondToInvite(invite.id, true)">
+                            Accept
+                        </UButton>
+                        <UButton
+                            color="neutral"
+                            variant="soft"
+                            class="min-h-11"
+                            @click="respondToInvite(invite.id, false)"
+                        >
+                            Decline
+                        </UButton>
+                    </li>
+                </ul>
+            </UCard>
+
             <p v-if="hackathon?.status === 'not_started'" class="mb-4">
                 (Don't worry though, you can also create or join a team during the hackathon :)
             </p>
@@ -228,7 +141,7 @@ const actions = ref([
 
             <h2 class="text-3xl bold mb-4">Your project</h2>
 
-            <ProjectCard v-if="data.team_id" :id="data.team_id"></ProjectCard>
+            <ProjectCard v-if="data.team_id" :id="data.team_id" />
 
             <h2 class="text-3xl bold my-4">Continue...</h2>
 
