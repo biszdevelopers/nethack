@@ -36,10 +36,10 @@ const hasSummary = computed(() =>
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h3 :id="headingId" class="font-semibold">Judge feedback</h3>
-                <p v-if="admin" class="mt-1 text-sm text-muted">
+                <p v-if="admin" class="mt-1 text-sm text-default">
                     Judge names and account IDs are visible only in this admin view.
                 </p>
-                <p v-else class="mt-1 text-sm text-muted">
+                <p v-else class="mt-1 text-sm text-default">
                     Judge names, account IDs, rubric metadata, and individual scores are hidden.
                     Comments appear only after publication when at least three judges have submitted
                     evaluations.
@@ -64,7 +64,7 @@ const hasSummary = computed(() =>
             </div>
         </div>
 
-        <p v-if="pending" class="mt-4 text-sm text-muted" role="status">
+        <p v-if="pending" class="mt-4 text-sm text-default" role="status">
             Loading published feedback…
         </p>
         <UAlert
@@ -77,7 +77,7 @@ const hasSummary = computed(() =>
         />
         <p
             v-else-if="data?.feedback_withheld_for_anonymity"
-            class="mt-4 rounded-lg bg-elevated p-4 text-sm text-muted"
+            class="mt-4 rounded-lg bg-elevated p-4 text-sm text-default"
             role="status"
         >
             Written feedback is hidden until at least three judges have evaluated this project so no
@@ -104,7 +104,7 @@ const hasSummary = computed(() =>
                         {{ evaluation.normalized_score }}/100
                     </span>
                 </div>
-                <p v-if="admin" class="mt-1 text-xs text-muted">
+                <p v-if="admin" class="mt-1 text-xs text-default">
                     {{ evaluation.track_name }} · {{ evaluation.rubric_name }} v{{
                         evaluation.rubric_version
                     }}
@@ -118,10 +118,10 @@ const hasSummary = computed(() =>
                         :key="criterion.id"
                         class="flex justify-between gap-3"
                     >
-                        <dt class="min-w-0 truncate text-muted">{{ criterion.name }}</dt>
+                        <dt class="min-w-0 truncate text-default">{{ criterion.name }}</dt>
                         <dd class="shrink-0 font-medium">
                             {{ evaluation.scores[criterion.id] ?? "—" }}
-                            <span class="text-muted">
+                            <span class="text-default">
                                 ({{ criterion.minScore }}–{{ criterion.maxScore }})
                             </span>
                         </dd>
@@ -132,6 +132,6 @@ const hasSummary = computed(() =>
                 </p>
             </article>
         </div>
-        <p v-else-if="data" class="mt-4 text-sm text-muted">No written feedback is available.</p>
+        <p v-else-if="data" class="mt-4 text-sm text-default">No written feedback is available.</p>
     </section>
 </template>

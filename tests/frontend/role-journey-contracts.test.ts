@@ -243,6 +243,10 @@ describe("judge results and admin controls", () => {
         expect(feedback).toContain("Feedback could not be loaded");
     });
 
+    it("keeps feedback dialog copy above the contrast threshold", () => {
+        expect(feedback).not.toContain("text-muted");
+    });
+
     it("shows original score, curve display, and rank as separate result values", () => {
         expect(feedback).toContain("Original average:");
         expect(feedback).toContain("Curved display ({{ curve?.label }}):");
