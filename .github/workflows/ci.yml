@@ -70,7 +70,11 @@ jobs:
               run: bun audit
 
             - name: Type-check the app and server
-              run: bun run typecheck
+              run: |
+                  # The sibling @basis/schema source imports zod; expose this
+                  # project's installed dependencies to it for vue-tsc.
+                  ln -s "$PWD/node_modules" ../basis-schema/node_modules
+                  bun run typecheck
 
             - name: Run PostgreSQL integration tests
               run: bun run test:postgres
