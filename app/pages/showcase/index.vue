@@ -8,7 +8,7 @@ useHead({
     meta: [
         {
             name: "description",
-            content: "Explore the winning projects and season showcases from basishacks.",
+            content: "Explore the winning projects and season showcases from nethack.",
         },
     ],
 });
@@ -107,6 +107,8 @@ useHead({
                 </NuxtLink>
             </div>
         </section>
+
+        <ShowcaseSeasonArchive />
     </main>
 </template>
 
