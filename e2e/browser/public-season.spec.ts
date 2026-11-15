@@ -29,6 +29,12 @@ async function expectTouchTarget(target: Locator) {
     expect(box.height).toBeGreaterThanOrEqual(44);
 }
 
+async function openSeasonTab(page: Page, name: string) {
+    const tab = page.getByRole("tab", { name, exact: true });
+    await expect(tab).toBeVisible();
+    if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+}
+
 async function setSeasonStatus(page: Page, selector: Locator, status: string) {
     if ((await selector.innerText()).includes(status)) return;
     const saved = page.waitForResponse(
@@ -115,6 +121,7 @@ test("public season JSON and page redact a configured unreleased theme", async (
     const secretDescription = "E2E private theme details do not expose a31f20";
 
     await loginAsAdmin(page);
+    await openSeasonTab(page, "Event settings");
     const configuration = page
         .getByRole("heading", { name: "Hackathon Configuration" })
         .locator("xpath=ancestor::section[1]");
@@ -122,8 +129,6 @@ test("public season JSON and page redact a configured unreleased theme", async (
     await expectTouchTarget(status);
     for (const label of [
         "Max Votes Per User",
-        "Schedule Start",
-        "Schedule End",
         "Start",
         "End",
         "Voting Start",
@@ -179,6 +184,7 @@ test("public season JSON and page redact a configured unreleased theme", async (
     );
 
     await page.goto("/developers/season");
+    await openSeasonTab(page, "Event settings");
     await expect(page.getByRole("heading", { name: "Hackathon Configuration" })).toBeVisible();
     await setSeasonStatus(page, status, "Paused");
     await expectUnreleasedThemeRedacted(page, request, "paused", secretName, secretDescription);

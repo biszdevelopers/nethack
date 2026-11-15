@@ -30,7 +30,9 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `results_open_timestamp` | bigint in PostgreSQL; JavaScript `number` | When results become visible, in epoch milliseconds |
 | `theme_name` / `theme_description` | text | Season theme |
 
-The live state comes from the selected YAML manifest. In YAML mode the admin page shows live settings as read-only and keeps other seasons editable. The legacy singleton remains available for PostgreSQL rollback mode.
+The live state comes from the selected YAML manifest. A local manifest is editable from the admin page, which writes the change back into the file (comments and the rubric block are preserved); a remote manifest is read-only. Other seasons always keep their own editable stored settings. The legacy singleton remains available for PostgreSQL rollback mode.
+
+Creating a season copies the live event settings and the active season's score display curve, and activating a season that was never configured seeds it from the live settings first, so switching seasons cannot blank the theme, schedule, or status.
 
 ## Tweakable Settings
 
@@ -95,7 +97,9 @@ At least one field is required. Boolean values are stored as `0`/`1`.
 | `getSeasons(event)` | List all seasons ordered by ID |
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
-| `setActiveSeason(event, seasonId)` | Activate one season and deactivate all others; throws 404 if the season does not exist |
+| `setActiveSeason(event, seasonId)` | Activate one season and deactivate all others; seeds a never-configured season from the live settings first; throws 404 if the season does not exist |
+| `pickSeasonConfig(source)` | Copy the event settings that seed a new or blank season |
+| `isUnconfiguredSeason(season)` | Detect a season that was never configured |
 | `updateSeasonTweaks(event, seasonId, data)` | Update stored tweaks. Live edits are rejected in YAML mode. |
 | `getScoreRankVisibilityResolver(event)` | Build a season-ID-to-visibility resolver with a global fallback |
 

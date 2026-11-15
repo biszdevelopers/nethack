@@ -11,7 +11,52 @@ import { hackathonUsesYaml } from "../hackathon-config";
  */
 export const SEASON_TWEAK_FIELDS = ["status", "show_scores", "show_ranking"] as const;
 
+/** Event settings that seed a new season and keep blank seasons usable. */
+const SEASON_CONFIG_FIELDS = [
+    "status",
+    "voting_enabled",
+    "results_published",
+    "show_scores",
+    "show_ranking",
+    "max_votes_per_user",
+    "judging_open",
+    "schedule_start",
+    "schedule_end",
+    "start_timestamp",
+    "end_timestamp",
+    "voting_start_timestamp",
+    "voting_end_timestamp",
+    "results_open_timestamp",
+    "theme_name",
+    "theme_description",
+] as const;
+
 export type SeasonTweaks = Partial<Pick<Season, (typeof SEASON_TWEAK_FIELDS)[number]>>;
+
+export function pickSeasonConfig(
+    source: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+    const picked: Record<string, unknown> = {};
+    if (!source) return picked;
+    for (const field of SEASON_CONFIG_FIELDS) {
+        if (source[field] !== undefined) picked[field] = source[field];
+    }
+    return picked;
+}
+
+/** A season nobody configured yet; activating it must not blank the event. */
+export function isUnconfiguredSeason(season: Season): boolean {
+    return (
+        season.status === "not_started" &&
+        !season.theme_name &&
+        !season.theme_description &&
+        season.start_timestamp === 0 &&
+        season.end_timestamp === 0 &&
+        season.voting_start_timestamp === 0 &&
+        season.voting_end_timestamp === 0 &&
+        season.results_open_timestamp === 0
+    );
+}
 
 function pickTweaks(source: Record<string, unknown>): Record<string, unknown> {
     const tweaks: Record<string, unknown> = {};
@@ -130,7 +175,8 @@ export async function updateSeasonTweaks(
 }
 
 export async function setActiveSeason(event: H3Event, seasonId: number | null) {
-    const liveConfig = hackathonUsesYaml() ? await getHackathon(event) : null;
+    const currentLive = await getHackathon(event);
+    const liveConfig = hackathonUsesYaml() ? currentLive : null;
     await event.context.drizzle.transaction(async (tx) => {
         let season: Season | undefined;
         if (seasonId !== null) {
@@ -150,6 +196,19 @@ export async function setActiveSeason(event: H3Event, seasonId: number | null) {
             const { id, submitted_count, ...settings } = liveConfig;
             await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));
         }
+
+        // Activating a season that was never configured must not blank the
+        // event, so seed it from the live configuration first.
+        const seed = pickSeasonConfig(currentLive as Record<string, unknown> | null);
+        if (
+            season &&
+            season.is_active !== 1 &&
+            isUnconfiguredSeason(season) &&
+            Object.keys(seed).length > 0
+        ) {
+            await tx.update(seasons).set(seed).where(eq(seasons.id, season.id));
+        }
+
         await tx.update(seasons).set({ is_active: 0 });
 
         if (seasonId !== null && season) {

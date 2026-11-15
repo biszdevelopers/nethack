@@ -52,9 +52,10 @@ describe("targeted accessibility regressions", () => {
         ];
 
         for (const label of labels) {
-            expect(source).toContain(`label="${label}"`);
+            expect(source).toContain(`label: "${label}"`);
         }
-        expect(source.match(/:ui="\{ label: 'min-h-11 cursor-pointer py-3' \}"/g)).toHaveLength(5);
+        expect(source).toContain(':label="toggle.label"');
+        expect(source.match(/:ui="\{ label: 'min-h-11 cursor-pointer py-3' \}"/g)).toHaveLength(1);
     });
 
     it("disables score animation when reduced motion is requested", () => {

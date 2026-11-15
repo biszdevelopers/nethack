@@ -85,7 +85,14 @@ function apiResponse(page: Page, path: string, method: string) {
     );
 }
 
+async function openSeasonTab(page: Page, name: string) {
+    const tab = page.getByRole("tab", { name, exact: true });
+    await expect(tab).toBeVisible();
+    if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+}
+
 async function setSeasonStatus(page: Page, status: string) {
+    await openSeasonTab(page, "Event settings");
     const configuration = page
         .getByRole("heading", { name: "Hackathon Configuration" })
         .locator("xpath=ancestor::section[1]");
@@ -100,6 +107,7 @@ async function setSeasonStatus(page: Page, status: string) {
 }
 
 async function setSeasonCheckbox(page: Page, label: string, checked: boolean) {
+    await openSeasonTab(page, "Event settings");
     const configuration = page
         .getByRole("heading", { name: "Hackathon Configuration" })
         .locator("xpath=ancestor::section[1]");
@@ -117,6 +125,7 @@ async function setSeasonCheckbox(page: Page, label: string, checked: boolean) {
 }
 
 async function setScoreCurve(page: Page, label: string) {
+    await openSeasonTab(page, "Scoring");
     const section = page
         .getByRole("heading", { name: "Score display curve" })
         .locator("xpath=ancestor::section[1]");
@@ -447,6 +456,7 @@ test("participant and admin complete mobile journeys while judging and review st
         expect(picture.ok()).toBe(true);
         expect(picture.headers()["content-type"]).toBe("image/gif");
         expect((await picture.body()).subarray(0, 6).toString()).toBe("GIF89a");
+        await openSeasonTab(admin.page, "Event settings");
         await expect(
             admin.page.getByRole("heading", { name: "Hackathon Configuration" }),
         ).toBeVisible();
@@ -454,6 +464,7 @@ test("participant and admin complete mobile journeys while judging and review st
         await expectResponsivePage(admin.page);
 
         markProgress("configuring season-specific judge comment guidance and prompts");
+        await openSeasonTab(admin.page, "Scoring");
         const customGuideline =
             "Describe observable project details so feedback stays specific and useful.";
         await admin.page.getByRole("textbox", { name: "Guideline 1" }).fill(customGuideline);

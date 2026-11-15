@@ -448,7 +448,7 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update stored settings for a season. In YAML mode, requests without a season ID or targeting the active season return 409. Edit the selected manifest to change live settings.
+Update stored settings for a season. With `YAML_SOURCE_HACKATHON=database` the change is written to PostgreSQL. With a local manifest the portal writes the change into `HACKATHON.yml` (keeping comments and the rubric) and mirrors it onto the active season, so live settings stay editable after a season is activated. A remote manifest is read-only and returns 409; historical and future seasons always keep their own editable stored settings.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -458,7 +458,7 @@ Update stored settings for a season. In YAML mode, requests without a season ID 
 
 ### POST `/api/admin/seasons`
 
-Create a new season.
+Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty unless one is copied in the rubric editor.
 
 | Field        | Details                                |
 | ------------ | -------------------------------------- |

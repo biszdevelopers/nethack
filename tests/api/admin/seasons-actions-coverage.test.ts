@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
     firstRow: vi.fn(),
     setActiveSeason: vi.fn(),
     getSeasons: vi.fn(),
+    getHackathon: vi.fn(),
+    getActiveSeason: vi.fn(),
+    pickSeasonConfig: vi.fn(),
     updateSet: vi.fn(),
     updateWhere: vi.fn(),
     insertValues: vi.fn(),
@@ -15,6 +18,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
 vi.mock("~~/server/utils/database/seasons", () => ({
     setActiveSeason: mocks.setActiveSeason,
+    getActiveSeason: mocks.getActiveSeason,
+    pickSeasonConfig: mocks.pickSeasonConfig,
 }));
 
 let patchHandler: any;
@@ -31,6 +36,9 @@ beforeEach(async () => {
     mocks.firstRow.mockResolvedValue({ id: 1, name: "Season 1", is_active: 1 });
     mocks.setActiveSeason.mockResolvedValue(undefined);
     mocks.getSeasons.mockResolvedValue([{ id: 1, name: "Renamed", is_active: 1 }]);
+    mocks.getHackathon.mockResolvedValue({ status: "voting", theme_name: "Live theme" });
+    mocks.getActiveSeason.mockResolvedValue({ id: 1, score_curve_preset: "gentle" });
+    mocks.pickSeasonConfig.mockReturnValue({ status: "voting", theme_name: "Live theme" });
     mocks.updateWhere.mockResolvedValue(undefined);
     mocks.updateSet.mockReturnValue({ where: mocks.updateWhere });
     mocks.insertReturning.mockResolvedValue([{ id: 5 }]);
@@ -38,6 +46,7 @@ beforeEach(async () => {
 
     vi.stubGlobal("requireUser", mocks.requireUser);
     vi.stubGlobal("getSeasons", mocks.getSeasons);
+    vi.stubGlobal("getHackathon", mocks.getHackathon);
 
     const selectChain: any = {
         from: () => selectChain,
@@ -111,11 +120,28 @@ describe("PATCH /api/admin/seasons action edges", () => {
 });
 
 describe("POST /api/admin/seasons action edges", () => {
-    it("creates an inactive season", async () => {
+    it("creates an inactive season as a copy of the live settings", async () => {
         mockBody.value = { name: "New season" };
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
+        expect(mocks.insertValues).toHaveBeenCalledWith({
+            status: "voting",
+            theme_name: "Live theme",
+            score_curve_preset: "gentle",
+            name: "New season",
+        });
+    });
+
+    it("creates a season when the live configuration is unavailable", async () => {
+        mocks.getHackathon.mockRejectedValueOnce(new Error("offline"));
+        mocks.getActiveSeason.mockResolvedValueOnce(null);
+        mockBody.value = { name: "Offline season" };
+
+        await expect(postHandler(event)).resolves.toHaveProperty("seasons");
+        expect(mocks.insertValues).toHaveBeenCalledWith({
+            name: "Offline season",
+        });
     });
 
     it("creates and activates a season", async () => {

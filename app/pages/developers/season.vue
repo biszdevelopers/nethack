@@ -31,13 +31,15 @@ const { data: adminData, refresh: refreshAdmin } = await useApiFetch("/api/admin
 });
 const hackathon = computed(() => adminData.value?.hackathon ?? null);
 const seasons = computed(() => adminData.value?.seasons ?? []);
-const liveConfigReadOnly = computed(
+
+/**
+ * A remote manifest cannot be written from the portal, so its live settings
+ * stay read-only. Other seasons keep editable stored settings.
+ */
+const configReadOnly = computed(
     () =>
-        adminData.value?.configSource !== "database" &&
-        (activeSeasonId.value === null ||
-            seasons.value.some(
-                (season: Season) => season.id === activeSeasonId.value && season.is_active === 1,
-            )),
+        adminData.value?.configSource === "remote" &&
+        (selectedSeasonId.value === null || selectedSeasonIsActive.value),
 );
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,11 @@ function tsToDatetime(ts: unknown): string {
 function datetimeToTs(s: string): number {
     if (!s) return 0;
     return new Date(s).getTime();
+}
+function formatTimestamp(ts: unknown): string {
+    const num = Number(ts);
+    if (!Number.isFinite(num) || num <= 0) return "Not set";
+    return new Date(num).toLocaleString();
 }
 
 async function downloadDatabase(format: "json" | "csv") {
@@ -79,8 +86,6 @@ const allFieldKeys = [
     "max_votes_per_user",
     "theme_name",
     "theme_description",
-    "schedule_start",
-    "schedule_end",
     "start_timestamp",
     "end_timestamp",
     "voting_start_timestamp",
@@ -103,6 +108,22 @@ const boolKeys = new Set([
     "show_scores",
     "show_ranking",
 ]);
+
+const toggleFields = [
+    { key: "voting_enabled", label: "Voting Enabled" },
+    { key: "judging_open", label: "Judging Open" },
+    { key: "results_published", label: "Results Published" },
+    { key: "show_scores", label: "Show Scores" },
+    { key: "show_ranking", label: "Show Ranking" },
+] as const;
+
+const statusLabels: Record<string, string> = {
+    not_started: "Not Started",
+    in_progress: "In Progress",
+    voting: "Voting",
+    finished: "Finished",
+    paused: "Paused",
+};
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -156,7 +177,7 @@ function applyConfig(seasonId: number | null) {
     }
     Object.assign(hackathonForm, raw);
 
-    if (seasonId !== null && !liveConfigReadOnly.value) {
+    if (seasonId !== null) {
         const s = seasons.value?.find((s: any) => s.id === seasonId);
         if (s) restoreSeasonConfig(s);
     }
@@ -183,74 +204,81 @@ function hasChanged(key: string, normalized: any): boolean {
     return normalized !== baseline;
 }
 
-/** Serialized PATCH queue — only one request in-flight at a time.
- *  Every PATCH carries ALL current form fields so no field can be
- *  silently dropped or overwritten by a stale concurrent request. */
-let patchChain = Promise.resolve();
+/**
+ * Save one field at a time. Sending only the field the organizer touched means
+ * a stale form can never overwrite unrelated settings.
+ */
+async function saveField(key: string) {
+    if (configReadOnly.value) return;
+    const raw = hackathonForm[key];
+    if (raw === undefined || raw === null) return;
+    const value = normalize(key, raw);
+    if (typeof value === "number" && Number.isNaN(value)) return;
+    if (!hasChanged(key, value)) return;
 
-function onFieldChange() {
-    if (liveConfigReadOnly.value) return;
-    const body: Record<string, any> = {};
-    for (const key of allFieldKeys) {
-        const raw = hackathonForm[key];
-        if (raw === undefined || raw === null) continue;
-        const val = normalize(key, raw);
-        if (typeof val === "number" && Number.isNaN(val)) continue;
-        if (!hasChanged(key, val)) continue;
-        body[key] = val;
-    }
-    if (Object.keys(body).length === 0) return;
-    if (activeSeasonId.value !== null) body.season_id = activeSeasonId.value;
+    const body: Record<string, unknown> = { [key]: value };
+    if (selectedSeasonId.value !== null) body.season_id = selectedSeasonId.value;
 
-    // Chain onto the previous PATCH so they never race.
-    // Each PATCH carries every changed field, so even if the user changed
-    // field A, then field B before the first PATCH finished, the
-    // second PATCH will persist BOTH.
     saving.value = true;
-    patchChain = patchChain
-        .then(() => apiFetch("/api/admin/hackathon", { method: "PATCH", body }))
-        .then(() => refreshAdmin())
-        .catch((error) => {
-            toast.add({
-                title: "Could not save season settings",
-                description: getErrorMessage(error),
-                color: "error",
-            });
-        })
-        .then(() => {
-            saving.value = false;
+    try {
+        await apiFetch("/api/admin/hackathon", { method: "PATCH", body });
+        await refreshAdmin();
+    } catch (error) {
+        toast.add({
+            title: "Could not save season settings",
+            description: getErrorMessage(error),
+            color: "error",
         });
+        applyConfig(selectedSeasonId.value);
+    } finally {
+        saving.value = false;
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Active season — picker at top, activates on "Set Active"
+// Selected season
 // ---------------------------------------------------------------------------
-const activeSeasonId = ref<number | null>(null);
+const selectedSeasonId = ref<number | null>(null);
+const activeTab = ref("overview");
 
-// One-time initialization: wait for both hackathon and seasons to load.
-// Selects the last (newest) season by default. After this, activeSeasonId
-// only changes via the dropdown v-model (user action).
+const tabItems = [
+    { label: "Overview", value: "overview", icon: "i-lucide-layout-dashboard" },
+    { label: "Seasons", value: "seasons", icon: "i-lucide-calendar-range" },
+    { label: "Event settings", value: "event", icon: "i-lucide-sliders-horizontal" },
+    { label: "Scoring", value: "scoring", icon: "i-lucide-trophy" },
+    { label: "Data", value: "data", icon: "i-lucide-database" },
+];
+
+// One-time initialization: wait for the live configuration, then select the
+// last (newest) season when one exists.
 watchEffect(() => {
     const h = hackathon.value;
-    const s = seasons.value;
-    if (!h || !s || s.length === 0 || formInitialized.value) return;
-    const last = s[s.length - 1];
-    activeSeasonId.value = last?.id ?? null;
-    applyConfig(activeSeasonId.value);
+    if (!h || formInitialized.value) return;
+    const last = seasons.value[seasons.value.length - 1];
+    selectedSeasonId.value = last?.id ?? null;
+    applyConfig(selectedSeasonId.value);
 });
 
-const activeSeasonItems = computed(() => [
+const selectedSeason = computed(
+    () => seasons.value.find((season: Season) => season.id === selectedSeasonId.value) ?? null,
+);
+const selectedSeasonIsActive = computed(() => selectedSeason.value?.is_active === 1);
+const statusLabel = computed(
+    () => statusLabels[hackathonForm.status] ?? statusLabels.not_started ?? "",
+);
+
+const seasonItems = computed(() => [
     { label: "None", value: null },
     ...(seasons.value?.map((s: { id: number; name: string }) => ({ label: s.name, value: s.id })) ||
         []),
 ]);
 
 // ---------------------------------------------------------------------------
-// Season name — separate editable field to rename the selected season
+// Season name, score curve, activation, creation, deletion
 // ---------------------------------------------------------------------------
 const seasonNameForm = ref("");
 
-watch(activeSeasonId, (id) => {
+watch(selectedSeasonId, (id) => {
     // Update season name
     seasonNameForm.value = seasons.value?.find((s: any) => s.id === id)?.name ?? "";
     scoreCurvePreset.value =
@@ -263,7 +291,7 @@ watch(activeSeasonId, (id) => {
 });
 
 async function saveScoreCurvePreset(value: ScoreCurvePreset) {
-    const seasonId = activeSeasonId.value;
+    const seasonId = selectedSeasonId.value;
     if (seasonId === null) return;
     scoreCurveSaving.value = true;
     try {
@@ -291,12 +319,12 @@ async function saveScoreCurvePreset(value: ScoreCurvePreset) {
 const seasonNameSaving = ref(false);
 
 async function renameSeason() {
-    if (activeSeasonId.value === null || !seasonNameForm.value.trim()) return;
+    if (selectedSeasonId.value === null || !seasonNameForm.value.trim()) return;
     seasonNameSaving.value = true;
     try {
         await apiFetch("/api/admin/seasons", {
             method: "PATCH",
-            body: { id: activeSeasonId.value, name: seasonNameForm.value.trim() },
+            body: { id: selectedSeasonId.value, name: seasonNameForm.value.trim() },
         });
         await refreshAdmin();
         toast.add({ title: "Season renamed.", color: "success" });
@@ -307,32 +335,73 @@ async function renameSeason() {
     }
 }
 
+const activating = ref(false);
+
 async function setActiveSeason() {
-    if (activeSeasonId.value === null) return;
+    const seasonId = selectedSeasonId.value;
+    if (seasonId === null) return;
+    if (
+        !confirm(
+            "Make this the active season? The public site, voting, and judging switch immediately.",
+        )
+    ) {
+        return;
+    }
+    activating.value = true;
     try {
         await apiFetch("/api/seasons/active", {
             method: "PATCH",
-            body: { season_id: activeSeasonId.value },
+            body: { season_id: seasonId },
         });
         await refreshAdmin();
         toast.add({ title: "Active season updated.", color: "success" });
     } catch (e: any) {
         toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
+    } finally {
+        activating.value = false;
     }
 }
 
-// ---------------------------------------------------------------------------
-// New season — prompts then adds to the dropdown
-// ---------------------------------------------------------------------------
-async function addSeason() {
+const creatingSeason = ref(false);
+
+async function createSeason() {
     const name = prompt("New season name:");
     if (!name || !name.trim()) return;
+    creatingSeason.value = true;
     try {
-        await apiFetch("/api/admin/seasons", { method: "POST", body: { name: name.trim() } });
+        const result = await apiFetch<{ seasons: Season[] }>("/api/admin/seasons", {
+            method: "POST",
+            body: { name: name.trim() },
+        });
         await refreshAdmin();
-        toast.add({ title: `Season "${name}" created.`, color: "success" });
+        selectedSeasonId.value =
+            result.seasons.find((season) => season.name === name.trim())?.id ?? null;
+        toast.add({ title: `Season "${name.trim()}" created.`, color: "success" });
     } catch (e: any) {
         toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
+    } finally {
+        creatingSeason.value = false;
+    }
+}
+
+const deletingSeason = ref(false);
+
+async function deleteSeason() {
+    const season = selectedSeason.value;
+    if (!season || season.is_active === 1) return;
+    if (!confirm(`Delete "${season.name}"? This cannot be undone.`)) return;
+    deletingSeason.value = true;
+    try {
+        const result = await apiFetch<{ seasons: Season[] }>(`/api/admin/seasons/${season.id}`, {
+            method: "DELETE",
+        });
+        await refreshAdmin();
+        selectedSeasonId.value = result.seasons[result.seasons.length - 1]?.id ?? null;
+        toast.add({ title: "Season deleted.", color: "success" });
+    } catch (e: any) {
+        toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
+    } finally {
+        deletingSeason.value = false;
     }
 }
 </script>
@@ -348,317 +417,425 @@ async function addSeason() {
         </template>
 
         <template #body>
-            <!-- Season picker at the top -->
-            <section class="bg-ui-bg p-6">
-                <h2 class="text-xl font-semibold mb-3">Season</h2>
-                <div class="flex flex-wrap items-center gap-3">
-                    <UFormField label="Select season" class="w-full sm:w-auto sm:max-w-xs">
-                        <USelect
-                            v-model="activeSeasonId"
-                            :items="activeSeasonItems"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-                    <UButton class="min-h-11" @click="setActiveSeason" color="primary">
-                        Set Active
-                    </UButton>
-                    <UButton class="min-h-11" @click="addSeason" variant="outline">
-                        + New Season
-                    </UButton>
+            <div class="p-4 sm:p-6 space-y-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="space-y-1">
+                        <h1 class="text-2xl font-semibold">Hackathon administration</h1>
+                        <p class="text-sm text-ui-text-muted">
+                            <template v-if="selectedSeason">
+                                Managing
+                                <span class="bold">{{ selectedSeason.name }}</span>
+                                <UBadge
+                                    v-if="selectedSeasonIsActive"
+                                    color="success"
+                                    variant="subtle"
+                                    class="ms-2"
+                                >
+                                    Active
+                                </UBadge>
+                            </template>
+                            <template v-else>No season selected.</template>
+                        </p>
+                    </div>
+                    <UBadge color="neutral" variant="subtle" class="min-h-8">
+                        {{ statusLabel }}
+                    </UBadge>
                 </div>
-            </section>
-            <USeparator />
 
-            <!-- Season Name (rename active season) -->
-            <section class="bg-ui-bg p-6">
-                <h2 class="text-xl font-semibold mb-3">Season Name</h2>
-                <div class="flex flex-wrap items-center gap-3">
-                    <UFormField label="Season name" class="min-w-0 flex-1">
-                        <UInput
-                            v-model="seasonNameForm"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-                    <UButton
-                        class="min-h-11"
-                        @click="renameSeason"
-                        :loading="seasonNameSaving"
-                        color="primary"
-                    >
-                        Rename Season
-                    </UButton>
-                </div>
-            </section>
-            <USeparator />
+                <UTabs
+                    v-model="activeTab"
+                    :items="tabItems"
+                    :content="false"
+                    :ui="{ list: 'w-full overflow-x-auto', trigger: 'whitespace-nowrap' }"
+                    class="w-full"
+                />
 
-            <section v-if="activeSeasonId !== null" class="bg-ui-bg p-6 space-y-3">
-                <h2 class="text-xl font-semibold">Score display curve</h2>
-                <p class="max-w-3xl text-sm text-ui-text-muted">
-                    This changes the displayed score only. The original judge average stays saved,
-                    and published ranking always uses that original score.
-                </p>
-                <div class="flex flex-wrap items-center gap-3">
-                    <UFormField label="Display curve" class="w-full max-w-xs">
-                        <USelect
-                            v-model="scoreCurvePreset"
-                            :items="scoreCurveItems"
-                            :disabled="scoreCurveSaving"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                            @update:model-value="saveScoreCurvePreset"
-                        />
-                    </UFormField>
-                    <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
-                </div>
-            </section>
-            <USeparator />
+                <!-- Overview -->
+                <section v-if="activeTab === 'overview'" class="space-y-4">
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <UCard>
+                            <template #header>
+                                <h2 class="font-semibold">Theme</h2>
+                            </template>
+                            <p class="text-lg">{{ hackathonForm.theme_name || "No theme set" }}</p>
+                            <p class="text-sm text-ui-text-muted mt-1">
+                                {{ hackathonForm.theme_description || "No description yet." }}
+                            </p>
+                        </UCard>
 
-            <AdminRubricManager
-                v-if="activeSeasonId !== null"
-                :key="activeSeasonId"
-                :season-id="activeSeasonId"
-                :seasons="seasons"
-            />
-            <USeparator />
-
-            <section v-if="hackathon && formInitialized" class="bg-ui-bg p-6 space-y-4">
-                <h2 class="text-xl font-semibold">
-                    Hackathon Configuration
-                    <span v-if="saving" class="text-sm text-primary font-normal ms-2">
-                        Saving...
-                    </span>
-                </h2>
-                <p v-if="liveConfigReadOnly" class="text-sm text-ui-text-muted">
-                    Edit HACKATHON.yml to change live settings.
-                </p>
-                <p v-else class="text-sm text-ui-text-muted">
-                    Changes auto-save with the selected season.
-                </p>
-
-                <fieldset
-                    :disabled="liveConfigReadOnly"
-                    class="grid grid-cols-1 md:grid-cols-2 gap-4"
-                >
-                    <UFormField label="Status" name="status" class="w-full">
-                        <USelect
-                            :items="[
-                                { label: 'Not Started', value: 'not_started' },
-                                { label: 'In Progress', value: 'in_progress' },
-                                { label: 'Voting', value: 'voting' },
-                                { label: 'Finished', value: 'finished' },
-                                { label: 'Paused', value: 'paused' },
-                            ]"
-                            v-model="hackathonForm.status"
-                            :disabled="liveConfigReadOnly"
-                            @update:model-value="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Max Votes Per User" name="max_votes_per_user" class="w-full">
-                        <UInput
-                            type="number"
-                            name="max_votes_per_user"
-                            v-model="hackathonForm.max_votes_per_user"
-                            min="0"
-                            max="100"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <div class="flex items-center gap-3">
-                        <UCheckbox
-                            v-model="hackathonForm.voting_enabled"
-                            label="Voting Enabled"
-                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                            :true-value="1"
-                            :false-value="0"
-                            :disabled="liveConfigReadOnly"
-                            @update:model-value="onFieldChange()"
-                        />
+                        <UCard>
+                            <template #header>
+                                <h2 class="font-semibold">Schedule</h2>
+                            </template>
+                            <dl class="space-y-1 text-sm">
+                                <div class="flex justify-between gap-3">
+                                    <dt class="text-ui-text-muted">Event</dt>
+                                    <dd>
+                                        {{ formatTimestamp(hackathonForm.start_timestamp) }} —
+                                        {{ formatTimestamp(hackathonForm.end_timestamp) }}
+                                    </dd>
+                                </div>
+                                <div class="flex justify-between gap-3">
+                                    <dt class="text-ui-text-muted">Voting</dt>
+                                    <dd>
+                                        {{ formatTimestamp(hackathonForm.voting_start_timestamp) }}
+                                        —
+                                        {{ formatTimestamp(hackathonForm.voting_end_timestamp) }}
+                                    </dd>
+                                </div>
+                                <div class="flex justify-between gap-3">
+                                    <dt class="text-ui-text-muted">Results open</dt>
+                                    <dd>
+                                        {{ formatTimestamp(hackathonForm.results_open_timestamp) }}
+                                    </dd>
+                                </div>
+                            </dl>
+                        </UCard>
                     </div>
 
-                    <div class="flex items-center gap-3">
-                        <UCheckbox
-                            v-model="hackathonForm.judging_open"
-                            label="Judging Open"
-                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                            :true-value="1"
-                            :false-value="0"
-                            :disabled="liveConfigReadOnly"
-                            @update:model-value="onFieldChange()"
-                        />
+                    <UCard>
+                        <template #header>
+                            <h2 class="font-semibold">What visitors can do</h2>
+                        </template>
+                        <ul class="grid gap-2 sm:grid-cols-2">
+                            <li
+                                v-for="toggle in toggleFields"
+                                :key="toggle.key"
+                                class="flex items-center justify-between gap-3"
+                            >
+                                <span>{{ toggle.label }}</span>
+                                <UBadge
+                                    :color="hackathonForm[toggle.key] ? 'success' : 'neutral'"
+                                    variant="subtle"
+                                >
+                                    {{ hackathonForm[toggle.key] ? "On" : "Off" }}
+                                </UBadge>
+                            </li>
+                        </ul>
+                        <div class="flex flex-wrap gap-3 mt-4">
+                            <UButton class="min-h-11" @click="activeTab = 'event'">
+                                Edit event settings
+                            </UButton>
+                            <UButton class="min-h-11" variant="soft" @click="activeTab = 'scoring'">
+                                Scoring and rubric
+                            </UButton>
+                        </div>
+                    </UCard>
+                </section>
+
+                <!-- Seasons -->
+                <section v-else-if="activeTab === 'seasons'" class="space-y-4">
+                    <UCard>
+                        <template #header>
+                            <h2 class="font-semibold">Selected season</h2>
+                        </template>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <UFormField label="Season" class="w-full sm:w-auto sm:max-w-xs">
+                                <USelect
+                                    v-model="selectedSeasonId"
+                                    :items="seasonItems"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UButton
+                                class="min-h-11"
+                                :loading="activating"
+                                :disabled="selectedSeasonId === null || selectedSeasonIsActive"
+                                @click="setActiveSeason"
+                            >
+                                {{ selectedSeasonIsActive ? "Active season" : "Set active" }}
+                            </UButton>
+                            <UButton
+                                class="min-h-11"
+                                variant="outline"
+                                :loading="creatingSeason"
+                                @click="createSeason"
+                            >
+                                New season
+                            </UButton>
+                            <UButton
+                                v-if="selectedSeason && !selectedSeasonIsActive"
+                                class="min-h-11"
+                                color="error"
+                                variant="soft"
+                                :loading="deletingSeason"
+                                @click="deleteSeason"
+                            >
+                                Delete season
+                            </UButton>
+                        </div>
+                        <p class="text-sm text-ui-text-muted mt-3">
+                            A new season starts as a copy of the current live settings. Activating a
+                            season switches the public site, voting, and judging to it immediately.
+                        </p>
+                    </UCard>
+
+                    <UCard v-if="selectedSeason">
+                        <template #header>
+                            <h2 class="font-semibold">Rename</h2>
+                        </template>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <UFormField label="Season name" class="min-w-0 flex-1">
+                                <UInput
+                                    v-model="seasonNameForm"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UButton
+                                class="min-h-11"
+                                :loading="seasonNameSaving"
+                                @click="renameSeason"
+                            >
+                                Rename
+                            </UButton>
+                        </div>
+                    </UCard>
+                </section>
+
+                <!-- Event settings -->
+                <section v-else-if="activeTab === 'event'" class="space-y-4">
+                    <section v-if="hackathon && formInitialized" class="bg-ui-bg p-6 space-y-4">
+                        <h2 class="text-xl font-semibold">
+                            Hackathon Configuration
+                            <span v-if="saving" class="text-sm text-primary font-normal ms-2">
+                                Saving...
+                            </span>
+                        </h2>
+                        <p v-if="configReadOnly" class="text-sm text-ui-text-muted">
+                            Live settings are read-only for a remote HACKATHON.yml. Edit the
+                            manifest where it is hosted, or pick another season to edit its stored
+                            settings.
+                        </p>
+                        <p v-else class="text-sm text-ui-text-muted">
+                            Changes save to
+                            {{
+                                adminData?.configSource === "local"
+                                    ? "HACKATHON.yml and the selected season"
+                                    : "the selected season"
+                            }}
+                            as you go.
+                        </p>
+
+                        <fieldset
+                            :disabled="configReadOnly"
+                            class="grid grid-cols-1 md:grid-cols-2 gap-4"
+                        >
+                            <UFormField label="Status" name="status" class="w-full">
+                                <USelect
+                                    :items="[
+                                        { label: 'Not Started', value: 'not_started' },
+                                        { label: 'In Progress', value: 'in_progress' },
+                                        { label: 'Voting', value: 'voting' },
+                                        { label: 'Finished', value: 'finished' },
+                                        { label: 'Paused', value: 'paused' },
+                                    ]"
+                                    v-model="hackathonForm.status"
+                                    :disabled="configReadOnly"
+                                    @update:model-value="saveField('status')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Max Votes Per User"
+                                name="max_votes_per_user"
+                                class="w-full"
+                            >
+                                <UInput
+                                    type="number"
+                                    name="max_votes_per_user"
+                                    v-model="hackathonForm.max_votes_per_user"
+                                    min="0"
+                                    max="100"
+                                    @change="saveField('max_votes_per_user')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <div
+                                v-for="toggle in toggleFields"
+                                :key="toggle.key"
+                                class="flex items-center gap-3"
+                            >
+                                <UCheckbox
+                                    v-model="hackathonForm[toggle.key]"
+                                    :label="toggle.label"
+                                    :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
+                                    :true-value="1"
+                                    :false-value="0"
+                                    :disabled="configReadOnly"
+                                    @update:model-value="saveField(toggle.key)"
+                                />
+                            </div>
+
+                            <UFormField label="Theme Name" name="theme_name" class="w-full">
+                                <UInput
+                                    name="theme_name"
+                                    v-model="hackathonForm.theme_name"
+                                    @change="saveField('theme_name')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Theme Description"
+                                name="theme_description"
+                                class="w-full md:col-span-2"
+                            >
+                                <UTextarea
+                                    name="theme_description"
+                                    v-model="hackathonForm.theme_description"
+                                    :rows="2"
+                                    @change="saveField('theme_description')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                        </fieldset>
+
+                        <h3 class="text-lg font-semibold pt-2">Schedule</h3>
+                        <p class="text-sm text-ui-text-muted">
+                            Times are shown in this browser's local time zone.
+                        </p>
+                        <fieldset
+                            :disabled="configReadOnly"
+                            class="grid grid-cols-1 md:grid-cols-2 gap-4"
+                        >
+                            <UFormField label="Start" name="start_timestamp" class="w-full">
+                                <UInput
+                                    type="datetime-local"
+                                    name="start_timestamp"
+                                    v-model="hackathonForm.start_timestamp"
+                                    @change="saveField('start_timestamp')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <UFormField label="End" name="end_timestamp" class="w-full">
+                                <UInput
+                                    type="datetime-local"
+                                    name="end_timestamp"
+                                    v-model="hackathonForm.end_timestamp"
+                                    @change="saveField('end_timestamp')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Voting Start"
+                                name="voting_start_timestamp"
+                                class="w-full"
+                            >
+                                <UInput
+                                    type="datetime-local"
+                                    name="voting_start_timestamp"
+                                    v-model="hackathonForm.voting_start_timestamp"
+                                    @change="saveField('voting_start_timestamp')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Voting End"
+                                name="voting_end_timestamp"
+                                class="w-full"
+                            >
+                                <UInput
+                                    type="datetime-local"
+                                    name="voting_end_timestamp"
+                                    v-model="hackathonForm.voting_end_timestamp"
+                                    @change="saveField('voting_end_timestamp')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Results Open"
+                                name="results_open_timestamp"
+                                class="w-full"
+                            >
+                                <UInput
+                                    type="datetime-local"
+                                    name="results_open_timestamp"
+                                    v-model="hackathonForm.results_open_timestamp"
+                                    @change="saveField('results_open_timestamp')"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                        </fieldset>
+                    </section>
+                </section>
+
+                <!-- Scoring -->
+                <section v-else-if="activeTab === 'scoring'" class="space-y-4">
+                    <section v-if="selectedSeasonId !== null" class="bg-ui-bg p-6 space-y-3">
+                        <h2 class="text-xl font-semibold">Score display curve</h2>
+                        <p class="max-w-3xl text-sm text-ui-text-muted">
+                            This changes the displayed score only. The original judge average stays
+                            saved, and published ranking always uses that original score.
+                        </p>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <UFormField label="Display curve" class="w-full max-w-xs">
+                                <USelect
+                                    v-model="scoreCurvePreset"
+                                    :items="scoreCurveItems"
+                                    :disabled="scoreCurveSaving"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                    @update:model-value="saveScoreCurvePreset"
+                                />
+                            </UFormField>
+                            <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
+                        </div>
+                    </section>
+
+                    <AdminRubricManager
+                        v-if="selectedSeasonId !== null"
+                        :key="selectedSeasonId"
+                        :season-id="selectedSeasonId"
+                        :seasons="seasons"
+                    />
+                    <p v-else class="text-sm text-ui-text-muted">
+                        Select a season to manage its judging rubric.
+                    </p>
+                </section>
+
+                <!-- Data -->
+                <section v-else class="bg-ui-bg p-6 space-y-3">
+                    <h2 class="text-xl font-semibold">Database Export</h2>
+                    <p class="text-sm text-ui-text-muted">
+                        Download a full snapshot of the database.
+                    </p>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <UButton
+                            class="min-h-11"
+                            color="primary"
+                            variant="solid"
+                            @click="downloadDatabase('json')"
+                        >
+                            Download JSON
+                        </UButton>
+                        <UButton
+                            class="min-h-11"
+                            color="neutral"
+                            variant="outline"
+                            @click="downloadDatabase('csv')"
+                        >
+                            Download CSV
+                        </UButton>
                     </div>
-
-                    <div class="flex items-center gap-3">
-                        <UCheckbox
-                            v-model="hackathonForm.results_published"
-                            label="Results Published"
-                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                            :true-value="1"
-                            :false-value="0"
-                            :disabled="liveConfigReadOnly"
-                            @update:model-value="onFieldChange()"
-                        />
-                    </div>
-
-                    <div class="flex items-center gap-3">
-                        <UCheckbox
-                            v-model="hackathonForm.show_scores"
-                            label="Show Scores"
-                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                            :true-value="1"
-                            :false-value="0"
-                            :disabled="liveConfigReadOnly"
-                            @update:model-value="onFieldChange()"
-                        />
-                    </div>
-
-                    <div class="flex items-center gap-3">
-                        <UCheckbox
-                            v-model="hackathonForm.show_ranking"
-                            label="Show Ranking"
-                            :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                            :true-value="1"
-                            :false-value="0"
-                            :disabled="liveConfigReadOnly"
-                            @update:model-value="onFieldChange()"
-                        />
-                    </div>
-
-                    <UFormField label="Theme Name" name="theme_name" class="w-full">
-                        <UInput
-                            name="theme_name"
-                            v-model="hackathonForm.theme_name"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField
-                        label="Theme Description"
-                        name="theme_description"
-                        class="w-full md:col-span-2"
-                    >
-                        <UTextarea
-                            name="theme_description"
-                            v-model="hackathonForm.theme_description"
-                            :rows="2"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Schedule Start" name="schedule_start" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="schedule_start"
-                            v-model="hackathonForm.schedule_start"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Schedule End" name="schedule_end" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="schedule_end"
-                            v-model="hackathonForm.schedule_end"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Start" name="start_timestamp" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="start_timestamp"
-                            v-model="hackathonForm.start_timestamp"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="End" name="end_timestamp" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="end_timestamp"
-                            v-model="hackathonForm.end_timestamp"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Voting Start" name="voting_start_timestamp" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="voting_start_timestamp"
-                            v-model="hackathonForm.voting_start_timestamp"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Voting End" name="voting_end_timestamp" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="voting_end_timestamp"
-                            v-model="hackathonForm.voting_end_timestamp"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-
-                    <UFormField label="Results Open" name="results_open_timestamp" class="w-full">
-                        <UInput
-                            type="datetime-local"
-                            name="results_open_timestamp"
-                            v-model="hackathonForm.results_open_timestamp"
-                            @change="onFieldChange()"
-                            :ui="{ base: 'min-h-11' }"
-                            class="w-full"
-                        />
-                    </UFormField>
-                </fieldset>
-            </section>
-            <USeparator />
-
-            <!-- Database Export -->
-            <section class="bg-ui-bg p-6 space-y-3">
-                <h2 class="text-xl font-semibold">Database Export</h2>
-                <p class="text-sm text-ui-text-muted">Download a full snapshot of the database.</p>
-                <div class="flex flex-wrap items-center gap-3">
-                    <UButton
-                        class="min-h-11"
-                        color="primary"
-                        variant="solid"
-                        @click="downloadDatabase('json')"
-                    >
-                        Download JSON
-                    </UButton>
-                    <UButton
-                        class="min-h-11"
-                        color="neutral"
-                        variant="outline"
-                        @click="downloadDatabase('csv')"
-                    >
-                        Download CSV
-                    </UButton>
-                </div>
-            </section>
+                </section>
+            </div>
         </template>
     </UDashboardPanel>
 </template>

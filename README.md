@@ -60,7 +60,8 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `BASIS_AUTH_RESOURCE` | Required | Resource audience for basishacks access tokens (`devconnect://nethack.bisz.dev`) |
 | `DATABASE_URL` | Required | PostgreSQL connection URL used in development, CI, and production |
 | `DATABASE_POOL_MAX` | Optional | Connection pool maximum (default `10`, accepted range `2`–`64`) |
-| `YAML_SOURCE_HACKATHON` | Optional | `local` or blank reads `HACKATHON.yml`. An assets origin or full asset URL selects a remote manifest. |
+| `YAML_SOURCE_HACKATHON` | Optional | `local` or blank reads `HACKATHON.yml`. An assets origin or full asset URL selects a remote manifest. A local manifest is editable from the mod portal; a remote manifest is read-only. |
+| `HACKATHON_CONFIG_PATH` | Optional | Local manifest the portal reads and, in `local` mode, rewrites (default `HACKATHON.yml`) |
 | `DATABASE_METRICS` | Optional | Set to `1` to log bounded PostgreSQL query and pool-acquisition timing summaries once per minute |
 | `MICROSOFT_TENANT_ID` | Optional | Tenant used only by Graph features |
 | `MICROSOFT_CLIENT_ID` | Optional | Application ID used only by Graph features |

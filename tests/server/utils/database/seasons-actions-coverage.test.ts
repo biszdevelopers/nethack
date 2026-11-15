@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     getScoreRankVisibilityResolver,
+    isUnconfiguredSeason,
+    pickSeasonConfig,
     setActiveSeason,
     updateSeasonTweaks,
 } from "~~/server/utils/database/seasons";
@@ -126,6 +128,63 @@ describe("season visibility and action boundaries", () => {
         expect(
             event.context.drizzle.prepare("SELECT is_active FROM seasons WHERE id = 1").first(),
         ).toEqual({ is_active: 1 });
+    });
+
+    it("seeds a never-configured season from the live event before activating it", async () => {
+        event.context.drizzle
+            .prepare(
+                "UPDATE hackathon SET status = 'voting', theme_name = 'Live theme', theme_description = 'Live description' WHERE id = 1",
+            )
+            .run();
+        event.context.drizzle
+            .prepare("INSERT INTO seasons(id, name, is_active) VALUES(9, 'Blank', 0)")
+            .run();
+
+        await setActiveSeason(event, 9);
+
+        expect(
+            event.context.drizzle
+                .prepare(
+                    "SELECT status, theme_name, theme_description, is_active FROM seasons WHERE id = 9",
+                )
+                .first(),
+        ).toEqual({
+            status: "voting",
+            theme_name: "Live theme",
+            theme_description: "Live description",
+            is_active: 1,
+        });
+    });
+
+    it("picks only event settings from a live configuration", () => {
+        expect(
+            pickSeasonConfig({
+                id: 1,
+                submitted_count: 4,
+                status: "voting",
+                theme_name: "Theme",
+                unrelated: "ignored",
+            }),
+        ).toEqual({ status: "voting", theme_name: "Theme" });
+        expect(pickSeasonConfig(null)).toEqual({});
+    });
+
+    it("treats only a never-configured season as blank", () => {
+        const season = {
+            status: "not_started",
+            theme_name: null,
+            theme_description: null,
+            start_timestamp: 0,
+            end_timestamp: 0,
+            voting_start_timestamp: 0,
+            voting_end_timestamp: 0,
+            results_open_timestamp: 0,
+        } as Season;
+
+        expect(isUnconfiguredSeason(season)).toBe(true);
+        expect(isUnconfiguredSeason({ ...season, theme_name: "Theme" } as Season)).toBe(false);
+        expect(isUnconfiguredSeason({ ...season, start_timestamp: 1 } as Season)).toBe(false);
+        expect(isUnconfiguredSeason({ ...season, status: "voting" } as Season)).toBe(false);
     });
 });
 

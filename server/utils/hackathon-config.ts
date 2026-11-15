@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createError } from "h3";
 import fetch from "node-fetch";
-import { parse } from "yaml";
+import { parse, parseDocument } from "yaml";
 import { z } from "zod";
 import { RubricDefinitionSchema } from "../../shared/schemas";
 
@@ -11,6 +11,10 @@ const refreshInterval = 5 * 60 * 1000;
 
 export function getHackathonCacheFile(): string {
     return resolve(process.env.HACKATHON_CACHE_PATH?.trim() || "assets/hackathon-config.yml");
+}
+/** Local manifest edited by the portal when the YAML source is `local`. */
+export function getLocalHackathonConfigPath(): string {
+    return process.env.HACKATHON_CONFIG_PATH?.trim() || "HACKATHON.yml";
 }
 const flag = z
     .union([z.literal(0), z.literal(1), z.boolean()])
@@ -59,18 +63,25 @@ export function hackathonUsesYaml() {
     return getHackathonConfigSource() !== "database";
 }
 
-let localConfig: { modifiedAt: number; size: number; value: HackathonConfig } | undefined;
+let localConfig:
+    | { path: string; modifiedAt: number; size: number; value: HackathonConfig }
+    | undefined;
 
 async function readLocalConfig() {
-    const file = await stat("HACKATHON.yml");
+    const path = getLocalHackathonConfigPath();
+    const file = await stat(path);
     if (file.size > maxBytes) throw new Error("HACKATHON.yml exceeds 64 KiB");
-    if (localConfig?.modifiedAt === file.mtimeMs && localConfig.size === file.size) {
+    if (
+        localConfig?.path === path &&
+        localConfig.modifiedAt === file.mtimeMs &&
+        localConfig.size === file.size
+    ) {
         return localConfig.value;
     }
-    const source = await readFile("HACKATHON.yml");
+    const source = await readFile(path);
     if (source.length > maxBytes) throw new Error("HACKATHON.yml exceeds 64 KiB");
     const value = parseHackathonConfig(source.toString("utf8"));
-    localConfig = { modifiedAt: file.mtimeMs, size: file.size, value };
+    localConfig = { path, modifiedAt: file.mtimeMs, size: file.size, value };
     return value;
 }
 
@@ -181,4 +192,94 @@ export async function readHackathonConfig(): Promise<HackathonConfig> {
         }
     }
     return state.value;
+}
+
+/** Settings the portal may write back into the local manifest. */
+const writableConfigKeys = new Set<keyof HackathonConfig>([
+    "status",
+    "voting_enabled",
+    "results_published",
+    "show_scores",
+    "show_ranking",
+    "max_votes_per_user",
+    "judging_open",
+    "schedule_start",
+    "schedule_end",
+    "start_timestamp",
+    "end_timestamp",
+    "voting_start_timestamp",
+    "voting_end_timestamp",
+    "results_open_timestamp",
+    "theme_name",
+    "theme_description",
+]);
+
+let pendingWrite: Promise<unknown> = Promise.resolve();
+
+async function writeLocalConfig(patch: Record<string, unknown>): Promise<HackathonConfig> {
+    for (const key of Object.keys(patch)) {
+        if (!writableConfigKeys.has(key as keyof HackathonConfig)) {
+            throw createError({
+                statusCode: 400,
+                message: `${key} cannot be changed through the portal.`,
+            });
+        }
+    }
+
+    let source: string;
+    try {
+        source = await readFile(getLocalHackathonConfigPath(), "utf8");
+    } catch {
+        throw createError({
+            statusCode: 503,
+            message: "Local HACKATHON.yml is missing or unreadable.",
+        });
+    }
+
+    // parseDocument keeps comments and the rubric block intact when a single
+    // setting changes.
+    const document = parseDocument(source);
+    let value: HackathonConfig;
+    try {
+        for (const [key, setting] of Object.entries(patch)) {
+            document.set(key, setting);
+        }
+        value = parseHackathonConfig(document.toString());
+    } catch {
+        throw createError({
+            statusCode: 409,
+            message: "The updated HACKATHON.yml would be invalid. Fix the file first.",
+        });
+    }
+
+    const file = getLocalHackathonConfigPath();
+    const temporary = `${file}.${process.pid}.tmp`;
+    try {
+        await writeFile(temporary, document.toString(), { mode: 0o644 });
+        await rename(temporary, file);
+    } catch {
+        throw createError({
+            statusCode: 503,
+            message: "Local HACKATHON.yml is not writable.",
+        });
+    }
+    localConfig = undefined;
+    return value;
+}
+
+/**
+ * Persist live settings into the local manifest. Remote manifests are
+ * read-only, and database mode writes through the database instead.
+ */
+export function writeHackathonConfig(patch: Record<string, unknown>): Promise<HackathonConfig> {
+    if (getHackathonConfigSource() !== "local") {
+        throw createError({
+            statusCode: 409,
+            message: "Live settings are read-only for this configuration source.",
+        });
+    }
+
+    const run = pendingWrite.then(() => writeLocalConfig(patch));
+    pendingWrite = run.catch(() => undefined);
+    return run;
 }

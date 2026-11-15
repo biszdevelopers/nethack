@@ -101,7 +101,7 @@ The platform supports multiple hackathon seasons stored in the `seasons` table. 
 
 Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed.
 
-Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings are edited in the configured YAML manifest. The administration page updates stored settings for other seasons.
+Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings are edited in the configured YAML manifest; a local manifest is written in place by the portal, while a remote manifest stays read-only. The administration page also updates stored settings for other seasons, and new seasons start as a copy of the live event.
 
 ## Directory Structure
 

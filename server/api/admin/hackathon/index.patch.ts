@@ -2,9 +2,13 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { AdminUpdateHackathonRequest } from "~~/shared/schemas";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
-import { getActiveSeason, getSeasons } from "~~/server/utils/database/seasons";
+import { getSeasons } from "~~/server/utils/database/seasons";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { hackathonUsesYaml } from "~~/server/utils/hackathon-config";
+import {
+    getHackathonConfigSource,
+    hackathonUsesYaml,
+    writeHackathonConfig,
+} from "~~/server/utils/hackathon-config";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -24,8 +28,8 @@ export default defineEventHandler(
 
         // Strip null/undefined — they'd violate NOT NULL constraints
         const configFields: Record<string, any> = {};
-        for (const [k, v] of Object.entries(rawConfig)) {
-            if (v !== null && v !== undefined) configFields[k] = v;
+        for (const [key, value] of Object.entries(rawConfig)) {
+            if (value !== null && value !== undefined) configFields[key] = value;
         }
 
         if (Object.keys(configFields).length === 0) {
@@ -35,28 +39,46 @@ export default defineEventHandler(
             });
         }
 
-        if (hackathonUsesYaml()) {
-            if (season_id === undefined) {
+        const [activeSeason] = await event.context.drizzle
+            .select({ id: seasons.id })
+            .from(seasons)
+            .where(eq(seasons.is_active, 1))
+            .limit(1);
+        const targetsLiveSettings = season_id === undefined || season_id === activeSeason?.id;
+
+        if (hackathonUsesYaml() && targetsLiveSettings) {
+            // A local checkout's manifest is writable, so the portal stays
+            // usable after a season is activated. Remote manifests are not.
+            if (getHackathonConfigSource() !== "local") {
                 throw createError({
                     statusCode: 409,
                     message: "Edit the configured HACKATHON.yml to change live settings.",
                 });
             }
-            await event.context.drizzle.transaction(async (tx) => {
-                const [season] = await tx
-                    .select({ is_active: seasons.is_active })
-                    .from(seasons)
-                    .where(eq(seasons.id, season_id))
-                    .for("update");
-                if (!season) throw createError({ statusCode: 404, message: "Season not found" });
-                if (season.is_active === 1) {
-                    throw createError({
-                        statusCode: 409,
-                        message: "Edit the configured HACKATHON.yml to change live settings.",
-                    });
-                }
-                await tx.update(seasons).set(configFields).where(eq(seasons.id, season_id));
-            });
+
+            await writeHackathonConfig(configFields);
+
+            // Keep the database copies aligned for rollback and stored-season views.
+            await event.context.drizzle
+                .update(hackathon)
+                .set(configFields)
+                .where(eq(hackathon.id, 1));
+            if (activeSeason) {
+                await event.context.drizzle
+                    .update(seasons)
+                    .set(configFields)
+                    .where(eq(seasons.id, activeSeason.id));
+            }
+        } else if (hackathonUsesYaml()) {
+            // Historical and future seasons keep editable stored settings.
+            const updatedSeasons = await event.context.drizzle
+                .update(seasons)
+                .set(configFields)
+                .where(eq(seasons.id, season_id!))
+                .returning({ id: seasons.id });
+            if (updatedSeasons.length === 0) {
+                throw createError({ statusCode: 404, message: "Season not found" });
+            }
         } else if (season_id !== undefined) {
             // Per-season save: write to the specified season,
             // and also to the global row if this is the active season
@@ -69,8 +91,7 @@ export default defineEventHandler(
                 throw createError({ statusCode: 404, message: "Season not found" });
             }
 
-            const active = await getActiveSeason(event);
-            if (active && active.id === season_id) {
+            if (activeSeason?.id === season_id) {
                 await event.context.drizzle
                     .update(hackathon)
                     .set(configFields)
@@ -84,12 +105,11 @@ export default defineEventHandler(
                 .set(configFields)
                 .where(eq(hackathon.id, 1));
 
-            const active = await getActiveSeason(event);
-            if (active) {
+            if (activeSeason) {
                 await event.context.drizzle
                     .update(seasons)
                     .set(configFields)
-                    .where(eq(seasons.id, active.id));
+                    .where(eq(seasons.id, activeSeason.id));
             }
         }
 

@@ -167,11 +167,13 @@ Mod portal layout using `UDashboardGroup` with a collapsible, resizable sidebar.
 
 **Navigation and access rules:**
 
-| Item                                        | Route           | Permission Required |
-| ------------------------------------------- | --------------- | ------------------- |
-| Home, Users, Teams, DeepSeek, Files, Season | `/developers/*` | Admin               |
+| Group  | Items               | Routes                                      | Permission Required |
+| ------ | ------------------- | ------------------------------------------- | ------------------- |
+| Event  | Overview, Hackathon | `/developers`, `/developers/season`         | Admin               |
+| People | Users, Teams        | `/developers/users`, `/developers/teams`    | Admin               |
+| Tools  | Files, DeepSeek     | `/developers/debug`, `/developers/deepseek` | Admin               |
 
-The retired application-management navigation is no longer present. All remaining developer routes require admin access.
+Groups render as labelled sections in the sidebar, so the portal stays scannable as it grows. The retired application-management navigation is no longer present. All remaining developer routes require admin access.
 
 **Used by:** `/developers`, `/developers/users`, `/developers/teams`, `/developers/deepseek`, `/developers/debug`, `/developers/season`
 

@@ -144,7 +144,8 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. | `local` |
+| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. A local manifest is writable from the mod portal; a remote manifest is read-only. | `local` |
+| `HACKATHON_CONFIG_PATH` | Local manifest the portal reads and, in `local` mode, rewrites | `HACKATHON.yml` |
 | `HACKATHON_CACHE_PATH` | File that stores the last successfully fetched remote manifest, used when the assets server is unavailable at startup | `assets/hackathon-config.yml` |
 | `BASIS_AUTH_PICTURE_CACHE_DIR` | Directory that stores basis-auth avatar bytes so profile pictures survive a provider outage | `assets/basis-auth-pictures` |
 
@@ -206,6 +207,9 @@ BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
 
 # OPTIONAL - Live event configuration source: local | manifest URL | database
 YAML_SOURCE_HACKATHON=local
+
+# OPTIONAL - Local manifest the mod portal reads and rewrites
+# HACKATHON_CONFIG_PATH=HACKATHON.yml
 
 # OPTIONAL - Remote manifest backup and basis-auth avatar cache locations
 # HACKATHON_CACHE_PATH=assets/hackathon-config.yml

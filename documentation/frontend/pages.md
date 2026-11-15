@@ -289,7 +289,7 @@ Placeholder page for the presentation event. States that top 10 teams will be in
 
 **File:** `app/pages/developers/index.vue`
 
-Mod portal landing page. Shows a welcome message. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
+Mod portal landing page. Summarizes the live event — active season, status, theme, schedule, and the visitor-facing toggles — and links to each management area. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
 
 **Layout:** `developers-dashboard`
 
@@ -331,14 +331,13 @@ Permission-gated, read-only listings of existing files and active permalink refe
 
 **File:** `app/pages/developers/season.vue`
 
-Hackathon Administration page (admin-only, hard 403 for non-admins). Contains:
+Hackathon Administration page (admin-only, hard 403 for non-admins). The page is split into tabs so no single scroll holds every control:
 
-- **Season** — pick the season to manage and activate it (`PATCH /api/seasons/active`); "New Season" creates one via `POST /api/admin/seasons`.
-- **Season Name** — rename the selected season via `PATCH /api/admin/seasons`.
-- **Judging rubric** — publish the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured. For database-managed seasons, edit track keys and labels, criteria, integer score ranges, and weights. Weights are checked to total 100% for each track. Saving creates a new immutable version; the version history shows which rubric is active. Organizers can copy a prior season directly or load its rubric to customize, apply or copy reusable named templates, and save, update, or delete templates. A track used by a submitted project must be reassigned before it can be removed.
-- **Score display curve** — choose a season-level presentation curve while preserving original judge averages and rankings.
-- **Hackathon Configuration** — live settings are read-only with a YAML source. Other seasons retain editable stored settings, auto-saved through `/api/admin/hackathon`.
-- **Database Export** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
+- **Overview** — theme, schedule, and the current visitor-facing toggles, with shortcuts to the editing tabs.
+- **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id`. A new season starts as a copy of the live settings so switching cannot blank the event.
+- **Event settings** — status, vote cap, voting/judging/results toggles, theme, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. A local `HACKATHON.yml` is written in place (comments preserved); a remote manifest is read-only and explains where to edit it. Other seasons keep their own editable stored settings.
+- **Scoring** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version; the history shows which version is active. Organizers can copy a prior season, load its rubric to customize, and apply or copy reusable named templates. A track used by a submitted project must be reassigned before removal.
+- **Data** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted.
 
 **Layout:** `developers-dashboard`
 

@@ -281,8 +281,12 @@ describe("judge results and admin controls", () => {
         expect(saveCurve).toContain('method: "PATCH"');
         expect(saveCurve).toContain("scoreCurvePreset.value =");
         expect(saveCurve).toContain('title: "Could not update score curve"');
-        expect(seasonAdmin).toContain("The original judge average stays saved");
-        expect(seasonAdmin).toContain("published ranking always uses that original score");
+        expect(seasonAdmin.replace(/\s+/g, " ")).toContain(
+            "The original judge average stays saved",
+        );
+        expect(seasonAdmin.replace(/\s+/g, " ")).toContain(
+            "published ranking always uses that original score",
+        );
     });
 
     it("blocks invalid season rubrics until every track's criteria total 100%", () => {

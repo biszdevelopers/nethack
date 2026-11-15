@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
     createTestContext,
     resetTestContext,
@@ -174,6 +177,17 @@ describe("PATCH /api/admin/hackathon", () => {
         expect(row.max_votes_per_user).toBe(5);
     });
 
+    it("updates a specific season when no season is active", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx, { name: "Dormant", is_active: 0 });
+        mockBody.value = { season_id: season.id, theme_name: "No live season" };
+
+        await expect(patchHandler(createEvent())).resolves.toHaveProperty("seasons");
+        expect(
+            ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get()!.theme_name,
+        ).toBe("No live season");
+    });
+
     it("persists two sequential per-season timestamp saves without losing either", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
 
@@ -223,83 +237,116 @@ describe("PATCH /api/admin/hackathon", () => {
 });
 
 describe("PATCH /api/admin/hackathon under manifest authority", () => {
-    function createManifestEvent(season: Record<string, unknown> | null) {
-        const updates: Record<string, unknown>[] = [];
-        const query: any = {
-            from: () => query,
-            where: () => query,
-            for: () => query,
-            then: (resolve: (rows: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
-                Promise.resolve(season ? [season] : []).then(resolve, reject),
-        };
-        const transaction = {
-            select: () => query,
-            update: () => ({
-                set: (values: Record<string, unknown>) => ({
-                    where: async () => {
-                        updates.push(values);
-                    },
-                }),
-            }),
-        };
-        const drizzle = new Proxy(
-            {
-                transaction: async (run: (transaction: typeof transaction) => unknown) =>
-                    run(transaction),
-            },
-            {
-                get(target, property, receiver) {
-                    if (property in target) return Reflect.get(target, property, receiver);
-                    const value = Reflect.get(ctx.drizzle as any, property);
-                    return typeof value === "function" ? value.bind(ctx.drizzle) : value;
-                },
-            },
-        );
-        return { event: { context: { drizzle } }, updates };
-    }
+    const manifest = `# organizer note stays put
+id: 1
+status: in_progress
+voting_enabled: 0
+results_published: 0
+show_scores: 0
+show_ranking: 0
+submitted_count: 0
+max_votes_per_user: 0
+judging_open: 0
+schedule_start: null
+schedule_end: null
+start_timestamp: 0
+end_timestamp: 0
+voting_start_timestamp: 0
+voting_end_timestamp: 0
+results_open_timestamp: 0
+theme_name: null
+theme_description: null
+`;
+    let manifestDirectory: string;
+    let manifestPath: string;
 
     beforeEach(() => {
+        manifestDirectory = mkdtempSync(join(tmpdir(), "basishacks-manifest-"));
+        manifestPath = join(manifestDirectory, "HACKATHON.yml");
+        writeFileSync(manifestPath, manifest);
         vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
+        vi.stubEnv("HACKATHON_CONFIG_PATH", manifestPath);
     });
 
     afterEach(() => {
         vi.unstubAllEnvs();
+        rmSync(manifestDirectory, { recursive: true, force: true });
     });
 
-    it("rejects a live update that omits the season hint", async () => {
+    it("writes live settings into a local manifest and mirrors them", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
-        mockBody.value = { theme_name: "Manifest only" };
-        const { event, updates } = createManifestEvent({ is_active: 0 });
+        const season = seedSeason(ctx);
+        mockBody.value = { voting_enabled: 1, theme_name: "Manifest theme" };
 
-        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 409 });
-        expect(updates).toEqual([]);
+        const result = await patchHandler(createEvent());
+
+        expect(result.hackathon).toMatchObject({
+            voting_enabled: 1,
+            theme_name: "Manifest theme",
+        });
+        const written = readFileSync(manifestPath, "utf8");
+        expect(written).toContain("# organizer note stays put");
+        expect(written).toContain("Manifest theme");
+        expect(ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()).toMatchObject(
+            { voting_enabled: 1, theme_name: "Manifest theme" },
+        );
+        expect(
+            ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get(),
+        ).toMatchObject({ voting_enabled: 1, theme_name: "Manifest theme" });
     });
 
-    it("rejects changes to the active season", async () => {
+    it("writes live settings into a local manifest even when no season is active", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
-        mockBody.value = { season_id: 1, theme_name: "Manifest only" };
-        const { event, updates } = createManifestEvent({ is_active: 1 });
+        mockBody.value = { theme_name: "No active season" };
 
-        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 409 });
-        expect(updates).toEqual([]);
+        await expect(patchHandler(createEvent())).resolves.toHaveProperty("hackathon");
+
+        expect(readFileSync(manifestPath, "utf8")).toContain("No active season");
+        expect(
+            ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()!.theme_name,
+        ).toBe("No active season");
+    });
+
+    it("writes settings for the active season into the manifest", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        mockBody.value = { season_id: season.id, theme_name: "Active theme" };
+
+        await expect(patchHandler(createEvent())).resolves.toHaveProperty("seasons");
+
+        expect(readFileSync(manifestPath, "utf8")).toContain("Active theme");
+    });
+
+    it("rejects live edits when the manifest is remote", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/HACKATHON.yml");
+        mockBody.value = { theme_name: "Not writable" };
+
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
     });
 
     it("rejects an unknown season", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { season_id: 987, theme_name: "Nowhere" };
-        const { event, updates } = createManifestEvent(null);
 
-        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 404 });
-        expect(updates).toEqual([]);
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it("updates a historical season without touching live settings", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
-        mockBody.value = { season_id: 2, theme_name: "Archived theme" };
-        const { event, updates } = createManifestEvent({ is_active: 0 });
+        const current = seedSeason(ctx);
+        const past = seedSeason(ctx, { name: "Season 0", is_active: 0 });
+        mockBody.value = { season_id: past.id, theme_name: "Archived theme" };
 
-        await expect(patchHandler(event)).resolves.toHaveProperty("seasons");
-        expect(updates).toEqual([{ theme_name: "Archived theme" }]);
+        await expect(patchHandler(createEvent())).resolves.toHaveProperty("seasons");
+
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
+        const stored = ctx.drizzle.select().from(seasons).where(eq(seasons.id, past.id)).get()!;
+        expect(stored.theme_name).toBe("Archived theme");
+        expect(
+            ctx.drizzle.select().from(seasons).where(eq(seasons.id, current.id)).get(),
+        ).toMatchObject({ is_active: 1 });
     });
 });
 
