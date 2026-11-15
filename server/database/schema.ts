@@ -18,6 +18,30 @@ import { sql } from "drizzle-orm";
 import type { RubricDefinition } from "../../shared/rubric";
 import type { ScoreCurvePreset } from "../../shared/score-curve";
 
+export const basisAccessTokenRevocations = pgTable(
+    "basis_access_token_revocations",
+    {
+        issuer: text("issuer").notNull(),
+        jti: text("jti").notNull(),
+        validAfter: bigint("valid_after", { mode: "number" }).notNull(),
+        retainUntil: bigint("retain_until", { mode: "number" }).notNull(),
+    },
+    (table) => [
+        primaryKey({ columns: [table.issuer, table.jti] }),
+        index("basis_access_token_revocations_retention_idx").on(table.retainUntil),
+    ],
+);
+
+export const basisSubjectLogouts = pgTable(
+    "basis_subject_logouts",
+    {
+        issuer: text("issuer").notNull(),
+        subject: text("subject").notNull(),
+        issuedAt: bigint("issued_at", { mode: "number" }).notNull(),
+    },
+    (table) => [primaryKey({ columns: [table.issuer, table.subject] })],
+);
+
 // ---------------------------------------------------------------------------
 // Legacy live configuration retained for export, SQLite import, and rollback.
 // ---------------------------------------------------------------------------

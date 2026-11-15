@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     setDatabaseInitialization: vi.fn(),
     collectOrphanProfileAssets: vi.fn(),
     collectOrphanPermalinkAssets: vi.fn(),
+    cleanBasisAccessTokenRevocations: vi.fn(),
 }));
 
 vi.mock("~~/server/database", () => ({
@@ -21,6 +22,9 @@ vi.mock("~~/server/utils/assets", () => ({
     collectOrphanProfileAssets: mocks.collectOrphanProfileAssets,
     collectOrphanPermalinkAssets: mocks.collectOrphanPermalinkAssets,
 }));
+vi.mock("~~/server/utils/database/basis-auth-revocations", () => ({
+    cleanBasisAccessTokenRevocations: mocks.cleanBasisAccessTokenRevocations,
+}));
 vi.stubGlobal("defineNitroPlugin", (plugin: (nitroApp: unknown) => Promise<void>) => plugin);
 
 const { default: initDatabase } = await import("~~/server/plugins/init-database");
@@ -31,6 +35,7 @@ describe("init-database plugin", () => {
         mocks.createDrizzleDatabase.mockResolvedValue({});
         mocks.createAndMigrateDatabase.mockResolvedValue(undefined);
         mocks.setDatabaseInitialization.mockReset();
+        mocks.cleanBasisAccessTokenRevocations.mockReset().mockResolvedValue(undefined);
         mocks.collectOrphanProfileAssets.mockResolvedValue({
             entriesVisited: 0,
             scanned: 0,
@@ -184,5 +189,34 @@ describe("init-database plugin", () => {
         await hook.mock.calls[0]![1]();
         warning.mockRestore();
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("runs denylist cleanup hourly and waits for it on shutdown", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(0));
+        const cleanup = Promise.withResolvers<void>();
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        mocks.cleanBasisAccessTokenRevocations
+            .mockRejectedValueOnce(new Error("sensitive database error"))
+            .mockReturnValueOnce(cleanup.promise);
+        try {
+            const hook = vi.fn();
+            await initDatabase({ hooks: { hook } });
+            await vi.advanceTimersByTimeAsync(3_599_999);
+            expect(mocks.cleanBasisAccessTokenRevocations).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1);
+            expect(mocks.cleanBasisAccessTokenRevocations).toHaveBeenCalledWith({}, 3600);
+            expect(warn).toHaveBeenCalledWith("[Basis Auth] Revocation cleanup failed");
+            await vi.advanceTimersByTimeAsync(7_200_000);
+            expect(mocks.cleanBasisAccessTokenRevocations).toHaveBeenCalledTimes(2);
+            const closing = hook.mock.calls[0]![1]();
+            expect(mocks.closeDatabase).not.toHaveBeenCalled();
+            cleanup.resolve();
+            await closing;
+            expect(mocks.closeDatabase).toHaveBeenCalledOnce();
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            warn.mockRestore();
+        }
     });
 });

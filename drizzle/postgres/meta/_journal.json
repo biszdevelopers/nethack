@@ -71,6 +71,13 @@
             "when": 1794736648912,
             "tag": "0009_great_santa_claus",
             "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1794750845271,
+            "tag": "0010_basis_auth_backchannel",
+            "breakpoints": true
         }
     ]
 }

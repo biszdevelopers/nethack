@@ -58,6 +58,9 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `BASIS_AUTH_CLIENT_ID` | Required | Confidential client ID registered for basishacks |
 | `BASIS_AUTH_CLIENT_SECRET` | Required | Confidential client secret; keep it server-side |
 | `BASIS_AUTH_RESOURCE` | Required | Resource audience for basishacks access tokens (`devconnect://nethack.bisz.dev`) |
+| `BASIS_AUTH_INTERNAL_URL` | Required for backchannel registration | Server-only Basis Auth internal listener origin |
+| `BASIS_AUTH_RESOURCE_SECRET` | Required for backchannel registration | Current server-only secret for the resource audience |
+| `BASIS_AUTH_ACCESS_TOKEN_LIFETIME_SECONDS` | Optional | Longest provider token lifetime for legacy revocation retention (default: 3600 seconds) |
 | `DATABASE_URL` | Required | PostgreSQL connection URL used in development, CI, and production |
 | `DATABASE_POOL_MAX` | Optional | Connection pool maximum (default `10`, accepted range `2`–`64`) |
 | `YAML_SOURCE_HACKATHON` | Optional | `local` or blank reads `HACKATHON.yml`. An assets origin or full asset URL selects a remote manifest. A local manifest is editable from the mod portal; a remote manifest is read-only. |
@@ -226,3 +229,5 @@ For an existing deployment with a SQLite database, follow the [SQLite-to-Postgre
 ### Required authentication env vars
 
 Set `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, and `BASIS_AUTH_RESOURCE` in `.env`. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` with the same basis-auth client.
+
+Configure the backchannel variables above and register `/api/auth/backchannel-logout` as a full HTTPS URL under **Resource Servers → Backchannel** for the exact audience. Local development can use `http://localhost:24598/api/auth/backchannel-logout`. To bootstrap before sign-in, add `backchannelLogoutUri` to the existing resource entry in Basis Auth's `OIDC_RESOURCES_JSON`. Sign-in and refresh require a verified URL. PostgreSQL migration `0010_basis_auth_backchannel` runs on startup and supports access-token revocation and user-wide logout across instances. [Basis Auth integration guide](documentation/architecture/oauth2.md#backchannel-registration)

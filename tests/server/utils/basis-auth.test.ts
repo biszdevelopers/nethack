@@ -16,6 +16,10 @@ const oidc = vi.hoisted(() => ({
 }));
 
 vi.mock("openid-client", () => oidc);
+vi.mock("~~/server/utils/basis-auth-jwt", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("~~/server/utils/basis-auth-jwt")>()),
+    verifyAccessToken: vi.fn(),
+}));
 vi.mock("~~/server/utils/oauth2", () => ({
     getPublicOrigin: () => "https://hacks.example.test",
 }));
@@ -35,6 +39,9 @@ import {
     BASIS_AUTH_TOKEN_COOKIE,
     establishBasisAuthUserSession,
 } from "~~/server/utils/basis-auth-session";
+import { invalidAccessToken, verifyAccessToken } from "~~/server/utils/basis-auth-jwt";
+
+const payload = { sub: "subject", iat: 1 } as Awaited<ReturnType<typeof verifyAccessToken>>;
 
 let sessionCookies = new WeakMap<object, Map<string, string>>();
 
@@ -78,6 +85,7 @@ beforeEach(() => {
     oidc.fetchUserInfo.mockReset();
     oidc.refreshTokenGrant.mockReset();
     oidc.tokenRevocation.mockReset();
+    vi.mocked(verifyAccessToken).mockReset().mockResolvedValue(payload);
 });
 
 afterEach(() => {
@@ -591,7 +599,7 @@ describe("basis-auth session refresh", () => {
         expect(oidc.refreshTokenGrant).not.toHaveBeenCalled();
     });
 
-    it("returns a session without network access while its access token is fresh", async () => {
+    it("returns a validated session without refreshing while its access token is fresh", async () => {
         const current = event();
         const tokens = {
             accessToken: "valid-access-token",
@@ -603,6 +611,7 @@ describe("basis-auth session refresh", () => {
         await expect(getFreshBasisAuthUserSession(current)).resolves.toEqual({
             userId: 17,
             tokens,
+            payload,
         });
         expect(oidc.refreshTokenGrant).not.toHaveBeenCalled();
     });
@@ -632,6 +641,12 @@ describe("basis-auth session refresh", () => {
         });
         expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(true);
         expect(oidc.refreshTokenGrant).toHaveBeenCalledWith("configuration", "refresh-token");
+        expect(verifyAccessToken).toHaveBeenLastCalledWith(
+            current,
+            "new-access-token",
+            expect.anything(),
+            { sessionIssuedAt: payload.iat },
+        );
     });
 
     it("shares one in-flight refresh between concurrent sessions with the same refresh token", async () => {
@@ -682,7 +697,10 @@ describe("basis-auth session refresh", () => {
                 expires_in: 300,
             });
 
-        await expect(getFreshBasisAuthUserSession(current)).resolves.toBeUndefined();
+        await expect(getFreshBasisAuthUserSession(current)).rejects.toMatchObject({
+            statusCode: 401,
+            message: "Invalid access token",
+        });
         expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(false);
 
         establishBasisAuthUserSession(current, 17, {
@@ -695,5 +713,65 @@ describe("basis-auth session refresh", () => {
             tokens: { accessToken: "recovered-access-token" },
         });
         expect(oidc.refreshTokenGrant).toHaveBeenCalledTimes(2);
+    });
+
+    it("checks revocation before requesting a refresh and clears the revoked cookie", async () => {
+        const current = event();
+        establishBasisAuthUserSession(current, 17, {
+            accessToken: "revoked",
+            accessTokenExpiresAt: Date.now(),
+            refreshToken: "refresh-token",
+        });
+        vi.mocked(verifyAccessToken).mockRejectedValueOnce(invalidAccessToken());
+        await expect(getFreshBasisAuthUserSession(current)).rejects.toMatchObject({
+            statusCode: 401,
+            message: "Invalid access token",
+        });
+        expect(oidc.refreshTokenGrant).not.toHaveBeenCalled();
+        expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(false);
+    });
+
+    it("keeps the session cookie when the revocation lookup is temporarily unavailable", async () => {
+        const current = event();
+        establishBasisAuthUserSession(current, 17, {
+            accessToken: "valid",
+            accessTokenExpiresAt: Date.now() + 60_000,
+            refreshToken: "refresh-token",
+        });
+        vi.mocked(verifyAccessToken).mockRejectedValueOnce({ statusCode: 503 });
+        await expect(getFreshBasisAuthUserSession(current)).rejects.toMatchObject({
+            statusCode: 503,
+        });
+        expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(true);
+    });
+
+    it("rejects a refresh that changes the subject", async () => {
+        const current = event();
+        establishBasisAuthUserSession(
+            current,
+            17,
+            {
+                accessToken: "expired",
+                accessTokenExpiresAt: Date.now(),
+                refreshToken: "refresh-token",
+            },
+            0,
+        );
+        oidc.refreshTokenGrant.mockResolvedValue({
+            access_token: "new",
+            refresh_token: "new-refresh",
+        });
+        vi.mocked(verifyAccessToken)
+            .mockResolvedValueOnce(payload)
+            .mockResolvedValueOnce({
+                ...payload,
+                sub: "other-subject",
+            });
+        await expect(getFreshBasisAuthUserSession(current)).rejects.toMatchObject({
+            statusCode: 401,
+        });
+        expect(verifyAccessToken).toHaveBeenLastCalledWith(current, "new", expect.anything(), {
+            sessionIssuedAt: 0,
+        });
     });
 });

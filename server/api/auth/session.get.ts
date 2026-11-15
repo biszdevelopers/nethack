@@ -1,9 +1,8 @@
-import { APIError } from "@basis/schema/api";
 import { setResponseHeader } from "h3";
 import { getFreshBasisAuthUserSession } from "~~/server/utils/basis-auth";
+import { invalidAccessToken } from "~~/server/utils/basis-auth-jwt";
 import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
 import { getUser } from "~~/server/utils/database/users";
-import { verifyAccessToken } from "~~/server/utils/oauth2-jwt";
 import { applyRateLimit, AUTH_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { effectiveNethackPermissions } from "~~/shared/permissions";
 
@@ -13,20 +12,17 @@ export default defineEventHandler(
         const session = await getFreshBasisAuthUserSession(event);
         if (!session) {
             clearBasisAuthUserSession(event);
-            throw new APIError("invalid_token", "The login session has expired", 401);
+            throw invalidAccessToken();
         }
 
-        try {
-            const payload = await verifyAccessToken(session.tokens.accessToken);
-            const user = await getUser(event, session.userId);
-            return {
-                user: { id: session.userId },
-                expiresAt: session.tokens.accessTokenExpiresAt,
-                permissions: effectiveNethackPermissions(payload.permissions, user ?? undefined),
-            };
-        } catch (error) {
-            clearBasisAuthUserSession(event);
-            throw error;
-        }
+        const user = await getUser(event, session.userId);
+        return {
+            user: { id: session.userId },
+            expiresAt: session.tokens.accessTokenExpiresAt,
+            permissions: effectiveNethackPermissions(
+                session.payload.permissions,
+                user ?? undefined,
+            ),
+        };
     }, AUTH_RATE_LIMIT_CONFIG),
 );

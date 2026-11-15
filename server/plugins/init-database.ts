@@ -2,11 +2,13 @@ import { closeDatabase, createDrizzleDatabase, setDatabaseInitialization } from 
 import type { DrizzleDatabase } from "../database";
 import { createAndMigrateDatabase } from "../database/migrate";
 import { collectOrphanProfileAssets } from "../utils/assets";
+import { cleanBasisAccessTokenRevocations } from "../utils/database/basis-auth-revocations";
 
 const INITIAL_PROFILE_ASSET_GC_DELAY_MS = 60 * 1000;
 const PROFILE_ASSET_GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const PROFILE_ASSET_GC_MAX_SCANNED = 250;
 const PROFILE_ASSET_GC_MAX_DELETIONS = 25;
+const REVOCATION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 export default defineNitroPlugin((nitroApp) => {
     let database: DrizzleDatabase | undefined;
@@ -77,11 +79,24 @@ export default defineNitroPlugin((nitroApp) => {
         };
 
         scheduleGc(INITIAL_PROFILE_ASSET_GC_DELAY_MS);
+        let activeRevocationCleanup: Promise<void> | undefined;
+        const revocationTimer = setInterval(() => {
+            activeRevocationCleanup ??= cleanBasisAccessTokenRevocations(
+                database!,
+                Math.floor(Date.now() / 1000),
+            )
+                .catch(() => console.warn("[Basis Auth] Revocation cleanup failed"))
+                .finally(() => {
+                    activeRevocationCleanup = undefined;
+                });
+        }, REVOCATION_CLEANUP_INTERVAL_MS);
+        revocationTimer.unref?.();
         nitroApp.hooks.hook("close", async () => {
             closing = true;
             if (gcTimer) clearTimeout(gcTimer);
             gcTimer = undefined;
-            await activeGc;
+            clearInterval(revocationTimer);
+            await Promise.all([activeGc, activeRevocationCleanup]);
             await closeDatabase();
         });
     });

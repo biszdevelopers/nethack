@@ -56,6 +56,8 @@ The frontend middleware is a convenience redirect and is never the only authoriz
 
 ## Resource-server tokens
 
+The backchannel receiver stores signed access-token revocations in PostgreSQL and blocks each JTI from its effective time. It keeps the earliest effective time and latest retention deadline across deliveries. The database plugin removes expired denylist entries hourly. A signed subject logout records the latest logout issuance time for that issuer and subject. Access tokens and cookie sessions issued at or before the cutoff are rejected. Refresh preserves the cookie's original verified issuance time, so it cannot bypass a logout. A sign-in with a token issued after the cutoff survives a replay of the same event. [Backchannel registration](/architecture/oauth2#backchannel-registration)
+
 Protected APIs trust basis-auth access tokens only. Validation requires the basis-auth JWKS signature, RS256, the exact configured issuer, the configured audience, `typ=at+jwt`, a valid expiry, and basis-schema access-token claims. The subject maps to a local user through the same issuer-and-subject link. Route access is evaluated from the JWT `permissions` array with the shared nethack permission hierarchy.
 
 For accounts carrying the former `participant`, `judge`, or `admin` permission, basishacks expands that legacy value into the corresponding granular permission bundle before server checks and frontend display gating. This compatibility bridge does not discard granular permissions already present in the token.

@@ -27,6 +27,8 @@ At startup the plugin calls `createDrizzleDatabase()` from `server/database/inde
 
 The shared instance uses a bounded PostgreSQL connection pool. Migrations and seeding finish before Nitro accepts requests.
 
+The plugin runs access-token denylist cleanup hourly and waits for in-flight cleanup before closing the pool.
+
 ### 02.database.ts
 
 **File:** `server/middleware/02.database.ts`

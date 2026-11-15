@@ -111,6 +111,10 @@ cp .env.example .env
 | `BASIS_AUTH_CLIENT_ID` | Registered confidential basishacks client ID | Provider-generated value |
 | `BASIS_AUTH_CLIENT_SECRET` | Server-only basishacks client secret | Provider-generated value |
 | `BASIS_AUTH_RESOURCE` | Resource audience registered for basishacks | `devconnect://nethack.bisz.dev` |
+| `BASIS_AUTH_INTERNAL_URL` | Server-only internal listener used to verify the backchannel | `http://localhost:3001` |
+| `BASIS_AUTH_RESOURCE_SECRET` | Current server-only secret for the backchannel resource | Value from Basis Auth |
+
+Set up the [verified backchannel](/architecture/oauth2#backchannel-registration) before signing in.
 
 ::: tip Login is delegated to basis-auth. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` for each environment. :::
 
@@ -204,6 +208,8 @@ BASIS_AUTH_ISSUER=http://localhost:3000
 BASIS_AUTH_CLIENT_ID=your_basis_auth_client_id
 BASIS_AUTH_CLIENT_SECRET=your_basis_auth_client_secret
 BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
+BASIS_AUTH_INTERNAL_URL=http://localhost:3001
+BASIS_AUTH_RESOURCE_SECRET=your_current_basis_auth_resource_secret
 
 # OPTIONAL - Live event configuration source: local | manifest URL | database
 YAML_SOURCE_HACKATHON=local

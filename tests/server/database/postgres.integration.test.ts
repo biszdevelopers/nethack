@@ -1,11 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { closeDatabase, createDrizzleDatabase, type DrizzleDatabase } from "~~/server/database";
 import { createAndMigrateDatabase } from "~~/server/database/migrate";
 import { readHackathonConfig } from "~~/server/utils/hackathon-config";
 import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import {
+    cleanBasisAccessTokenRevocations,
+    isBasisCredentialRevoked,
+    recordBasisAccessTokenRevocation,
+    recordBasisSubjectLogout,
+} from "~~/server/utils/database/basis-auth-revocations";
+import {
     hackathon,
+    basisAccessTokenRevocations,
+    basisSubjectLogouts,
     judgingDrafts,
     rubricVersions,
     seasons,
@@ -36,6 +45,123 @@ describe.skipIf(!enabled || !hasDatabaseUrl)("PostgreSQL integration", () => {
             await database.delete(users).where(eq(users.id, createdUserId));
         }
         await closeDatabase();
+    });
+
+    it("preserves the earliest Basis Auth revocation and latest retention in either delivery order", async () => {
+        const db = database!;
+        const iss = `https://${randomUUID()}.example.test`;
+        const now = Math.floor(Date.now() / 1000);
+        const earlier = [now - 60, now + 7200] as const;
+        const later = [now, now + 3600] as const;
+        try {
+            for (const [jti, deliveries] of [
+                ["forward", [earlier, later]],
+                ["reverse", [later, earlier]],
+            ] as const) {
+                for (const [validAfter, retainUntil] of deliveries) {
+                    await recordBasisAccessTokenRevocation(db, iss, jti, validAfter, retainUntil);
+                }
+            }
+            await Promise.all(
+                [earlier, later].map(([validAfter, retainUntil]) =>
+                    recordBasisAccessTokenRevocation(
+                        db,
+                        iss,
+                        "concurrent",
+                        validAfter,
+                        retainUntil,
+                    ),
+                ),
+            );
+            const entries = await db
+                .select()
+                .from(basisAccessTokenRevocations)
+                .where(eq(basisAccessTokenRevocations.issuer, iss));
+            expect(entries).toHaveLength(3);
+            for (const { jti, validAfter, retainUntil } of entries) {
+                expect({ validAfter, retainUntil }).toEqual({
+                    validAfter: earlier[0],
+                    retainUntil: earlier[1],
+                });
+                const claims = { iss, jti, sub: "subject" };
+                await expect(
+                    isBasisCredentialRevoked(db, claims, now - 120, validAfter - 1),
+                ).resolves.toBe(false);
+                await expect(
+                    isBasisCredentialRevoked(db, claims, now - 120, validAfter),
+                ).resolves.toBe(true);
+            }
+        } finally {
+            await db
+                .delete(basisAccessTokenRevocations)
+                .where(eq(basisAccessTokenRevocations.issuer, iss));
+        }
+    });
+
+    it("cleans Basis Auth revocations by retention deadline and preserves a longer-lived token", async () => {
+        const db = database!;
+        const iss = `https://${randomUUID()}.example.test`;
+        const now = Math.floor(Date.now() / 1000);
+        const rollback = new Error("Rollback test cleanup");
+        await expect(
+            db.transaction(async (tx) => {
+                const connection = tx as unknown as DrizzleDatabase;
+                await recordBasisAccessTokenRevocation(
+                    connection,
+                    iss,
+                    "unknown-expiry",
+                    now,
+                    now + 3600,
+                );
+                await recordBasisAccessTokenRevocation(
+                    connection,
+                    iss,
+                    "known-expiry",
+                    now,
+                    now + 7200,
+                );
+                const list = () =>
+                    tx
+                        .select({ jti: basisAccessTokenRevocations.jti })
+                        .from(basisAccessTokenRevocations)
+                        .where(eq(basisAccessTokenRevocations.issuer, iss));
+                await cleanBasisAccessTokenRevocations(connection, now + 3599);
+                expect(await list()).toHaveLength(2);
+                await cleanBasisAccessTokenRevocations(connection, now + 3600);
+                expect(await list()).toEqual([{ jti: "known-expiry" }]);
+                await cleanBasisAccessTokenRevocations(connection, now + 7200);
+                expect(await list()).toEqual([]);
+                throw rollback;
+            }),
+        ).rejects.toBe(rollback);
+    });
+
+    it("ends all Basis Auth credentials for the subject through the signed logout time", async () => {
+        const db = database!;
+        const iss = `https://${randomUUID()}.example.test`;
+        const sub = "subject";
+        const now = Math.floor(Date.now() / 1000);
+        try {
+            await recordBasisSubjectLogout(db, iss, sub, now);
+            for (const jti of ["session-one", "session-two"]) {
+                await expect(
+                    isBasisCredentialRevoked(db, { iss, sub, jti }, now, now),
+                ).resolves.toBe(true);
+            }
+            await recordBasisSubjectLogout(db, iss, sub, now);
+            await recordBasisSubjectLogout(db, iss, sub, now - 5);
+            await expect(
+                isBasisCredentialRevoked(db, { iss, sub, jti: "relogin" }, now + 1, now + 1),
+            ).resolves.toBe(false);
+            await expect(
+                isBasisCredentialRevoked(db, { iss, sub, jti: "old-refresh" }, now, now + 1),
+            ).resolves.toBe(true);
+            await expect(
+                isBasisCredentialRevoked(db, { iss, sub: "other", jti: "session-three" }, now, now),
+            ).resolves.toBe(false);
+        } finally {
+            await db.delete(basisSubjectLogouts).where(eq(basisSubjectLogouts.issuer, iss));
+        }
     });
 
     it("activates the YAML rubric once under concurrent reads and preserves prior versions", async () => {

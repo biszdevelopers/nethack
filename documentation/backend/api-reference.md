@@ -58,6 +58,18 @@ Validates the cookie-held access token and returns `{ user: { id }, expiresAt, p
 
 Attempts to revoke the stored refresh-token family, always clears the local session, and returns the canonical success envelope.
 
+### POST `/api/auth/backchannel-logout`
+
+Basis Auth sends requests as `application/x-www-form-urlencoded`.
+
+| Form | Effect | Success |
+| --- | --- | --- |
+| `action=test`, `nonce`, `challenge` | Starts the HMAC proof to the configured internal listener | 202 |
+| `action=revoke_access_token`, `jti`, `valid_after`, `revocation_token` | Records a signed revocation for one access-token JTI | 204 |
+| `logout_token` | Ends local sessions for the signed subject through the event's issuance time | 204 |
+
+Malformed forms or invalid event tokens receive 400. Unsupported media types receive 415. Persistence failures receive 503 so Basis Auth can retry. [Backchannel registration](/architecture/oauth2#backchannel-registration)
+
 ::: info Retired endpoints The native `/.well-known/openid-configuration`, `/api/oauth2/*`, and `/api/applications/*` surfaces have been removed. Register and manage clients in basis-auth. :::
 
 ---

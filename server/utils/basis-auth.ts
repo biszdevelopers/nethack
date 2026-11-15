@@ -2,12 +2,12 @@ import type { H3Event } from "h3";
 import * as oidc from "openid-client";
 import { getPublicOrigin } from "~~/server/utils/oauth2";
 import type { BasisAuthIdentity } from "~~/server/utils/database/users";
+import { invalidAccessToken, verifyAccessToken } from "~~/server/utils/basis-auth-jwt";
 import {
     clearBasisAuthUserSession,
     establishBasisAuthUserSession,
     readBasisAuthUserSession,
     type BasisAuthFlowTransaction,
-    type BasisAuthUserSession,
     type StoredBasisAuthTokens,
 } from "~~/server/utils/basis-auth-session";
 import {
@@ -254,33 +254,54 @@ const REFRESH_BUFFER_MS = 30_000;
 const refreshes = new Map<string, Promise<StoredBasisAuthTokens>>();
 
 /** Read the encrypted token cookie and rotate it when its access token is near expiry. */
-export async function getFreshBasisAuthUserSession(
-    event: H3Event,
-): Promise<BasisAuthUserSession | undefined> {
+export async function getFreshBasisAuthUserSession(event: H3Event) {
     const session = readBasisAuthUserSession(event);
     if (!session) return undefined;
-    if (session.tokens.accessTokenExpiresAt > Date.now() + REFRESH_BUFFER_MS) return session;
 
-    let pending = refreshes.get(session.tokens.refreshToken);
+    try {
+        const config = getBasisAuthConfig();
+        const needsRefresh = session.tokens.accessTokenExpiresAt <= Date.now() + REFRESH_BUFFER_MS;
+        const payload = await verifyAccessToken(event, session.tokens.accessToken, config, {
+            allowExpiredForRefresh: needsRefresh,
+            sessionIssuedAt: session.issuedAt,
+        });
+        if (!needsRefresh) return { ...session, payload };
+
+        const issuedAt = session.issuedAt ?? payload.iat;
+        const tokens = await rotateSessionTokens(session.tokens.refreshToken);
+        const refreshed = await verifyAccessToken(event, tokens.accessToken, config, {
+            sessionIssuedAt: issuedAt,
+        });
+        if (refreshed.sub !== payload.sub) {
+            console.warn("[Basis Auth] Refresh returned a different subject");
+            throw invalidAccessToken();
+        }
+        establishBasisAuthUserSession(event, session.userId, tokens, issuedAt);
+        return { userId: session.userId, tokens, issuedAt, payload: refreshed };
+    } catch (error) {
+        if ((error as { statusCode?: number }).statusCode === 401) clearBasisAuthUserSession(event);
+        throw error;
+    }
+}
+
+async function rotateSessionTokens(refreshToken: string) {
+    let pending = refreshes.get(refreshToken);
     if (!pending) {
-        pending = refreshBasisAuthTokens(session.tokens.refreshToken)
+        pending = refreshBasisAuthTokens(refreshToken)
             .then((tokens) => ({
                 accessToken: tokens.accessToken,
                 accessTokenExpiresAt: tokens.expiresAt,
                 refreshToken: tokens.refreshToken,
             }))
-            .finally(() => refreshes.delete(session.tokens.refreshToken));
-        refreshes.set(session.tokens.refreshToken, pending);
+            .catch(() => {
+                console.warn("[Basis Auth] Session refresh failed");
+                throw invalidAccessToken();
+            })
+            .finally(() => refreshes.delete(refreshToken));
+        refreshes.set(refreshToken, pending);
     }
 
-    try {
-        const tokens = await pending;
-        establishBasisAuthUserSession(event, session.userId, tokens);
-        return { userId: session.userId, tokens };
-    } catch {
-        clearBasisAuthUserSession(event);
-        return undefined;
-    }
+    return await pending;
 }
 
 export async function revokeBasisAuthToken(refreshToken: string) {

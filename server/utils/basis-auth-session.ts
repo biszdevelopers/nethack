@@ -19,6 +19,7 @@ export interface StoredBasisAuthTokens {
 export interface BasisAuthUserSession {
     userId: number;
     tokens: StoredBasisAuthTokens;
+    issuedAt?: number;
 }
 
 export interface BasisAuthFlowTransaction {
@@ -107,6 +108,7 @@ function parseTokens(value: unknown): BasisAuthUserSession | undefined {
     const tokens = session.tokens as Partial<StoredBasisAuthTokens> | undefined;
     if (
         !Number.isInteger(session.userId) ||
+        (session.issuedAt !== undefined && !Number.isSafeInteger(session.issuedAt)) ||
         !tokens ||
         typeof tokens.accessToken !== "string" ||
         typeof tokens.accessTokenExpiresAt !== "number" ||
@@ -121,11 +123,12 @@ export function establishBasisAuthUserSession(
     event: H3Event,
     userId: number,
     tokens: StoredBasisAuthTokens,
+    issuedAt?: number,
 ): void {
     setCookie(
         event,
         BASIS_AUTH_TOKEN_COOKIE,
-        seal({ userId, tokens }, "tokens"),
+        seal({ userId, tokens, issuedAt }, "tokens"),
         cookieOptions(TOKEN_MAX_AGE_SECONDS),
     );
 }

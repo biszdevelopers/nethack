@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { jwtVerifyMock, createRemoteJWKSetMock, getUserBySubjectMock } = vi.hoisted(() => ({
-    jwtVerifyMock: vi.fn(),
-    createRemoteJWKSetMock: vi.fn(() => "jwks"),
-    getUserBySubjectMock: vi.fn(),
-}));
+const { jwtVerifyMock, createRemoteJWKSetMock, getUserBySubjectMock, isRevoked } = vi.hoisted(
+    () => ({
+        jwtVerifyMock: vi.fn(),
+        createRemoteJWKSetMock: vi.fn(() => "jwks"),
+        getUserBySubjectMock: vi.fn(),
+        isRevoked: vi.fn(),
+    }),
+);
 
 vi.mock("jose", () => ({
     createRemoteJWKSet: createRemoteJWKSetMock,
@@ -24,16 +27,16 @@ vi.mock("~~/server/utils/basis-auth", () => ({
 vi.mock("~~/server/utils/database/users", () => ({
     getUserByBasisAuthSubject: getUserBySubjectMock,
 }));
+vi.mock("~~/server/utils/database/basis-auth-revocations", () => ({
+    isBasisCredentialRevoked: isRevoked,
+}));
 
-import {
-    extractBearerToken,
-    resolveOAuth2User,
-    verifyAccessToken,
-    verifyOAuth2JWT,
-} from "~~/server/utils/oauth2-jwt";
-import { getFreshBasisAuthUserSession } from "~~/server/utils/basis-auth";
+import { extractBearerToken, resolveOAuth2User, verifyOAuth2JWT } from "~~/server/utils/oauth2-jwt";
+import { getBasisAuthConfig, getFreshBasisAuthUserSession } from "~~/server/utils/basis-auth";
+import { verifyAccessToken as verify } from "~~/server/utils/basis-auth-jwt";
 
-const event = () => ({ context: {} }) as any;
+const event = () => ({ context: {}, node: { res: { setHeader: vi.fn() } } }) as any;
+const verifyAccessToken = (token: string) => verify(event(), token, getBasisAuthConfig());
 const claims = {
     sub: "user-1",
     client_id: "portal",
@@ -48,6 +51,7 @@ const claims = {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    isRevoked.mockReset().mockResolvedValue(false);
     vi.stubGlobal("createError", (input: any) => {
         const error = new Error(input.message);
         Object.assign(error, input);
@@ -71,6 +75,8 @@ describe("basis-auth access tokens", () => {
             issuer: "https://auth.example.test",
             audience: "devconnect://nethack.bisz.dev",
             typ: "at+jwt",
+            requiredClaims: ["exp"],
+            clockTolerance: 0,
         });
     });
 
@@ -91,13 +97,13 @@ describe("basis-auth access tokens", () => {
         await expect(verifyAccessToken("token")).rejects.toMatchObject({ statusCode: 401 });
     });
 
-    it("rejects an empty token before attempting configuration or signature checks", async () => {
+    it("uses the generic public response for an empty token", async () => {
+        jwtVerifyMock.mockRejectedValueOnce(new Error("Malformed JWT"));
         await expect(verifyAccessToken("")).rejects.toMatchObject({
             statusCode: 401,
             statusMessage: "invalid_token",
-            message: "Empty access token",
+            message: "Invalid access token",
         });
-        expect(jwtVerifyMock).not.toHaveBeenCalled();
     });
 
     it("maps the stable issuer and subject to the local user", async () => {
@@ -138,7 +144,7 @@ describe("OAuth2 bearer parsing", () => {
 
     it("rejects a bearer scheme without a token", () => {
         vi.mocked(getHeader).mockReturnValue("Bearer   ");
-        expect(() => extractBearerToken(event())).toThrow("Empty access token");
+        expect(() => extractBearerToken(event())).toThrow("Invalid access token");
     });
 
     it("verifies bearer tokens when the request carries an authorization header", async () => {
@@ -158,6 +164,7 @@ describe("OAuth2 bearer parsing", () => {
         vi.mocked(getHeader).mockReturnValue(undefined);
         vi.mocked(getFreshBasisAuthUserSession).mockResolvedValue({
             userId: 42,
+            payload: claims,
             tokens: {
                 accessToken: "cookie-token",
                 accessTokenExpiresAt: Date.now() + 60_000,
@@ -167,11 +174,7 @@ describe("OAuth2 bearer parsing", () => {
         jwtVerifyMock.mockResolvedValue({ payload: claims });
 
         await expect(verifyOAuth2JWT(event())).resolves.toMatchObject({ sub: "user-1" });
-        expect(jwtVerifyMock).toHaveBeenCalledWith(
-            "cookie-token",
-            "jwks",
-            expect.objectContaining({ typ: "at+jwt" }),
-        );
+        expect(jwtVerifyMock).not.toHaveBeenCalled();
     });
 
     it("rejects requests without an authorization header or active session", async () => {
@@ -181,8 +184,41 @@ describe("OAuth2 bearer parsing", () => {
         await expect(verifyOAuth2JWT(event())).rejects.toMatchObject({
             statusCode: 401,
             statusMessage: "invalid_token",
-            message: "Missing or expired basis-auth token cookie",
+            message: "Invalid access token",
         });
         expect(jwtVerifyMock).not.toHaveBeenCalled();
+    });
+
+    it.each(["malformed header", "bad signature or expiry", "revoked"])(
+        "returns the same public error and challenge for %s",
+        async (reason) => {
+            const request = event();
+            vi.mocked(getHeader).mockReturnValue(
+                reason === "malformed header" ? "Basic invalid" : "Bearer token",
+            );
+            if (reason === "bad signature or expiry")
+                jwtVerifyMock.mockRejectedValueOnce(new Error());
+            else jwtVerifyMock.mockResolvedValue({ payload: claims });
+            isRevoked.mockResolvedValue(reason === "revoked");
+
+            await expect(verifyOAuth2JWT(request)).rejects.toMatchObject({
+                statusCode: 401,
+                statusMessage: "invalid_token",
+                message: "Invalid access token",
+            });
+            expect(request.node.res.setHeader).toHaveBeenCalledWith(
+                "WWW-Authenticate",
+                'Bearer error="invalid_token"',
+            );
+        },
+    );
+
+    it("fails closed when revocation storage is unavailable", async () => {
+        jwtVerifyMock.mockResolvedValue({ payload: claims });
+        isRevoked.mockRejectedValue(new Error("database unavailable"));
+        vi.mocked(getHeader).mockReturnValue("Bearer token");
+        const request = event();
+        await expect(verifyOAuth2JWT(request)).rejects.toMatchObject({ statusCode: 503 });
+        expect(request.node.res.setHeader).not.toHaveBeenCalled();
     });
 });
