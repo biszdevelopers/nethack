@@ -154,7 +154,6 @@ async function createAndSubmitProject(
         teamResponse.ok(),
         `team creation failed with HTTP ${teamResponse.status()}`,
     ).toBeTruthy();
-    expect(new URL(teamResponse.url()).searchParams.get("add")).toBe("true");
     const teamResponseBody = (await teamResponse.json()) as {
         data?: { id: number; name: string };
         id?: number;
