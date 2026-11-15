@@ -144,7 +144,14 @@ export async function createTeam(event: H3Event, teamName: string): Promise<Team
     return team;
 }
 
-export async function updateTeam(event: H3Event, team: Team) {
+export async function updateTeam(
+    event: H3Event,
+    team: Team,
+    options: { requireUnsubmitted?: boolean } = {},
+) {
+    const where = options.requireUnsubmitted
+        ? and(eq(teams.id, team.id), eq(teams.project_submitted, 0))
+        : eq(teams.id, team.id);
     const changed = await changedRows(
         event.context.drizzle
             .update(teams)
@@ -161,7 +168,7 @@ export async function updateTeam(event: H3Event, team: Team) {
                 sourcing: team.sourcing,
                 season_id: team.season_id,
             })
-            .where(eq(teams.id, team.id))
+            .where(where)
             .returning({ id: teams.id }),
     );
 

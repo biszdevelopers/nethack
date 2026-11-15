@@ -54,7 +54,7 @@ export default defineEventHandler(
             team.project_repo_url = payload.project.repo_url;
         if (payload.project?.sourcing !== undefined) team.sourcing = payload.project.sourcing;
 
-        await updateTeam(event, team);
+        await updateTeam(event, team, { requireUnsubmitted: true });
 
         return { message: "Updated your team & project" };
     }, DEFAULT_RATE_LIMIT_CONFIG),
