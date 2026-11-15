@@ -114,7 +114,8 @@ export async function getInvitesForEmail(
         })
         .from(teamInvites)
         .innerJoin(teams, eq(teamInvites.team_id, teams.id))
-        .where(eq(teamInvites.email, email.trim().toLowerCase()))
+        .innerJoin(seasons, eq(teams.season_id, seasons.id))
+        .where(and(eq(teamInvites.email, email.trim().toLowerCase()), eq(seasons.is_active, 1)))
         .orderBy(asc(teamInvites.id));
 }
 
