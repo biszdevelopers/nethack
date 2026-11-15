@@ -5,6 +5,7 @@ import { mockBody, mockParams, resetMockState, setupNitroGlobals } from "~~/test
 const mocks = vi.hoisted(() => ({
     requireUser: vi.fn(),
     createSession: vi.fn(),
+    getAllSessions: vi.fn(),
     getDeepSeekSession: vi.fn(),
     deleteSession: vi.fn(),
     addMessage: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~~/server/utils/auth", () => ({ requireUser: mocks.requireUser }));
 vi.mock("~~/server/utils/deepseek-store", () => ({
     createSession: mocks.createSession,
+    getAllSessions: mocks.getAllSessions,
     getDeepSeekSession: mocks.getDeepSeekSession,
     deleteSession: mocks.deleteSession,
     addMessage: mocks.addMessage,
@@ -54,6 +56,7 @@ const readBody = vi.fn(async (_event: unknown, parse: (body: unknown) => unknown
 );
 
 let create: (event: any) => Promise<unknown>;
+let list: (event: any) => Promise<unknown>;
 let get: (event: any) => Promise<unknown>;
 let remove: (event: any) => Promise<unknown>;
 let sendMessage: (event: any) => Promise<unknown>;
@@ -65,6 +68,7 @@ beforeAll(async () => {
     // Nitro auto-imports this helper into the compiled route module.
     vi.stubGlobal("deleteSession", mocks.deleteSession);
     create = (await import("~~/server/api/debug/deepseek/sessions/index.post")).default;
+    list = (await import("~~/server/api/debug/deepseek/sessions/index.get")).default;
     get = (await import("~~/server/api/debug/deepseek/sessions/[id]/index.get")).default;
     remove = (await import("~~/server/api/debug/deepseek/sessions/[id]/index.delete")).default;
     sendMessage = (await import("~~/server/api/debug/deepseek/sessions/[id]/message.post")).default;
@@ -78,6 +82,7 @@ beforeEach(() => {
     messages.length = 0;
     mocks.requireUser.mockReset().mockResolvedValue(testUser);
     mocks.createSession.mockReset().mockReturnValue(session);
+    mocks.getAllSessions.mockReset().mockReturnValue([session]);
     mocks.getDeepSeekSession
         .mockReset()
         .mockImplementation((id: number) => (id === session.id ? session : undefined));
@@ -100,6 +105,27 @@ afterAll(() => {
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("DeepSeek session listing route", () => {
+    it("returns every stored session for a reader", async () => {
+        mocks.getAllSessions.mockReturnValue([session]);
+
+        await expect(list(event)).resolves.toEqual([session]);
+        expect(mocks.requireUser).toHaveBeenCalledWith(
+            event,
+            NethackPermissions.Debug.deepseekRead,
+        );
+    });
+
+    it("requires read permission before listing", async () => {
+        mocks.requireUser.mockRejectedValueOnce(
+            Object.assign(new Error("Forbidden"), { statusCode: 403 }),
+        );
+
+        await expect(list(event)).rejects.toMatchObject({ statusCode: 403 });
+        expect(mocks.getAllSessions).not.toHaveBeenCalled();
+    });
+});
 
 describe("DeepSeek session creation route", () => {
     it("requires the write permission before reading input", async () => {

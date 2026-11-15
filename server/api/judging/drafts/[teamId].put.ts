@@ -17,6 +17,12 @@ export default defineEventHandler(
     applyRateLimit(async (event) => {
         const judge = await requireUser(event, NethackPermissions.Judging.scoresWriteAssigned);
         const { teamId } = await getValidatedRouterParams(event, ParamsSchema.parse);
+        if (judge.team_id === teamId) {
+            throw createError({
+                statusCode: 403,
+                message: "You cannot score your own team",
+            });
+        }
         const body = await readValidatedBody(event, SaveJudgingDraftRequest.parse);
         const [season, eventState] = await Promise.all([
             getActiveSeason(event),

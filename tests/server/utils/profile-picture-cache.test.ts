@@ -65,6 +65,25 @@ describe("basis-auth profile pictures", () => {
         ).resolves.toBeUndefined();
     });
 
+    it("replaces a stale cached format when the provider changes type", async () => {
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+        fetch.mockResolvedValueOnce(
+            new Response(png, { headers: { "content-type": "image/png" } }),
+        );
+        await fetchBasisAuthPicture("https://auth.example.test/a.png", "9");
+
+        const jpeg = Buffer.from([0xff, 0xd8, 0xff]);
+        fetch.mockResolvedValueOnce(
+            new Response(jpeg, { headers: { "content-type": "image/jpeg" } }),
+        );
+        await fetchBasisAuthPicture("https://auth.example.test/a.png", "9");
+
+        fetch.mockRejectedValueOnce(new Error("provider offline"));
+        await expect(
+            fetchBasisAuthPicture("https://auth.example.test/a.png", "9"),
+        ).resolves.toEqual({ bytes: jpeg, contentType: "image/jpeg" });
+    });
+
     it("returns provider bytes without caching when no cache key is supplied", async () => {
         const bytes = Buffer.from([1, 2, 3]);
         fetch.mockResolvedValueOnce(

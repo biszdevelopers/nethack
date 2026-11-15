@@ -70,6 +70,17 @@ function createEvent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("DELETE /api/teams/:id/users/:user", () => {
+    it("returns 404 for a team from a previous season", async () => {
+        const pastSeason = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const staleTeam = seedTeam(ctx, { name: "Old team", season_id: pastSeason.id });
+        const owner = seedUser(ctx, { email: "owner@basischina.com", team_id: staleTeam.id });
+        mockSession.value = { user: { id: owner.id } };
+        mockParams.values["id"] = String(staleTeam.id);
+        mockParams.values["user"] = String(owner.id);
+
+        await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
     it("removes a user from the team", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });

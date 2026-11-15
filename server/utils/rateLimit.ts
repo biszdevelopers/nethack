@@ -73,12 +73,13 @@ export function clearRateLimitHistory() {
     lastCleanup = 0;
 }
 
-function cleanupStaleEntries(now: number) {
+function cleanupStaleEntries(now: number, windowMs: number) {
     if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
     lastCleanup = now;
-    const oneHourAgo = now - 60 * 60 * 1000;
+    const retention = Math.max(60 * 60 * 1000, windowMs);
+    const cutoff = now - retention;
     for (const [key, times] of requestHistory.entries()) {
-        const recentTimes = times.filter((t) => t > oneHourAgo);
+        const recentTimes = times.filter((t) => t > cutoff);
         if (recentTimes.length === 0) {
             requestHistory.delete(key);
         } else {
@@ -145,7 +146,7 @@ export function applyRateLimit(
         const now = Date.now();
 
         // Run cleanup on a time-based interval instead of probabilistically
-        cleanupStaleEntries(now);
+        cleanupStaleEntries(now, finalConfig.windowMs);
 
         // Treat maxRequests <= 0 as always-limited
         if (finalConfig.maxRequests <= 0) {

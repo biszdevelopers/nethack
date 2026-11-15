@@ -1,3 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
+
+function matchesClientState(candidate: unknown, expected: string): boolean {
+    if (typeof candidate !== "string" || candidate.length !== expected.length) return false;
+    return timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+}
+
 /** Graph may batch notifications; every item must carry the configured secret. */
 export function hasValidMicrosoftWebhookState(
     value: unknown,
@@ -10,6 +17,6 @@ export function hasValidMicrosoftWebhookState(
             notification !== null &&
             typeof notification === "object" &&
             "clientState" in notification &&
-            notification.clientState === expectedState,
+            matchesClientState(notification.clientState, expectedState),
     );
 }

@@ -24,7 +24,10 @@ export default defineEventHandler(
 
         const { email } = await readValidatedBody(event, AddTeamMemberRequest.parse);
 
-        const team = (await getTeam(event, teamID))!;
+        const team = await getTeam(event, teamID);
+        if (!team) {
+            throw createError({ status: 404, message: "Team not found" });
+        }
         if (team.project_submitted) {
             throw createError({
                 status: 403,

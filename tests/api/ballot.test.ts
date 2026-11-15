@@ -13,7 +13,7 @@ import {
     type TestContext,
 } from "./helpers";
 import { eq } from "drizzle-orm";
-import { peerVotingScores } from "~~/server/database/schema";
+import { peerVotingScores, teams } from "~~/server/database/schema";
 
 // The summary handler explicitly imports requireUser, so vi.mock is needed for it.
 // The get/post handlers use requireUser as a Nitro auto-import (global), so they
@@ -138,6 +138,38 @@ describe("GET /api/ballot", () => {
         expect(result.projects).toHaveLength(1);
         expect(result).toHaveProperty("scores");
         expect(result).toHaveProperty("reasoning");
+    });
+
+    it("never exposes persisted ranks before results are published", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting" });
+        const season = seedSeason(ctx);
+        const userTeam = seedTeam(ctx, {
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
+        seedUser(ctx, { email: "voter@basischina.com", team_id: userTeam.id });
+        const otherTeam = seedTeam(ctx, {
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
+        ctx.drizzle
+            .update(teams)
+            .set({ rank: 1, score: 99 })
+            .where(eq(teams.id, otherTeam.id))
+            .run();
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            team_id: userTeam.id,
+            role: "participant",
+        });
+
+        const result = await getBallotHandler(createEvent());
+
+        expect(result.projects[0]!.rank).toBeNull();
+        expect(result.projects[0]!.score).toBeNull();
     });
 
     it("returns 403 when user's team has not submitted a project", async () => {

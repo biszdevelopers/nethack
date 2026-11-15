@@ -1,5 +1,7 @@
 import * as schema from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
+import { asc } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { hackathonUsesYaml, readHackathonConfig } from "./hackathon-config";
 
 const PAGE_SIZE = 250;
@@ -58,6 +60,12 @@ function anonymizeExportRow(name: string, row: Record<string, unknown>) {
     return row;
 }
 
+/** Stable page order: every exported table is ordered by its primary key. */
+function exportOrder(table: unknown) {
+    const { primaryKeys } = getTableConfig(table as never);
+    return primaryKeys.flatMap((key) => key.columns.map((column) => asc(column)));
+}
+
 /** Stream an admin database export without exposing judge links or OAuth client secrets. */
 export async function* snapshotDatabaseExport(db: DrizzleDatabase, format: "json" | "csv") {
     if (format === "json") {
@@ -82,6 +90,7 @@ export async function* snapshotDatabaseExport(db: DrizzleDatabase, format: "json
                     : ((await db
                           .select()
                           .from(table as any)
+                          .orderBy(...exportOrder(table))
                           .limit(PAGE_SIZE)
                           .offset(offset)) as Record<string, unknown>[]);
             if (rawRows.length === 0) break;

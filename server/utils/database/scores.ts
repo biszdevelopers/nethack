@@ -22,6 +22,12 @@ function lockForUpdateIfSupported<T>(query: T): T {
 }
 
 export async function createTeamScores(event: H3Event, scores: NewTeamScore): Promise<TeamScores> {
+    // Read the manifest before opening the season row lock; a remote fetch can
+    // take seconds and must never serialize concurrent judge submissions.
+    const liveResultsPublished = hackathonUsesYaml()
+        ? (await readHackathonConfig()).results_published
+        : null;
+
     return event.context.drizzle.transaction(async (tx) => {
         const seasonQuery = lockForUpdateIfSupported(
             tx.select().from(seasons).where(eq(seasons.id, scores.season_id)).limit(1),
@@ -30,9 +36,7 @@ export async function createTeamScores(event: H3Event, scores: NewTeamScore): Pr
         if (!season || season.is_active !== 1) {
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }
-        const resultsPublished = hackathonUsesYaml()
-            ? (await readHackathonConfig()).results_published
-            : season.results_published;
+        const resultsPublished = liveResultsPublished ?? season.results_published;
         if (resultsPublished) {
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }

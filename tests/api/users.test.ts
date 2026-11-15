@@ -432,8 +432,38 @@ describe("DELETE /api/users", () => {
         });
     });
 
+    it("refuses to delete the current administrator", async () => {
+        const alice = seedUser(ctx, { email: "admin@basischina.com" });
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: alice.id, role: "admin" });
+        mockBody.value = { ids: [alice.id] };
+
+        await expect(deleteHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "You cannot delete yourself or a designated initial administrator",
+        });
+        expect(ctx.drizzle.select().from(users).all()).toHaveLength(1);
+    });
+
+    it("refuses to delete a designated initial administrator", async () => {
+        const cindy = seedUser(ctx, { email: "Cindy.Cheng-Bisz@basischina.com" });
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
+        mockBody.value = { ids: [cindy.id] };
+
+        await expect(deleteHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
+        expect(ctx.drizzle.select().from(users).all()).toHaveLength(1);
+    });
+
+    it("ignores ids that no longer exist", async () => {
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
+        mockBody.value = { ids: [4040] };
+
+        await expect(deleteHandler(createEvent())).resolves.toEqual({
+            message: "Deleted 1 user(s)",
+        });
+    });
+
     it("deletes users by IDs", async () => {
-        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 1, role: "admin" });
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
 
         const alice = seedUser(ctx, { email: "alice@basischina.com" });
         const bob = seedUser(ctx, { email: "bob@basischina.com" });

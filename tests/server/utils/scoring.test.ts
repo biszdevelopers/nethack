@@ -106,16 +106,16 @@ describe("judge score aggregation and ranking", () => {
         });
     });
 
-    it("rejects scores whose team is not part of the submitted season", async () => {
-        const teamId = addTeam("junior", { project_submitted: 0 });
-        addScore(teamId, 5);
+    it("ignores saved scores whose team is not part of the submitted season", async () => {
+        const submittedTeam = addTeam("junior");
+        addScore(submittedTeam, 4);
+        const unsubmittedTeam = addTeam("junior", { project_submitted: 0 });
+        addScore(unsubmittedTeam, 5);
 
-        await expect(
-            calculateSeasonScoresWithDatabase(event.context.drizzle, seasonId),
-        ).rejects.toMatchObject({
-            statusCode: 409,
-            message: "A saved judge score is missing its team or rubric version.",
-        });
+        const ranked = await calculateSeasonScoresWithDatabase(event.context.drizzle, seasonId);
+
+        expect(ranked.map((team) => team.id)).toEqual([submittedTeam]);
+        expect(ranked[0]).toMatchObject({ score: 80 });
     });
 
     it("rejects scores whose saved rubric version is unavailable", async () => {

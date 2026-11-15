@@ -7,6 +7,6 @@ const SERVER_TO_SERVER_POST_PATHS = new Set(["/api/_webhooks/update", "/api/_web
 export default defineEventHandler((event) => {
     const method = event.method.toUpperCase();
     if (SAFE_METHODS.has(method)) return;
-    if (method === "POST" && SERVER_TO_SERVER_POST_PATHS.has(event.path)) return;
+    if (method === "POST" && SERVER_TO_SERVER_POST_PATHS.has(event.path.split("?")[0]!)) return;
     enforceSameOriginCookieRequest(event);
 });

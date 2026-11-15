@@ -78,6 +78,21 @@ function createEvent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("POST /api/teams/:id/scores", () => {
+    it("rejects a judge scoring their own team", async () => {
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            role: "judge",
+            team_id: 12,
+        } as any);
+        mockParams.values.id = "12";
+
+        await expect(scoresHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "You cannot score your own team",
+        });
+        expect(createTeamScoresMock).not.toHaveBeenCalled();
+    });
+
     const validScores = {
         originality: 4,
         presentation: 3,

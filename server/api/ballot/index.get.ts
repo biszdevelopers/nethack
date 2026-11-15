@@ -51,7 +51,9 @@ export default defineEventHandler(
 
         return {
             submitted,
-            projects: eligibleProjects.map((t) => convertTeamToPublic(t)),
+            projects: eligibleProjects.map((t) =>
+                convertTeamToPublic(t, { withScore: false, withRank: false }),
+            ),
             scores,
             reasoning,
         } satisfies GetBallotResponse;

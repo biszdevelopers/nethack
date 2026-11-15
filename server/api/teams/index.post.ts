@@ -7,7 +7,7 @@ export default defineEventHandler(
     applyRateLimit(async (event) => {
         const user = await requireUser(event, NethackPermissions.Teams.create);
         const userID = user.id;
-        if (user?.team_id) {
+        if (user?.team_id && (await getTeam(event, user.team_id))) {
             throw createError({
                 status: 403,
                 message: "Cannot create a team while in a team",

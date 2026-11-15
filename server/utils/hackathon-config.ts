@@ -151,6 +151,15 @@ export async function readHackathonConfig(): Promise<HackathonConfig> {
         }
     }
 
+    try {
+        getRemoteConfigUrl(source);
+    } catch {
+        throw createError({
+            statusCode: 503,
+            message: "YAML_SOURCE_HACKATHON must be a credential-free HTTPS URL in production.",
+        });
+    }
+
     if (remote?.source !== source) remote = { source, nextCheck: 0 };
     const state = remote;
     if (Date.now() >= state.nextCheck) {

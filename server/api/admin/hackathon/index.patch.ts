@@ -60,10 +60,14 @@ export default defineEventHandler(
         } else if (season_id !== undefined) {
             // Per-season save: write to the specified season,
             // and also to the global row if this is the active season
-            await event.context.drizzle
+            const updatedSeasons = await event.context.drizzle
                 .update(seasons)
                 .set(configFields)
-                .where(eq(seasons.id, season_id));
+                .where(eq(seasons.id, season_id))
+                .returning({ id: seasons.id });
+            if (updatedSeasons.length === 0) {
+                throw createError({ statusCode: 404, message: "Season not found" });
+            }
 
             const active = await getActiveSeason(event);
             if (active && active.id === season_id) {
@@ -73,11 +77,20 @@ export default defineEventHandler(
                     .where(eq(hackathon.id, 1));
             }
         } else {
-            // No season — write only to the global hackathon row
+            // No season — write the global row and mirror it onto the active
+            // season so public visibility resolvers see the same settings.
             await event.context.drizzle
                 .update(hackathon)
                 .set(configFields)
                 .where(eq(hackathon.id, 1));
+
+            const active = await getActiveSeason(event);
+            if (active) {
+                await event.context.drizzle
+                    .update(seasons)
+                    .set(configFields)
+                    .where(eq(seasons.id, active.id));
+            }
         }
 
         const updated = await getHackathon(event);

@@ -10,11 +10,13 @@ function createDatabase(rowsByTable: Record<string, Record<string, unknown>[]>) 
             from: (table: unknown) => {
                 const name = getTableName(table as typeof schema.teams);
                 return {
-                    limit: (limit: number) => ({
-                        offset: async (offset: number) => {
-                            pageOffsets.push({ table: name, limit, offset });
-                            return (rowsByTable[name] ?? []).slice(offset, offset + limit);
-                        },
+                    orderBy: () => ({
+                        limit: (limit: number) => ({
+                            offset: async (offset: number) => {
+                                pageOffsets.push({ table: name, limit, offset });
+                                return (rowsByTable[name] ?? []).slice(offset, offset + limit);
+                            },
+                        }),
                     }),
                 };
             },

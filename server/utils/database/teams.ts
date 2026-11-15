@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { eq, and, inArray, notExists } from "drizzle-orm";
+import { eq, and, inArray, notExists, asc } from "drizzle-orm";
 import {
     teams,
     teamScores,
@@ -78,6 +78,7 @@ export async function getSubmittedTeams(event: H3Event): Promise<Team[]> {
         .select()
         .from(teams)
         .where(and(eq(teams.season_id, seasonId), eq(teams.project_submitted, 1)))
+        .orderBy(asc(teams.id))
         .then((rows) => rows as Team[]);
 }
 

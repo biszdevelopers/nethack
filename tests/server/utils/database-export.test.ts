@@ -65,8 +65,10 @@ function mockDatabase() {
                 const name = getTableName(table as typeof schema.teamScores);
                 queriedTables.push(name);
                 return {
-                    limit: () => ({
-                        offset: async () => rowsByTable[name] ?? [],
+                    orderBy: () => ({
+                        limit: () => ({
+                            offset: async () => rowsByTable[name] ?? [],
+                        }),
                     }),
                 };
             },

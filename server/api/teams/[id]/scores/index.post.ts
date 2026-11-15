@@ -20,6 +20,12 @@ export default defineEventHandler(
 
         const judge = await requireUser(event, NethackPermissions.Judging.scoresWriteAssigned);
         const userID = judge.id;
+        if (judge.team_id === teamID) {
+            throw createError({
+                statusCode: 403,
+                message: "You cannot score your own team",
+            });
+        }
 
         const [hackathon, season] = await Promise.all([
             getHackathon(event),

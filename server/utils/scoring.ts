@@ -140,8 +140,9 @@ export async function calculateSeasonScoresWithDatabase(
 
     for (const judgeScore of judgeScores) {
         const team = teamById.get(judgeScore.team_id);
+        if (!team) continue;
         const version = versionById.get(judgeScore.rubric_version_id);
-        if (!team || !version) {
+        if (!version) {
             throw createError({
                 statusCode: 409,
                 message: "A saved judge score is missing its team or rubric version.",

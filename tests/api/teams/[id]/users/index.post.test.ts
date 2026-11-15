@@ -93,6 +93,22 @@ describe("POST /api/teams/:id/users", () => {
         expect(updated!.team_id).toBe(team.id);
     });
 
+    it("returns 404 for a team from a previous season", async () => {
+        const pastSeason = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const staleTeam = seedTeam(ctx, { name: "Old team", season_id: pastSeason.id });
+        const owner = seedUser(ctx, {
+            email: "owner@basischina.com",
+            name: "Owner",
+            team_id: staleTeam.id,
+        });
+
+        mockSession.value = { user: { id: owner.id } };
+        mockParams.values["id"] = String(staleTeam.id);
+        mockBody.value = { email: "newbie@basischina.com" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
     it("returns 404 when target user is not found", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });

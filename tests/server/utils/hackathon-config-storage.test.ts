@@ -90,11 +90,11 @@ describe("hackathon manifest storage limits", () => {
         ["embedded credentials", "https://user:secret@assets.example.test/HACKATHON.yml"],
         ["a fragment", "https://assets.example.test/HACKATHON.yml#section"],
         ["plain HTTP outside development", "http://assets.example.test/HACKATHON.yml"],
-    ])("refuses a remote source with %s and uses the bundled manifest", async (_name, source) => {
+    ])("refuses a remote source with %s", async (_name, source) => {
         vi.stubEnv("YAML_SOURCE_HACKATHON", source);
         vi.stubEnv("NODE_ENV", source.startsWith("http:") ? "production" : "test");
 
-        await expect(readHackathonConfig()).resolves.toMatchObject({ id: 1 });
+        await expect(readHackathonConfig()).rejects.toMatchObject({ statusCode: 503 });
         expect(fetch).not.toHaveBeenCalled();
     });
 

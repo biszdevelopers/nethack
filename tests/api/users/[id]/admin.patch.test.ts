@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NethackPermissions } from "~~/shared/permissions";
 
 const mocks = vi.hoisted(() => ({
     requireUser: vi.fn(),
@@ -58,6 +59,10 @@ describe("PATCH /api/users/:id/admin", () => {
             is_admin: true,
         });
         expect(mocks.updateSet).toHaveBeenCalledWith({ is_admin: 1 });
+        expect(mocks.requireUser).toHaveBeenCalledWith(
+            globalThis.__adminEvent,
+            NethackPermissions.all,
+        );
 
         mocks.body = { is_admin: false };
         await expect(handler(globalThis.__adminEvent)).resolves.toEqual({

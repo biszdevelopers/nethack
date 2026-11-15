@@ -14,7 +14,7 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "./helpers";
-import { judgingDrafts, teamScores } from "~~/server/database/schema";
+import { judgingDrafts, teamScores, users } from "~~/server/database/schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import { clearRateLimitHistory, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -85,6 +85,20 @@ function createEvent() {
 }
 
 describe("judging draft rubric recovery", () => {
+    it("rejects a judge saving a draft for their own team", async () => {
+        ctx.drizzle.update(users).set({ team_id: teamId }).where(eq(users.id, judgeId)).run();
+        mockBody.value = {
+            scores: { originality: 3, presentation: 3, technicality: 3 },
+            reasoning: "",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "You cannot score your own team",
+        });
+    });
+
     it("returns comment guidance saved with the rubric version", async () => {
         const commentGuidance = {
             introduction: "Write a concise, respectful note about the project.",

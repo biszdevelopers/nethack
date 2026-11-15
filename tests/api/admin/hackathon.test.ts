@@ -144,6 +144,25 @@ describe("PATCH /api/admin/hackathon", () => {
         });
     });
 
+    it("returns 404 for an unknown season in database mode", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { season_id: 987, theme_name: "Nowhere" };
+
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("mirrors global settings onto the active season", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        mockBody.value = { theme_name: "Mirrored theme", show_scores: 1 };
+
+        await patchHandler(createEvent());
+
+        const row = ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get()!;
+        expect(row.theme_name).toBe("Mirrored theme");
+        expect(row.show_scores).toBe(1);
+    });
+
     it("persists changes to the database", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { theme_name: "AI Innovators", max_votes_per_user: 5 };
@@ -345,5 +364,39 @@ describe("PATCH /api/admin/seasons", () => {
         mockBody.value = { id: 999, name: "Ghost Season" };
 
         await expect(updateSeasonHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("rejects an update with no fields", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        seedSeason(ctx);
+        mockBody.value = { id: 1 };
+
+        await expect(updateSeasonHandler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it("activates exactly one season through the activation flow", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const current = seedSeason(ctx);
+        const next = ctx.drizzle
+            .insert(seasons)
+            .values({ name: "Season 2", is_active: 0 } as any)
+            .returning()
+            .get();
+        mockBody.value = { id: next.id, is_active: 1 };
+
+        const result = await updateSeasonHandler(createEvent());
+
+        expect(result.seasons.find((season: any) => season.id === next.id)?.is_active).toBe(1);
+        expect(result.seasons.find((season: any) => season.id === current.id)?.is_active).toBe(0);
+    });
+
+    it("reports a duplicate season name as a conflict", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        seedSeason(ctx);
+        mockBody.value = { name: "Season 1" };
+
+        await expect(createSeasonHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+        });
     });
 });

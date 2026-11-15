@@ -103,7 +103,7 @@ export default defineEventHandler(
                         return {
                             team: convertTeamToPublic(
                                 team as Team,
-                                { withScore: false },
+                                { withScore: false, withRank: false },
                                 awardsByTeam[team.id] ?? [],
                             ),
                             evaluated: evaluation !== null,
@@ -124,7 +124,11 @@ export default defineEventHandler(
             );
 
             return teams.map((t) =>
-                convertTeamToPublic(t, { withScore: false }, awardsByTeam[t.id] ?? []),
+                convertTeamToPublic(
+                    t,
+                    { withScore: false, withRank: false },
+                    awardsByTeam[t.id] ?? [],
+                ),
             );
         } else {
             const seasonId = query.season_id ?? -1;

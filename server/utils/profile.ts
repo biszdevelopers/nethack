@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import jdenticon from "jdenticon";
 import fetch from "node-fetch";
@@ -40,6 +40,11 @@ async function writeCachedPicture(cacheKey: string, contentType: string, bytes: 
         const temporary = `${path}.${process.pid}.tmp`;
         await writeFile(temporary, bytes, { mode: 0o600 });
         await rename(temporary, path);
+        for (const other of new Set(Object.values(extensionByType))) {
+            if (other !== extension) {
+                await rm(cachePath(cacheKey, other), { force: true });
+            }
+        }
     } catch {
         // The provider remains authoritative; a cache failure must not break the response.
     }
