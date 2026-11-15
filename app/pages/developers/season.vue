@@ -176,7 +176,7 @@ function normalize(key: string, val: any): any {
  *  Returns false when baseline is undefined (field hasn't been loaded yet). */
 function hasChanged(key: string, normalized: any): boolean {
     const baseline = (hackathon.value as any)?.[key];
-    if (baseline === undefined || baseline === null) return false;
+    if (baseline === undefined) return false;
     if (boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)) {
         return Number(normalized) !== Number(baseline);
     }
