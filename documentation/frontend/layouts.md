@@ -1,11 +1,11 @@
 ---
 title: Layouts
-description: Nuxt layouts used across the basishacks frontend — default, dashboard, fullwidth, and mod portal.
+description: Nuxt layouts used across the nethack frontend — default, dashboard, fullwidth, and mod portal.
 ---
 
 # Layouts
 
-The basishacks frontend defines **6 layouts** in `app/layouts/`. Layouts are selected per-page via `definePageMeta({ layout: '...' })` or `setPageLayout()`.
+The nethack frontend defines **6 layouts** in `app/layouts/`. Layouts are selected per-page via `definePageMeta({ layout: '...' })` or `setPageLayout()`.
 
 ## default
 

@@ -5,7 +5,7 @@ interface Props {
 }
 
 withDefaults(defineProps<Props>(), {
-    title: "basishacks@docs:~",
+    title: "nethack@docs:~",
     prompt: "$",
 });
 </script>
@@ -22,7 +22,7 @@ withDefaults(defineProps<Props>(), {
         </div>
         <div class="vp-terminal-body">
             <div class="vp-terminal-prompt">
-                <span class="t-user">basishacks</span>
+                <span class="t-user">nethack</span>
                 <span class="t-at">@</span>
                 <span class="t-host">docs</span>
                 <span class="t-colon">:</span>

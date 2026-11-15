@@ -1,11 +1,11 @@
 ---
 title: Security Considerations
-description: Security measures and best practices in the basishacks platform
+description: Security measures and best practices in the nethack platform
 ---
 
 # Security Considerations
 
-The basishacks platform implements multiple layers of security to protect user data, prevent abuse, and ensure safe operation across all deployment environments.
+The nethack platform implements multiple layers of security to protect user data, prevent abuse, and ensure safe operation across all deployment environments.
 
 ## HTTP Security Headers
 
@@ -37,7 +37,7 @@ The following environment variables directly affect platform security and must b
 | Variable | Requirement | Purpose |
 | --- | --- | --- |
 | `BASIS_AUTH_COOKIE_SECRET` | At least 32 bytes | Encryption key for sessions and server-side token records |
-| `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates basishacks at the basis-auth token endpoint |
+| `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates nethack at the basis-auth token endpoint |
 | `BASIS_AUTH_ISSUER` | Exact trusted issuer; HTTPS required in production except for loopback HTTP local testing | Discovery and issuer validation |
 | `BASIS_AUTH_RESOURCE` | Exact registered audience | Resource-token audience validation |
 | `CURRENT_URL_ORIGIN` | Public HTTPS origin, without a path; loopback HTTP accepted only while bound to loopback | Callback URL and same-origin validation for cookie-authenticated mutations |
@@ -72,7 +72,7 @@ See [Rate Limiting](./rate-limiting.md) for full details.
 
 `server/middleware/00.request-security.ts` checks every `POST`, `PUT`, `PATCH`, and `DELETE` request. Cookie-authenticated browser requests must send a matching `Origin` or `Referer`; requests marked `Sec-Fetch-Site: cross-site` are rejected. Production startup requires `CURRENT_URL_ORIGIN` to be an HTTPS origin with no path, query, fragment, or credentials, or a loopback HTTP origin while the server binds to loopback. Requests authenticated with an explicit `Authorization` header bypass this browser-cookie check and remain protected by token validation and route permissions.
 
-The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its upload slot and reading its separate 10 MiB allowance for base64-encoded images. Each user may buffer one profile update at a time, and the process allows at most four concurrent profile updates; excess requests are rejected with `503 Service Unavailable` and `Retry-After: 2` before the request body is read. This bounds concurrent decoded-image buffers while keeping the existing 7 MiB per-image validation and prevents one slow user from blocking everybody else. Microsoft Graph webhook payloads have a stricter 64 KiB streaming cap before JSON parsing. The webhook handlers fail closed if `MICROSOFT_WEBHOOK_STATE` is missing and validate the state on every notification in a batch. The same persistent value is sent to Graph when the subscription is created; set `MICROSOFT_WEBHOOK_ID` from the initial startup log so subsequent starts refresh that subscription instead of creating duplicates. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/basishacks-request-limits.conf` inside the site configuration. Do not proxy compressed request bodies to the webhook endpoints.
+The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its upload slot and reading its separate 10 MiB allowance for base64-encoded images. Each user may buffer one profile update at a time, and the process allows at most four concurrent profile updates; excess requests are rejected with `503 Service Unavailable` and `Retry-After: 2` before the request body is read. This bounds concurrent decoded-image buffers while keeping the existing 7 MiB per-image validation and prevents one slow user from blocking everybody else. Microsoft Graph webhook payloads have a stricter 64 KiB streaming cap before JSON parsing. The webhook handlers fail closed if `MICROSOFT_WEBHOOK_STATE` is missing and validate the state on every notification in a batch. The same persistent value is sent to Graph when the subscription is created; set `MICROSOFT_WEBHOOK_ID` from the initial startup log so subsequent starts refresh that subscription instead of creating duplicates. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/nethack-request-limits.conf` inside the site configuration. Do not proxy compressed request bodies to the webhook endpoints.
 
 ```nginx
 client_max_body_size 10m;
@@ -119,7 +119,7 @@ Critical authentication configuration is validated at server startup in `server/
 | `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE` | All must be set | Fatal startup error when any is missing | Warning; login unavailable until configured |
 | `MICROSOFT_*` env vars | All three must be set for Graph features | Warning if partially configured | Warning if partially configured |
 
-Resource access tokens are verified against basis-auth JWKS and are never signed by basishacks.
+Resource access tokens are verified against basis-auth JWKS and are never signed by nethack.
 
 ## Database Security
 
@@ -196,7 +196,7 @@ Access and refresh tokens are sealed with AES-256-GCM into the HTTP-only `basis-
 
 - All Microsoft Graph API calls are centralized in `server/plugins/microsoft.ts` for auditability
 - Graph configuration reads the tenant and client ID from `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID`.
-- Graph features are independent from basis-auth and cannot authenticate a basishacks session.
+- Graph features are independent from basis-auth and cannot authenticate a nethack session.
 
 ## OAuth2 Client Secret Storage
 
@@ -220,7 +220,7 @@ if (part === hash) return true;
 
 ## Resource Access Tokens
 
-Protected basishacks APIs accept basis-auth access tokens with the following required properties:
+Protected nethack APIs accept basis-auth access tokens with the following required properties:
 
 - **Signature:** basis-auth JWKS, RS256 only
 - **Issuer:** exact `BASIS_AUTH_ISSUER`

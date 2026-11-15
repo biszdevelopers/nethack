@@ -1,6 +1,6 @@
 ---
 title: Plugins & Middleware
-description: Nitro plugins and server middleware in the basishacks backend
+description: Nitro plugins and server middleware in the nethack backend
 ---
 
 # Plugins & Middleware

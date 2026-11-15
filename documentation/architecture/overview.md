@@ -1,11 +1,11 @@
 ---
 title: Architecture Overview
-description: High-level overview of the basishacks full-stack architecture, directory structure, data flow, and key design decisions.
+description: High-level overview of the nethack full-stack architecture, directory structure, data flow, and key design decisions.
 ---
 
 # Architecture Overview
 
-basishacks is a **full-stack Nuxt 4 application** that combines a Vue 3 frontend with a Nitro backend in a single deployable unit. It manages hackathon registration, team creation, project submission, peer voting, and judge scoring for the BIBS-C Network Hackathon (season 2, 2025–26).
+nethack is a **full-stack Nuxt 4 application** that combines a Vue 3 frontend with a Nitro backend in a single deployable unit. It manages hackathon registration, team creation, project submission, peer voting, and judge scoring for the BIBS-C Network Hackathon (season 2, 2025–26).
 
 <StatusBadge status="info" text="Stack: Nuxt 4 + PostgreSQL" />
 

@@ -1,11 +1,11 @@
 ---
 title: Pages
-description: File-based routes in the basishacks frontend — home, dashboard, voting, judging, mod portal, and OAuth2 flows.
+description: File-based routes in the nethack frontend — home, dashboard, voting, judging, mod portal, and OAuth2 flows.
 ---
 
 # Pages
 
-The basishacks frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
+The nethack frontend contains **29 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
 
 ## Public Pages
 
@@ -83,7 +83,7 @@ Static rules page listing hackathon requirements:
 
 **File:** `app/pages/showcase/index.vue`
 
-Season showcase index. The featured top section links to the current Beneath the Surface experience, and the archive section beneath it links to the previous Signal experience.
+Season showcase index. The featured section links to the Beneath the Surface experience, the curated archive card links to Signal, and the season-driven project archive lists previous seasons that have started.
 
 **Layout:** `fullwidth-nostick`
 
@@ -137,6 +137,14 @@ Season 1's data-driven winners showcase for **Beneath the Surface**. Its `Showca
 Each winner receives a full-viewport, project-specific visual chapter. Project names, team names, and links come from the Season 1 API; the frozen title and summary remain visible if a record cannot be loaded. "Open project" launches a `UModal` with the shared `ProjectCard` using the already loaded public team record, while the repository button links out directly. The hero and closing headings use Unbounded, and each chapter heading uses its own locally hosted display font (Orbitron, Silkscreen, Creepster, Space Mono, Cormorant Garamond, Chakra Petch). Ranks appear as shimmering metallic `#1`/`#2`/`#3` medals (gold/silver/bronze, like the previous season), and pathways as sonar chips labeled junior or senior.
 
 **Motion:** GSAP and ScrollTrigger create the hero entrance, depth progress, desktop pinned sections, scroll-linked reveals, ambient layers, and pointer parallax. Mobile layouts use natural scrolling. `prefers-reduced-motion` disables pinning, scrubbing, parallax, and ambient movement while keeping all content visible.
+
+### `/showcase/seasons/:id`
+
+**File:** `app/pages/showcase/seasons/[id].vue`
+
+Historical project archive for an inactive season that has started. The page loads the selected season, then `SeasonProjectArchive` fetches submitted projects from `/api/teams?season_id=:id` and displays their names, descriptions, safe demo and repository links, awards, and ranks when results are published. Blank upcoming seasons are not listed or addressable through this archive.
+
+**Layout:** `fullwidth-nostick`
 
 **Components used:** `ShowcaseBeneathTheSurface`, `GoBackUp`
 
@@ -362,7 +370,7 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). The page is
 
 ## Login Flow
 
-`/api/login` redirects directly to basis-auth, so basishacks no longer renders a native authorization or consent page. basis-auth owns provider login and consent UI; basishacks handles only its callback and local session.
+`/api/login` redirects directly to basis-auth, so nethack no longer renders a native authorization or consent page. basis-auth owns provider login and consent UI; nethack handles only its callback and local session.
 
 ## User Profile
 

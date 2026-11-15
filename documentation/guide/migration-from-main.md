@@ -64,12 +64,12 @@ No manual SQL intervention is required.
 
 Login is now delegated to basis-auth. Add the registered confidential-client values to `.env`:
 
-| Variable                   | Purpose                         | Previously hardcoded as         |
-| -------------------------- | ------------------------------- | ------------------------------- |
-| `BASIS_AUTH_ISSUER`        | Exact basis-auth issuer         | Provider deployment URL         |
-| `BASIS_AUTH_CLIENT_ID`     | Registered basishacks client ID | Provider-generated value        |
-| `BASIS_AUTH_CLIENT_SECRET` | Confidential client secret      | Provider-generated value        |
-| `BASIS_AUTH_RESOURCE`      | basishacks resource audience    | `devconnect://nethack.bisz.dev` |
+| Variable                   | Purpose                      | Previously hardcoded as         |
+| -------------------------- | ---------------------------- | ------------------------------- |
+| `BASIS_AUTH_ISSUER`        | Exact basis-auth issuer      | Provider deployment URL         |
+| `BASIS_AUTH_CLIENT_ID`     | Registered nethack client ID | Provider-generated value        |
+| `BASIS_AUTH_CLIENT_SECRET` | Confidential client secret   | Provider-generated value        |
+| `BASIS_AUTH_RESOURCE`      | nethack resource audience    | `devconnect://nethack.bisz.dev` |
 
 Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` in basis-auth.
 

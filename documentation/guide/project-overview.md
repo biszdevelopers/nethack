@@ -1,13 +1,13 @@
 ---
 title: Project Overview
-description: High-level overview of the basishacks hackathon platform, including features, technology stack, directory structure, and key concepts.
+description: High-level overview of the nethack hackathon platform, including features, technology stack, directory structure, and key concepts.
 ---
 
 # Project Overview
 
-**basishacks** is the official website for the **BIBS-C Network Hackathon** (season 2, 2025–26). It is a full-stack Nuxt 4 application that serves as the central platform for organizing and running the hackathon event.
+**nethack** is the official website for the **BIBS-C Network Hackathon**. It is a full-stack Nuxt 4 application that serves as the central platform for organizing and running the event. The 2025–26 seasons remain historical records, and an inactive R1 2026–2027 shell is prepared for organizers to configure and obtain board approval.
 
-## What basishacks Does
+## What nethack Does
 
 The platform manages the entire hackathon lifecycle:
 
@@ -24,7 +24,7 @@ The platform manages the entire hackathon lifecycle:
 | **DeepSeek AI Chatbot** | In-memory chat session store powered by the OpenAI SDK for DeepSeek AI interactions in debug routes. |
 | **SafeLink / SafeComark Components** | Client-side components that sanitize user-provided links and markdown content, preventing XSS and open redirects in rendered project descriptions. |
 | **Security Middleware** | A middleware pipeline including HTTP security headers (6 headers, 10 CSP directives), debug route lockdown (`DISABLE_DEBUG_ROUTES`), and rate limiting (4 tiers). |
-| **Season Showcases** | Public, art-directed winner experiences, including the six-project Beneath the Surface showcase. |
+| **Season Showcases** | Public, art-directed winner experiences and a season-driven archive of submitted project descriptions, demos, repositories, awards, and published ranks from past rounds. |
 
 ## Technology Stack
 

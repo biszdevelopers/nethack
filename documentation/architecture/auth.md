@@ -5,7 +5,7 @@ description: basis-auth login, local sessions, identity linking, RBAC, and resou
 
 # Authentication and Authorization
 
-basishacks delegates user authentication to the separately deployed **basis-auth** OpenID Connect provider. It keeps local user IDs, team membership, votes, and submissions in PostgreSQL. Access and refresh tokens are kept in an encrypted HTTP-only cookie.
+nethack delegates user authentication to the separately deployed **basis-auth** OpenID Connect provider. It keeps local user IDs, team membership, votes, and submissions in PostgreSQL. Access and refresh tokens are kept in an encrypted HTTP-only cookie.
 
 ## Browser login
 
@@ -58,10 +58,10 @@ The frontend middleware is a convenience redirect and is never the only authoriz
 
 Protected APIs trust basis-auth access tokens only. Validation requires the basis-auth JWKS signature, RS256, the exact configured issuer, the configured audience, `typ=at+jwt`, a valid expiry, and basis-schema access-token claims. The subject maps to a local user through the same issuer-and-subject link. Route access is evaluated from the JWT `permissions` array with the shared nethack permission hierarchy.
 
-For accounts carrying the former `participant`, `judge`, or `admin` permission, basishacks expands that legacy value into the corresponding granular permission bundle before server checks and frontend display gating. This compatibility bridge does not discard granular permissions already present in the token.
+For accounts carrying the former `participant`, `judge`, or `admin` permission, nethack expands that legacy value into the corresponding granular permission bundle before server checks and frontend display gating. This compatibility bridge does not discard granular permissions already present in the token.
 
 The browser never receives the access or refresh token. Protected browser requests rely on the encrypted HTTP-only cookie; explicit bearer clients can still call the same APIs. The frontend unwraps `APIResponse.data`, converts failed envelopes with `APIError.from`, and redirects to `/api/login` once on a 401 without looping through auth endpoints. Token rotation and refresh happen server-side.
 
 ## Retired provider surface
 
-basishacks no longer exposes its native authorization, token, UserInfo, authorization-session, or application-management routes and pages. The legacy `oauth2_applications` table and existing rows remain untouched for audit and rollback. Graph integration is separate and cannot authenticate a basishacks session.
+nethack no longer exposes its native authorization, token, UserInfo, authorization-session, or application-management routes and pages. The legacy `oauth2_applications` table and existing rows remain untouched for audit and rollback. Graph integration is separate and cannot authenticate a nethack session.

@@ -15,7 +15,7 @@ const terminalLines = ref<{ type: string; text: string }[]>([]);
 const terminalDone = ref(false);
 
 const bootSequence = [
-    "basishacks-docs v1.0.0",
+    "nethack-docs v1.0.0",
     "Loading configuration... OK",
     "Resolving sidebar navigation... OK",
     "Mounting API reference... OK",
@@ -25,7 +25,7 @@ const bootSequence = [
     "All documentation systems ready.",
     "",
     "> docs --status=READY",
-    "> Season 2 — 2025/26",
+    "> R1 2026–2027 — in preparation",
     "> Awaiting operators...",
 ];
 
@@ -42,9 +42,9 @@ const terminalCommands = [
     { type: "prompt", text: "$ cat docs/welcome.txt" },
     { type: "output", text: "" },
     { type: "output", text: "BIBS-C Network Hackathon Platform" },
-    { type: "output", text: "Season 2 — 2025/26" },
+    { type: "output", text: "R1 2026–2027 — in preparation" },
     { type: "output", text: "" },
-    { type: "output", text: "Stack: Nuxt 4 + Nitro + Vue 3 + SQLite" },
+    { type: "output", text: "Stack: Nuxt 4 + Nitro + Vue 3 + PostgreSQL" },
     { type: "output", text: "Auth: basis-auth OpenID Connect" },
     { type: "output", text: "Features: teams, submissions, peer voting, judge rubrics" },
     { type: "output", text: "" },
@@ -96,7 +96,9 @@ onMounted(() => {
             <div class="hero-section">
                 <div class="ascii-art hero-art">{{ asciiBanner }}</div>
                 <h2 class="hero-subtitle">Network Hackathon Platform Docs</h2>
-                <p class="hero-tagline">Season 2 — 2025/26 &nbsp;|&nbsp; BIBS-C Network</p>
+                <p class="hero-tagline">
+                    R1 2026–2027 &nbsp;|&nbsp; In preparation &nbsp;|&nbsp; BIBS-C Network
+                </p>
 
                 <div class="hero-status">
                     <span>
@@ -121,7 +123,7 @@ onMounted(() => {
                         <span class="dot-yellow"></span>
                         <span class="dot-green"></span>
                     </div>
-                    <span class="terminal-title">basishacks@docs:~</span>
+                    <span class="terminal-title">nethack@docs:~</span>
                     <span class="terminal-size">bash — 80×24</span>
                 </div>
                 <div class="terminal-body">
@@ -131,7 +133,7 @@ onMounted(() => {
                         :class="['terminal-line', line.type]"
                     >
                         <template v-if="line.type === 'prompt'">
-                            <span class="ps1-user">basishacks</span>
+                            <span class="ps1-user">nethack</span>
                             <span class="ps1-host">@docs</span>
                             <span class="ps1-path">:~</span>
                             <span class="ps1-cmd">{{ line.text.replace("$ ", "") }}</span>
@@ -147,7 +149,7 @@ onMounted(() => {
             <div class="network-grid">
                 <div class="network-node">
                     <div class="node-title">Full-Stack Nuxt 4</div>
-                    <div class="node-desc">Vue 3 + Nitro + TypeScript + SQLite</div>
+                    <div class="node-desc">Vue 3 + Nitro + TypeScript + PostgreSQL</div>
                 </div>
                 <div class="network-node">
                     <div class="node-title">Authentication</div>
@@ -167,7 +169,7 @@ onMounted(() => {
                 </div>
                 <div class="network-node">
                     <div class="node-title">VPS</div>
-                    <div class="node-desc">Node.js server + SQLite + CI/CD</div>
+                    <div class="node-desc">Node.js server + PostgreSQL + CI/CD</div>
                 </div>
             </div>
         </div>

@@ -1,6 +1,6 @@
 ---
 title: Server Utilities
-description: All server-side utility modules in the basishacks backend
+description: All server-side utility modules in the nethack backend
 ---
 
 # Server Utilities

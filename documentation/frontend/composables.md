@@ -1,11 +1,11 @@
 ---
 title: Composables & Utilities
-description: Shared composables, middleware, constants, error handling, and cross-cutting patterns used across the basishacks frontend.
+description: Shared composables, middleware, constants, error handling, and cross-cutting patterns used across the nethack frontend.
 ---
 
 # Composables & Utilities
 
-The basishacks frontend organizes shared logic into composables (`app/composables/`), route middleware (`app/middleware/`), utility functions (`app/utils/`), and app configuration (`app/app.config.ts`). The encrypted HTTP-only cookie holds basis-auth tokens on the server. `useBasisAuthSession()` exposes a browser-safe session summary. The server API fetch wrapper and `app/plugins/api.client.ts` unwrap `APIResponse.data`; the client plugin converts error envelopes to `APIError` and restarts login after an unauthorized protected request. Pass `$fetch: globalThis.$fetch` to `useFetch` for API routes so server-rendered requests use the same envelope handling as direct `$fetch` calls.
+The nethack frontend organizes shared logic into composables (`app/composables/`), route middleware (`app/middleware/`), utility functions (`app/utils/`), and app configuration (`app/app.config.ts`). The encrypted HTTP-only cookie holds basis-auth tokens on the server. `useBasisAuthSession()` exposes a browser-safe session summary. The server API fetch wrapper and `app/plugins/api.client.ts` unwrap `APIResponse.data`; the client plugin converts error envelopes to `APIError` and restarts login after an unauthorized protected request. Pass `$fetch: globalThis.$fetch` to `useFetch` for API routes so server-rendered requests use the same envelope handling as direct `$fetch` calls.
 
 ## Composables
 
@@ -121,13 +121,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
 Global constants used throughout the frontend.
 
 ```ts
-export const WEBSITE_NAME = "basishacks";
+export const WEBSITE_NAME = "nethack";
 //export const THEME_NAME = "nostalgia"; used for testing
 ```
 
-| Constant       | Value          | Usage                                                   |
-| -------------- | -------------- | ------------------------------------------------------- |
-| `WEBSITE_NAME` | `'basishacks'` | Displayed in headers, page titles, and welcome messages |
+| Constant       | Value       | Usage                                                   |
+| -------------- | ----------- | ------------------------------------------------------- |
+| `WEBSITE_NAME` | `'nethack'` | Displayed in headers, page titles, and welcome messages |
 
 `THEME_NAME` is currently commented out and not used. These constants are auto-imported by Nuxt and available in any component or page.
 

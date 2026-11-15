@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: Complete reference for all API endpoints in the basishacks backend
+description: Complete reference for all API endpoints in the nethack backend
 ---
 
 # API Reference
@@ -488,6 +488,17 @@ Rename, activate, or deactivate a season. Any `is_active` change additionally re
 | **Body**     | `{ id: number, name?: string, is_active?: 0 \| 1 }`               |
 | **Response** | `{ seasons: Season[] }`                                           |
 
+### PATCH `/api/admin/seasons/:id/approval`
+
+Record or revoke board approval for a blank-start season. The server records the authenticated administrator's user ID and the approval timestamp. Approval cannot be revoked while that season is active.
+
+| Field          | Details                                        |
+| -------------- | ---------------------------------------------- |
+| **Auth**       | `nethack.Seasons.update`                       |
+| **Validation** | `{ approved: boolean }`                        |
+| **Response**   | `{ id, board_approved_at, board_approved_by }` |
+| **Rate limit** | Yes                                            |
+
 ### DELETE `/api/admin/seasons/[id]`
 
 Delete an empty, inactive season by ID. Active seasons and seasons with teams or judging history return `409 Conflict`; deleting an eligible season also removes its unused rubric versions.
@@ -583,7 +594,7 @@ The optional validation token and each bounded notification field are validated 
 
 ---
 
-<TerminalWindow title="basishacks@api-test:~" prompt="$">
+<TerminalWindow title="nethack@api-test:~" prompt="$">
 
 ```bash
 # Quick health check

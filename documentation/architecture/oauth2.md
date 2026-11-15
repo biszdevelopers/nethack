@@ -5,16 +5,17 @@ description: OpenID Connect client and resource-server integration with basis-au
 
 # basis-auth Integration
 
-basishacks is an OpenID Connect confidential client and a protected resource of basis-auth. It is no longer an OAuth provider.
+nethack is an OpenID Connect confidential client and a protected resource of basis-auth. It is no longer an OAuth provider.
 
 ## Registration
 
 Register one confidential client in basis-auth without changing basis-auth source code. Its redirect URI set must contain every deployed callback, for example:
 
 ```text
-http://localhost:24598/api/auth/basis/callback
-https://nethack.biszweb.club/api/auth/basis/callback
+${CURRENT_URL_ORIGIN}/api/auth/basis/callback
 ```
+
+Set `CURRENT_URL_ORIGIN` in the deployment `.env` to the public nethack origin. The application derives the callback and canonical URLs from that variable.
 
 Register `devconnect://nethack.bisz.dev` as a resource and use the same value for `BASIS_AUTH_RESOURCE`. The login request is `openid profile email offline_access`; basis-auth supplies feature authorization in the access-token `permissions` array, so application permissions are not requested as OAuth scopes.
 
@@ -23,7 +24,7 @@ Register `devconnect://nethack.bisz.dev` as a resource and use the same value fo
 | Variable                   | Purpose                                        |
 | -------------------------- | ---------------------------------------------- |
 | `BASIS_AUTH_ISSUER`        | Exact issuer used for discovery and validation |
-| `BASIS_AUTH_CLIENT_ID`     | basishacks confidential client ID              |
+| `BASIS_AUTH_CLIENT_ID`     | nethack confidential client ID                 |
 | `BASIS_AUTH_CLIENT_SECRET` | Server-only client secret                      |
 | `BASIS_AUTH_RESOURCE`      | Expected resource audience                     |
 | `CURRENT_URL_ORIGIN`       | Origin from which the callback URL is derived  |
@@ -32,7 +33,7 @@ In production, `CURRENT_URL_ORIGIN` must be a public HTTPS origin without a path
 
 ## Protected API validation
 
-`server/utils/oauth2-jwt.ts` loads the provider JWKS and validates access tokens with exact issuer and audience checks, RS256, access-token type, expiry, basis-schema claims, and stable subject mapping. Delegated scopes use the shared hierarchy matcher: `.all` grants descendant leaves, while `.*` is unsupported. Hackathon roles remain application-local. The verifier deliberately does not accept legacy basishacks HS256 tokens.
+`server/utils/oauth2-jwt.ts` loads the provider JWKS and validates access tokens with exact issuer and audience checks, RS256, access-token type, expiry, basis-schema claims, and stable subject mapping. Delegated scopes use the shared hierarchy matcher: `.all` grants descendant leaves, while `.*` is unsupported. Hackathon roles remain application-local. The verifier deliberately does not accept legacy nethack HS256 tokens.
 
 ## Legacy data
 

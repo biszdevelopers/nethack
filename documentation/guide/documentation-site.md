@@ -1,6 +1,6 @@
 ---
 title: Documentation Site
-description: Theme, interactive components, and live dependency tables for the basishacks VitePress docs.
+description: Theme, interactive components, and live dependency tables for the nethack VitePress docs.
 ---
 
 # Documentation Site
@@ -27,7 +27,7 @@ Show a colored status pill:
 Wrap shell snippets in a terminal chrome:
 
 ````md
-<TerminalWindow title="basishacks@api-test:~" prompt="$">
+<TerminalWindow title="nethack@api-test:~" prompt="$">
 
 ```bash
 curl -s https://localhost:24598/api/health

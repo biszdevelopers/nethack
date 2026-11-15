@@ -1,11 +1,17 @@
 ---
 title: Database
-description: Database schema, access patterns, per-table helpers, type conventions, and migration strategy for basishacks.
+description: Database schema, access patterns, per-table helpers, type conventions, and migration strategy for nethack.
 ---
 
 # Database
 
-basishacks uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
+nethack uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
+
+## Historical SQLite comparison
+
+The selected local backup at `database/basishacks.sqlite` passes SQLite's integrity check and contains 93 teams, 71 of which have non-empty project descriptions. A read-only audit matched all 93 team IDs and all 71 descriptions against the configured PostgreSQL database, with no project-description conflicts. The descriptions were present in the target; the old public showcase exposed only curated pages and did not list each completed season's projects. The public archive now reads these records through the season-specific API.
+
+The importer copies `project_description` when the source schema has that column, but it only accepts an empty or exact fresh-seed target. Never rerun it against populated PostgreSQL data. The comparison also found legacy singleton, season, and user-field conflicts, which remain unchanged for review. The audit is read-only; `bun run db:backup` creates and verifies a PostgreSQL snapshot before any manually reviewed reconciliation.
 
 ## Tables
 

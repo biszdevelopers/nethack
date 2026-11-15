@@ -1,11 +1,11 @@
 ---
 title: Environment Setup
-description: Configure environment variables, install tooling, and prepare your IDE for basishacks development.
+description: Configure environment variables, install tooling, and prepare your IDE for nethack development.
 ---
 
 # Environment Setup
 
-This guide covers everything you need to configure before developing basishacks, from environment variables to IDE setup.
+This guide covers everything you need to configure before developing nethack, from environment variables to IDE setup.
 
 ## Prerequisites
 
@@ -105,12 +105,12 @@ cp .env.example .env
 
 | Variable | Description | Example |
 | --- | --- | --- |
-| `DATABASE_URL` | Required PostgreSQL connection URL | `postgresql://basishacks:secret@127.0.0.1:5432/basishacks` |
+| `DATABASE_URL` | Required PostgreSQL connection URL | `postgresql://nethack:secret@127.0.0.1:5432/nethack` |
 | `BASIS_AUTH_COOKIE_SECRET` | Session and token-record encryption key. **Must be at least 32 bytes.** | Output of `openssl rand -base64 32` |
 | `BASIS_AUTH_ISSUER` | Exact basis-auth issuer URL | `http://localhost:3000` |
-| `BASIS_AUTH_CLIENT_ID` | Registered confidential basishacks client ID | Provider-generated value |
-| `BASIS_AUTH_CLIENT_SECRET` | Server-only basishacks client secret | Provider-generated value |
-| `BASIS_AUTH_RESOURCE` | Resource audience registered for basishacks | `devconnect://nethack.bisz.dev` |
+| `BASIS_AUTH_CLIENT_ID` | Registered confidential nethack client ID | Provider-generated value |
+| `BASIS_AUTH_CLIENT_SECRET` | Server-only nethack client secret | Provider-generated value |
+| `BASIS_AUTH_RESOURCE` | Resource audience registered for nethack | `devconnect://nethack.bisz.dev` |
 
 ::: tip Login is delegated to basis-auth. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` for each environment. :::
 
@@ -138,7 +138,7 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CURRENT_URL_ORIGIN` | Public HTTPS origin used for the callback and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. Required in production; local development defaults to `http://localhost:3000`. | `http://localhost:3000` |
+| `CURRENT_URL_ORIGIN` | Required public origin used for canonical page URLs, the basis-auth callback, and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. | Set it in `.env`; the example uses a local origin |
 
 #### Live manifest and local caches
 
@@ -185,7 +185,8 @@ These are read by development scripts, never by the running server.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `PLAYWRIGHT_BASE_URL` | Base URL used by the end-to-end Playwright suite | dev server origin |
+| `BASISHACKS_E2E_DATABASE_URL` | Separate loopback PostgreSQL URL for the disposable database named `basishacks_e2e`; never read by the app server | Set it in `.env` for browser tests |
+| `PLAYWRIGHT_BASE_URL` | Required loopback HTTP origin for the isolated end-to-end Playwright app | Set it in `.env`; the sample shows the test origin |
 | `VPS_RELEASE_OUTPUT_DIR` | Directory `bun run release:package` writes the deployable bundle into | `release-package` |
 | `VPS_RELEASE_INCLUDE_NODE_MODULES` | Set to `1` to copy production `node_modules` into the release bundle | unset |
 | `BENCHMARK_HEADERS_JSON` | JSON object of extra request headers for `bun run benchmark:vps` | unset |
@@ -194,7 +195,7 @@ These are read by development scripts, never by the running server.
 
 ```bash
 # REQUIRED - PostgreSQL connection
-DATABASE_URL=postgresql://basishacks:replace_me@127.0.0.1:5432/basishacks
+DATABASE_URL=postgresql://nethack:replace_me@127.0.0.1:5432/nethack
 
 # REQUIRED - Session and token encryption key, must be at least 32 bytes
 BASIS_AUTH_COOKIE_SECRET=your_random_string_at_least_32_bytes_long
@@ -348,10 +349,10 @@ Example:
 
 ```ts
 // Correct (project style)
-const name = "basishacks";
+const name = "nethack";
 
 // Wrong
-const name = "basishacks";
+const name = "nethack";
 ```
 
 ## Production Configuration
@@ -360,7 +361,7 @@ In production on the VPS, environment variables are configured through the serve
 
 ```bash
 # Example: setting environment variables before starting the server
-DATABASE_URL=postgresql://basishacks:secret@127.0.0.1:5432/basishacks bun run start
+DATABASE_URL=postgresql://nethack:secret@127.0.0.1:5432/nethack bun run start
 ```
 
 Configure credentials in a protected server environment file. For systemd, set `DATABASE_URL` and `DATABASE_POOL_MAX=10` in the service's `EnvironmentFile`; upload storage is always project-root `/assets`, not an environment variable. Make that directory writable by the service account. In-place pull/build/start updates preserve it because git ignores it; preserve or restore it before serving from a re-clone, and back it up separately. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for the unit files, import steps, and service hardening.

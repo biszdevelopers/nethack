@@ -76,6 +76,8 @@ For both season-tweaks routes, the `id` must be a positive safe integer. Missing
 
 Passing `null` deactivates all seasons.
 
+Startup creates the inactive `R1 2026–2027` shell with switches disabled, empty schedule and theme fields, no rubric, and no board approval record. The administration page preserves its settings-copy option and also provides a blank-season option. Activation is rejected with `409 season_not_ready` until the season has a theme, event and voting dates, its own rubric version, and recorded board approval. An administrator records or revokes approval in the season manager; the record stores the admin user ID and timestamp. Approval cannot be revoked while a blank-start season is active. Activation never seeds a blank season from the live event.
+
 `PATCH /api/seasons/:id/tweaks` accepts `UpdateSeasonTweaksRequest`:
 
 ```ts
@@ -97,8 +99,9 @@ At least one field is required. Boolean values are stored as `0`/`1`.
 | `getSeasons(event)` | List all seasons ordered by ID |
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
-| `setActiveSeason(event, seasonId)` | Activate one season and deactivate all others; seeds a never-configured season from the live settings first; throws 404 if the season does not exist |
-| `pickSeasonConfig(source)` | Copy the event settings that seed a new or blank season |
+| `setActiveSeason(event, seasonId)` | Activate one configured season and deactivate all others; throws 404 if it does not exist and 409 if required settings or the season rubric are missing |
+| `getSeasonActivationBlockers(season)` | Return missing theme, event dates, voting dates, and rubric requirements |
+| `pickSeasonConfig(source)` | Select live event settings copied when an administrator creates a settings-copy season |
 | `isUnconfiguredSeason(season)` | Detect a season that was never configured |
 | `updateSeasonTweaks(event, seasonId, data)` | Update stored tweaks. Live edits are rejected in YAML mode. |
 | `getScoreRankVisibilityResolver(event)` | Build a season-ID-to-visibility resolver with a global fallback |
