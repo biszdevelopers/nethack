@@ -58,6 +58,15 @@ describe("datetime-local conversions", () => {
         );
     });
 
+    it("accepts a form value that already includes seconds", () => {
+        expect(fromDateTimeLocalString("2026-01-02T11:04:30")).toBe(
+            Date.parse("2026-01-02T03:04:30.000Z"),
+        );
+        expect(fromDateTimeLocalString("2026-01-02T11:04:30.500")).toBe(
+            Date.parse("2026-01-02T03:04:30.500Z"),
+        );
+    });
+
     it("returns 0 for an empty or invalid form value", () => {
         expect(fromDateTimeLocalString("")).toBe(0);
         expect(fromDateTimeLocalString("not a date")).toBe(0);

@@ -177,7 +177,7 @@ bunx playwright install chromium
 bun run build
 # Set BASISHACKS_E2E_DATABASE_URL to the dedicated basishacks_e2e database and
 # PLAYWRIGHT_BASE_URL to an explicit loopback origin in .env, then run:
-bun run test:e2e        # Chromium role and responsive browser journeys
+bun run test:e2e        # Chromium role, route-sweep, and responsive browser journeys
 ```
 
 To capture the synthetic board walkthrough, configure that same isolated database and app origin in `.env`, install Chromium and FFmpeg with its `libflite` filter, then run `bun run demo:capture` followed by `bun run demo:render`. Capture refuses to use `DATABASE_URL`; it requires a separate loopback database named `basishacks_e2e`. The offline narration is synthesized by FFmpeg, so it works without an installed operating-system voice or external service. The narrated 5–7 minute MP4, 30–45 second GIF, and transcript are written under `artifacts/board-demo/`.

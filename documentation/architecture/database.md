@@ -227,6 +227,94 @@ Stores per-team award assignments and JSON metadata. Award details are joined fr
 
 **Primary key**: `(team_id, award)`
 
+### `rubric_templates`
+
+Reusable rubric definitions that administrators can copy into a season. Names are unique case-insensitively.
+
+| Column        | Type                   | Description                            |
+| ------------- | ---------------------- | -------------------------------------- |
+| `id`          | `SERIAL PRIMARY KEY`   | Template ID                            |
+| `name`        | `TEXT NOT NULL`        | Display name, unique per `lower(name)` |
+| `description` | `TEXT`                 | Optional description                   |
+| `definition`  | `JSONB NOT NULL`       | Complete `RubricDefinition`            |
+| `created_by`  | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL)  |
+| `created_at`  | `TIMESTAMPTZ NOT NULL` | Creation time                          |
+| `updated_at`  | `TIMESTAMPTZ NOT NULL` | Last update time                       |
+
+### `rubric_versions`
+
+Immutable per-season rubric snapshots. A finalized score keeps the version it was judged against.
+
+| Column               | Type                   | Description                                      |
+| -------------------- | ---------------------- | ------------------------------------------------ |
+| `id`                 | `SERIAL PRIMARY KEY`   | Version ID                                       |
+| `season_id`          | `INTEGER NOT NULL`     | FK to `seasons.id` (ON DELETE RESTRICT)          |
+| `version`            | `INTEGER NOT NULL`     | 1-based version within the season                |
+| `name`               | `TEXT NOT NULL`        | Version name                                     |
+| `definition`         | `JSONB NOT NULL`       | Frozen `RubricDefinition`                        |
+| `source_template_id` | `INTEGER`              | FK to `rubric_templates.id` (ON DELETE SET NULL) |
+| `created_by`         | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL)            |
+| `created_at`         | `TIMESTAMPTZ NOT NULL` | Creation time                                    |
+
+**Unique index**: `(season_id, version)`
+
+### `judging_drafts`
+
+Autosaved judge work that has not been finalized. One row per judge and team.
+
+| Column              | Type                   | Description                                     |
+| ------------------- | ---------------------- | ----------------------------------------------- |
+| `team_id`           | `INTEGER NOT NULL`     | FK to `teams.id` (ON DELETE CASCADE)            |
+| `judge_user_id`     | `INTEGER NOT NULL`     | FK to `users.id` (ON DELETE CASCADE)            |
+| `rubric_version_id` | `INTEGER NOT NULL`     | FK to `rubric_versions.id` (ON DELETE RESTRICT) |
+| `scores`            | `JSONB NOT NULL`       | Criterion scores keyed by criterion ID          |
+| `reasoning`         | `TEXT NOT NULL`        | Draft comment (default `''`)                    |
+| `updated_at`        | `TIMESTAMPTZ NOT NULL` | Last autosave                                   |
+
+**Primary key**: `(team_id, judge_user_id)`
+
+### `sc_votes`
+
+Legacy ballot rows retained by the SQLite importer for audit and history. The application does not read or write them for voting.
+
+| Column         | Type      | Description                           |
+| -------------- | --------- | ------------------------------------- |
+| `id`           | `SERIAL`  | Row ID                                |
+| `user_id`      | `INTEGER` | FK to `users.id` (ON DELETE SET NULL) |
+| `vote`         | `TEXT`    | Original legacy payload               |
+| `submitted_at` | `INTEGER` | Original submission time              |
+
+### `asset_objects`
+
+Content-addressed registry of managed uploads, used to deduplicate files and to collect unreferenced ones after the grace period.
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `collection` | `TEXT NOT NULL` | `assets` or `userassets` |
+| `asset_path` | `TEXT NOT NULL` | Path relative to the collection root |
+| `sha256` | `TEXT NOT NULL` | Content hash, 64 lowercase hex characters |
+| `byte_size` | `BIGINT NOT NULL` | Stored size in bytes |
+| `pinned` | `BOOLEAN NOT NULL` | Pinned objects are never collected |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
+| `unreferenced_at` | `TIMESTAMPTZ` | When the last reference was released; starts the grace period |
+
+**Primary key**: `(collection, asset_path)`. Check constraints enforce the collection name, the hash format, a non-negative size, and the content-addressed path shape.
+
+### `asset_references`
+
+Active permalink references to a stored object. Releasing the last reference sets `asset_objects.unreferenced_at`; cleanup waits at least seven days and re-checks the database under a lock.
+
+| Column           | Type                   | Description                           |
+| ---------------- | ---------------------- | ------------------------------------- |
+| `id`             | `TEXT PRIMARY KEY`     | Reference ID                          |
+| `collection`     | `TEXT NOT NULL`        | Collection of the referenced object   |
+| `asset_path`     | `TEXT NOT NULL`        | Path of the referenced object         |
+| `reference_type` | `TEXT NOT NULL`        | Only `permalink` is allowed           |
+| `created_by`     | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL) |
+| `created_at`     | `TIMESTAMPTZ NOT NULL` | Creation time                         |
+
+**Foreign key**: `(collection, asset_path)` to `asset_objects` with `ON DELETE CASCADE`.
+
 ## Access Patterns
 
 All database access goes through `event.context.drizzle` (a Drizzle ORM instance). Per-table helpers in `server/utils/database/*.ts` wrap common queries:

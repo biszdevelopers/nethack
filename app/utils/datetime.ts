@@ -52,6 +52,8 @@ export function toDateTimeLocalString(value: DateInput): string {
 export function fromDateTimeLocalString(value: string): number {
     if (!value) return 0;
 
-    const timestamp = Date.parse(`${value}:00${DISPLAY_UTC_OFFSET}`);
+    // `datetime-local` omits seconds by default, but a browser may include them.
+    const withSeconds = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? `${value}:00` : value;
+    const timestamp = Date.parse(`${withSeconds}${DISPLAY_UTC_OFFSET}`);
     return Number.isNaN(timestamp) ? 0 : timestamp;
 }
