@@ -908,6 +908,89 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         source.close();
     });
 
+    it("accepts the inactive next-season shell that db:migrate also seeds", async () => {
+        const source = createSource();
+        const columns = targetColumns(source);
+        const season = {
+            id: 1,
+            name: "Season 1",
+            is_active: 1,
+            status: "not_started",
+            voting_enabled: 0,
+            results_published: 0,
+            judging_open: 0,
+            show_scores: 0,
+            show_ranking: 0,
+            max_votes_per_user: 0,
+            schedule_start: null,
+            schedule_end: null,
+            start_timestamp: 0,
+            end_timestamp: 0,
+            voting_start_timestamp: 0,
+            voting_end_timestamp: 0,
+            results_open_timestamp: 0,
+            theme_name: null,
+            theme_description: null,
+            score_curve_preset: "original",
+            rubric_version_id: 1,
+        };
+        const shell = {
+            ...season,
+            id: 2,
+            name: "R1 2026–2027",
+            is_active: 0,
+            is_blank_start: 1,
+            rubric_version_id: null,
+        };
+        const sql: any = async () => [];
+        sql.unsafe = vi.fn(async (statement: string) => {
+            if (statement.includes("count(*)")) {
+                const table = /FROM "([^"]+)"/.exec(statement)?.[1];
+                if (table === "seasons") return [{ count: 2 }];
+                if (["hackathon", "rubric_templates", "rubric_versions"].includes(table ?? "")) {
+                    return [{ count: 1 }];
+                }
+                return [{ count: 0 }];
+            }
+            if (statement.includes('SELECT * FROM "hackathon"')) {
+                return [{ ...PRISTINE_HACKATHON_SEED }];
+            }
+            if (statement.includes('SELECT * FROM "seasons" ORDER BY id')) return [season, shell];
+            if (statement.includes('SELECT * FROM "rubric_templates"')) {
+                return [
+                    {
+                        id: 1,
+                        name: "BIBS-C Default",
+                        description: "The original BIBS-C judging rubric.",
+                        definition: DEFAULT_RUBRIC_DEFINITION,
+                        created_by: null,
+                    },
+                ];
+            }
+            if (statement.includes('SELECT * FROM "rubric_versions"')) {
+                return [
+                    {
+                        id: 1,
+                        season_id: 1,
+                        version: 1,
+                        name: "BIBS-C Default",
+                        definition: DEFAULT_RUBRIC_DEFINITION,
+                        source_template_id: 1,
+                        created_by: null,
+                    },
+                ];
+            }
+            return [];
+        });
+
+        await expect(ensureEmptyTarget(sql, columns)).resolves.toMatchObject({
+            hackathonId: 1,
+            rubricSeed: { seasonId: 1, templateId: 1, rubricVersionId: 1 },
+            extraSeasonIds: [2],
+        });
+        source.close();
+    });
+
     it("retains only a single basis-auth user whose identity fields match the source exactly", async () => {
         const source = createSource();
         const columns = targetColumns(source);

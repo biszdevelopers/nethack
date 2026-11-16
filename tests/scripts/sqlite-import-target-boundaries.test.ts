@@ -38,29 +38,31 @@ const freshSeedTarget = () => {
                 theme_name: null,
                 theme_description: null,
             },
-            seasons: {
-                id: 1,
-                name: "Season 1",
-                is_active: 1,
-                status: "not_started",
-                voting_enabled: 0,
-                results_published: 0,
-                judging_open: 0,
-                show_scores: 0,
-                show_ranking: 0,
-                max_votes_per_user: 0,
-                schedule_start: null,
-                schedule_end: null,
-                start_timestamp: 0,
-                end_timestamp: 0,
-                voting_start_timestamp: 0,
-                voting_end_timestamp: 0,
-                results_open_timestamp: 0,
-                theme_name: null,
-                theme_description: null,
-                score_curve_preset: "original",
-                rubric_version_id: 1,
-            },
+            seasons: [
+                {
+                    id: 1,
+                    name: "Season 1",
+                    is_active: 1,
+                    status: "not_started",
+                    voting_enabled: 0,
+                    results_published: 0,
+                    judging_open: 0,
+                    show_scores: 0,
+                    show_ranking: 0,
+                    max_votes_per_user: 0,
+                    schedule_start: null,
+                    schedule_end: null,
+                    start_timestamp: 0,
+                    end_timestamp: 0,
+                    voting_start_timestamp: 0,
+                    voting_end_timestamp: 0,
+                    results_open_timestamp: 0,
+                    theme_name: null,
+                    theme_description: null,
+                    score_curve_preset: "original",
+                    rubric_version_id: 1,
+                },
+            ],
             rubric_templates: {
                 id: 1,
                 name: "BIBS-C Default",
@@ -85,7 +87,7 @@ describe("SQLite import target validation boundaries", () => {
     it("accepts bigint values for PostgreSQL safe-integer seed columns", () => {
         const target = freshSeedTarget();
         target.rows.hackathon.start_timestamp = 0n;
-        target.rows.seasons.end_timestamp = 0n;
+        target.rows.seasons[0].end_timestamp = 0n;
 
         expect(inspectFreshImportTarget(target)).toMatchObject({
             hackathonId: 1,
@@ -118,7 +120,7 @@ describe("SQLite import target validation boundaries", () => {
         expect(inspectFreshImportTarget(missingHackathon)).toBeNull();
 
         const malformedNumericString = freshSeedTarget();
-        malformedNumericString.rows.seasons.start_timestamp = "01";
+        malformedNumericString.rows.seasons[0].start_timestamp = "01";
         expect(inspectFreshImportTarget(malformedNumericString)).toBeNull();
     });
 
