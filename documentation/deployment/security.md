@@ -165,7 +165,7 @@ All redirect parameters in the login flow are validated to prevent open redirect
 - **`login.get.ts`** — The `postLoginRedirect` parameter is allowed only when it does not start with `http://`, `https://`, or `//` (protocol-relative). Only relative paths are accepted.
 - **`dccallback.get.ts`** — The OAuth2 onsite login callback validates redirects before following them, ensuring they point to relative paths only.
 - **`SafeLink.vue`** — User-provided links in rendered content (e.g. project descriptions) are rendered through the `SafeLink` component, which validates URLs with `isSafeUrl()` — only relative paths rooted at `/` and `http:`/`https:` URLs are rendered as clickable links; unsafe URLs are shown as plain strikethrough text.
-- **`SafeComark.vue`** — Markdown content rendered from user input uses the `SafeLink` component as its link renderer via `Comark`, and HTML rendering is disabled.
+- **`SafeComark.vue`** — Markdown content rendered from user input uses the `SafeLink` component as its link renderer via `@comark/vue`, disables the default HTML/component plugins, and preserves single line breaks with the `breaks` plugin.
 
 ## Unified Client Credential Errors
 
@@ -262,7 +262,7 @@ A comprehensive XSS audit has been performed across all frontend components (`ap
 - **No `v-html` usage**: zero instances. All user-controlled text renders through Vue's auto-escaping `{{ }}` interpolation.
 - **No `innerHTML`** or `dangerouslySetInnerHTML`: zero instances.
 - **SafeLink component**: validates all `href` attributes via `isSafeUrl()` before rendering; unsafe URLs render as inert `<span>` elements.
-- **SafeComark component**: renders user project descriptions with HTML escaping before Markdown processing.
+- **SafeComark component**: renders user project descriptions with the default Comark HTML plugin disabled, then maps links through `SafeLink`.
 - **URL safety**: all project demo/repo URLs use `safeUrl()` computed properties; new uploaded objects use server-generated SHA-256 content-addressed filenames.
 - **Form maxlength attributes**: all key form inputs (`ProjectForm.vue`, `JudgingCard.vue`, `voting.vue`) now have `:maxlength` bound to the `MAX_*` constants from `shared/schemas.ts`, preventing users from exceeding validation limits before submission.
 

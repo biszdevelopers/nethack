@@ -21,7 +21,7 @@ nethack is a **full-stack Nuxt 4 application** that combines a Vue 3 frontend wi
 | Database | PostgreSQL via Drizzle ORM and the `postgres` driver |
 | Auth | basis-auth OIDC with encrypted HTTP-only token cookies |
 | Validation | Zod 4.x (^4.6.7) |
-| Fonts | `@nuxt/fonts` ^0.14.0 (local provider) |
+| Fonts | `@nuxt/fonts` ^1.2.0 (local provider) |
 | Icons | `@nuxt/icon` with fluent, heroicons, lucide, material-symbols, and simple-icons |
 | Linting | `@nuxt/eslint` ^1.17.0 + Oxfmt ^0.78.0 |
 | Deployment | Node.js server (VPS; Bun also supported) |
@@ -47,7 +47,7 @@ basishacks-r2/
 │       ├── database/       # Per-table DB helpers (users, teams, scores, etc.)
 │       ├── auth.ts         # requireUser / optionalUser permission helpers
 │       ├── convert.ts      # DB row -> public API object transformers
-│       ├── rateLimit.ts    # In-memory rate limiter (4 tiers)
+│       ├── rateLimit.ts    # In-memory rate limiter (5 tiers)
 │       ├── oauth2.ts       # Public origin and callback URL helpers
 │       ├── basis-auth.ts   # OIDC discovery, PKCE login, callback, and UserInfo
 │       ├── oauth2-jwt.ts   # basis-auth resource-token validation
@@ -176,7 +176,7 @@ URL validation is enforced at both layers to prevent SSRF and open redirect atta
 ### SafeLink / SafeComark frontend components
 
 - **`SafeLink`** (`app/components/SafeLink.vue`): A link component that validates `href` URLs via `isSafeUrl()`. Safe external links open with `target="_blank" rel="noopener noreferrer"`; unsafe URLs are rendered as inert strikethrough text.
-- **`SafeComark`** (`app/components/SafeComark.vue`): A Markdown rendering wrapper that uses `SafeLink` for all `<a>` tags, preventing XSS and open redirect via user-supplied content.
+- **`SafeComark`** (`app/components/SafeComark.vue`): A Markdown rendering wrapper around `@comark/vue`'s `Markdown` component. It uses `SafeLink` for all `<a>` tags, disables the default HTML plugin, and preserves line breaks.
 
 ### Security middleware
 

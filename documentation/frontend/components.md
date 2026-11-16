@@ -167,7 +167,7 @@ Shows the weighted score preview, individual scores, and anonymous feedback in a
 
 **File:** `app/components/VotingProjectCard.vue`
 
-Interactive card displaying a project for peer voting. Shows project name, team name, pathway badge, description rendered with `Comark`, and repo/demo links, plus star increment and decrement controls.
+Interactive card displaying a project for peer voting. Shows project name, team name, pathway badge, description rendered with `SafeComark`, and repo/demo links, plus star increment and decrement controls.
 
 **Props:**
 
@@ -505,7 +505,7 @@ An `<a>` tag that validates its `href` attribute through `isSafeUrl()` before re
 
 **File:** `app/components/SafeComark.vue`
 
-Wraps the `Comark` component (inline Markdown renderer) with XSS-safe configuration. Disables raw HTML (`html: false`) and replaces `<a>` tags with `SafeLink` to prevent unsafe links. Used wherever user-provided content is rendered (project descriptions, sourcing notes, etc.).
+Wraps the `Markdown` component from `@comark/vue` (inline Markdown renderer) with an XSS-safe configuration. It extracts the slot text, disables the default plugin set so raw HTML is never parsed, adds only the line-break plugin, and replaces `<a>` tags with `SafeLink` to prevent unsafe links. Used wherever user-provided content is rendered (project descriptions, sourcing notes, etc.).
 
 ```vue
 <SafeComark>{{ team.project.description }}</SafeComark>

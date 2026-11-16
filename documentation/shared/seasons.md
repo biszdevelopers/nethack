@@ -29,8 +29,9 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `voting_start_timestamp` / `voting_end_timestamp` | bigint in PostgreSQL; JavaScript `number` | Voting window in epoch milliseconds |
 | `results_open_timestamp` | bigint in PostgreSQL; JavaScript `number` | When results become visible, in epoch milliseconds |
 | `theme_name` / `theme_description` | text | Season theme |
+| `announcement` | text | Admin-editable home-page announcement for the season |
 
-The live state comes from the selected YAML manifest. A local manifest is editable from the admin page, which writes the change back into the file (comments and the rubric block are preserved); a remote manifest is read-only. Other seasons always keep their own editable stored settings. The legacy singleton remains available for PostgreSQL rollback mode.
+The live state comes from the selected YAML manifest. A local manifest is editable from the admin page, which writes the change back into the file (comments and the rubric block are preserved); a remote manifest is read-only. Other seasons always keep their own editable stored settings. The announcement is a PostgreSQL live override, so it stays editable even when the manifest is remote. The legacy singleton remains available for PostgreSQL rollback mode.
 
 Creating a season copies the live event settings and the active season's score display curve, and activating a season that was never configured seeds it from the live settings first, so switching seasons cannot blank the theme, schedule, or status.
 
@@ -64,7 +65,7 @@ Judge comments are available to current and past team members only after `result
 
 For both season-tweaks routes, the `id` must be a positive safe integer. Missing or malformed IDs return `400`; a valid ID for a season that does not exist returns `404`. The public `GET` response uses the `PublicSeason` allowlist and redacts theme values while a season has not started or is paused.
 
-`GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, and `theme_description`. Theme fields are hidden when the hackathon status is `not_started` or `paused`.
+`GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, `theme_description`, and `announcement`. Theme fields are hidden when the hackathon status is `not_started` or `paused`; the announcement is always returned so organizers can publish preparation news before an event starts.
 
 `PATCH /api/seasons/active` accepts `SetActiveSeasonRequest`:
 
@@ -76,7 +77,7 @@ For both season-tweaks routes, the `id` must be a positive safe integer. Missing
 
 Passing `null` deactivates all seasons.
 
-Startup creates the inactive `R1 2026–2027` shell with switches disabled, empty schedule and theme fields, no rubric, and no board approval record. The administration page preserves its settings-copy option and also provides a blank-season option. Activation is rejected with `409 season_not_ready` until the season has a theme, event and voting dates, its own rubric version, and recorded board approval. An administrator records or revokes approval in the season manager; the record stores the admin user ID and timestamp. Approval cannot be revoked while a blank-start season is active. Activation never seeds a blank season from the live event.
+Startup creates the inactive `Next season` shell with switches disabled, empty schedule and theme fields, no rubric, and no board approval record. Older targets that still contain the legacy `R1 2026–2027` shell are recognized by the SQLite importer as the same pristine seed state. The administration page preserves its settings-copy option and also provides a blank-season option. Activation is rejected with `409 season_not_ready` until the season has a theme, event and voting dates, its own rubric version, and recorded board approval. An administrator records or revokes approval in the season manager; the record stores the admin user ID and timestamp. Approval cannot be revoked while a blank-start season is active. Activation never seeds a blank season from the live event.
 
 `PATCH /api/seasons/:id/tweaks` accepts `UpdateSeasonTweaksRequest`:
 

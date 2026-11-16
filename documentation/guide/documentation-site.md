@@ -5,7 +5,13 @@ description: Theme, interactive components, and live dependency tables for the n
 
 # Documentation Site
 
-This site is built with [VitePress](https://vitepress.dev) and a custom terminal-inspired theme. The theme lives in `documentation/.vitepress/theme/`.
+This site is built with [VitePress](https://vitepress.dev) and a custom theme that mirrors the main application. The theme lives in `documentation/.vitepress/theme/`.
+
+## Typography and Color
+
+The docs use the same **Monaspace Neon** webfont as the application. The font file in `documentation/public/fonts/` is served under `/docs/fonts/` and declared with `@font-face` in `documentation/.vitepress/theme/style.css`. The `--bh-font-mono` and `--bh-font-display` tokens therefore match the app shell, and VitePress's own `--vp-font-family-base` / `--vp-font-family-mono` variables point at the same stack.
+
+The dark palette mirrors the application surface (`#0a0f1a` background, `#111827` panels, `#22c55e` primary). All colors are exposed as `--bh-*` custom properties so both light and dark modes stay consistent.
 
 ## Theme Components
 
@@ -79,6 +85,16 @@ Render live dependency tables parsed from the root `package.json`. The data is l
 ```md
 <PackageVersions />
 ```
+
+### TestCount
+
+Render the authoritative test count from `tests/.test-meta.json`:
+
+```md
+<TestCount />
+```
+
+The value is loaded by `documentation/.vitepress/data/tests.data.ts` and refreshes when the metadata file changes.
 
 The component displays:
 

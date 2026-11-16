@@ -1,7 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
-   NETHACK — Modern Terminal Emulator Theme
-   Network Hackathon Documentation
+   NETHACK — Documentation Theme
+   Shares the main site's Monaspace Neon typography and terminal look.
    ═══════════════════════════════════════════════════════════════ */
+
+@font-face {
+    font-family: "Monaspace Neon";
+    src: url("/docs/fonts/Monaspace-Neon.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
 
 /* ── CSS Custom Properties ──────────────────────────────────── */
 :root {
@@ -36,9 +44,10 @@
     --bh-terminal-header: #f6f8fa;
     --bh-terminal-text: #1f2328;
 
-    /* Typography */
-    --bh-font-mono: "IBM Plex Mono", "Space Mono", "Courier New", Courier, monospace;
-    --bh-font-display: "VT323", "IBM Plex Mono", "Space Mono", monospace;
+    /* Typography — identical to the application shell */
+    --bh-font-mono:
+        "Monaspace Neon", ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
+    --bh-font-display: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
     --bh-transition-speed: 0.15s;
 
     /* Legacy CRT aliases (used by home page components) */
@@ -53,6 +62,8 @@
     --crt-text: var(--bh-text);
 
     /* VitePress variable overrides */
+    --vp-font-family-base: var(--bh-font-mono);
+    --vp-font-family-mono: var(--bh-font-mono);
     --vp-c-bg: var(--bh-bg);
     --vp-c-bg-alt: var(--bh-bg-soft);
     --vp-c-bg-elv: var(--bh-bg-soft);
@@ -85,31 +96,31 @@
 }
 
 .dark {
-    /* Dark mode — modern terminal emulator */
-    --bh-green: #23d18b;
+    /* Dark mode — matches the main application surface */
+    --bh-green: #22c55e;
     --bh-green-dim: #16a34a;
-    --bh-green-subtle: rgba(35, 209, 139, 0.1);
-    --bh-text: #d4d4d4;
-    --bh-text-muted: #8b949e;
-    --bh-bg: #0d1117;
-    --bh-bg-soft: #161b22;
-    --bh-bg-mute: #21262d;
-    --bh-border: #30363d;
-    --bh-code-bg: #0d1117;
-    --bh-selection-bg: rgba(35, 209, 139, 0.2);
-    --bh-selection-text: #d4d4d4;
-    --bh-shadow: rgba(0, 0, 0, 0.35);
-    --bh-scrollbar-thumb: #30363d;
-    --bh-scrollbar-track: #0d1117;
-    --bh-btn-bg: #238636;
+    --bh-green-subtle: rgba(34, 197, 94, 0.1);
+    --bh-text: #e6edf3;
+    --bh-text-muted: #94a3b8;
+    --bh-bg: #0a0f1a;
+    --bh-bg-soft: #111827;
+    --bh-bg-mute: #162033;
+    --bh-border: #233047;
+    --bh-code-bg: #0d1424;
+    --bh-selection-bg: rgba(34, 197, 94, 0.22);
+    --bh-selection-text: #e6edf3;
+    --bh-shadow: rgba(0, 0, 0, 0.45);
+    --bh-scrollbar-thumb: #2b3a55;
+    --bh-scrollbar-track: #0a0f1a;
+    --bh-btn-bg: #16a34a;
     --bh-btn-text: #ffffff;
-    --bh-btn-hover: #2ea043;
-    --bh-table-stripe: #161b22;
+    --bh-btn-hover: #22c55e;
+    --bh-table-stripe: #111827;
     --bh-crt-glow: none;
-    --bh-terminal-bg: #0d1117;
-    --bh-terminal-border: #30363d;
-    --bh-terminal-header: #161b22;
-    --bh-terminal-text: #d4d4d4;
+    --bh-terminal-bg: #0d1424;
+    --bh-terminal-border: #233047;
+    --bh-terminal-header: #111827;
+    --bh-terminal-text: #e6edf3;
 
     /* Legacy CRT aliases */
     --crt-green: var(--bh-green);
@@ -129,7 +140,7 @@
     --vp-c-bg-elv-mute: var(--bh-bg-mute);
     --vp-c-text-1: var(--bh-text);
     --vp-c-text-2: var(--bh-text-muted);
-    --vp-c-text-3: #6a9a6a;
+    --vp-c-text-3: #6b8299;
     --vp-c-border: var(--bh-border);
     --vp-c-divider: var(--bh-border);
     --vp-c-gutter: var(--bh-border);
@@ -148,7 +159,7 @@
     --vp-code-copy-code-active-text: var(--bh-green);
     --vp-custom-block-tip-border: var(--bh-green);
     --vp-custom-block-tip-text: var(--bh-text);
-    --vp-custom-block-tip-bg: rgba(51, 255, 102, 0.08);
+    --vp-custom-block-tip-bg: rgba(34, 197, 94, 0.08);
     --vp-custom-block-tip-title: var(--bh-green);
     --vp-sidebar-bg-color: var(--bh-bg-soft);
     --vp-nav-bg-color: var(--bh-bg);
@@ -1568,6 +1579,58 @@ tr:hover td {
 .ascii-art {
     text-shadow: none !important;
     letter-spacing: 0;
+}
+
+/* ── Final polish: match the application's calmer, high-contrast surface ── */
+.VPNavBar {
+    backdrop-filter: blur(14px);
+    background-color: color-mix(in srgb, var(--bh-bg) 88%, transparent) !important;
+}
+
+.VPNavBrand .title {
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.dark .VPNavBrand .title {
+    text-shadow: 0 0 18px color-mix(in srgb, var(--bh-green) 55%, transparent);
+}
+
+.vp-doc h1 {
+    font-weight: 800;
+    letter-spacing: -0.035em;
+}
+
+.vp-doc h2,
+.vp-doc h3 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.vp-doc a {
+    text-underline-offset: 3px;
+}
+
+.vp-doc table,
+.vp-doc div[class*="language-"],
+.custom-block {
+    border-radius: 12px;
+}
+
+.vp-doc div[class*="language-"] {
+    box-shadow: 0 8px 30px color-mix(in srgb, var(--bh-shadow) 70%, transparent);
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+    letter-spacing: 0.01em;
+}
+
+.VPSidebarItem .item {
+    border-radius: 6px;
+}
+
+.VPFeature {
+    border-radius: 14px;
 }
 
 /* Reduce motion for accessibility */

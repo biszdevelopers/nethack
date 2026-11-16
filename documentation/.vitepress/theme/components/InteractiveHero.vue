@@ -25,7 +25,7 @@ const bootSequence = [
     "All documentation systems ready.",
     "",
     "> docs --status=READY",
-    "> R1 2026–2027 — in preparation",
+    "> Hackathon platform documentation",
     "> Awaiting operators...",
 ];
 
@@ -42,11 +42,12 @@ const terminalCommands = [
     { type: "prompt", text: "$ cat docs/welcome.txt" },
     { type: "output", text: "" },
     { type: "output", text: "BIBS-C Network Hackathon Platform" },
-    { type: "output", text: "R1 2026–2027 — in preparation" },
+    { type: "output", text: "Season details are managed from the admin portal" },
     { type: "output", text: "" },
     { type: "output", text: "Stack: Nuxt 4 + Nitro + Vue 3 + PostgreSQL" },
     { type: "output", text: "Auth: basis-auth OpenID Connect" },
     { type: "output", text: "Features: teams, submissions, peer voting, judge rubrics" },
+    { type: "output", text: "Admin: seasons, announcements, rubrics, results" },
     { type: "output", text: "" },
     { type: "prompt", text: "$ _" },
 ];
@@ -97,7 +98,7 @@ onMounted(() => {
                 <div class="ascii-art hero-art">{{ asciiBanner }}</div>
                 <h2 class="hero-subtitle">Network Hackathon Platform Docs</h2>
                 <p class="hero-tagline">
-                    R1 2026–2027 &nbsp;|&nbsp; In preparation &nbsp;|&nbsp; BIBS-C Network
+                    BIBS-C Network &nbsp;|&nbsp; Season configuration lives in the admin portal
                 </p>
 
                 <div class="hero-status">
@@ -105,8 +106,11 @@ onMounted(() => {
                         <span class="status-dot"></span>
                         System Online
                     </span>
-                    <span class="status-center">HACKATHON_STATUS: READY</span>
-                    <span>Nodes: 130</span>
+                    <span class="status-center">DOCUMENTATION_STATUS: READY</span>
+                    <span>
+                        Tests:
+                        <TestCount />
+                    </span>
                 </div>
 
                 <div class="hero-actions">
@@ -158,6 +162,12 @@ onMounted(() => {
                 <div class="network-node">
                     <div class="node-title">Hackathon Engine</div>
                     <div class="node-desc">Teams, submissions, peer voting, judge rubrics</div>
+                </div>
+                <div class="network-node">
+                    <div class="node-title">Season Studio</div>
+                    <div class="node-desc">
+                        Admin-editable announcements, schedules, themes, and rubrics
+                    </div>
                 </div>
                 <div class="network-node">
                     <div class="node-title">Dev Portal</div>

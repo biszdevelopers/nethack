@@ -39,9 +39,10 @@ The legacy singleton (`id = 1`) is retained for export, import compatibility, an
 | `results_open_timestamp` | `BIGINT` | Results visibility timestamp in epoch milliseconds |
 | `theme_name` | `TEXT` | Hackathon theme name |
 | `theme_description` | `TEXT` | Hackathon theme description |
+| `announcement` | `TEXT` | Admin-editable home-page announcement |
 | `live_overrides` | `JSONB` | Portal-managed operational switches that override `HACKATHON.yml` |
 
-Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, and `max_votes_per_user` are stored in `live_overrides` and applied on top of the manifest. Schedule, theme, and the rubric remain manifest-owned, so the operational switches keep working with a remote, read-only manifest.
+Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`, and `announcement` are stored in `live_overrides` and applied on top of the manifest. The announcement also has a dedicated column so it can be read without parsing the JSON. Schedule, theme, and the rubric remain manifest-owned, so the operational switches and announcement keep working with a remote, read-only manifest.
 
 Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 
@@ -145,13 +146,14 @@ Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted a
 
 ### `seasons`
 
-| Column      | Type                                | Description                                  |
-| ----------- | ----------------------------------- | -------------------------------------------- |
-| `id`        | `INTEGER PRIMARY KEY AUTOINCREMENT` | Season ID                                    |
-| `name`      | `TEXT NOT NULL UNIQUE`              | Season name                                  |
-| `is_active` | `INTEGER NOT NULL DEFAULT 0`        | Only one season can be active (CHECK 0 or 1) |
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | Season ID |
+| `name` | `TEXT NOT NULL UNIQUE` | Season name |
+| `is_active` | `INTEGER NOT NULL DEFAULT 0` | Only one season can be active (CHECK 0 or 1) |
+| `announcement` | `TEXT` | Editable home-page announcement |
 
-Each season stores a snapshot of its event settings. With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+Each season stores a snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
 
 The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 

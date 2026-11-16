@@ -15,7 +15,7 @@ Every API endpoint in the system enforces the following security measures:
 
 | Measure | Implementation |
 | --- | --- |
-| **Rate limiting** | All endpoints are wrapped with `applyRateLimit()` using one of four tier configs (`DEFAULT`, `AUTH`, `VOTE`, `UPLOAD`). Returns 429 with `Retry-After` header when exceeded. |
+| **Rate limiting** | All endpoints are wrapped with `applyRateLimit()` using one of five tier configs (`DEFAULT`, `JUDGING_DRAFT`, `AUTH`, `VOTE`, `UPLOAD`). Returns 429 with `Retry-After` header when exceeded. |
 | **Input validation** | `readValidatedBody(event, Schema.parse)` or `getValidatedQuery(event, Schema.parse)` with bounded Zod schemas. Streaming and webhook bodies retain their byte limits before schema validation. |
 | **Length-bounded inputs** | All string fields in Zod schemas have explicit `min()`/`max()` bounds to prevent resource exhaustion. Example: `name: z.string().min(1).max(50)`. |
 | **Authentication** | Protected APIs validate a basis-auth token from the encrypted HTTP-only cookie or an explicit bearer header. The separate browser session cookie alone is not authorization. |
@@ -337,7 +337,7 @@ Submit peer voting ballot.
 
 ### GET `/api/ballot/summary`
 
-Developer endpoint returning per-season judging progress (project, submitted, and scored counts). The judge's own team is excluded from all three counts so progress can reach completion.
+Developer endpoint returning per-season judging progress (project, submitted, and scored counts). The judge's own team is excluded from all three counts so progress can reach completion. `scored_count` counts only distinct **submitted** teams the current judge has evaluated, so a leftover score on an unsubmitted team cannot make the queue look complete.
 
 | Field        | Details                                                             |
 | ------------ | ------------------------------------------------------------------- |
@@ -364,7 +364,7 @@ Get the currently active season (public).
 | Field | Details |
 | --- | --- |
 | **Auth** | None |
-| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles); theme is hidden when hackathon status is `not_started` or `paused` |
+| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); theme is hidden when hackathon status is `not_started` or `paused` |
 
 ### PATCH `/api/seasons/active`
 
@@ -473,7 +473,7 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
+Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |

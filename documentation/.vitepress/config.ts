@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
     title: "nethack",
-    description: "Internal documentation for the nethack BIBS-C Network Hackathon platform",
+    description: "Documentation for the nethack BIBS-C Network Hackathon platform",
     base: "/docs/",
     lang: "en-US",
     appearance: "dark",
@@ -32,6 +32,7 @@ export default defineConfig({
             { text: "Frontend", link: "/frontend/components" },
             { text: "Backend", link: "/backend/api-reference" },
             { text: "Shared", link: "/shared/schemas" },
+            { text: "Deployment", link: "/deployment/security" },
         ],
         sidebar: {
             "/guide/": [
@@ -114,7 +115,7 @@ export default defineConfig({
         search: {
             provider: "local",
         },
-        socialLinks: [{ icon: "github", link: "https://github.com" }],
+        socialLinks: [{ icon: "github", link: "https://github.com/biszdevelopers/nethack" }],
         footer: {
             message: "BIBS-C Network Hackathon Documentation",
             copyright: "Copyright © 2026-2027 BISZ Developers' Club & BINJ Hack Club",
@@ -124,7 +125,7 @@ export default defineConfig({
             label: "On this page",
         },
         editLink: {
-            pattern: "https://github.com/basishacks/basishacks-r2/edit/main/documentation/:path",
+            pattern: "https://github.com/biszdevelopers/nethack/edit/main/documentation/:path",
             text: "Edit this page",
         },
     },
