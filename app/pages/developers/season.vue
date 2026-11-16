@@ -529,7 +529,10 @@ async function deleteSeason() {
                     v-model="activeTab"
                     :items="tabItems"
                     :content="false"
-                    :ui="{ list: 'w-full overflow-x-auto', trigger: 'whitespace-nowrap' }"
+                    :ui="{
+                        list: 'w-full overflow-x-auto',
+                        trigger: 'whitespace-nowrap data-[state=active]:bg-primary',
+                    }"
                     class="w-full"
                 />
 
