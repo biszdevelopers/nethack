@@ -776,17 +776,14 @@ tr:hover td {
 }
 
 .boot-line {
-    opacity: 0;
     animation: boot-appear 0.15s ease forwards;
 }
 
 @keyframes boot-appear {
     from {
-        opacity: 0;
         transform: translateY(4px);
     }
     to {
-        opacity: 1;
         transform: translateY(0);
     }
 }
@@ -946,7 +943,6 @@ tr:hover td {
 }
 
 .bh-terminal .terminal-line {
-    opacity: 0;
     animation: term-appear 0.2s ease forwards;
     white-space: pre-wrap;
     word-break: break-all;
@@ -954,10 +950,10 @@ tr:hover td {
 
 @keyframes term-appear {
     from {
-        opacity: 0;
+        transform: translateY(2px);
     }
     to {
-        opacity: 1;
+        transform: translateY(0);
     }
 }
 
@@ -1683,4 +1679,10 @@ tr:hover td {
     html {
         scroll-behavior: auto;
     }
+}
+
+/* Line numbers are annotated text; keep them above the contrast threshold. */
+.vp-doc .line-numbers-wrapper,
+.vp-doc .line-numbers-wrapper .line-number {
+    color: var(--bh-text-muted);
 }

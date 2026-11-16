@@ -73,7 +73,7 @@ const actions = ref([
                 Welcome
                 <span class="bold">{{ data!.name || data!.email }}</span>
                 ! You don't have a team yet. You can
-                <ULink href="/dashboard/teams">create a team</ULink>
+                <ULink href="/dashboard/teams" class="underline">create a team</ULink>
                 or accept an invitation from another team!
             </p>
 
@@ -135,7 +135,7 @@ const actions = ref([
             </p>
             <p class="mb-4">
                 Please review the
-                <ULink href="/rules">rules page</ULink>
+                <ULink href="/rules" class="underline">rules page</ULink>
                 for the most up-to-date rules and requirements.
             </p>
 

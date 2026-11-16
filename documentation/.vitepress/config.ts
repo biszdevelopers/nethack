@@ -131,5 +131,7 @@ export default defineConfig({
     },
     markdown: {
         lineNumbers: true,
+        // github-dark alone renders comments at 3.4:1, below WCAG AA.
+        theme: { light: "github-light", dark: "github-dark-high-contrast" },
     },
 });

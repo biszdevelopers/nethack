@@ -83,7 +83,7 @@ onMounted(() => {
 <template>
     <div class="vp-interactive-hero">
         <div v-if="!showMain" class="boot-sequence">
-            <div class="ascii-art boot-art">{{ asciiBanner }}</div>
+            <div class="ascii-art boot-art" tabindex="0">{{ asciiBanner }}</div>
             <div class="boot-lines">
                 <p v-for="(line, i) in bootLines" :key="i" class="boot-line">
                     <span v-if="line.startsWith('>')" class="prompt">$</span>
@@ -95,7 +95,7 @@ onMounted(() => {
 
         <div v-else class="main-content">
             <div class="hero-section">
-                <div class="ascii-art hero-art">{{ asciiBanner }}</div>
+                <div class="ascii-art hero-art" tabindex="0">{{ asciiBanner }}</div>
                 <h2 class="hero-subtitle">Network Hackathon Platform Docs</h2>
                 <p class="hero-tagline">
                     BIBS-C Network &nbsp;|&nbsp; Season configuration lives in the admin portal
