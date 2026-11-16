@@ -155,6 +155,75 @@ describe("basis-auth subject state", () => {
         ).rejects.toMatchObject({ statusCode: 401 });
     });
 
+    it("fails closed on a non-404 user-state response and backs off", async () => {
+        configureInternalApi();
+        vi.resetModules();
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "https://hacks.example.test");
+        const { assertAccessTokenActive } = await import("~~/server/utils/basis-auth-state");
+        const now = Math.floor(Date.now() / 1000);
+        const fetchMock = vi.fn(async () => new Response(null, { status: 503 }));
+        vi.stubGlobal("fetch", fetchMock);
+
+        await expect(
+            assertAccessTokenActive(event, { sub: "unavailable", iat: now, jti: "i" }),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        await expect(
+            assertAccessTokenActive(event, { sub: "unavailable", iat: now, jti: "j" }),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats an unknown subject as definitive and retries on the next request", async () => {
+        configureInternalApi();
+        vi.resetModules();
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "https://hacks.example.test");
+        const { assertAccessTokenActive } = await import("~~/server/utils/basis-auth-state");
+        const now = Math.floor(Date.now() / 1000);
+        const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+        vi.stubGlobal("fetch", fetchMock);
+
+        await expect(
+            assertAccessTokenActive(event, { sub: "missing", iat: now, jti: "k" }),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        await expect(
+            assertAccessTokenActive(event, { sub: "missing", iat: now, jti: "l" }),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("honours a Date-valued barrier returned by the private listener", async () => {
+        configureInternalApi();
+        vi.resetModules();
+        vi.stubEnv("NODE_ENV", "development");
+        const { assertAccessTokenActive } = await import("~~/server/utils/basis-auth-state");
+        const now = Math.floor(Date.now() / 1000);
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(
+                async () =>
+                    ({
+                        ok: true,
+                        body: null,
+                        json: async () => ({
+                            user: {
+                                disabled: false,
+                                tokensValidAfter: new Date((now - 30) * 1000),
+                            },
+                        }),
+                    }) as unknown as Response,
+            ),
+        );
+
+        await expect(
+            assertAccessTokenActive(event, { sub: "dated", iat: now - 60, jti: "m" }),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        await expect(
+            assertAccessTokenActive(event, { sub: "dated", iat: now, jti: "n" }),
+        ).resolves.toBeUndefined();
+    });
+
     it("keeps a loopback instance usable when the remote listener is not routable", async () => {
         configureInternalApi();
         vi.resetModules();

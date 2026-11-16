@@ -12,7 +12,6 @@ const EXPIRY_RETENTION_SECONDS = 300;
 const UNKNOWN_EXPIRY_RETENTION_SECONDS = 7 * 24 * 60 * 60;
 const SUBJECT_CACHE_MS = 60_000;
 const SUBJECT_FAILURE_BACKOFF_MS = 15_000;
-const SUBJECT_CACHE_LIMIT = 2000;
 
 export function invalidAccessToken(): never {
     throw createError({
@@ -157,7 +156,6 @@ async function loadBasisAuthSubjectState(subject: string): Promise<SubjectState 
                 ? tokensValidAfter
                 : null,
     };
-    if (subjectCache.size >= SUBJECT_CACHE_LIMIT) subjectCache.clear();
     subjectCache.set(subject, { state, expiresAt: Date.now() + SUBJECT_CACHE_MS });
     return state;
 }
