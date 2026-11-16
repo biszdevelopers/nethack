@@ -150,7 +150,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
 
 <template>
     <div>
-        <h2 class="text-3xl bold mb-4 flex flex-wrap items-center gap-4">
+        <h1 class="text-3xl bold mb-4 flex flex-wrap items-center gap-4">
             <span class="min-w-0 break-words">
                 Your team:
                 <span class="glow">{{ team.name }}</span>
@@ -209,7 +209,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                     </UForm>
                 </template>
             </UModal>
-        </h2>
+        </h1>
 
         <ul class="grid grid-cols-1 gap-4 lg:grid-cols-2 mb-4">
             <li v-for="user in users" :key="user.id">
