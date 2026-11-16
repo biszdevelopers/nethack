@@ -300,6 +300,7 @@ In production, these are configured in the server environment.
 - The judging queue marks a project evaluated only when the current judge has a committed `team_scores` row. After finalization the workspace re-reads the page and the progress summary from the server, so a scored project is never shown as unscored and **Next unscored** scans committed state.
 - User-authored project text is rendered with `SafeComark` → `@comark/vue`'s `Markdown` component using the `value` prop. Default plugins are disabled (no raw HTML parsing), `breaks()` preserves newlines, and links map to `SafeLink`.
 - The `/api/debug/*` routes expose DeepSeek chat sessions and existing file listings; these are intended for development only.
+- The administrator portal embeds the protected docs at `/developers/docs` in a same-origin iframe; `/docs/` also works standalone. Docs routes use `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'`, while every other route keeps `DENY` / `'none'`. The docs theme's **Portal** link uses `target="_top"` to leave the iframe.
 
 ---
 

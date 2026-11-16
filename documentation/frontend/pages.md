@@ -5,7 +5,7 @@ description: File-based routes in the nethack frontend — home, dashboard, voti
 
 # Pages
 
-The nethack frontend contains **27 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
+The nethack frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
 
 ## Public Pages
 
@@ -344,6 +344,14 @@ The table includes a **Members** column that renders a `UserAvatarGroup` (with `
 **File:** `app/pages/developers/deepseek.vue`
 
 DeepSeek AI chat interface.
+
+**Layout:** `developers-dashboard`
+
+### `/developers/docs`
+
+**File:** `app/pages/developers/docs.vue`
+
+Admin-only documentation viewer. Embeds the protected VitePress site at `/docs/` in a full-height same-origin iframe, so organizers keep the portal sidebar while reading the reference. The navbar action opens the standalone `/docs/` site in a new tab. The docs theme's **Portal** link uses `target="_top"` to return the outer portal window from inside the frame.
 
 **Layout:** `developers-dashboard`
 

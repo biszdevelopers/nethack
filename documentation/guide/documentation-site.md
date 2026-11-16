@@ -11,6 +11,10 @@ This site is built with [VitePress](https://vitepress.dev) and a custom theme th
 
 The docs use the same **Monaspace Neon** webfont as the application. The font file in `documentation/public/fonts/` is served under `/docs/fonts/` and declared with `@font-face` in `documentation/.vitepress/theme/style.css`. The `--bh-font-mono` and `--bh-font-display` tokens therefore match the app shell, and VitePress's own `--vp-font-family-base` / `--vp-font-family-mono` variables point at the same stack.
 
+## Portal Integration
+
+The administrator portal embeds the docs at `/developers/docs` in a full-height iframe and keeps the standalone `/docs/` route available. The custom `Layout.vue` adds a return link to the nav bar (and the mobile nav screen) with `target="_top"`. It detects the frame at runtime: embedded views show **Portal** (`/developers`) and standalone views show **Home** (`/`), so the link returns the outer application window instead of trying to load `/developers` inside the frame.
+
 The dark palette mirrors the application surface (`#0a0f1a` background, `#111827` panels, `#22c55e` primary). All colors are exposed as `--bh-*` custom properties so both light and dark modes stay consistent.
 
 ## Theme Components
