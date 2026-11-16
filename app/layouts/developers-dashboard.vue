@@ -38,8 +38,7 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
                 {
                     label: "Documentation",
                     icon: "i-lucide-book-open",
-                    to: "/docs/",
-                    external: true,
+                    to: "/developers/docs",
                 },
                 { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
                 {

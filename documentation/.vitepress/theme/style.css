@@ -1582,6 +1582,43 @@ tr:hover td {
 }
 
 /* ── Final polish: match the application's calmer, high-contrast surface ── */
+.vp-portal-return {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.75rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--bh-border);
+    border-radius: 999px;
+    color: var(--bh-text-muted);
+    font-family: var(--bh-font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    transition:
+        color 0.15s ease,
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+}
+
+.vp-portal-return:hover {
+    border-color: var(--bh-green);
+    background: var(--bh-green-subtle);
+    color: var(--bh-green);
+    text-decoration: none;
+}
+
+.vp-portal-return-mobile {
+    margin: 0.5rem 1.25rem 0.75rem;
+}
+
+@media (max-width: 768px) {
+    .vp-portal-return:not(.vp-portal-return-mobile) {
+        display: none;
+    }
+}
+
 .VPNavBar {
     backdrop-filter: blur(14px);
     background-color: color-mix(in srgb, var(--bh-bg) 88%, transparent) !important;

@@ -12,7 +12,8 @@ export function applySecurityHeaders(event: H3Event): void {
 
     // API responses may contain caller-specific data. Prevent browsers and
     // shared intermediaries from retaining any API response, including errors.
-    if (event.path === "/api" || event.path.startsWith("/api/")) {
+    const pathname = (event.path ?? "").split("?")[0] || "";
+    if (pathname === "/api" || pathname.startsWith("/api/")) {
         setHeader(event, "Cache-Control", "private, no-store");
     }
 
@@ -20,8 +21,12 @@ export function applySecurityHeaders(event: H3Event): void {
     // eligibility for the HSTS preload list.
     setHeader(event, "Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
 
+    // Only the protected documentation is allowed to be framed, so the admin
+    // portal can embed it without weakening the app's frame protections.
+    const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
+
     // Prevent the site from being embedded in frames / iframes (clickjacking).
-    setHeader(event, "X-Frame-Options", "DENY");
+    setHeader(event, "X-Frame-Options", isDocs ? "SAMEORIGIN" : "DENY");
 
     // Stop browsers from MIME-sniffing responses away from the declared type.
     setHeader(event, "X-Content-Type-Options", "nosniff");
@@ -56,6 +61,6 @@ export function applySecurityHeaders(event: H3Event): void {
     setHeader(
         event,
         "Content-Security-Policy",
-        `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`,
+        `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors ${isDocs ? "'self'" : "'none'"}`,
     );
 }

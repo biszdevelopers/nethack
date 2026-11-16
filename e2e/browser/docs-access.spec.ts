@@ -77,6 +77,20 @@ test("docs pages and assets require judge or administrator permission", async ({
     const admin = await adminContext.newPage();
     await loginAs(admin, "admin@e2e.basishacks.invalid", "/developers");
     await admin.goto("/developers");
-    await expect(admin.getByRole("link", { name: "Documentation", exact: true })).toBeVisible();
+    const documentationLink = admin.getByRole("link", { name: "Documentation", exact: true });
+    await expect(documentationLink).toBeVisible();
+    await documentationLink.click();
+    await expect(admin).toHaveURL((url) => url.pathname === "/developers/docs");
+    await expect(
+        admin.getByRole("link", { name: /Open in new tab|Open documentation in a new tab/ }),
+    ).toBeVisible();
+    const docsFrame = admin.frameLocator('iframe[title="nethack documentation"]');
+    await expect(
+        docsFrame.getByRole("heading", { name: "Network Hackathon Platform Docs" }),
+    ).toBeVisible();
+    const portalLink = docsFrame.getByRole("link", { name: /Portal/ });
+    await expect(portalLink).toBeVisible();
+    await portalLink.click();
+    await expect(admin).toHaveURL((url) => url.pathname === "/developers");
     await adminContext.close();
 });

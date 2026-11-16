@@ -81,6 +81,41 @@ describe("security headers middleware", () => {
         expect(csp).toContain("frame-ancestors 'none'");
     });
 
+    it("allows only the protected docs routes to be framed on the same origin", async () => {
+        const docsRoot = createMockEvent("/docs");
+        await middleware(docsRoot);
+
+        expect(docsRoot.node.res.getHeader("x-frame-options")).toBe("SAMEORIGIN");
+        expect(docsRoot.node.res.getHeader("content-security-policy")).toContain(
+            "frame-ancestors 'self'",
+        );
+
+        const docs = createMockEvent("/docs/guide/getting-started");
+        await middleware(docs);
+
+        expect(docs.node.res.getHeader("x-frame-options")).toBe("SAMEORIGIN");
+        expect(docs.node.res.getHeader("content-security-policy")).toContain(
+            "frame-ancestors 'self'",
+        );
+
+        const lookalike = createMockEvent("/docsomething");
+        await middleware(lookalike);
+
+        expect(lookalike.node.res.getHeader("x-frame-options")).toBe("DENY");
+        expect(lookalike.node.res.getHeader("content-security-policy")).toContain(
+            "frame-ancestors 'none'",
+        );
+
+        const missingPath = createMockEvent("/docs");
+        missingPath.path = undefined as unknown as string;
+        await middleware(missingPath);
+
+        expect(missingPath.node.res.getHeader("x-frame-options")).toBe("DENY");
+        expect(missingPath.node.res.getHeader("content-security-policy")).toContain(
+            "frame-ancestors 'none'",
+        );
+    });
+
     it("disables the expected permissions in Permissions-Policy", async () => {
         const event = createMockEvent("/");
         await middleware(event);
