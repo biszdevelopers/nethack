@@ -99,6 +99,7 @@
             <div class="xl:mt-auto max-xl:flex items-center justify-start max-xl:w-full">
                 <img
                     src="/assets/d3048fe7-b43b-4a95-a0a8-1d654819ddb3"
+                    alt=""
                     class="max-xl:h-[40vh] xl:w-[20vw] max-xl:-scale-y-100"
                 />
             </div>
@@ -164,6 +165,7 @@
             <div class="xl:mt-auto max-xl:flex items-center justify-end max-xl:w-full">
                 <img
                     src="/assets/aea63660-a483-4308-bd3c-0934bb1e3339"
+                    alt=""
                     class="max-xl:h-[40vh] xl:w-[20vw]"
                 />
             </div>

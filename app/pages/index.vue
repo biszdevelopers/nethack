@@ -86,7 +86,9 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
 
         <UCollapsible class="mb-4">
             <template #default="{ open }">
-                <p>{{ open ? "▼" : "▶" }} Detailed schedule</p>
+                <button type="button" class="text-left">
+                    {{ open ? "▼" : "▶" }} Detailed schedule
+                </button>
             </template>
 
             <template #content>

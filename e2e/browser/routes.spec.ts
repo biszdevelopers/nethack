@@ -1,9 +1,11 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL;
 if (!baseURL) throw new Error("Set PLAYWRIGHT_BASE_URL in .env for the browser tests.");
 
 const widths = [320, 1440] as const;
+const accessibilityTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 const PUBLIC_ROUTES = [
     "/",
@@ -99,6 +101,16 @@ async function sweep(page: Page, routes: readonly string[]) {
                     { timeout: 10_000, message: `${route} overflows at ${width}px` },
                 )
                 .toBeLessThanOrEqual(0);
+
+            if (width === 320) {
+                const accessibility = await new AxeBuilder({ page })
+                    .withTags(accessibilityTags)
+                    .analyze();
+                expect(
+                    accessibility.violations,
+                    `${route} at ${width}px: ${JSON.stringify(accessibility.violations, null, 2)}`,
+                ).toEqual([]);
+            }
 
             expect(pageErrors, `${route} at ${width}px threw in the browser`).toEqual([]);
             expect(serverErrors, `${route} at ${width}px returned a server error`).toEqual([]);

@@ -40,12 +40,17 @@ export default defineNitroErrorHandler((input, event) => {
 
     if ((getRequestHeader(event, "accept") ?? "").includes("text/html")) {
         setResponseHeader(event, "content-type", "text/html; charset=utf-8");
-        // The shared renderer hardcodes a 500px image, which overflows narrow screens.
-        const html = renderErrorPage(apiError.toJSON()).replace(
+        // The shared renderer returns a fragment with a hardcoded 500px image.
+        // Wrap it in a real document so the page has a language, a title, and a
+        // responsive viewport, and constrain the image on narrow screens.
+        const fragment = renderErrorPage(apiError.toJSON()).replace(
             "<img width=500 ",
-            '<img width="500" style="max-width:100%;height:auto" ',
+            '<img width="500" alt="Sad mascot" style="max-width:100%;height:auto" ',
         );
-        return send(event, html);
+        return send(
+            event,
+            `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${fragment}</body></html>`,
+        );
     }
 
     setResponseHeader(event, "content-type", "application/json; charset=utf-8");

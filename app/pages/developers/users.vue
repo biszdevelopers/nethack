@@ -9,6 +9,8 @@ definePageMeta({
     middleware: ["auth"],
 });
 
+useHead({ title: `Users | ${WEBSITE_NAME}` });
+
 const UserAvatar = resolveComponent("UserAvatar");
 const UserPopover = resolveComponent("UserPopover");
 const UButton = resolveComponent("UButton");
@@ -106,14 +108,14 @@ const columns: TableColumn<AdminUser>[] = [
                     : table.getIsAllPageRowsSelected(),
                 "onUpdate:modelValue": (value: boolean | "indeterminate") =>
                     table.toggleAllPageRowsSelected(!!value),
-                ariaLabel: "Select all",
+                "aria-label": "Select all users",
             }),
         cell: ({ row }) =>
             h(UCheckbox, {
                 modelValue: row.getIsSelected(),
                 "onUpdate:modelValue": (value: boolean | "indeterminate") =>
                     row.toggleSelected(!!value),
-                ariaLabel: "Select row",
+                "aria-label": `Select ${row.original.name ?? row.original.email}`,
             }),
     },
     {
