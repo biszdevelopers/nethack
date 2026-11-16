@@ -71,30 +71,55 @@ const PRISTINE_TEMPLATE_DESCRIPTION = "The original BIBS-C judging rubric.";
 
 /**
  * `db:migrate` also creates the inactive next-season shell. It is part of the
- * fresh seed state, so imports must recognize and clear it too.
+ * fresh seed state, so imports must recognize and clear it too. Older targets
+ * may still carry the legacy shell name, so accept both.
  */
-const PRISTINE_R1_SEASON_SEED = {
-    name: "R1 2026–2027",
-    is_blank_start: 1,
-    is_active: 0,
-    status: "not_started",
-    voting_enabled: 0,
-    results_published: 0,
-    judging_open: 0,
-    show_scores: 0,
-    show_ranking: 0,
-    max_votes_per_user: 0,
-    schedule_start: null,
-    schedule_end: null,
-    start_timestamp: 0,
-    end_timestamp: 0,
-    voting_start_timestamp: 0,
-    voting_end_timestamp: 0,
-    results_open_timestamp: 0,
-    theme_name: null,
-    theme_description: null,
-    rubric_version_id: null,
-};
+const PRISTINE_NEXT_SEASON_SEEDS = [
+    {
+        name: "Next season",
+        is_blank_start: 1,
+        is_active: 0,
+        status: "not_started",
+        voting_enabled: 0,
+        results_published: 0,
+        judging_open: 0,
+        show_scores: 0,
+        show_ranking: 0,
+        max_votes_per_user: 0,
+        schedule_start: null,
+        schedule_end: null,
+        start_timestamp: 0,
+        end_timestamp: 0,
+        voting_start_timestamp: 0,
+        voting_end_timestamp: 0,
+        results_open_timestamp: 0,
+        theme_name: null,
+        theme_description: null,
+        rubric_version_id: null,
+    },
+    {
+        name: "R1 2026–2027",
+        is_blank_start: 1,
+        is_active: 0,
+        status: "not_started",
+        voting_enabled: 0,
+        results_published: 0,
+        judging_open: 0,
+        show_scores: 0,
+        show_ranking: 0,
+        max_votes_per_user: 0,
+        schedule_start: null,
+        schedule_end: null,
+        start_timestamp: 0,
+        end_timestamp: 0,
+        voting_start_timestamp: 0,
+        voting_end_timestamp: 0,
+        results_open_timestamp: 0,
+        theme_name: null,
+        theme_description: null,
+        rubric_version_id: null,
+    },
+];
 
 function matchesFields(row, expected) {
     return (
@@ -162,7 +187,9 @@ export function inspectFreshImportTarget({ counts, rows }) {
         matchesFields(row, { ...PRISTINE_SEASON_SEED, rubric_version_id: version?.id }),
     );
     const remaining = seasons.filter((row) => row !== season);
-    const nextSeason = remaining.find((row) => matchesFields(row, PRISTINE_R1_SEASON_SEED));
+    const nextSeason = remaining.find((row) =>
+        PRISTINE_NEXT_SEASON_SEEDS.some((seed) => matchesFields(row, seed)),
+    );
     if (
         !season ||
         remaining.length > 1 ||

@@ -157,13 +157,17 @@ describe("PATCH /api/admin/hackathon", () => {
     it("mirrors global settings onto the active season", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         const season = seedSeason(ctx);
-        mockBody.value = { theme_name: "Mirrored theme", show_scores: 1 };
+        mockBody.value = { theme_name: "Mirrored theme", show_scores: 1, announcement: "News" };
 
         await patchHandler(createEvent());
 
         const row = ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get()!;
         expect(row.theme_name).toBe("Mirrored theme");
         expect(row.show_scores).toBe(1);
+        expect(row.announcement).toBe("News");
+
+        const global = ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()!;
+        expect(global.announcement).toBe("News");
     });
 
     it("persists changes to the database", async () => {

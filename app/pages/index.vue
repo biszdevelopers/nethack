@@ -17,6 +17,7 @@ const votingEndDate = computed(() => new Date(hackathon.value.voting_end_timesta
 const resultsOpenDate = computed(() => new Date(hackathon.value.results_open_timestamp));
 
 const themeDescription = computed(() => hackathon.value.theme_description || "");
+const announcement = computed(() => hackathon.value.announcement?.trim() || "");
 const hasStart = computed(() => hackathon.value.start_timestamp > 0);
 const hasEnd = computed(() => hackathon.value.end_timestamp > 0);
 const hasVotingStart = computed(() => hackathon.value.voting_start_timestamp > 0);
@@ -37,8 +38,8 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
             <span class="text-primary glow">{{ WEBSITE_NAME }}</span>
             .
         </p>
-        <p class="mb-4 text-muted">
-            R1 2026–2027 is in preparation. Dates and theme will be announced here.
+        <p v-if="announcement" class="mb-4 whitespace-pre-wrap text-muted">
+            {{ announcement }}
         </p>
         <ULink href="/dashboard">
             <UAlert v-if="status !== 'not_started'" variant="soft" class="mb-4">

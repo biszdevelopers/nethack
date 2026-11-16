@@ -518,7 +518,7 @@ test("participant and admin complete mobile journeys while judging and review st
         await openSeasonTab(admin.page, "Seasons");
         const seasonPicker = admin.page.getByRole("combobox").first();
         await seasonPicker.click();
-        await admin.page.getByRole("option", { name: "R1 2026–2027", exact: true }).click();
+        await admin.page.getByRole("option", { name: "Next season", exact: true }).click();
         await expect(admin.page.getByText("No board approval is recorded.")).toBeVisible();
         const seededSeasonPayload = (await fetchApiJson(admin.page, "/api/admin/hackathon"))
             .body as {
@@ -537,8 +537,8 @@ test("participant and admin complete mobile journeys while judging and review st
             }[];
         };
         const seededSeasons = seededSeasonPayload.seasons;
-        const r1Shell = seededSeasons.find((season) => season.name === "R1 2026–2027");
-        expect(r1Shell).toMatchObject({
+        const nextSeasonShell = seededSeasons.find((season) => season.name === "Next season");
+        expect(nextSeasonShell).toMatchObject({
             is_active: 0,
             is_blank_start: 1,
             status: "not_started",
@@ -552,7 +552,7 @@ test("participant and admin complete mobile journeys while judging and review st
         await captureBoardDemo(
             admin.page,
             "03-r1-shell",
-            "R1 waits for dates, theme, rubric, and approval",
+            "The next season waits for dates, theme, rubric, and approval",
         );
         const activeSeasonName = seededSeasons.find((season) => season.is_active === 1)?.name;
         if (!activeSeasonName) throw new Error("The E2E database has no active season.");

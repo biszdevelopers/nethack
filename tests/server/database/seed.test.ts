@@ -3,7 +3,7 @@ import type { DrizzleDatabase } from "~~/server/database";
 import {
     seedDefaultSeasonAndRubrics,
     seedHackathon,
-    seedR1Season,
+    seedNextSeason,
 } from "~~/server/database/migrate";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import type { seasons } from "~~/server/database/schema";
@@ -137,17 +137,17 @@ const rubricVersion = (id: number, season_id: number, version = 1) => ({
 });
 
 describe("PostgreSQL default data seeding", () => {
-    it("creates an inactive blank R1 season without copying event settings or a rubric", async () => {
+    it("creates an inactive blank next-season shell without copying event settings or a rubric", async () => {
         const { database, calls } = createSeedDatabase();
 
-        await seedR1Season(database);
+        await seedNextSeason(database);
 
         expect(calls).toEqual([
             {
                 operation: "insert",
                 table: "seasons",
                 value: {
-                    name: "R1 2026–2027",
+                    name: "Next season",
                     is_blank_start: 1,
                     is_active: 0,
                     status: "not_started",
@@ -276,9 +276,9 @@ describe("PostgreSQL default data seeding", () => {
     });
 
     it("does not add a default rubric to an explicitly blank-start season", async () => {
-        const blankR1 = {
+        const blankShell = {
             id: 9,
-            name: "R1 2026–2027",
+            name: "Next season",
             is_active: 0,
             is_blank_start: 1,
             status: "not_started",
@@ -292,7 +292,7 @@ describe("PostgreSQL default data seeding", () => {
             rubric_version_id: null,
         };
         const { database, calls } = createSeedDatabase({
-            selects: { seasons: [[blankR1], [blankR1]], rubricTemplates: [[template]] },
+            selects: { seasons: [[blankShell], [blankShell]], rubricTemplates: [[template]] },
         });
 
         await seedDefaultSeasonAndRubrics(database);

@@ -42,11 +42,11 @@ export async function seedHackathon(database: DrizzleDatabase): Promise<void> {
 }
 
 /** Add the next event shell without carrying over live settings or a rubric. */
-export async function seedR1Season(database: DrizzleDatabase): Promise<void> {
+export async function seedNextSeason(database: DrizzleDatabase): Promise<void> {
     await database
         .insert(seasons)
         .values({
-            name: "R1 2026–2027",
+            name: "Next season",
             is_blank_start: 1,
             is_active: 0,
             status: "not_started",
@@ -186,6 +186,6 @@ export async function createAndMigrateDatabase(database: DrizzleDatabase): Promi
     await migrateDatabase(database);
     await seedHackathon(database);
     await seedDefaultSeasonAndRubrics(database);
-    await seedR1Season(database);
+    await seedNextSeason(database);
     await seedInitialAdmins(database);
 }

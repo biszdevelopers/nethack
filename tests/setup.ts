@@ -123,6 +123,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
 
     // Apply migrations that add tables/columns not in init.sql
     db.exec(`
+    ALTER TABLE hackathon ADD COLUMN announcement TEXT;
     CREATE TABLE IF NOT EXISTS seasons (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -130,8 +131,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_seasons_active ON seasons(is_active) WHERE is_active = 1;
 
-    ALTER TABLE seasons ADD COLUMN status TEXT NOT NULL DEFAULT 'not_started';
-    ALTER TABLE seasons ADD COLUMN voting_enabled INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE seasons ADD COLUMN status TEXT NOT NULL DEFAULT 'not_started';    ALTER TABLE seasons ADD COLUMN voting_enabled INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN results_published INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN show_scores INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN show_ranking INTEGER NOT NULL DEFAULT 0;
@@ -146,6 +146,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE seasons ADD COLUMN results_open_timestamp INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN theme_name TEXT;
     ALTER TABLE seasons ADD COLUMN theme_description TEXT;
+    ALTER TABLE seasons ADD COLUMN announcement TEXT;
     ALTER TABLE seasons ADD COLUMN score_curve_preset TEXT NOT NULL DEFAULT 'original';
     ALTER TABLE seasons ADD COLUMN rubric_version_id INTEGER;
     ALTER TABLE seasons ADD COLUMN is_blank_start INTEGER NOT NULL DEFAULT 0;

@@ -9,6 +9,7 @@ const schemaPath = resolve(import.meta.dirname, "..", "..", "sql", "archive", "i
 const initSQL = readFileSync(schemaPath, "utf-8");
 
 const migrationSQL = `
+  ALTER TABLE hackathon ADD COLUMN announcement TEXT;
   CREATE TABLE IF NOT EXISTS seasons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -32,6 +33,7 @@ const migrationSQL = `
   ALTER TABLE seasons ADD COLUMN results_open_timestamp INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE seasons ADD COLUMN theme_name TEXT;
   ALTER TABLE seasons ADD COLUMN theme_description TEXT;
+  ALTER TABLE seasons ADD COLUMN announcement TEXT;
   ALTER TABLE seasons ADD COLUMN score_curve_preset TEXT NOT NULL DEFAULT 'original';
   ALTER TABLE seasons ADD COLUMN rubric_version_id INTEGER;
   ALTER TABLE seasons ADD COLUMN is_blank_start INTEGER NOT NULL DEFAULT 0;

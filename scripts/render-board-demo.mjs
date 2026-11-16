@@ -29,7 +29,7 @@ const scenes = [
         id: "03-admin-season",
         title: "Administration and season setup",
         narration:
-            "Administrators manage event settings, rubrics, judging controls, and season status from the protected portal. A new round can copy the current settings or start as a blank shell. The R1 2026 to 2027 shell remains inactive until its event dates, theme, rubric, and board approval are recorded. This screen shows the controls that prepare a round while keeping it out of the live participant flow.",
+            "Administrators manage event settings, rubrics, judging controls, and season status from the protected portal. A new round can copy the current settings or start as a blank shell. The next-season shell remains inactive until its event dates, theme, rubric, and board approval are recorded. This screen shows the controls that prepare a round while keeping it out of the live participant flow.",
     },
     {
         id: "03-r1-shell",

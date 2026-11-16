@@ -42,6 +42,9 @@ export const hackathon = pgTable(
         results_open_timestamp: bigint("results_open_timestamp", { mode: "number" }).notNull(),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
+        // Editable visitor-facing copy shown above the schedule. Stored in
+        // PostgreSQL even when the rest of the live settings come from YAML.
+        announcement: text("announcement"),
         // Operational settings changed through the portal are stored here so
         // they keep applying even when HACKATHON.yml is remote and read-only.
         live_overrides: jsonb("live_overrides")
@@ -236,6 +239,7 @@ export const seasons = pgTable(
             .default(0),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
+        announcement: text("announcement"),
         score_curve_preset: text("score_curve_preset")
             .$type<ScoreCurvePreset>()
             .notNull()

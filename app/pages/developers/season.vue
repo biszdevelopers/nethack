@@ -92,6 +92,7 @@ const allFieldKeys = [
     "max_votes_per_user",
     "theme_name",
     "theme_description",
+    "announcement",
     "start_timestamp",
     "end_timestamp",
     "voting_start_timestamp",
@@ -684,9 +685,9 @@ async function deleteSeason() {
                         <div class="flex flex-wrap items-center justify-between gap-4">
                             <div class="max-w-2xl text-sm text-ui-text-muted">
                                 <p>
-                                    R1 activation requires the board's approval in addition to its
-                                    theme, dates, and rubric. Record this only after approval has
-                                    been granted.
+                                    Blank-season activation requires the board's approval in
+                                    addition to its theme, dates, and rubric. Record this only after
+                                    approval has been granted.
                                 </p>
                                 <p v-if="boardApprovalRecorded" class="mt-2">
                                     Approval recorded by administrator #{{
@@ -841,6 +842,23 @@ async function deleteSeason() {
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @change="saveField('theme_description')"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Visitor announcement"
+                                name="announcement"
+                                class="w-full md:col-span-2"
+                                help="Shown above the schedule on the home page. Leave empty to hide it. This saves to PostgreSQL and works with a remote HACKATHON.yml."
+                            >
+                                <UTextarea
+                                    v-model="hackathonForm.announcement"
+                                    name="announcement"
+                                    :rows="3"
+                                    :maxlength="2000"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                    @change="saveField('announcement')"
                                 />
                             </UFormField>
                         </fieldset>

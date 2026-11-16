@@ -1,97 +1,104 @@
 {
-    "version": "7",
-    "dialect": "postgresql",
-    "entries": [
-        {
-            "idx": 0,
-            "version": "7",
-            "when": 1794305874021,
-            "tag": "0000_pg_initial",
-            "breakpoints": true
-        },
-        {
-            "idx": 1,
-            "version": "7",
-            "when": 1794305956989,
-            "tag": "0001_query_indexes",
-            "breakpoints": true
-        },
-        {
-            "idx": 2,
-            "version": "7",
-            "when": 1794310577216,
-            "tag": "0002_schema_constraints_and_score_curves",
-            "breakpoints": true
-        },
-        {
-            "when": 1794486417650,
-            "breakpoints": true,
-            "version": "7",
-            "idx": 3,
-            "tag": "0003_event_timestamps_bigint"
-        },
-        {
-            "idx": 4,
-            "version": "7",
-            "when": 1794488498657,
-            "tag": "0004_season_rubric_fk_and_sequence",
-            "breakpoints": true
-        },
-        {
-            "idx": 5,
-            "version": "7",
-            "when": 1794651146736,
-            "tag": "0005_blushing_george_stacy",
-            "breakpoints": true
-        },
-        {
-            "idx": 6,
-            "version": "7",
-            "when": 1794694950895,
-            "tag": "0006_amusing_mauler",
-            "breakpoints": true
-        },
-        {
-            "idx": 7,
-            "version": "7",
-            "when": 1794695452995,
-            "tag": "0007_jazzy_runaways",
-            "breakpoints": true
-        },
-        {
-            "idx": 8,
-            "version": "7",
-            "when": 1794708182426,
-            "tag": "0008_normal_lenny_balinger",
-            "breakpoints": true
-        },
-        {
-            "idx": 9,
-            "version": "7",
-            "when": 1794736648912,
-            "tag": "0009_great_santa_claus",
-            "breakpoints": true
-        },
-        {
-            "idx": 10,
-            "version": "7",
-            "when": 1794743068575,
-            "tag": "0010_clear_puma",
-            "breakpoints": true
-        },
-        {
-            "idx": 11,
-            "version": "7",
-            "when": 1794745154133,
-            "tag": "0011_even_blackheart",
-            "breakpoints": true
-        },
-        {
-            "idx": 12,
-            "version": "7",
-            "when": 1794784628499,
-            "tag": "0012_adorable_stature",
-            "breakpoints": true
-        }
-    ]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794305874021,
+      "tag": "0000_pg_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794305956989,
+      "tag": "0001_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794310577216,
+      "tag": "0002_schema_constraints_and_score_curves",
+      "breakpoints": true
+    },
+    {
+      "when": 1794486417650,
+      "breakpoints": true,
+      "version": "7",
+      "idx": 3,
+      "tag": "0003_event_timestamps_bigint"
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794488498657,
+      "tag": "0004_season_rubric_fk_and_sequence",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794651146736,
+      "tag": "0005_blushing_george_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794694950895,
+      "tag": "0006_amusing_mauler",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794695452995,
+      "tag": "0007_jazzy_runaways",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794708182426,
+      "tag": "0008_normal_lenny_balinger",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794736648912,
+      "tag": "0009_great_santa_claus",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794743068575,
+      "tag": "0010_clear_puma",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794745154133,
+      "tag": "0011_even_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794784628499,
+      "tag": "0012_adorable_stature",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794822305329,
+      "tag": "0013_opposite_night_nurse",
+      "breakpoints": true
+    }
+  ]
 }
