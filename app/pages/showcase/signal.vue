@@ -565,8 +565,8 @@ onUnmounted(() => {
     57%,
     100% {
         text-shadow:
-            0 0 0.05em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%),
-            0 0 0.1em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%);
+            0 0 0.05em color-mix(in srgb, currentColor 75%, #000 25%),
+            0 0 0.1em color-mix(in srgb, currentColor 75%, #000 25%);
         opacity: 1;
     }
     /* The "Broken" Moments (Dim/Off) */

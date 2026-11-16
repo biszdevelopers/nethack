@@ -49,7 +49,7 @@ export default defineNitroErrorHandler((input, event) => {
         );
         return send(
             event,
-            `<!DOCTYPE html><html lang="en" class="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{color-scheme:dark}body{margin:0;padding:2rem 1.25rem;background:#0b1120;color:#e2e8f0;font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.6}h1{max-width:60ch;font-size:1.15rem;font-weight:600}a{color:#4ade80}p{max-width:60ch;color:#94a3b8}img{display:block;max-width:100%;height:auto;margin:1.5rem 0;border-radius:12px}</style></head><body>${fragment}</body></html>`,
+            `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{color-scheme:light dark;--bg:#fff;--fg:#0f172a;--muted:#475569;--link:#15803d}@media (prefers-color-scheme:dark){:root{--bg:#0b1120;--fg:#e2e8f0;--muted:#94a3b8;--link:#4ade80}}body{margin:0;padding:2rem 1.25rem;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.6}h1{max-width:60ch;font-size:1.15rem;font-weight:600}a{color:var(--link)}p{max-width:60ch;color:var(--muted)}img{display:block;max-width:100%;height:auto;margin:1.5rem 0;border-radius:12px}</style></head><body>${fragment}</body></html>`,
         );
     }
 

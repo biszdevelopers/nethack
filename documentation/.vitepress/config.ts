@@ -5,7 +5,7 @@ export default defineConfig({
     description: "Documentation for the nethack BIBS-C Network Hackathon platform",
     base: "/docs/",
     lang: "en-US",
-    appearance: "dark",
+    appearance: true,
     cleanUrls: true,
     lastUpdated: true,
     head: [

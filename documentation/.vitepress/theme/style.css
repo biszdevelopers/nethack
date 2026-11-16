@@ -19,9 +19,12 @@
     --bh-brand-dark: #006638;
 
     /* Light mode — light terminal emulator */
-    --bh-green: #00884a;
+    --bh-green: #006b3a;
     --bh-green-dim: #3a6e4f;
-    --bh-green-subtle: rgba(0, 136, 74, 0.08);
+    --bh-green-subtle: rgba(0, 107, 58, 0.08);
+    --bh-info: #1d6a96;
+    --bh-warn: #7a5c00;
+    --bh-danger: #a32121;
     --bh-text: #1f2328;
     --bh-text-muted: #57606a;
     --bh-bg: #ffffff;
@@ -70,7 +73,7 @@
     --vp-c-bg-elv-mute: var(--bh-bg-mute);
     --vp-c-text-1: var(--bh-text);
     --vp-c-text-2: var(--bh-text-muted);
-    --vp-c-text-3: #6a8a6a;
+    --vp-c-text-3: var(--bh-text-muted);
     --vp-c-border: var(--bh-border);
     --vp-c-divider: var(--bh-border);
     --vp-c-gutter: var(--bh-border);
@@ -100,6 +103,9 @@
     --bh-green: #22c55e;
     --bh-green-dim: #16a34a;
     --bh-green-subtle: rgba(34, 197, 94, 0.1);
+    --bh-info: #4499cc;
+    --bh-warn: #ccaa00;
+    --bh-danger: #cc3333;
     --bh-text: #e6edf3;
     --bh-text-muted: #94a3b8;
     --bh-bg: #0a0f1a;
@@ -457,30 +463,30 @@ tr:hover td {
 }
 
 .custom-block.warning {
-    border-color: #ccaa00;
+    border-color: var(--bh-warn);
     background: rgba(204, 170, 0, 0.08);
 }
 
 .custom-block.warning .custom-block-title {
-    color: #ccaa00 !important;
+    color: var(--bh-warn) !important;
 }
 
 .custom-block.danger {
-    border-color: #cc3333;
+    border-color: var(--bh-danger);
     background: rgba(204, 51, 51, 0.08);
 }
 
 .custom-block.danger .custom-block-title {
-    color: #cc3333 !important;
+    color: var(--bh-danger) !important;
 }
 
 .custom-block.info {
-    border-color: #4499cc;
+    border-color: var(--bh-info);
     background: rgba(68, 153, 204, 0.08);
 }
 
 .custom-block.info .custom-block-title {
-    color: #4499cc !important;
+    color: var(--bh-info) !important;
 }
 
 /* ── Badges ─────────────────────────────────────────────────── */
@@ -1097,20 +1103,20 @@ tr:hover td {
 }
 
 .vp-status-badge.status-warn {
-    color: #ccaa00;
-    border-color: #ccaa00;
+    color: var(--bh-warn);
+    border-color: var(--bh-warn);
     background: rgba(204, 170, 0, 0.08);
 }
 
 .vp-status-badge.status-error {
-    color: #cc3333;
-    border-color: #cc3333;
+    color: var(--bh-danger);
+    border-color: var(--bh-danger);
     background: rgba(204, 51, 51, 0.08);
 }
 
 .vp-status-badge.status-info {
-    color: #4499cc;
-    border-color: #4499cc;
+    color: var(--bh-info);
+    border-color: var(--bh-info);
     background: rgba(68, 153, 204, 0.08);
 }
 

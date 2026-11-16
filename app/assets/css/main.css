@@ -20,14 +20,14 @@
 
 .glow {
     text-shadow:
-        0 0 0.05em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%),
-        0 0 0.1em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%);
+        0 0 0.05em color-mix(in srgb, currentColor 75%, var(--ui-bg) 25%),
+        0 0 0.1em color-mix(in srgb, currentColor 75%, var(--ui-bg) 25%);
 }
 
 .glow-sm {
     text-shadow:
-        0 0 0.03em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%),
-        0 0 0.07em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%);
+        0 0 0.03em color-mix(in srgb, currentColor 75%, var(--ui-bg) 25%),
+        0 0 0.07em color-mix(in srgb, currentColor 75%, var(--ui-bg) 25%);
 }
 
 code {
@@ -38,4 +38,20 @@ code {
 
 button:disabled {
     filter: grayscale(1);
+}
+
+/*
+ * The stock light palette uses the 500 shade for semantic colours, which is
+ * tuned for dark surfaces and drops to 2.2:1 on white. Darker 700 shades keep
+ * text, soft alerts, and filled buttons above WCAG AA in light mode.
+ */
+html:not(.dark) {
+    --ui-primary: var(--ui-color-primary-800);
+    --ui-success: var(--ui-color-success-800);
+    --ui-info: var(--ui-color-info-800);
+    --ui-warning: var(--ui-color-warning-800);
+    --ui-error: var(--ui-color-error-800);
+    /* Secondary text also sits on tinted panels in light mode. */
+    --ui-text-muted: var(--ui-color-neutral-600);
+    --ui-text-toned: var(--ui-color-neutral-700);
 }

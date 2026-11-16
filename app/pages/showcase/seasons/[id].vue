@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { parseSeasonId } from "~/utils/season-detail";
 
+definePageMeta({
+    layout: "fullwidth-nostick",
+});
+
 const route = useRoute();
 const seasonId = parseSeasonId(route.params.id);
 if (seasonId === null) {

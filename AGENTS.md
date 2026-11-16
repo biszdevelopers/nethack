@@ -185,7 +185,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 
 ## Frontend Patterns
 
-- The application is dark-only (`colorMode.preference = "dark"`); there is no theme toggle, because the light palette was never designed or contrast-checked.
+- Both light and dark themes are fully supported. The header exposes a theme toggle (also reachable in the mobile menu), colour mode follows the system preference by default, and both palettes are contrast-checked by the browser sweep.
 - Pages use `<script setup lang="ts">`.
 - Global constants (`WEBSITE_NAME`, `THEME_NAME`) are imported from `~/utils/consts.ts`.
 - Fetch errors are handled with `getErrorMessage(e)` from `~/utils/errors.ts`.
