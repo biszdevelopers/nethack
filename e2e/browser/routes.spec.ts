@@ -67,7 +67,14 @@ async function sweep(page: Page, routes: readonly string[]) {
             await page.setViewportSize({ width, height: 900 });
 
             const response = await page.goto(route, { waitUntil: "load" });
-            expect(response?.status(), `${route} returned an error status`).toBeLessThan(400);
+            const status = response?.status() ?? 0;
+            // The archive route intentionally 404s while the season it names is
+            // still active; it only opens for finished, inactive seasons.
+            const archiveMayBeMissing = route === "/showcase/seasons/1";
+            expect(
+                status < 400 || (archiveMayBeMissing && status === 404),
+                `${route} returned HTTP ${status}`,
+            ).toBe(true);
 
             if (route === "/developers/docs") {
                 await expect(

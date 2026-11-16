@@ -117,8 +117,8 @@ function selectRelative(offset: number) {
             </template>
         </p>
 
-        <div v-else class="grid gap-4 md:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)]">
-            <nav aria-label="Evaluated projects" class="md:sticky md:top-4 md:self-start">
+        <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)]">
+            <nav aria-label="Evaluated projects" class="min-w-0 md:sticky md:top-4 md:self-start">
                 <h2 class="mb-2 text-sm font-semibold text-muted">
                     {{ items.length }} evaluated
                     {{ items.length === 1 ? "project" : "projects" }}
@@ -138,8 +138,8 @@ function selectRelative(offset: number) {
                             "
                             @click="selectedTeamId = item.team.id"
                         >
-                            <span class="flex items-baseline justify-between gap-2">
-                                <span class="truncate font-semibold">
+                            <span class="flex min-w-0 items-baseline justify-between gap-2">
+                                <span class="min-w-0 truncate font-semibold">
                                     {{ item.team.project.name }}
                                 </span>
                                 <span

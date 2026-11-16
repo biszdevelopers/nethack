@@ -42,7 +42,7 @@ const seasonLabel = season.status.replaceAll("_", " ");
 
         <header class="mb-8">
             <div class="flex flex-wrap items-center gap-3">
-                <h1 class="break-words text-4xl font-bold text-primary glow">
+                <h1 class="min-w-0 break-words text-4xl font-bold text-primary glow">
                     {{ season.name }}
                 </h1>
                 <UBadge v-if="season.is_active" color="primary" variant="subtle">

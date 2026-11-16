@@ -41,21 +41,21 @@ const archivedSeasons = computed(() =>
             <p v-else-if="archivedSeasons.length === 0" class="text-white/60">
                 Past season archives will appear here when they are available.
             </p>
-            <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <NuxtLink
                     v-for="season in archivedSeasons"
                     :key="season.id"
                     :to="`/showcase/seasons/${season.id}`"
-                    class="group flex min-h-52 flex-col justify-between border border-white/10 bg-white/[0.03] p-6 transition hover:border-cyan-300/50 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300"
+                    class="group flex min-h-52 min-w-0 flex-col justify-between border border-white/10 bg-white/[0.03] p-6 transition hover:border-cyan-300/50 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300"
                 >
-                    <div>
+                    <div class="min-w-0">
                         <p class="font-mono text-xs tracking-[0.2em] text-cyan-200/70 uppercase">
                             {{ season.status.replaceAll("_", " ") }}
                         </p>
-                        <h3 class="mt-3 text-2xl font-semibold tracking-tight">
+                        <h3 class="mt-3 break-words text-2xl font-semibold tracking-tight">
                             {{ season.name }}
                         </h3>
-                        <p v-if="season.theme_name" class="mt-2 text-sm text-white/60">
+                        <p v-if="season.theme_name" class="mt-2 break-words text-sm text-white/60">
                             {{ season.theme_name }}
                         </p>
                     </div>

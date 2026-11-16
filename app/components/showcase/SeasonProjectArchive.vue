@@ -44,7 +44,7 @@ const orderedProjects = computed(() =>
         <p v-else-if="orderedProjects.length === 0" class="border border-default p-6 text-muted">
             No submitted projects were recorded for this season.
         </p>
-        <div v-else class="grid gap-5 lg:grid-cols-2">
+        <div v-else class="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <article
                 v-for="team in orderedProjects"
                 :key="team.id"
@@ -52,7 +52,7 @@ const orderedProjects = computed(() =>
             >
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
-                        <p class="font-mono text-xs text-muted">{{ team.name }}</p>
+                        <p class="font-mono text-xs break-words text-muted">{{ team.name }}</p>
                         <h3 class="mt-2 break-words text-xl font-semibold">
                             {{ team.project.name || "Untitled project" }}
                         </h3>
