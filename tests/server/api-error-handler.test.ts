@@ -71,8 +71,9 @@ describe("canonical API error handler", () => {
         expect(body).toContain('src="data:image/png;base64,');
         expect(body).toContain('style="max-width:100%;height:auto"');
         expect(body).toContain('alt="Sad mascot"');
-        expect(body).toContain('<html lang="en">');
+        expect(body).toContain('<html lang="en" class="dark">');
         expect(body).toContain('name="viewport"');
+        expect(body).toContain("color-scheme:dark");
         expect(h3.setResponseStatus).toHaveBeenCalledWith(event, 500);
         expect(h3.setResponseHeader).toHaveBeenCalledWith(
             event,
