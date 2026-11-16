@@ -69,7 +69,9 @@ export default defineNitroPlugin(() => {
         const message =
             `Missing basis-auth backchannel configuration: ${missingBackchannel}. ` +
             "Sign-in fails with 14408 until the resource has a verified logout URL.";
-        if (isProduction) {
+        // A loopback origin cannot serve a public webhook, so treat it as a
+        // local instance even when Nitro inlines NODE_ENV=production.
+        if (isProduction && !isLoopbackHttpOrigin(process.env.CURRENT_URL_ORIGIN)) {
             console.error(`[FATAL] ${message}`);
             process.exit(1);
         } else {

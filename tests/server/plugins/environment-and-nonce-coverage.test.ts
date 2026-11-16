@@ -102,6 +102,19 @@ describe("environment validation plugin", () => {
         expect(error).toHaveBeenCalledWith(expect.stringContaining("BASIS_AUTH_RESOURCE_SECRET"));
     });
 
+    it("warns instead of exiting for a loopback production build without backchannel settings", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+        vi.stubEnv("HOST", "127.0.0.1");
+        vi.stubEnv("BASIS_AUTH_RESOURCE_SECRET", "");
+        vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "");
+
+        await runPlugin();
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("14408"));
+    });
+
     it("rejects a non-HTTP internal basis-auth URL", async () => {
         vi.stubEnv("NODE_ENV", "production");
         vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "ftp://127.0.0.1:3001");
