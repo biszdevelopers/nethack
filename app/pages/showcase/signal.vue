@@ -49,16 +49,16 @@
             <div v-if="cursorAuraVisible" class="team1-cursor-aura" :style="team1AuraStyle" />
             <Transition name="slide-right">
                 <div v-if="team1showDescriptionRef" class="team1-description transition-content">
-                    <h1
+                    <p
                         class="block lg:hidden text-8xl text-left metallic-gold uppercase mb-12 bold"
                     >
                         #1
-                    </h1>
+                    </p>
 
                     <h3 class="text-2xl text-left text-neutral-400 uppercase leading-16">
                         Featuring 白鹿青崖间
                     </h3>
-                    <h1 class="text-4xl sm:text-6xl text-left leading-16 bold glow">Syl</h1>
+                    <h2 class="text-4xl sm:text-6xl text-left leading-16 bold glow">Syl</h2>
 
                     <p class="mt-16 text-neutral-400">
                         ... by 6 scenes, the player can experience the story of a fallen
@@ -106,7 +106,7 @@
 
             <div class="max-h-[20vh] xl:min-h-screen flex flex-col justify-center w-full">
                 <div class="flex flex-col items-center justify-center">
-                    <h1 class="hidden max-sm:block metallic-silver text-8xl z-4 bold mb-4">#2</h1>
+                    <p class="hidden max-sm:block metallic-silver text-8xl z-4 bold mb-4">#2</p>
 
                     <h3 class="bold z-3 text-2xl text-neutral-400 uppercase leading-16">
                         =^^= presents
@@ -114,7 +114,7 @@
                     <div class="metallic-silver team2-background-number select-none max-sm:hidden">
                         #2
                     </div>
-                    <h1
+                    <h2
                         :class="team2Visible ? 'animate' : ''"
                         class="text-4xl text-left leading-16 bold relative z-10 hidden lg:block"
                     >
@@ -126,12 +126,12 @@
                         <span class="word word-6">Recognition</span>
                         <span class="word word-7">Robotic</span>
                         <span class="word word-8">Head</span>
-                    </h1>
-                    <h1
+                    </h2>
+                    <h2
                         class="text-4xl text-center lg:leading-16 bold relative z-10 lg:hidden max-lg:mb-8"
                     >
                         Super Cool But Creepy Visual Recognition Robotic Head
-                    </h1>
+                    </h2>
                     <p class="z-3 w-full max-w-xl text-center px-4 sm:px-8">
                         A robotic head that looks cool and is able to recognize learned faces and
                         colors, and provide personalized reactions

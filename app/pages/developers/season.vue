@@ -460,7 +460,7 @@ async function deleteSeason() {
 <template>
     <UDashboardPanel id="hackathon-admin">
         <template #header>
-            <UDashboardNavbar title="Hackathon Administration">
+            <UDashboardNavbar title="Hackathon Administration" :as="{ title: 'span' }">
                 <template #leading>
                     <UDashboardSidebarCollapse />
                 </template>

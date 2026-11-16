@@ -90,7 +90,7 @@ function formatTimestamp(ts: unknown): string {
 <template>
     <UDashboardPanel id="developers-home">
         <template #header>
-            <UDashboardNavbar title="Mod Portal">
+            <UDashboardNavbar title="Mod Portal" :as="{ title: 'span' }">
                 <template #leading>
                     <UDashboardSidebarCollapse />
                 </template>

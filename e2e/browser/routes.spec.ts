@@ -104,6 +104,11 @@ async function sweep(page: Page, routes: readonly string[]) {
                     )
                     .toBeLessThanOrEqual(0);
 
+                expect(
+                    await page.locator("h1").count(),
+                    `${route} at ${width}px should expose exactly one top-level heading`,
+                ).toBe(1);
+
                 if (status < 400) {
                     expect(
                         await page.evaluate(() =>

@@ -68,6 +68,7 @@ const actions = ref([
 
 <template>
     <div>
+        <h1 class="sr-only">Dashboard</h1>
         <div v-if="!data?.team">
             <p class="mb-4">
                 Welcome
