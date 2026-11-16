@@ -30,7 +30,7 @@ nethack is a **full-stack Nuxt 4 application** that combines a Vue 3 frontend wi
 ## Directory Structure
 
 ```
-basishacks-r2/
+nethack/
 ├── app/                    # Nuxt app (Vue frontend)
 │   ├── assets/css/         # Global styles (Tailwind + custom utilities)
 │   ├── components/         # Vue components (includes SafeLink, SafeComark)

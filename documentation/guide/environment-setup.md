@@ -57,9 +57,9 @@ bun --version
 ## Clone and Install
 
 ```bash
-git clone <repository-url> basishacks-r2
+git clone <repository-url> nethack
 git clone https://github.com/biszdevelopers/basis-schema.git basis-schema
-cd basishacks-r2
+cd nethack
 bun i
 ```
 

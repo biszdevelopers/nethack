@@ -13,8 +13,8 @@ If you are starting from a clean checkout:
 
 ```bash
 # Clone the repository
-git clone <repository-url> basishacks-r2
-cd basishacks-r2
+git clone <repository-url> nethack
+cd nethack
 
 # Install dependencies
 bun install

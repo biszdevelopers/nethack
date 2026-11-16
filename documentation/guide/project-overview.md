@@ -108,7 +108,7 @@ Season management happens through the `/api/seasons/` endpoints and the Hackatho
 ## Directory Structure
 
 ```
-basishacks-r2/
+nethack/
 ├── app/                        # Nuxt app (Vue frontend)
 │   ├── assets/css/             # Global styles (Tailwind + custom utilities)
 │   ├── components/             # Vue components

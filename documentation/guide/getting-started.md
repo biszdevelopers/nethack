@@ -51,9 +51,9 @@ If you need to manage multiple Node.js versions, consider using [fnm](https://gi
 <TerminalWindow title="nethack@setup:~" prompt="$">
 
 ```bash
-git clone <repository-url> basishacks-r2
+git clone <repository-url> nethack
 git clone https://github.com/biszdevelopers/basis-schema.git basis-schema
-cd basishacks-r2
+cd nethack
 ```
 
 </TerminalWindow>
@@ -66,7 +66,7 @@ Install all project dependencies using Bun:
 bun i
 ```
 
-The [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) checkout must remain beside `basishacks-r2`. The Nuxt and Vitest configurations resolve its source from `../basis-schema`; no Bun link is required. Use Bun 1.3.14 to install from the committed lockfile.
+The [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) checkout must remain beside `nethack`. The Nuxt and Vitest configurations resolve its source from `../basis-schema`; no Bun link is required. Use Bun 1.3.14 to install from the committed lockfile.
 
 If you prefer npm:
 
