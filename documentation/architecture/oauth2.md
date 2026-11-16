@@ -29,15 +29,15 @@ The URL must be HTTPS, or `http://localhost` for local testing, and reachable fr
 
 ## Client configuration
 
-| Variable                     | Purpose                                                              |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `BASIS_AUTH_ISSUER`          | Exact issuer used for discovery and validation                       |
-| `BASIS_AUTH_CLIENT_ID`       | nethack confidential client ID                                       |
-| `BASIS_AUTH_CLIENT_SECRET`   | Server-only client secret                                            |
-| `BASIS_AUTH_RESOURCE`        | Expected resource audience                                           |
-| `BASIS_AUTH_RESOURCE_SECRET` | Resource secret used for the webhook proof and private listener auth  |
-| `BASIS_AUTH_INTERNAL_URL`    | basis-auth private listener origin (default `http://127.0.0.1:3001`)  |
-| `CURRENT_URL_ORIGIN`         | Origin from which the callback URL is derived                        |
+| Variable | Purpose |
+| --- | --- |
+| `BASIS_AUTH_ISSUER` | Exact issuer used for discovery and validation |
+| `BASIS_AUTH_CLIENT_ID` | nethack confidential client ID |
+| `BASIS_AUTH_CLIENT_SECRET` | Server-only client secret |
+| `BASIS_AUTH_RESOURCE` | Expected resource audience |
+| `BASIS_AUTH_RESOURCE_SECRET` | Resource secret used for the webhook proof and private listener auth |
+| `BASIS_AUTH_INTERNAL_URL` | basis-auth private listener origin (default `http://127.0.0.1:3001`) |
+| `CURRENT_URL_ORIGIN` | Origin from which the callback URL is derived |
 
 Production startup fails when `BASIS_AUTH_RESOURCE_SECRET` or `BASIS_AUTH_INTERNAL_URL` is missing, because the resource cannot complete webhook verification or answer revocation events.
 

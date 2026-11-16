@@ -159,6 +159,8 @@ jobs:
                   BASIS_AUTH_CLIENT_ID: basishacks-ci
                   BASIS_AUTH_CLIENT_SECRET: ci-client-secret
                   BASIS_AUTH_RESOURCE: devconnect://nethack.bisz.dev
+                  BASIS_AUTH_RESOURCE_SECRET: ci-resource-secret
+                  BASIS_AUTH_INTERNAL_URL: http://127.0.0.1:3001
                   CURRENT_URL_ORIGIN: https://basishacks.example.invalid
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
                   TRUSTED_PROXY_HOPS: "0"

@@ -121,10 +121,10 @@ Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they a
 
 ### `revoked_access_tokens`
 
-| Column        | Type               | Description                                        |
-| ------------- | ------------------ | -------------------------------------------------- |
-| `jti`         | `TEXT PRIMARY KEY` | Revoked access-token ID                            |
-| `valid_after` | `BIGINT NOT NULL`  | Unix seconds; the token is rejected at or after it |
+| Column        | Type               | Description                                           |
+| ------------- | ------------------ | ----------------------------------------------------- |
+| `jti`         | `TEXT PRIMARY KEY` | Revoked access-token ID                               |
+| `valid_after` | `BIGINT NOT NULL`  | Unix seconds; the token is rejected at or after it    |
 | `expires_at`  | `BIGINT`           | Signed token expiry in Unix seconds, used for cleanup |
 
 Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted after `expires_at` plus a five-minute tolerance, with a seven-day fallback for entries that have no known expiry.
