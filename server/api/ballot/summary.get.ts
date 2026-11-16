@@ -18,7 +18,10 @@ export default defineEventHandler(
                     sql<number>`COUNT(DISTINCT CASE WHEN ${teams.project_submitted} = 1 THEN ${teams.id} END)`.mapWith(
                         Number,
                     ),
-                scored_count: sql<number>`COUNT(DISTINCT ${teamScores.team_id})`.mapWith(Number),
+                scored_count:
+                    sql<number>`COUNT(DISTINCT CASE WHEN ${teams.project_submitted} = 1 THEN ${teamScores.team_id} END)`.mapWith(
+                        Number,
+                    ),
             })
             .from(seasons)
             .leftJoin(teams, and(eq(teams.season_id, seasons.id), ne(teams.id, user.team_id ?? -1)))

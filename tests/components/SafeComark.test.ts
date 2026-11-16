@@ -13,8 +13,16 @@ describe("SafeComark.vue", () => {
         expect(source).toContain("const safeComponents = { a: SafeLink }");
     });
 
-    it("passes its slot text through Comark's markdown prop", () => {
+    it("renders the registered Markdown component with its value prop", () => {
         expect(source).toContain("const markdown = computed");
-        expect(source).toContain('<Comark :markdown="markdown"');
+        expect(source).toContain("<Markdown");
+        expect(source).toContain(':value="markdown"');
+        expect(source).not.toContain("<Comark");
+    });
+
+    it("keeps raw HTML disabled and preserves single line breaks", () => {
+        expect(source).toContain("registerDefaultPlugins: false");
+        expect(source).toContain("const safePlugins = [breaks()]");
+        expect(source).toContain(':plugins="safePlugins"');
     });
 });

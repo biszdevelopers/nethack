@@ -72,16 +72,20 @@ export function useJudgingDraft() {
             rubricVersionId.value = response.rubric.version_id;
             const track = response.rubric.tracks[trackKey];
             if (!track) throw new Error("This project does not match a track in its saved rubric.");
+            // Only a non-zero minimum is a real starting score. Leaving
+            // zero-minimum criteria unset keeps the form honest: the judge must
+            // choose every criterion before the review step unlocks.
             const defaults = Object.fromEntries(
-                track.criteria.map((criterion) => [criterion.id, criterion.minScore]),
+                track.criteria
+                    .filter((criterion) => criterion.minScore > 0)
+                    .map((criterion) => [criterion.id, criterion.minScore]),
             );
             if (response.draft) {
                 assignState({ ...defaults, ...response.draft.scores }, response.draft.reasoning);
                 lastSavedAt.value = Date.parse(response.draft.updated_at) || null;
             } else {
-                // A fresh project still needs every criterion present in state so
-                // autosave and review use the rubric's score range, including any
-                // non-zero minimum configured by the organizer.
+                // A fresh project starts unset unless the organizer configured
+                // a non-zero minimum, which the rubric treats as a valid score.
                 assignState(defaults, "");
                 lastSavedAt.value = null;
             }

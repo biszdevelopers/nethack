@@ -40,10 +40,6 @@ describe("useJudgingDraft", () => {
 
         expect(draft.state.scores).toEqual({
             originality: 4,
-            presentation: 0,
-            technicality: 0,
-            theme: 0,
-            impact: 0,
         });
         expect(draft.state.reasoning).toBe("Clear and thoughtful work.");
         expect(draft.rubricVersionId.value).toBe(3);
@@ -72,10 +68,6 @@ describe("useJudgingDraft", () => {
         await draft.load(43, "junior");
 
         expect(draft.state.scores).toEqual({
-            originality: 0,
-            presentation: 0,
-            technicality: 0,
-            theme: 0,
             impact: 2,
         });
     });
@@ -98,10 +90,6 @@ describe("useJudgingDraft", () => {
             body: {
                 scores: {
                     originality: 5,
-                    presentation: 0,
-                    technicality: 0,
-                    theme: 0,
-                    impact: 0,
                 },
                 reasoning: "Strong execution and a clear demo.",
                 rubric_version_id: 3,
@@ -155,10 +143,6 @@ describe("useJudgingDraft", () => {
             body: {
                 scores: {
                     originality: 4,
-                    presentation: 0,
-                    technicality: 0,
-                    theme: 0,
-                    impact: 0,
                 },
                 reasoning: "A saved explanation that must stay with this rubric.",
                 rubric_version_id: 3,

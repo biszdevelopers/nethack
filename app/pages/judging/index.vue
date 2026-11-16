@@ -22,7 +22,11 @@ const {
     error,
     refresh,
     status: summaryStatus,
-} = await useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false });
+} = await useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", {
+    server: false,
+    // Always re-read progress after a judge returns from the queue.
+    getCachedData: () => undefined,
+});
 
 const currentSummary = computed(() => summary.value?.current ?? null);
 const judgingOpen = computed(

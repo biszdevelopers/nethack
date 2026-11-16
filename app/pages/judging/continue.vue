@@ -272,6 +272,16 @@ async function getQueuePage(page: number) {
     return request;
 }
 
+async function refreshQueuePage(page: number) {
+    const response = await apiFetch<GetJudgingQueueResponse>("/api/teams", {
+        query: { judging: true, page, page_size: queuePageSize },
+    });
+    queuePages.value = { ...queuePages.value, [page]: response.items };
+    totalProjects.value = response.total;
+    totalPages.value = response.total_pages;
+    return response.items;
+}
+
 async function openPage(page: number, index: number): Promise<boolean> {
     if (navigating.value || page < 1 || page > totalPages.value) return false;
 
@@ -451,6 +461,11 @@ async function recordFinalizedEvaluation(team: { id: number }) {
     }
 
     step.value = "score";
+    // The committed row is the source of truth for the evaluated flag and the
+    // progress counter; re-read both so a stale cached page cannot report a
+    // scored project as unscored (or hide the next-unscored jump).
+    void summaryFetch.refresh();
+    await refreshQueuePage(currentPage.value).catch(() => undefined);
     return focusNextPending(currentPage.value, activeIndex.value + 1);
 }
 
