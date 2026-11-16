@@ -14,6 +14,7 @@ defineProps<{
                     viewBox="0 0 500 500"
                     width="300"
                     height="300"
+                    class="h-auto max-w-full"
                 >
                     <g
                         transform="matrix(0.1, 0, 0, -0.1, -198.211914, 245.052246)"
