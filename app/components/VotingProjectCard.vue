@@ -33,7 +33,7 @@ const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
             <p class="text-sm font-semibold text-muted">AI-use disclosure</p>
             <SafeComark
                 v-if="team.project.sourcing"
-                class="mt-1 whitespace-pre-wrap text-sm leading-relaxed"
+                class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed"
             >
                 {{ team.project.sourcing }}
             </SafeComark>
