@@ -122,6 +122,15 @@ describe("environment validation plugin", () => {
         expect(warn).toHaveBeenCalledWith(expect.stringContaining("14408"));
     });
 
+    it("warns in development for a non-HTTP internal basis-auth URL", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "ftp://127.0.0.1:3001");
+
+        await runPlugin();
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("BASIS_AUTH_INTERNAL_URL"));
+    });
+
     it("rejects an invalid public production origin", async () => {
         vi.stubEnv("NODE_ENV", "production");
         vi.stubEnv("CURRENT_URL_ORIGIN", "https://site.example.test/path");

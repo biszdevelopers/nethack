@@ -65,4 +65,10 @@ describe("POST /api/auth/basis/backchannel", () => {
 
         await expect(handler({ context: {} })).rejects.toMatchObject({ statusCode: 400 });
     });
+
+    it("rejects an empty request body", async () => {
+        mockBody.value = undefined;
+
+        await expect(handler({ context: {} })).rejects.toMatchObject({ statusCode: 400 });
+    });
 });

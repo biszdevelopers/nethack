@@ -1,9 +1,19 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NethackPermissions } from "~~/shared/permissions";
 import { readProtectedDocsFile, serveProtectedDocsFile } from "~~/server/utils/protected-docs";
+
+vi.mock("node:path", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("node:path")>();
+    return {
+        ...actual,
+        // Simulate a candidate that resolves outside the docs root.
+        relative: (from: string, to: string) =>
+            to.endsWith("escaped.html") ? to : actual.relative(from, to),
+    };
+});
 
 const mockedRequireUser = vi.fn();
 let workingDirectory: string;
@@ -91,5 +101,60 @@ describe("private VitePress file serving", () => {
         await expect(
             readProtectedDocsFile({ context: {} } as never, "does-not-exist.html"),
         ).rejects.toBe(denied);
+    });
+
+    it("returns 404 for malformed percent-encoding", async () => {
+        await expect(
+            readProtectedDocsFile({ context: {} } as never, "%E0%A4%A"),
+        ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("returns 404 when no candidate file exists", async () => {
+        await expect(
+            readProtectedDocsFile({ context: {} } as never, "missing-page"),
+        ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("returns 503 when no built documentation directory is available", async () => {
+        const emptyDirectory = mkdtempSync(join(tmpdir(), "nethack-no-docs-"));
+        cwdSpy.mockReturnValue(emptyDirectory);
+
+        try {
+            await expect(readProtectedDocsFile({ context: {} } as never, "")).rejects.toMatchObject(
+                { statusCode: 503 },
+            );
+        } finally {
+            rmSync(emptyDirectory, { recursive: true, force: true });
+        }
+    });
+
+    it("serves unknown extensions as an opaque binary stream", async () => {
+        writeFileSync(join(workingDirectory, "docs", "assets", "data.bin"), "binary");
+
+        const response = await readProtectedDocsFile({ context: {} } as never, "assets/data.bin");
+
+        expect(response.contentType).toBe("application/octet-stream");
+        expect(response.body.toString()).toBe("binary");
+    });
+
+    it("skips a candidate that resolves outside the docs root", async () => {
+        await expect(
+            readProtectedDocsFile({ context: {} } as never, "escaped.html"),
+        ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("does not serve files that link outside the docs root", async () => {
+        const outsideDirectory = mkdtempSync(join(tmpdir(), "nethack-outside-docs-"));
+        writeFileSync(join(outsideDirectory, "escape.html"), "secret");
+        symlinkSync(outsideDirectory, join(workingDirectory, "docs", "link"), "junction");
+
+        try {
+            await expect(
+                readProtectedDocsFile({ context: {} } as never, "link/escape.html"),
+            ).rejects.toMatchObject({ statusCode: 404 });
+        } finally {
+            rmSync(join(workingDirectory, "docs", "link"), { recursive: true, force: true });
+            rmSync(outsideDirectory, { recursive: true, force: true });
+        }
     });
 });

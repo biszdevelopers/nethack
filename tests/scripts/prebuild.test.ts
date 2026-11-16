@@ -57,4 +57,22 @@ describe("prebuild launcher", () => {
             "VitePress documentation build failed with exit code 1.",
         );
     });
+
+    it("runs the steps when the module is executed directly", async () => {
+        const spawn = vi.fn(() => ({ status: 0, error: undefined }));
+        const scriptPath = resolve(import.meta.dirname, "../../scripts/prebuild.mjs");
+        const originalArgvEntry = process.argv[1];
+
+        vi.doMock("node:child_process", () => ({ spawnSync: spawn }));
+        process.argv[1] = scriptPath;
+        vi.resetModules();
+        try {
+            await import("../../scripts/prebuild.mjs");
+        } finally {
+            process.argv[1] = originalArgvEntry;
+            vi.doUnmock("node:child_process");
+        }
+
+        expect(spawn).toHaveBeenCalledTimes(2);
+    });
 });

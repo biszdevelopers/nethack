@@ -82,10 +82,53 @@ describe("basis-auth webhook proof", () => {
         ).not.toThrow();
     });
 
+    it("swallows a failing proof after accepting the challenge", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => {
+                throw new Error("connect ECONNREFUSED");
+            }),
+        );
+
+        handleBackchannelTest(
+            new URLSearchParams({
+                action: "test",
+                nonce: "a".repeat(43),
+                challenge: "b".repeat(43),
+            }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
     it("rejects a malformed challenge", () => {
         expect(() =>
             handleBackchannelTest(new URLSearchParams({ action: "test", nonce: "short" })),
         ).toThrow(/webhook challenge/);
+    });
+
+    it("skips the proof when the private listener is not configured", async () => {
+        delete process.env.BASIS_AUTH_INTERNAL_URL;
+        delete process.env.BASIS_AUTH_RESOURCE_SECRET;
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const fetchMock = vi.fn();
+        vi.stubGlobal("fetch", fetchMock);
+
+        await sendBasisAuthWebhookProof("nonce-value", "challenge-value");
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("webhook verification skipped"));
+    });
+
+    it("logs a rejected proof without throwing", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => new Response(null, { status: 400 })),
+        );
+
+        await sendBasisAuthWebhookProof("nonce-value", "challenge-value");
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("rejected with 400"));
     });
 });
 
@@ -154,6 +197,22 @@ describe("basis-auth access-token revocations", () => {
         });
     });
 
+    it("stores an unknown token expiry as null", async () => {
+        mocks.verifyJwt.mockResolvedValue({
+            access_token_jti: "jti-1",
+            valid_after: 1000,
+            access_token_expires_at: Number.POSITIVE_INFINITY,
+        });
+
+        await applyBasisAuthAccessTokenRevocation(event(), form());
+
+        expect(mocks.revoke).toHaveBeenCalledWith(expect.anything(), {
+            jti: "jti-1",
+            validAfter: 1000,
+            expiresAt: null,
+        });
+    });
+
     it("rejects a revocation token that does not match the form fields", async () => {
         mocks.verifyJwt.mockResolvedValue({
             access_token_jti: "other-jti",
@@ -164,5 +223,21 @@ describe("basis-auth access-token revocations", () => {
             statusCode: 400,
         });
         expect(mocks.revoke).not.toHaveBeenCalled();
+    });
+
+    it("rejects an incomplete or malformed revocation event", async () => {
+        await expect(
+            applyBasisAuthAccessTokenRevocation(
+                event(),
+                new URLSearchParams({ jti: "jti-1", valid_after: "1000" }),
+            ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+        await expect(
+            applyBasisAuthAccessTokenRevocation(
+                event(),
+                new URLSearchParams({ jti: "jti-1", valid_after: "soon", revocation_token: "x" }),
+            ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+        expect(mocks.verifyJwt).not.toHaveBeenCalled();
     });
 });

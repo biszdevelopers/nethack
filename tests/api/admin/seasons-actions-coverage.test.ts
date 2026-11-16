@@ -175,6 +175,20 @@ describe("POST /api/admin/seasons action edges", () => {
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
     });
 
+    it("creates an inactive blank season shell without live settings", async () => {
+        mockBody.value = { name: "Blank shell", copy_live_settings: false };
+
+        await expect(postHandler(event)).resolves.toHaveProperty("seasons");
+        expect(mocks.insertValues).toHaveBeenCalledWith({
+            name: "Blank shell",
+            is_active: 0,
+            is_blank_start: 1,
+        });
+        expect(mocks.getActiveSeason).not.toHaveBeenCalled();
+        expect(mocks.pickSeasonConfig).not.toHaveBeenCalled();
+        expect(mocks.setActiveSeason).not.toHaveBeenCalled();
+    });
+
     it("does not activate when the insert returns no row", async () => {
         mocks.insertReturning.mockResolvedValueOnce([]);
         mockBody.value = { name: "New season", is_active: 1 };

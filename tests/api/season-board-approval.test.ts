@@ -82,4 +82,33 @@ describe("PATCH /api/admin/seasons/:id/approval", () => {
         await expect(approvalHandler(event)).rejects.toMatchObject({ statusCode: 409 });
         expect(mocks.updateSet).not.toHaveBeenCalled();
     });
+
+    it("returns 404 when the season does not exist", async () => {
+        mocks.firstRow.mockResolvedValueOnce(undefined);
+
+        await expect(approvalHandler(event)).rejects.toMatchObject({ statusCode: 404 });
+        expect(mocks.updateSet).not.toHaveBeenCalled();
+    });
+
+    it("revokes board approval on a blank season that is not active", async () => {
+        mocks.updateReturning.mockResolvedValueOnce([
+            { id: 5, board_approved_at: null, board_approved_by: null },
+        ]);
+        mockBody.value = { approved: false };
+
+        await expect(approvalHandler(event)).resolves.toMatchObject({
+            board_approved_at: null,
+            board_approved_by: null,
+        });
+        expect(mocks.updateSet).toHaveBeenCalledWith({
+            board_approved_at: null,
+            board_approved_by: null,
+        });
+    });
+
+    it("returns 404 when the update matches no row", async () => {
+        mocks.updateReturning.mockResolvedValueOnce([]);
+
+        await expect(approvalHandler(event)).rejects.toMatchObject({ statusCode: 404 });
+    });
 });
