@@ -14,6 +14,11 @@ describe("RoleHeader.vue", () => {
         expect(source).not.toContain("useUserSession()");
     });
 
+    it("keeps the unvalidated light theme unreachable", () => {
+        expect(source).not.toContain("UColorModeButton");
+        expect(source).not.toContain("useColorMode");
+    });
+
     it("renders the shared nethack brand constant", () => {
         expect(source).toContain("{{ WEBSITE_NAME }}");
     });
@@ -53,10 +58,6 @@ describe("RoleHeader.vue", () => {
         expect(source).toContain('to: "/judging"');
         expect(source).not.toMatch(/can\(NethackPermissions\.Judging\.assignmentsRead\)\s*&&/);
         expect(source).toContain("Judges keep the Judging link outside the voting phase");
-    });
-
-    it("includes a UColorModeButton for theme toggling", () => {
-        expect(source).toContain("UColorModeButton");
     });
 
     it("has a profile button linking to /profile", () => {

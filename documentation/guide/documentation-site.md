@@ -15,7 +15,7 @@ The docs use the same **Monaspace Neon** webfont as the application. The font fi
 
 The administrator portal embeds the docs at `/developers/docs` in a full-height iframe and keeps the standalone `/docs/` route available. The custom `Layout.vue` adds a return link to the nav bar (and the mobile nav screen) with `target="_top"`. It detects the frame at runtime: embedded views show **Portal** (`/developers`) and standalone views show **Home** (`/`), so the link returns the outer application window instead of trying to load `/developers` inside the frame.
 
-The dark palette mirrors the application surface (`#0a0f1a` background, `#111827` panels, `#22c55e` primary). All colors are exposed as `--bh-*` custom properties so both light and dark modes stay consistent.
+The dark palette mirrors the application surface (`#0a0f1a` background, `#111827` panels, `#22c55e` primary). All colors are exposed as `--bh-*` custom properties. The site is configured with `appearance: "dark"`, matching the application's dark-only interface.
 
 ## Theme Components
 
@@ -114,7 +114,7 @@ The component displays:
 - Component source: `documentation/.vitepress/theme/components/`
 - Component registration: `documentation/.vitepress/theme/index.ts`
 
-The CSS uses CSS custom properties prefixed with `--bh-*` and overrides VitePress's own variables for consistent light/dark modes.
+The CSS uses CSS custom properties prefixed with `--bh-*` and overrides VitePress's own variables. The site is dark-only (`appearance: "dark"`), mirroring the application.
 
 ## Live Dependency Data
 

@@ -12,7 +12,6 @@
         <UNavigationMenu :items="navItems" />
 
         <template #right>
-            <UColorModeButton class="hidden min-h-11 min-w-11 sm:inline-flex" />
             <UButton
                 variant="ghost"
                 :class="[profileIconColor, 'min-h-11 min-w-11']"
@@ -33,9 +32,6 @@
                 class="-mx-2.5"
                 :ui="{ link: 'min-h-11' }"
             />
-            <div class="mt-3 border-t border-default px-2.5 pt-3 sm:hidden">
-                <UColorModeButton class="min-h-11 min-w-11" />
-            </div>
         </template>
     </UHeader>
 </template>

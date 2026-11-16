@@ -102,6 +102,11 @@ async function sweep(page: Page, routes: readonly string[]) {
                 )
                 .toBeLessThanOrEqual(0);
 
+            expect(
+                await page.evaluate(() => document.documentElement.classList.contains("dark")),
+                `${route} should render the dark surface`,
+            ).toBe(true);
+
             if (width === 320) {
                 const accessibility = await new AxeBuilder({ page })
                     .withTags(accessibilityTags)

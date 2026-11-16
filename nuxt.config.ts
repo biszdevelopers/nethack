@@ -46,7 +46,10 @@ export default defineNuxtConfig({
 
     css: ["~/assets/css/main.css"],
     colorMode: {
+        // The interface is designed and validated as a dark surface only.
         preference: "dark",
+        fallback: "dark",
+        storageKey: "nethack-color-mode",
     },
     experimental: {
         asyncContext: true,
