@@ -40,7 +40,12 @@ export default defineNitroErrorHandler((input, event) => {
 
     if ((getRequestHeader(event, "accept") ?? "").includes("text/html")) {
         setResponseHeader(event, "content-type", "text/html; charset=utf-8");
-        return send(event, renderErrorPage(apiError.toJSON()));
+        // The shared renderer hardcodes a 500px image, which overflows narrow screens.
+        const html = renderErrorPage(apiError.toJSON()).replace(
+            "<img width=500 ",
+            '<img width="500" style="max-width:100%;height:auto" ',
+        );
+        return send(event, html);
     }
 
     setResponseHeader(event, "content-type", "application/json; charset=utf-8");

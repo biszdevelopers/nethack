@@ -69,6 +69,7 @@ describe("canonical API error handler", () => {
         expect(body).not.toContain("database");
         expect(body).not.toContain("server_error");
         expect(body).toContain('src="data:image/png;base64,');
+        expect(body).toContain('style="max-width:100%;height:auto"');
         expect(h3.setResponseStatus).toHaveBeenCalledWith(event, 500);
         expect(h3.setResponseHeader).toHaveBeenCalledWith(
             event,
