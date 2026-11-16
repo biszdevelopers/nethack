@@ -1,9 +1,10 @@
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const scriptPath = fileURLToPath(
-    new URL("../../scripts/audit-sqlite-postgres.mjs", import.meta.url),
-);
+const scriptUrl = new URL("../../scripts/audit-sqlite-postgres.mjs", import.meta.url);
+const scriptPath = fileURLToPath(scriptUrl);
+const projectRoot = dirname(dirname(scriptPath));
 const modulePath = "../../scripts/audit-sqlite-postgres.mjs";
 const importModulePath = "../../scripts/import-sqlite-to-postgres.mjs";
 
@@ -857,7 +858,7 @@ describe("audit CLI", () => {
 
         await module.main();
 
-        expect(mkdir).toHaveBeenCalledWith(expect.stringMatching(/basishacks-r2$/), {
+        expect(mkdir).toHaveBeenCalledWith(projectRoot, {
             recursive: true,
         });
         const outputPath = open.mock.calls[0]![0] as string;
