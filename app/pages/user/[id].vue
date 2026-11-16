@@ -19,9 +19,23 @@ const backgroundUrl = computed(() => getProfileThemeUrl(user.value?.profile_them
 
 <template>
     <div
-        class="bg-center bg-cover"
+        class="min-h-[calc(100vh-var(--ui-header-height))] bg-center bg-cover pb-16"
         :style="backgroundUrl ? { backgroundImage: `url(${backgroundUrl})` } : undefined"
     >
-        <div class="h-[calc(100vh-var(--ui-header-height))] pt-4 px-4 sm:px-6 lg:px-8" />
+        <div class="mx-auto w-full max-w-3xl px-4 pt-8 sm:px-6 lg:px-8">
+            <section class="rounded-2xl border border-default bg-default p-6">
+                <div class="flex items-center gap-4">
+                    <UserAvatar :user="user" size="lg" />
+                    <div class="min-w-0">
+                        <p class="font-mono text-xs tracking-[0.18em] text-muted uppercase">
+                            Member profile
+                        </p>
+                        <h1 class="mt-1 truncate text-2xl font-bold text-primary glow sm:text-3xl">
+                            {{ user.name || "Unnamed member" }}
+                        </h1>
+                    </div>
+                </div>
+            </section>
+        </div>
     </div>
 </template>

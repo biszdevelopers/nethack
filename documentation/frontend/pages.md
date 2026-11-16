@@ -393,7 +393,8 @@ Public user profile page.
 
 - Fetches user data from `/api/users/{id}`
 - If the user has a `profile_theme` with mode `url`, sets the background image from `/userast/{value}`
-- Full-height container with default background overlay
+- Renders the member card with avatar and an `h1` name on top of the themed background, so the page never looks blank
+- Public responses omit the email address, so only the display name is shown
 
 **Layout:** `fullwidth` (set programmatically via `setPageLayout`)
 
