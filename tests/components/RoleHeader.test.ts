@@ -19,7 +19,10 @@ describe("RoleHeader.vue", () => {
     });
 
     it("keeps the brand and mobile header controls usable on narrow touch screens", () => {
-        expect(source).toContain("text-base text-primary sm:text-xl");
+        expect(source).toContain("title: 'min-h-11 items-center'");
+        expect(source).toContain(
+            "flex items-center text-base leading-none text-primary sm:text-xl",
+        );
         expect(source).toContain("min-h-11 min-w-11");
         expect(source).toContain(":ui=\"{ link: 'min-h-11' }\"");
     });

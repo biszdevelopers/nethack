@@ -62,9 +62,26 @@ const orderedProjects = computed(() =>
                     </UBadge>
                 </div>
 
-                <p class="mt-4 flex-1 whitespace-pre-wrap break-words text-sm leading-6 text-muted">
+                <SafeComark
+                    class="mt-4 flex-1 whitespace-pre-wrap break-words text-sm leading-6 text-muted"
+                >
                     {{ team.project.description || "No project description was recorded." }}
-                </p>
+                </SafeComark>
+
+                <div class="mt-4 border-t border-default pt-3">
+                    <p class="font-mono text-[0.7rem] tracking-[0.18em] text-muted uppercase">
+                        AI-use disclosure
+                    </p>
+                    <SafeComark
+                        v-if="team.project.sourcing"
+                        class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted"
+                    >
+                        {{ team.project.sourcing }}
+                    </SafeComark>
+                    <p v-else class="mt-2 text-sm leading-6 text-muted">
+                        No AI-use disclosure was recorded.
+                    </p>
+                </div>
 
                 <div class="mt-6 flex flex-wrap gap-3">
                     <UButton

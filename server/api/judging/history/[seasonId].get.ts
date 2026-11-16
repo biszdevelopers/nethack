@@ -82,8 +82,26 @@ export default defineEventHandler(
                     : versionsById.get(row.rubric_version_id);
             const track = getRubricTrack(version?.definition, row.team.pathway);
             const scores = parseStoredScores(row.scores);
+
             if (!version || !track || !scores || validateRubricScores(track, scores).length > 0) {
                 unavailable += 1;
+                // Keep the project details and the judge's written feedback
+                // reviewable even when the immutable rubric is gone.
+                items.push({
+                    team: convertTeamToPublic(
+                        row.team as Team,
+                        { withScore: false, withRank: false },
+                        awardsByTeam[row.team.id] ?? [],
+                    ),
+                    rubric_name: version?.name ?? "Unavailable rubric",
+                    rubric_version: version?.version ?? 0,
+                    track_name: track?.name ?? "Unavailable track",
+                    normalized_score: null,
+                    scores: scores ?? {},
+                    criteria: track?.criteria ?? [],
+                    reasoning: row.reasoning,
+                    unavailable: true,
+                });
                 continue;
             }
 

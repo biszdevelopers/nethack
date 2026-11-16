@@ -18,6 +18,9 @@ const endpoint = computed(() =>
     props.admin ? `/api/admin/teams/${props.teamId}/scores` : `/api/teams/${props.teamId}/scores`,
 );
 const { data, pending, error } = await useApiFetch<TeamScoreFeedbackResponse>(endpoint);
+const { data: projectTeam } = await useApiFetch<GetTeamResponse>(
+    () => `/api/teams/${props.teamId}`,
+);
 const curve = computed(() =>
     data.value?.curve_preset ? SCORE_CURVE_PRESETS[data.value.curve_preset] : null,
 );
@@ -62,6 +65,30 @@ const hasSummary = computed(() =>
                     <strong>#{{ data.rank }}</strong>
                 </span>
             </div>
+        </div>
+
+        <div v-if="projectTeam" class="mt-4 rounded-lg border border-default bg-elevated/50 p-4">
+            <p class="text-sm font-semibold text-default">Project context</p>
+            <p class="mt-2 text-sm font-semibold text-default">Project description</p>
+            <SafeComark
+                v-if="projectTeam.project.description"
+                class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed"
+            >
+                {{ projectTeam.project.description }}
+            </SafeComark>
+            <p v-else class="mt-1 text-sm leading-relaxed text-default">
+                No project description was recorded.
+            </p>
+            <p class="mt-3 text-sm font-semibold text-default">AI-use disclosure</p>
+            <SafeComark
+                v-if="projectTeam.project.sourcing"
+                class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed"
+            >
+                {{ projectTeam.project.sourcing }}
+            </SafeComark>
+            <p v-else class="mt-1 text-sm leading-relaxed text-default">
+                No AI-use disclosure was recorded.
+            </p>
         </div>
 
         <p v-if="pending" class="mt-4 text-sm text-default" role="status">

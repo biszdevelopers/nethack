@@ -61,6 +61,22 @@ async function openQueue() {
         </header>
 
         <UAlert
+            v-if="can(NethackPermissions.all)"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-shield-check"
+            title="Administrator review"
+            description="Open every team's judge feedback, including comments and AI-use disclosures."
+            class="mb-6"
+        >
+            <template #actions>
+                <UButton to="/developers/teams" variant="outline" class="min-h-11">
+                    Open team review
+                </UButton>
+            </template>
+        </UAlert>
+
+        <UAlert
             v-if="error"
             color="error"
             icon="i-lucide-circle-alert"

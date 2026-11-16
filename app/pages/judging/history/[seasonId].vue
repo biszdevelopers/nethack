@@ -145,7 +145,7 @@ function selectRelative(offset: number) {
                                 <span
                                     class="shrink-0 text-sm font-semibold text-primary tabular-nums"
                                 >
-                                    {{ item.normalized_score }}
+                                    {{ item.unavailable ? "—" : item.normalized_score }}
                                 </span>
                             </span>
                             <span class="truncate text-sm text-muted">{{ item.team.name }}</span>
@@ -195,6 +195,16 @@ function selectRelative(offset: number) {
                 <h2 class="mt-3 break-words text-2xl font-bold">
                     {{ selectedItem.team.project.name || "Untitled project" }}
                 </h2>
+
+                <UAlert
+                    v-if="selectedItem.unavailable"
+                    color="warning"
+                    variant="subtle"
+                    icon="i-lucide-triangle-alert"
+                    title="Saved rubric unavailable"
+                    description="The project details and your written feedback are still shown. The score breakdown cannot be reconstructed because its rubric version is no longer available."
+                    class="mt-4"
+                />
 
                 <dl class="my-4 divide-y divide-default rounded-xl border border-default">
                     <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
@@ -298,17 +308,26 @@ function selectRelative(offset: number) {
 
                 <div class="rounded-xl bg-primary/10 p-4">
                     <p class="text-sm text-default">Your weighted score</p>
-                    <p class="mt-1 text-3xl font-bold text-primary">
-                        {{ selectedItem.normalized_score }}
-                        <span class="text-lg">/ 100</span>
+                    <p v-if="selectedItem.unavailable" class="mt-1 text-2xl font-bold text-muted">
+                        Unavailable
                     </p>
-                    <p class="mt-1 text-sm text-default">
-                        {{ selectedItem.rubric_name }} · version
-                        {{ selectedItem.rubric_version }}
-                    </p>
+                    <template v-else>
+                        <p class="mt-1 text-3xl font-bold text-primary">
+                            {{ selectedItem.normalized_score }}
+                            <span class="text-lg">/ 100</span>
+                        </p>
+                        <p class="mt-1 text-sm text-default">
+                            {{ selectedItem.rubric_name }} · version
+                            {{ selectedItem.rubric_version }}
+                        </p>
+                    </template>
                 </div>
 
-                <section class="mt-5" aria-labelledby="history-criteria-heading">
+                <section
+                    v-if="!selectedItem.unavailable"
+                    class="mt-5"
+                    aria-labelledby="history-criteria-heading"
+                >
                     <h3 id="history-criteria-heading" class="mb-2 font-semibold">
                         Criterion scores
                     </h3>

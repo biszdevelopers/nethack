@@ -212,7 +212,7 @@ describe("GET /api/judging/history/:seasonId", () => {
         await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 401 });
     });
 
-    it("skips evaluations whose saved rubric or scores cannot be displayed", async () => {
+    it("keeps evaluations whose saved rubric or scores cannot be displayed reviewable", async () => {
         const season = seedSeason(ctx);
         const rubricVersionId = season.rubric_version_id;
         const teams = [
@@ -243,11 +243,17 @@ describe("GET /api/judging/history/:seasonId", () => {
         mockParams.values.seasonId = String(season.id);
         const result = await handler(createEvent());
 
-        expect(result.items).toEqual([]);
+        expect(result.items).toHaveLength(teams.length);
         expect(result.unavailable_evaluations).toBe(teams.length);
+        for (const item of result.items) {
+            expect(item.unavailable).toBe(true);
+            expect(item.normalized_score).toBeNull();
+            expect(item.reasoning).toBe("A careful evaluation.");
+            expect(item.team.project.sourcing).toBeDefined();
+        }
     });
 
-    it("counts legacy evaluations without a rubric version as unavailable", async () => {
+    it("keeps legacy evaluations without a rubric version reviewable", async () => {
         const season = seedSeason(ctx);
         const team = seedTeam(ctx, { pathway: "junior", season_id: season.id });
         addEvaluation(season.id, team.id, { rubric_version_id: null, season_id: null });
@@ -255,7 +261,12 @@ describe("GET /api/judging/history/:seasonId", () => {
         mockParams.values.seasonId = String(season.id);
         const result = await handler(createEvent());
 
-        expect(result.items).toEqual([]);
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0]).toMatchObject({
+            unavailable: true,
+            normalized_score: null,
+            reasoning: "A careful evaluation.",
+        });
         expect(result.unavailable_evaluations).toBe(1);
     });
 });

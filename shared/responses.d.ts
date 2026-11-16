@@ -64,10 +64,11 @@ interface JudgingHistoryItem {
     rubric_name: string;
     rubric_version: number;
     track_name: string;
-    normalized_score: number;
+    normalized_score: number | null;
     scores: Record<string, number>;
     criteria: ScoreFeedbackCriterionResponse[];
     reasoning: string;
+    unavailable?: boolean;
 }
 
 interface GetJudgingHistoryResponse {
