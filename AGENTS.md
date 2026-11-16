@@ -188,7 +188,7 @@ Use the helpers in `server/utils/auth.ts` to enforce roles:
 - Pages use `<script setup lang="ts">`.
 - Global constants (`WEBSITE_NAME`, `THEME_NAME`) are imported from `~/utils/consts.ts`.
 - Fetch errors are handled with `getErrorMessage(e)` from `~/utils/errors.ts`.
-- The `auth` route middleware (`app/middleware/auth.ts`) redirects unauthenticated users to `/login`.
+- The `auth` route middleware (`app/middleware/auth.ts`) redirects unauthenticated users to `/api/login?redirect=<requested-path>`.
 - Layouts are declared with `definePageMeta({ layout: '...' })`.
 - UI components come from `@nuxt/ui` (e.g., `UButton`, `UForm`, `UAlert`).
 - Run `bun run format` always before you commit

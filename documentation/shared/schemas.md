@@ -338,9 +338,7 @@ The refinement uses a custom function: `(u) => u.startsWith("https://") || /^htt
 | `positions[].candidates[].id` | `string` | Max 64 characters |
 | `positions[].candidates[].rank` | `number \| null` | Integer 1+, or `null` to abstain |
 
-A `null` rank records an abstention for that candidate. The schema does not enforce uniqueness or contiguity of ranks; application logic handles IRV tabulation rules.
-
-**API endpoint:** `POST /api/election/vote`
+A `null` rank records an abstention for that candidate. The schema does not enforce uniqueness or contiguity of ranks; application logic handles IRV tabulation rules. There is no election HTTP route: `server/utils/election.ts` provides the tabulation helpers and this schema defines their input shape.
 
 ---
 

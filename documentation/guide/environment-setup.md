@@ -189,6 +189,7 @@ These are read by development scripts, never by the running server.
 | --- | --- | --- |
 | `BASISHACKS_E2E_DATABASE_URL` | Separate loopback PostgreSQL URL for the disposable database named `basishacks_e2e`; never read by the app server | Set it in `.env` for browser tests |
 | `PLAYWRIGHT_BASE_URL` | Required loopback HTTP origin for the isolated end-to-end Playwright app | Set it in `.env`; the sample shows the test origin |
+| `ASSET_STORAGE_DIR` | Absolute asset storage root honored only while `NODE_ENV=test`, so Vitest can redirect uploads into a temporary directory; ignored in every other runtime | unset |
 | `VPS_RELEASE_OUTPUT_DIR` | Directory `bun run release:package` writes the deployable bundle into | `release-package` |
 | `VPS_RELEASE_INCLUDE_NODE_MODULES` | Set to `1` to copy production `node_modules` into the release bundle | unset |
 | `BENCHMARK_HEADERS_JSON` | JSON object of extra request headers for `bun run benchmark:vps` | unset |

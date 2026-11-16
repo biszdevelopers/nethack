@@ -213,7 +213,7 @@ The active Vitest suite covers the basis-auth authorization request, callback tr
 
 Once the server is running, follow these steps to log in for the first time:
 
-1. **Navigate to the login page** — Click the login button or go to `/login`.
+1. **Start the login flow** — Click the login button or go to `/api/login`.
 2. **Sign in with basis-auth** — Start login from nethack and complete authentication at the configured basis-auth issuer.
 3. **Access the dashboard** — After successful authentication, you are redirected to the dashboard.
 

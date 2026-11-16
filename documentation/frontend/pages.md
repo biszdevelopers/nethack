@@ -402,7 +402,7 @@ Public user profile page.
 
 **File:** `app/pages/user/index.vue`
 
-Redirects an authenticated user to their own profile page (`/user/{id}`). If the user is not logged in, redirects to `/login`.
+Redirects an authenticated user to their own profile page (`/user/{id}`). If the user is not logged in, redirects to `/api/login?redirect=/user`.
 
 ## Debug
 

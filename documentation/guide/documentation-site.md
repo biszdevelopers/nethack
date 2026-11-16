@@ -40,7 +40,7 @@ Wrap shell snippets in a terminal chrome:
 <TerminalWindow title="nethack@api-test:~" prompt="$">
 
 ```bash
-curl -s https://localhost:24598/api/health
+curl -s https://localhost:24598/api/seasons/active
 ```
 
 </TerminalWindow>

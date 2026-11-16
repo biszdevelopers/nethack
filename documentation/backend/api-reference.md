@@ -611,7 +611,7 @@ The optional validation token and each bounded notification field are validated 
 
 ```bash
 # Quick health check
-curl -s https://localhost:24598/api/health | jq .
+curl -s https://localhost:24598/api/seasons/active | jq .
 
 # List teams (authenticated)
 curl -s -H "Cookie: session=..." \
