@@ -10,10 +10,11 @@ const safeOptions = { registerDefaultPlugins: false };
 const safePlugins = [breaks()];
 const slots = useSlots();
 
-const getNodeText = (node: VNode): string => {
+const getNodeText = (node: VNode | string): string => {
+    if (typeof node === "string") return node;
     if (typeof node.children === "string") return node.children;
     if (Array.isArray(node.children)) {
-        return node.children.map((child) => getNodeText(child as VNode)).join("");
+        return node.children.map((child) => getNodeText(child as VNode | string)).join("");
     }
     return "";
 };
