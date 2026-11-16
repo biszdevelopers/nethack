@@ -128,6 +128,7 @@ onMounted(refreshFiles);
                                 color="neutral"
                                 variant="ghost"
                                 size="sm"
+                                aria-label="Refresh file list"
                                 @click="refreshFiles()"
                             />
                         </div>

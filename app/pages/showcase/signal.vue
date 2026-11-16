@@ -77,7 +77,7 @@
                         <ResultsProjectLinks
                             github-link="https://github.com/Rua-You/Syl"
                             demo-link="https://rua-you.itch.io/syl"
-                            video-link="/assets/ee2c39cc-c590-4c36-a73e-43d335c76a86.mp4"
+                            video-link=""
                         />
                     </div>
                 </div>
@@ -313,11 +313,6 @@ useHead({
             rel: "preload",
             as: "video",
             href: "/assets/3f9cbe2c-c8ea-42f4-94f6-4a4a0cb01549", // team3 demo
-        },
-        {
-            rel: "preload",
-            as: "video",
-            href: "/assets/ee2c39cc-c590-4c36-a73e-43d335c76a86", // team3 demo
         },
     ],
 });

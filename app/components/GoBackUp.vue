@@ -4,6 +4,7 @@
             v-if="isVisible"
             class="z-999 fixed bottom-4 right-4"
             icon="i-lucide-arrow-up"
+            aria-label="Back to top"
             @click="scrollToTop"
         />
     </Transition>
