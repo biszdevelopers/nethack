@@ -42,7 +42,6 @@ function stable(value) {
     if (Array.isArray(value)) return value.map(stable);
     if (!value || typeof value !== "object") return value;
     if (value instanceof Date) return value.toISOString();
-    if (typeof value === "bigint") return value.toString();
     return Object.fromEntries(
         Object.keys(value)
             .sort()
