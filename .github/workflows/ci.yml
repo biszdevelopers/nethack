@@ -117,6 +117,22 @@ jobs:
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
                   BASISHACKS_POSTGRES_TEST: "1"
 
+            # `prebuild` builds the VitePress site before Nuxt, so docs
+            # dependencies must be installed before the app build.
+            - name: Cache docs dependencies
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.bun/install/cache
+                      documentation/node_modules
+                  key: ${{ runner.os }}-docs-bun-${{ hashFiles('documentation/package.json', 'documentation/bun.lock') }}
+                  restore-keys: |
+                      ${{ runner.os }}-docs-bun-
+
+            - name: Install docs dependencies
+              working-directory: documentation
+              run: bun install --frozen-lockfile
+
             - name: Build Nuxt app
               run: bun run build
               env:
@@ -164,20 +180,6 @@ jobs:
                   CURRENT_URL_ORIGIN: https://basishacks.example.invalid
                   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_test
                   TRUSTED_PROXY_HOPS: "0"
-
-            - name: Cache docs dependencies
-              uses: actions/cache@v4
-              with:
-                  path: |
-                      ~/.bun/install/cache
-                      documentation/node_modules
-                  key: ${{ runner.os }}-docs-bun-${{ hashFiles('documentation/package.json', 'documentation/bun.lock') }}
-                  restore-keys: |
-                      ${{ runner.os }}-docs-bun-
-
-            - name: Install docs dependencies
-              working-directory: documentation
-              run: bun install --frozen-lockfile
 
             - name: Build documentation
               working-directory: documentation
