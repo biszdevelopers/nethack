@@ -7,7 +7,15 @@ const { data, error } = await useApiFetch("/api/seasons/active", { $fetch: globa
 if (error.value) {
     throw error.value;
 }
-const hackathon = computed(() => data.value!);
+const hackathon = computed(() => {
+    if (!data.value) {
+        throw createError({
+            statusCode: 502,
+            statusMessage: "The active season could not be loaded.",
+        });
+    }
+    return data.value;
+});
 
 const status = computed(() => hackathon.value.status);
 const startDate = computed(() => new Date(hackathon.value.start_timestamp));

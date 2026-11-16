@@ -3,6 +3,7 @@ import { apiFetch } from "~~/app/composables/useApiFetch";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
+import { formatDateTime, fromDateTimeLocalString, toDateTimeLocalString } from "~/utils/datetime";
 import AdminRubricManager from "~/components/admin/RubricManager.vue";
 definePageMeta({
     layout: "developers-dashboard",
@@ -50,19 +51,15 @@ const configReadOnly = computed(
 function tsToDatetime(ts: unknown): string {
     const num = Number(ts);
     if (!Number.isFinite(num) || num <= 0) return "";
-    const d = new Date(num);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return toDateTimeLocalString(num);
 }
 function datetimeToTs(s: string): number {
-    if (!s) return 0;
-    return new Date(s).getTime();
+    return fromDateTimeLocalString(s);
 }
 function formatTimestamp(ts: unknown): string {
     const num = Number(ts);
     if (!Number.isFinite(num) || num <= 0) return "Not set";
-    return new Date(num).toLocaleString();
+    return formatDateTime(num);
 }
 /** Format a datetime-local form value so the overview matches the editable fields. */
 function formatFormTimestamp(value: unknown): string {
@@ -694,11 +691,7 @@ async function deleteSeason() {
                                         selectedSeason.board_approved_by
                                     }}
                                     on
-                                    {{
-                                        new Date(
-                                            selectedSeason.board_approved_at!,
-                                        ).toLocaleString()
-                                    }}.
+                                    {{ formatDateTime(selectedSeason.board_approved_at!) }}.
                                 </p>
                                 <p v-else class="mt-2">No board approval is recorded.</p>
                             </div>

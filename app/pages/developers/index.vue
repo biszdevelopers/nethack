@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatDateTime } from "~/utils/datetime";
+
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -81,7 +83,7 @@ const links = [
 function formatTimestamp(ts: unknown): string {
     const num = Number(ts);
     if (!Number.isFinite(num) || num <= 0) return "Not set";
-    return new Date(num).toLocaleString();
+    return formatDateTime(num);
 }
 </script>
 
