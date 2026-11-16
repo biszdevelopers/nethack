@@ -6,6 +6,8 @@ definePageMeta({
     middleware: ["auth"],
 });
 
+useHead({ title: `DeepSeek | ${WEBSITE_NAME}` });
+
 const toast = useToast();
 
 // DeepSeek state

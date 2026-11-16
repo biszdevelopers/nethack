@@ -26,7 +26,7 @@ describe("page document titles", () => {
         const missing = files.filter((file) => {
             if (TITLELESS_PAGES.has(file)) return false;
             const source = readFileSync(join(pagesDir, file), "utf8");
-            return !/useHead\s*\(/.test(source) && !/\btitle:\s*[`"']/.test(source);
+            return !/useHead\s*\(/.test(source);
         });
 
         expect(missing).toEqual([]);

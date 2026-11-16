@@ -15,6 +15,8 @@ if (error.value) {
 const userID = computed(() => userRef.value?.id ?? 0);
 const user = computed(() => data.value);
 
+useHead(() => ({ title: `${user.value?.name || "Your profile"} | ${WEBSITE_NAME}` }));
+
 async function doLogout() {
     try {
         await clear();
