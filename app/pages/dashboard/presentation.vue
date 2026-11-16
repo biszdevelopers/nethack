@@ -15,6 +15,10 @@
 </template>
 
 <script lang="ts" setup>
+import { WEBSITE_NAME } from "~/utils/consts";
+
+useHead({ title: `Presentation | ${WEBSITE_NAME}` });
+
 definePageMeta({
     layout: "dashboard",
     middleware: "auth",

@@ -14,6 +14,8 @@ if (error.value) {
 
 const user = computed(() => data.value as APIUser);
 
+useHead(() => ({ title: `${user.value?.name || "Member profile"} | ${WEBSITE_NAME}` }));
+
 const backgroundUrl = computed(() => getProfileThemeUrl(user.value?.profile_theme));
 </script>
 

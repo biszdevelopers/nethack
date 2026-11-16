@@ -279,6 +279,8 @@ definePageMeta({
     middleware: ["auth"],
 });
 
+useHead({ title: `Debug | ${WEBSITE_NAME}` });
+
 await useApiUser();
 const { can } = useNethackPermissions();
 if (!can(NethackPermissions.all)) {

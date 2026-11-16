@@ -8,6 +8,8 @@ definePageMeta({
     middleware: ["auth"],
 });
 
+useHead({ title: `Debug | ${WEBSITE_NAME}` });
+
 const fileListError = ref("");
 const filesUnavailable = ref(false);
 const loadingFiles = ref(false);
