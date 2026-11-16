@@ -167,7 +167,7 @@ Shows the weighted score preview, individual scores, and anonymous feedback in a
 
 **File:** `app/components/VotingProjectCard.vue`
 
-Interactive card displaying a project for peer voting. Shows project name, team name, pathway badge, description rendered with `SafeComark`, and repo/demo links, plus star increment and decrement controls.
+Interactive card displaying a project for peer voting. Shows project name, team name, pathway badge, description rendered with `SafeComark`, the AI-use disclosure, and repo/demo links, plus star increment and decrement controls.
 
 **Props:**
 
@@ -267,7 +267,7 @@ Horizontal scroll card used in the showcase marquee. Displays project rank, awar
 
 **File:** `app/components/ProjectCard.vue`
 
-Fetches and displays a team's project card by ID. Shows project name, team name, description rendered with `SafeComark`, repo/demo links, and awarded badges via `AwardButton`. `SafeComark` extracts the supplied slot text and passes it to Comark as markdown, so descriptions render consistently in every card context.
+Fetches and displays a team's project card by ID. Shows project name, team name, description rendered with `SafeComark`, the AI-use disclosure (or an explicit "not provided" state), repo/demo links, and awarded badges via `AwardButton`. `SafeComark` extracts the supplied slot text and passes it to Comark as markdown, so descriptions render consistently in every card context.
 
 **Props:**
 
@@ -280,6 +280,12 @@ Fetches and displays a team's project card by ID. Shows project name, team name,
 ```
 
 When a parent already has a public `GetTeamResponse`, it can pass `:team="team"` instead. This avoids a second request to the authenticated single-team endpoint, which is how public showcase modals render project details.
+
+### ScoreFeedbackPanel
+
+**File:** `app/components/ScoreFeedbackPanel.vue`
+
+Renders the project context (description and AI-use disclosure) plus the judge feedback for one team. The admin view (`admin`) reveals judge names, criterion scores, and rubric metadata; the public view shows only anonymous comments after the anonymity threshold is met. Loading project context through `/api/teams/:id` keeps the disclosure visible in the admin team-review modal and on past results cards even when the caller does not already hold the public team record.
 
 ### ResultsProjectLinks
 

@@ -211,9 +211,9 @@ Read-only review of the signed-in judge's finalized evaluations for one season. 
 - Left list of every evaluated project, selectable with Previous and Next controls
 - Project name, team, track, repository and demo links, description, and AI-use disclosure, each labeled; missing values are stated explicitly instead of being omitted
 - The judge's weighted score, rubric name and version, per-criterion scores, and anonymous feedback
-- An alert when saved evaluations reference a rubric that is no longer available
+- Evaluations whose immutable rubric is missing or invalid remain in the list with their project details and written feedback; the page shows an explicit "Saved rubric unavailable" alert instead of hiding the comment
 
-The page requests `GET /api/judging/history/:seasonId`; the response only contains the requesting judge's own evaluations.
+The API always returns a row for every finalized evaluation, including legacy rows whose rubric can no longer be reconstructed, so past comments and disclosures are never silently dropped.
 
 **Layout:** `fullwidth` with the footer hidden
 

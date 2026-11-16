@@ -219,8 +219,8 @@ Read the signed-in judge's finalized evaluations for one season, including past 
 | **Auth** | Judge with `nethack.Judging.assignmentsRead` |
 | **Params** | `seasonId` — positive integer |
 | **Response** | `GetJudgingHistoryResponse` — `{ season, items, unavailable_evaluations }` |
-| **Items** | `team` (`APITeam`), rubric name and version, track name, normalized weighted score, criterion scores, and anonymous feedback |
-| **Edge cases** | Returns `404` for an unknown season and an empty list when the judge has no evaluations. Evaluations whose saved rubric or score payload cannot be read are counted in `unavailable_evaluations` instead of failing the request |
+| **Items** | `team` (`APITeam` with description and AI-use disclosure), rubric name and version, track name, normalized weighted score, criterion scores, anonymous feedback, and an optional `unavailable` flag |
+| **Edge cases** | Returns `404` for an unknown season and an empty list when the judge has no evaluations. An evaluation whose saved rubric or score payload cannot be read is still returned with `unavailable: true`, `normalized_score: null`, the project details, and the written feedback; it is also counted in `unavailable_evaluations` |
 
 ### GET `/api/teams/:id/scores`
 
