@@ -57,7 +57,7 @@ export default defineEventHandler(
         team.sourcing = payload.project.sourcing ?? "";
         team.project_submitted = 1;
 
-        await updateTeam(event, team);
+        await updateTeam(event, team, { requireUnsubmitted: true });
 
         return { message: "Successfully submitted project" };
     }, DEFAULT_RATE_LIMIT_CONFIG),

@@ -232,6 +232,32 @@ describe("POST /api/teams/:id/submit", () => {
         });
     });
 
+    it("does not overwrite a project submitted between the guard and the write", async () => {
+        const team = seedTeam(ctx, { name: "Race Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+        ctx.drizzle
+            .update(teams)
+            .set({ project_submitted: 1, project_name: "Locked" })
+            .where(eq(teams.id, team.id))
+            .run();
+
+        const getTeamSpy = vi
+            .spyOn(globalThis as any, "getTeam")
+            .mockResolvedValue({ ...team, project_submitted: 0 });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        try {
+            await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+            const after = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+            expect(after!.project_name).toBe("Locked");
+        } finally {
+            getTeamSpy.mockRestore();
+        }
+    });
+
     it("validates request body through SubmitTeamRequest schema", async () => {
         const originalReadValidatedBody = globalThis.readValidatedBody;
         vi.stubGlobal("readValidatedBody", async (_event: any, schema: any) => {
