@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { inArray } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
+import { MAX_BULK_DELETE_IDS } from "~~/shared/schemas";
 import { teams } from "~~/server/database/schema";
 import { calculateSeasonScores } from "~~/server/utils/scoring";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 const DeleteTeamsRequest = z.object({
-    ids: z.array(z.number().int().positive()),
+    ids: z.array(z.number().int().positive()).max(MAX_BULK_DELETE_IDS),
 });
 
 export default defineEventHandler(

@@ -81,12 +81,7 @@ export async function resolveOAuth2User(event: H3Event, payload: Pick<OAuth2JWTP
     if (!payload.sub) invalidAccessToken();
 
     const user = await getUserByBasisAuthSubject(event, getBasisAuthConfig().issuer, payload.sub);
-    if (!user) {
-        throw createError({
-            statusCode: 404,
-            message: "User not found",
-        });
-    }
+    if (!user) invalidAccessToken();
 
     return user;
 }

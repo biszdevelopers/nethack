@@ -162,11 +162,11 @@ describe("basis-auth access tokens", () => {
         expect(getUserBySubjectMock).not.toHaveBeenCalled();
     });
 
-    it("returns not found when the basis-auth identity has no local user", async () => {
+    it("rejects an access token whose basis-auth identity has no local user", async () => {
         getUserBySubjectMock.mockResolvedValue(undefined);
         await expect(resolveOAuth2User(event(), { sub: "missing-user" })).rejects.toMatchObject({
-            statusCode: 404,
-            message: "User not found",
+            statusCode: 401,
+            statusMessage: "invalid_token",
         });
     });
 });

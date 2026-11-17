@@ -21,7 +21,7 @@ export const MAX_ELECTION_POSITIONS = 20;
 export const MAX_ELECTION_CANDIDATES = 50;
 export const MAX_ELECTION_TITLE_LENGTH = 128;
 export const MAX_ELECTION_CANDIDATE_ID_LENGTH = 64;
-export const MAX_APPLICATION_IDS_DELETE = 100;
+export const MAX_BULK_DELETE_IDS = 100;
 
 export const BasisEmail = z
     .email()
@@ -341,8 +341,8 @@ export const DeleteApplicationsRequest = z.object({
     ids: z
         .array(z.string().min(1))
         .max(
-            MAX_APPLICATION_IDS_DELETE,
-            `Cannot delete more than ${MAX_APPLICATION_IDS_DELETE} applications at once`,
+            MAX_BULK_DELETE_IDS,
+            `Cannot delete more than ${MAX_BULK_DELETE_IDS} applications at once`,
         ),
 });
 export type DeleteApplicationsRequest = z.infer<typeof DeleteApplicationsRequest>;
