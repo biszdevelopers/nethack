@@ -41,8 +41,25 @@ button:disabled {
 }
 
 /*
+ * Surface entrance animations use a 200 ms opacity fade. Mid-fade, text is
+ * translucent and drops below AA on light surfaces, so animate position only.
+ */
+@keyframes surface-in {
+    from {
+        transform: translateY(4px) scale(0.98);
+    }
+    to {
+        transform: translateY(0) scale(1);
+    }
+}
+
+[data-slot="content"][data-state="open"] {
+    animation: surface-in 200ms ease-out !important;
+}
+
+/*
  * The stock light palette uses the 500 shade for semantic colours, which is
- * tuned for dark surfaces and drops to 2.2:1 on white. Darker 700 shades keep
+ * tuned for dark surfaces and drops to 2.2:1 on white. The 800 shade keeps
  * text, soft alerts, and filled buttons above WCAG AA in light mode.
  */
 html:not(.dark) {
