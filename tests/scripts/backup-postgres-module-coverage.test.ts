@@ -9,7 +9,7 @@ const originalExitCode = process.exitCode;
 
 type SpawnOutcome =
     | "success"
-    | { code: number | null; signal?: string | null }
+    | { code: number | null; signal?: string | null; stderr?: string }
     | { error: unknown };
 
 interface RunOptions {
@@ -20,15 +20,29 @@ interface RunOptions {
     outcomes?: SpawnOutcome[];
     exists?: boolean;
     statSize?: number;
+    unlinkFailure?: boolean | "all";
 }
 
 const createSpawn = (outcomes: SpawnOutcome[]) => {
     const queue = [...outcomes];
     return vi.fn(() => {
         const outcome = queue.shift() ?? "success";
+        const stderrHandlers: Array<(chunk: unknown) => void> = [];
+        const stderr = {
+            on(event: string, handler: (chunk: unknown) => void) {
+                if (event === "data") stderrHandlers.push(handler);
+                return stderr;
+            },
+        };
         const child = {
+            stderr,
             once(event: string, handler: (...handlerArguments: never[]) => void) {
                 if (event === "exit") {
+                    if (typeof outcome !== "string" && "code" in outcome && outcome.stderr) {
+                        queueMicrotask(() =>
+                            stderrHandlers.forEach((emit) => emit(outcome.stderr)),
+                        );
+                    }
                     if (outcome === "success")
                         queueMicrotask(() =>
                             (handler as (code: number, signal: null) => void)(0, null),
@@ -61,7 +75,16 @@ const runScript = async (options: RunOptions = {}) => {
     const mkdir = vi.fn(async () => undefined);
     const stat = vi.fn(async () => ({ size: options.statSize ?? 42 }));
     const rename = vi.fn(async () => undefined);
-    const unlink = vi.fn(async () => undefined);
+    let unlinkCalls = 0;
+    const unlink = vi.fn(async () => {
+        unlinkCalls += 1;
+        if (
+            options.unlinkFailure === "all" ||
+            (options.unlinkFailure === true && unlinkCalls === 1)
+        ) {
+            throw new Error("cleanup unavailable");
+        }
+    });
     const existsSync = vi.fn(() => options.exists ?? false);
     vi.doMock("node:child_process", () => ({ spawn }));
     vi.doMock("node:fs/promises", () => ({ mkdir, stat, rename, unlink }));
@@ -310,7 +333,36 @@ describe("PostgreSQL snapshot script", () => {
         });
 
         expect(run.rename).not.toHaveBeenCalled();
+        expect(run.unlink).toHaveBeenCalledTimes(2);
         expect(run.unlink).toHaveBeenCalledWith(resolve(repositoryRoot, "snapshot.dump.partial"));
+        expect(run.exitCode).toBe(1);
+    });
+
+    it("tolerates a failed pre-run partial cleanup and reports verification stderr", async () => {
+        const run = await runScript({
+            argv: ["--output", "snapshot.dump"],
+            databaseUrl: "postgres://localhost/app",
+            outcomes: ["success", { code: 1, stderr: "corrupt dump" }],
+            unlinkFailure: true,
+        });
+
+        expect(run.errorLog).toHaveBeenCalledWith(
+            "[PostgreSQL snapshot] pg_restore exited with code 1. corrupt dump",
+        );
+        expect(run.exitCode).toBe(1);
+    });
+
+    it("swallows a failed cleanup after a failed dump", async () => {
+        const run = await runScript({
+            argv: ["--output", "snapshot.dump"],
+            databaseUrl: "postgres://localhost/app",
+            outcomes: [{ code: null, signal: "SIGKILL" }],
+            unlinkFailure: "all",
+        });
+
+        expect(run.errorLog).toHaveBeenCalledWith(
+            "[PostgreSQL snapshot] pg_dump exited with SIGKILL.",
+        );
         expect(run.exitCode).toBe(1);
     });
 

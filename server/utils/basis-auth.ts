@@ -125,9 +125,10 @@ export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
     if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//"))
         return undefined;
     const parsed = new URL(value, "https://nethack.invalid");
-    return parsed.origin === "https://nethack.invalid"
-        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-        : undefined;
+    if (parsed.origin !== "https://nethack.invalid") return undefined;
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    // URL normalization can turn "/..//evil.com" into a protocol-relative URL.
+    return path.startsWith("//") ? undefined : path;
 }
 
 const discoveredConfigurations = new Map<string, Promise<oidc.Configuration>>();

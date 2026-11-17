@@ -354,8 +354,13 @@ export const ManageRedirectUriRequest = z.object({
         .url("Invalid URL format")
         .refine(
             (u) => {
-                if (u.startsWith("https://")) return true;
-                return /^http:\/\/localhost(\/|:|$)/.test(u);
+                const parsed = new URL(u);
+                if (parsed.username || parsed.password) return false;
+                if (parsed.protocol === "https:") return true;
+                return (
+                    parsed.protocol === "http:" &&
+                    ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
+                );
             },
             { message: "Redirect URI must use https:// or http://localhost" },
         ),
@@ -457,30 +462,40 @@ export const AdminUpdateHackathonRequest = z.object({
     start_timestamp: z
         .number()
         .int()
+        .nonnegative()
+        .max(8_640_000_000_000_000)
         .nullish()
         .transform((v) => v ?? 0)
         .optional(),
     end_timestamp: z
         .number()
         .int()
+        .nonnegative()
+        .max(8_640_000_000_000_000)
         .nullish()
         .transform((v) => v ?? 0)
         .optional(),
     voting_start_timestamp: z
         .number()
         .int()
+        .nonnegative()
+        .max(8_640_000_000_000_000)
         .nullish()
         .transform((v) => v ?? 0)
         .optional(),
     voting_end_timestamp: z
         .number()
         .int()
+        .nonnegative()
+        .max(8_640_000_000_000_000)
         .nullish()
         .transform((v) => v ?? 0)
         .optional(),
     results_open_timestamp: z
         .number()
         .int()
+        .nonnegative()
+        .max(8_640_000_000_000_000)
         .nullish()
         .transform((v) => v ?? 0)
         .optional(),

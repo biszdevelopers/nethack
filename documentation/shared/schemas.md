@@ -299,9 +299,9 @@ These exported schemas remain for rollback and source compatibility. The native 
 
 | Field | Type | Constraints |
 | --- | --- | --- |
-| `uri` | `string` | Required. Must start with `https://` or match `http://localhost(/:\|$)` pattern |
+| `uri` | `string` | Required. Parsed with `URL`: HTTPS with no credentials, or HTTP on `localhost`, `127.0.0.1`, or `[::1]` with no credentials |
 
-The refinement uses a custom function: `(u) => u.startsWith("https://") || /^http:\/\/localhost(\/|:|$)/.test(u)`. This allows any `https://` URL or `http://localhost` with any port or path.
+The refinement parses the URL and checks `protocol`, `hostname`, `username`, and `password`. Raw-string checks are not used, so userinfo such as `http://localhost:3000@evil.com` is rejected.
 
 ---
 

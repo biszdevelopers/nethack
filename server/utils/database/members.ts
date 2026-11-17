@@ -73,7 +73,7 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
                 message: "User not found or not in team",
             });
         }
-        if ((memberCount?.value ?? 0) <= 1) {
+        if (memberCount!.value <= 1) {
             throw createError({
                 statusCode: 409,
                 message: "Every team must keep at least one member",

@@ -790,6 +790,44 @@ describe("audit CLI", () => {
         );
     });
 
+    it("refuses an audit report path outside the workspace", async () => {
+        const fixture = minimalFixture(
+            createSqlDouble({ targetPrimaryKeys: { teams: ["id"] }, rows: { teams: [{ id: 1 }] } }),
+        );
+        const { module, open } = await loadAuditModule({
+            ...fixture,
+            availableTables: new Set(["teams"]),
+            env: { SQLITE_IMPORT_PATH: "cli.sqlite", DATABASE_URL: "postgres://user@host/db" },
+        });
+
+        await expect(
+            module.main(["--output", "../../outside.json"], {
+                SQLITE_IMPORT_PATH: "cli.sqlite",
+                DATABASE_URL: "postgres://user@host/db",
+            }),
+        ).rejects.toThrow("The audit report path must remain inside the project workspace.");
+        expect(open).not.toHaveBeenCalled();
+    });
+
+    it("refuses to overwrite an existing audit report", async () => {
+        const fixture = minimalFixture(
+            createSqlDouble({ targetPrimaryKeys: { teams: ["id"] }, rows: { teams: [{ id: 1 }] } }),
+        );
+        const { module, open } = await loadAuditModule({
+            ...fixture,
+            availableTables: new Set(["teams"]),
+            env: { SQLITE_IMPORT_PATH: "cli.sqlite", DATABASE_URL: "postgres://user@host/db" },
+        });
+
+        await expect(
+            module.main(["--output", "package.json"], {
+                SQLITE_IMPORT_PATH: "cli.sqlite",
+                DATABASE_URL: "postgres://user@host/db",
+            }),
+        ).rejects.toThrow(/Refusing to overwrite/);
+        expect(open).not.toHaveBeenCalled();
+    });
+
     it("writes a summary report to the requested path", async () => {
         const fixture = minimalFixture(
             createSqlDouble({ targetPrimaryKeys: { teams: ["id"] }, rows: { teams: [{ id: 1 }] } }),

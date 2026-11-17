@@ -78,6 +78,12 @@ describe("score submission action boundaries", () => {
         expectNoSavedScore();
     });
 
+    it("falls back to the season flag when no live hackathon row exists", async () => {
+        raw.prepare("DELETE FROM hackathon WHERE id = 1").run();
+
+        await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
+    });
+
     it("reads published results from the authoritative manifest when YAML is live", async () => {
         vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
         try {

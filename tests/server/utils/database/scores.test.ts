@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createMockEvent } from "./helpers";
-import { lockForUpdateIfSupported } from "~~/server/utils/database/query";
+import { lockForUpdateIfSupported, supportsRowLocks } from "~~/server/utils/database/query";
 import {
     createTeamScores,
     getTeamScoresByTeamID,
@@ -464,6 +464,12 @@ describe("scores database helpers", () => {
 
             const plain = {};
             expect(lockForUpdateIfSupported(plain)).toBe(plain);
+        });
+
+        it("detects row-lock support from the query builder", () => {
+            expect(supportsRowLocks({ for: () => undefined })).toBe(true);
+            expect(supportsRowLocks({})).toBe(false);
+            expect(supportsRowLocks(undefined)).toBe(false);
         });
     });
 });

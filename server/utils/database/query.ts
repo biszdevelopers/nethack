@@ -17,3 +17,8 @@ export function lockForUpdateIfSupported<T>(query: T): T {
     const lockable = query as T & { for?: (lock: "update") => T };
     return typeof lockable.for === "function" ? lockable.for("update") : query;
 }
+
+/** True when the query builder supports PostgreSQL row locks. */
+export function supportsRowLocks(query: unknown): boolean {
+    return typeof (query as { for?: unknown } | null)?.for === "function";
+}

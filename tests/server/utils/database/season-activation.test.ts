@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockEvent } from "./helpers";
-import { getActiveSeason, setActiveSeason } from "~~/server/utils/database/seasons";
+import {
+    acquireActivationLock,
+    getActiveSeason,
+    setActiveSeason,
+} from "~~/server/utils/database/seasons";
 
 const manifest = `# organizer note stays put
 id: 1
@@ -25,6 +29,24 @@ results_open_timestamp: 0
 theme_name: Live theme
 theme_description: Live description
 `;
+
+describe("acquireActivationLock", () => {
+    it("issues the advisory lock only when row locks are supported", async () => {
+        const execute = vi.fn(async () => undefined);
+        await acquireActivationLock({
+            select: () => ({ from: () => ({ limit: () => ({ for: () => undefined }) }) }),
+            execute,
+        });
+        expect(execute).toHaveBeenCalledOnce();
+
+        execute.mockClear();
+        await acquireActivationLock({
+            select: () => ({ from: () => ({ limit: () => ({}) }) }),
+            execute,
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+});
 
 describe("setActiveSeason with a local manifest", () => {
     let event: Awaited<ReturnType<typeof createMockEvent>>;

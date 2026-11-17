@@ -379,12 +379,17 @@ describe("basis-auth authorization-code flow", () => {
         ).resolves.toMatchObject({ identity: { picture } });
     });
 
-    it.each([undefined, "", "dashboard", "//evil.example", "/\\evil.example/path"])(
-        "rejects unsafe post-login redirect %s",
-        (redirect) => {
-            expect(sanitizePostLoginRedirect(redirect)).toBeUndefined();
-        },
-    );
+    it.each([
+        undefined,
+        "",
+        "dashboard",
+        "//evil.example",
+        "/\\evil.example/path",
+        "/..//evil.example",
+        "/%2e%2e//evil.example",
+    ])("rejects unsafe post-login redirect %s", (redirect) => {
+        expect(sanitizePostLoginRedirect(redirect)).toBeUndefined();
+    });
 
     it("keeps a same-origin redirect path, query, and fragment", () => {
         expect(sanitizePostLoginRedirect("/dashboard?tab=team#members")).toBe(

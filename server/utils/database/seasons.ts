@@ -3,7 +3,7 @@ import { eq, asc, sql } from "drizzle-orm";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { getHackathon, invalidateHackathonCache } from "./hackathon";
-import { firstRow } from "./query";
+import { firstRow, supportsRowLocks } from "./query";
 import {
     getHackathonConfigSource,
     hackathonUsesYaml,
@@ -199,6 +199,16 @@ export async function updateSeasonTweaks(
 /** Advisory-lock key shared by every process that can switch the active season. */
 const ACTIVATION_LOCK_KEY = 0x4e455448;
 
+/** Take the transaction-scoped activation lock on PostgreSQL; no-op on SQLite. */
+export async function acquireActivationLock(tx: {
+    select: (...args: any[]) => any;
+    execute: (statement: any) => Promise<unknown>;
+}): Promise<void> {
+    if (supportsRowLocks(tx.select().from(seasons).limit(1))) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${ACTIVATION_LOCK_KEY})`);
+    }
+}
+
 let activationQueue: Promise<unknown> = Promise.resolve();
 
 /** Serialize activations so two admin requests cannot interleave their writes. */
@@ -230,10 +240,7 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
         // The in-memory queue only covers one process. A transaction-scoped
         // advisory lock also serializes activations across app instances;
         // SQLite fixtures have no `FOR UPDATE`, so skip it there.
-        const probe = tx.select().from(seasons).limit(1) as { for?: unknown };
-        if (typeof probe.for === "function") {
-            await tx.execute(sql`SELECT pg_advisory_xact_lock(${ACTIVATION_LOCK_KEY})`);
-        }
+        await acquireActivationLock(tx);
 
         [previousActive] = await tx
             .select({ id: seasons.id })
@@ -324,10 +331,7 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             // whose manifest write did not apply.
             try {
                 await event.context.drizzle.transaction(async (tx) => {
-                    const rollbackProbe = tx.select().from(seasons).limit(1) as { for?: unknown };
-                    if (typeof rollbackProbe.for === "function") {
-                        await tx.execute(sql`SELECT pg_advisory_xact_lock(${ACTIVATION_LOCK_KEY})`);
-                    }
+                    await acquireActivationLock(tx);
                     // Another instance may have committed an activation after
                     // ours. Never undo a newer switch with our stale snapshot.
                     const [currentlyActive] = await tx

@@ -71,6 +71,31 @@ describe("prebuild launcher", () => {
         );
     });
 
+    it("reuses or rebuilds docs in dev based on whether the output exists", async () => {
+        const scriptPath = resolve(import.meta.dirname, "../../scripts/prebuild.mjs");
+        const originalArgv = process.argv;
+
+        for (const [docsExist, expectedCalls] of [
+            [true, 1],
+            [false, 2],
+        ] as const) {
+            const spawn = vi.fn(() => ({ status: 0, error: undefined }));
+            vi.doMock("node:child_process", () => ({ spawnSync: spawn }));
+            vi.doMock("node:fs", () => ({ existsSync: () => docsExist }));
+            process.argv = [process.execPath, scriptPath, "--dev"];
+            vi.resetModules();
+            try {
+                await import("../../scripts/prebuild.mjs");
+            } finally {
+                vi.doUnmock("node:child_process");
+                vi.doUnmock("node:fs");
+            }
+            expect(spawn).toHaveBeenCalledTimes(expectedCalls);
+        }
+
+        process.argv = originalArgv;
+    });
+
     it("runs the steps when the module is executed directly", async () => {
         const spawn = vi.fn(() => ({ status: 0, error: undefined }));
         const scriptPath = resolve(import.meta.dirname, "../../scripts/prebuild.mjs");

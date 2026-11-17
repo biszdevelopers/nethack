@@ -9,6 +9,7 @@ import {
     CreateTeamScoresRequest,
     SubmitVoteRequest,
     ManageRedirectUriRequest,
+    AdminUpdateHackathonRequest,
     OAuth2TokenRequest,
     OAuth2SessionActionRequest,
     SetActiveSeasonRequest,
@@ -511,6 +512,29 @@ describe("SubmitVoteRequest", () => {
     });
 });
 
+describe("AdminUpdateHackathonRequest timestamps", () => {
+    const fields = [
+        "start_timestamp",
+        "end_timestamp",
+        "voting_start_timestamp",
+        "voting_end_timestamp",
+        "results_open_timestamp",
+    ] as const;
+
+    it.each(fields)("rejects out-of-range values for %s", (field) => {
+        for (const value of [-1, 8_640_000_000_000_001]) {
+            expect(() => AdminUpdateHackathonRequest.parse({ [field]: value })).toThrow();
+        }
+    });
+
+    it.each(fields)("accepts null and valid values for %s", (field) => {
+        expect(AdminUpdateHackathonRequest.parse({ [field]: null })).toEqual({ [field]: 0 });
+        expect(AdminUpdateHackathonRequest.parse({ [field]: 1_700_000_000_000 })).toEqual({
+            [field]: 1_700_000_000_000,
+        });
+    });
+});
+
 describe("ManageRedirectUriRequest", () => {
     it("accepts a valid HTTPS URL", () => {
         expect(() =>
@@ -550,6 +574,27 @@ describe("ManageRedirectUriRequest", () => {
         expect(() =>
             ManageRedirectUriRequest.parse({ uri: "http://example.com/callback" }),
         ).toThrow();
+    });
+
+    it("rejects userinfo that only looks like localhost", () => {
+        expect(() =>
+            ManageRedirectUriRequest.parse({ uri: "http://localhost:3000@evil.com/callback" }),
+        ).toThrow();
+    });
+
+    it("rejects credentials on an HTTPS URL", () => {
+        expect(() =>
+            ManageRedirectUriRequest.parse({ uri: "https://user:pass@example.com/callback" }),
+        ).toThrow();
+    });
+
+    it("accepts numeric loopback hosts", () => {
+        expect(() =>
+            ManageRedirectUriRequest.parse({ uri: "http://127.0.0.1:3000/callback" }),
+        ).not.toThrow();
+        expect(() =>
+            ManageRedirectUriRequest.parse({ uri: "http://[::1]:3000/callback" }),
+        ).not.toThrow();
     });
 
     it("rejects an invalid URL", () => {
@@ -1677,16 +1722,16 @@ describe("ManageRedirectUriRequest - additional", () => {
         ).not.toThrow();
     });
 
-    it("rejects http://127.0.0.1 (not localhost)", () => {
+    it("accepts numeric loopback hosts", () => {
         expect(() =>
             ManageRedirectUriRequest.parse({ uri: "http://127.0.0.1/callback" }),
-        ).toThrow();
+        ).not.toThrow();
     });
 
-    it("rejects case-variant http://LOCALHOST", () => {
+    it("accepts case-variant http://LOCALHOST after URL normalization", () => {
         expect(() =>
             ManageRedirectUriRequest.parse({ uri: "http://LOCALHOST/callback" }),
-        ).toThrow();
+        ).not.toThrow();
     });
 
     it("rejects ws:// protocol", () => {
