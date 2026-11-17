@@ -244,6 +244,16 @@ describe("members database helpers", () => {
             );
         });
 
+        it("keeps the last member so the team is not orphaned", async () => {
+            await removeTeamMember(event, 1, 1);
+
+            await expect(removeTeamMember(event, 1, 2)).rejects.toMatchObject({
+                statusCode: 409,
+                message: "Every team must keep at least one member",
+            });
+            expect(await getTeamMembers(event, 1)).toHaveLength(1);
+        });
+
         it("does not record a past team entry on failure", async () => {
             await expect(removeTeamMember(event, 1, 3)).rejects.toThrow();
 

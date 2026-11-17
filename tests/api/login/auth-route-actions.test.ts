@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     readSession: vi.fn(),
     consumeTransaction: vi.fn(),
     linkUser: vi.fn(),
+    getUser: vi.fn(),
     establishSession: vi.fn(),
 }));
 
@@ -31,6 +32,7 @@ vi.mock("~~/server/utils/basis-auth-session", () => ({
 }));
 vi.mock("~~/server/utils/database/users", () => ({
     findOrLinkBasisAuthUser: mocks.linkUser,
+    getUser: mocks.getUser,
 }));
 
 let loginHandler: (event: any) => Promise<unknown>;

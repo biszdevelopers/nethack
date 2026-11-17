@@ -10,7 +10,7 @@ import {
 import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { lockForUpdateIfSupported } from "./query";
-import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
+import { getHackathon } from "./hackathon";
 
 type NewTeamScore = Pick<
     TeamScores,
@@ -18,11 +18,10 @@ type NewTeamScore = Pick<
 > & { season_id: number };
 
 export async function createTeamScores(event: H3Event, scores: NewTeamScore): Promise<TeamScores> {
-    // Read the manifest before opening the season row lock; a remote fetch can
-    // take seconds and must never serialize concurrent judge submissions.
-    const liveResultsPublished = hackathonUsesYaml()
-        ? (await readHackathonConfig()).results_published
-        : null;
+    // Resolve the effective live settings before opening the season row lock; a
+    // remote fetch can take seconds and must not serialize judge submissions.
+    // results_published is a portal override, so the merged value is authoritative.
+    const liveHackathon = await getHackathon(event);
 
     return event.context.drizzle.transaction(async (tx) => {
         const seasonQuery = lockForUpdateIfSupported(
@@ -32,7 +31,7 @@ export async function createTeamScores(event: H3Event, scores: NewTeamScore): Pr
         if (!season || season.is_active !== 1) {
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }
-        const resultsPublished = liveResultsPublished ?? season.results_published;
+        const resultsPublished = liveHackathon?.results_published ?? season.results_published;
         if (resultsPublished) {
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }

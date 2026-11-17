@@ -13,7 +13,18 @@ export async function getLiveOverrides(event: H3Event): Promise<LiveOverrides> {
             .from(hackathon)
             .limit(1),
     );
-    const parsed = LiveOverrides.safeParse(row?.live_overrides ?? {});
+    // PostgreSQL jsonb returns an object; SQLite test fixtures store JSON text.
+    // Accept both so tests exercise the same override application as production.
+    const stored = row?.live_overrides;
+    let value: unknown = stored ?? {};
+    if (typeof value === "string") {
+        try {
+            value = JSON.parse(value);
+        } catch {
+            return {};
+        }
+    }
+    const parsed = LiveOverrides.safeParse(value);
     return parsed.success ? parsed.data : {};
 }
 

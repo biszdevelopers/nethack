@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,16 +42,27 @@ function databaseEnvironment(value) {
 
 function run(program, args, environment, { quiet = false } = {}) {
     return new Promise((resolvePromise, reject) => {
+        let stderr = "";
         const child = spawn(program, args, {
             cwd: projectRoot,
             env: environment,
-            stdio: quiet ? "ignore" : "inherit",
+            stdio: quiet ? ["ignore", "ignore", "pipe"] : "inherit",
             windowsHide: true,
+        });
+        child.stderr?.on("data", (chunk) => {
+            stderr += String(chunk);
         });
         child.once("error", reject);
         child.once("exit", (code, signal) => {
             if (code === 0) resolvePromise();
-            else reject(new Error(`${program} exited with ${signal ?? `code ${code}`}.`));
+            else {
+                const detail = stderr.trim();
+                reject(
+                    new Error(
+                        `${program} exited with ${signal ?? `code ${code}`}.${detail ? ` ${detail}` : ""}`,
+                    ),
+                );
+            }
         });
     });
 }
@@ -75,14 +86,26 @@ async function main(argv = process.argv.slice(2), env = process.env) {
 
     const { database, environment } = databaseEnvironment(env.DATABASE_URL);
     await mkdir(dirname(outputPath), { recursive: true });
-    await run(
-        env.PG_DUMP_BIN || "pg_dump",
-        ["--format=custom", "--no-owner", "--no-privileges", `--file=${outputPath}`],
-        environment,
-    );
-    await run(env.PG_RESTORE_BIN || "pg_restore", ["--list", outputPath], environment, {
-        quiet: true,
-    });
+
+    // Write to a temporary file so a failed dump never leaves a partial file at
+    // the final path (which would make every retry fail the overwrite guard).
+    const partialPath = `${outputPath}.partial`;
+    await unlink(partialPath).catch(() => undefined);
+    let published = false;
+    try {
+        await run(
+            env.PG_DUMP_BIN || "pg_dump",
+            ["--format=custom", "--no-owner", "--no-privileges", `--file=${partialPath}`],
+            environment,
+        );
+        await run(env.PG_RESTORE_BIN || "pg_restore", ["--list", partialPath], environment, {
+            quiet: true,
+        });
+        await rename(partialPath, outputPath);
+        published = true;
+    } finally {
+        if (!published) await unlink(partialPath).catch(() => undefined);
+    }
 
     const backup = await stat(outputPath);
     console.info(

@@ -5,7 +5,7 @@ import {
     consumeBasisAuthFlowTransaction,
     establishBasisAuthUserSession,
 } from "~~/server/utils/basis-auth-session";
-import { findOrLinkBasisAuthUser } from "~~/server/utils/database/users";
+import { getUser, findOrLinkBasisAuthUser } from "~~/server/utils/database/users";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -14,19 +14,27 @@ export default defineEventHandler(
 
         try {
             const result = await completeBasisAuthFlow(getRequestURL(event), transaction);
-            const user = await findOrLinkBasisAuthUser(event, result.identity);
 
             // A login started while signed in must not silently replace that
             // session with a different account (login CSRF / session fixation).
-            if (
-                transaction.preLoginUserId !== undefined &&
-                transaction.preLoginUserId !== user.id
-            ) {
-                throw createError({
-                    statusCode: 409,
-                    message: "This login flow belongs to a different session.",
-                });
+            // Check before linking, so a rejected flow cannot create or mutate
+            // a local user row for the other identity.
+            if (transaction.preLoginUserId !== undefined) {
+                const preLoginUser = await getUser(event, transaction.preLoginUserId);
+                if (
+                    !preLoginUser ||
+                    preLoginUser.auth_issuer !== result.identity.issuer ||
+                    preLoginUser.auth_subject !== result.identity.subject
+                ) {
+                    throw createError({
+                        statusCode: 409,
+                        statusMessage: "login_session_mismatch",
+                        message: "This login flow belongs to a different session.",
+                    });
+                }
             }
+
+            const user = await findOrLinkBasisAuthUser(event, result.identity);
 
             establishBasisAuthUserSession(event, user.id, {
                 accessToken: result.tokens.accessToken,
@@ -40,6 +48,14 @@ export default defineEventHandler(
                 302,
             );
         } catch (error) {
+            if (
+                error &&
+                typeof error === "object" &&
+                "statusMessage" in error &&
+                error.statusMessage === "login_session_mismatch"
+            ) {
+                throw error;
+            }
             console.error(
                 "basis-auth callback failed:",
                 error instanceof Error ? error.message : "unknown error",

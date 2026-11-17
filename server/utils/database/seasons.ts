@@ -166,7 +166,7 @@ export async function updateSeasonTweaks(
 ): Promise<Season | null> {
     const tweaks = pickTweaks(data as Record<string, unknown>);
 
-    return event.context.drizzle.transaction(async (tx) => {
+    const updated = await event.context.drizzle.transaction(async (tx) => {
         const season = await firstRow(
             tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
         );
@@ -192,6 +192,8 @@ export async function updateSeasonTweaks(
             )) as Season | undefined) ?? null
         );
     });
+    invalidateHackathonCache(event);
+    return updated;
 }
 
 /** Advisory-lock key shared by every process that can switch the active season. */
@@ -215,14 +217,13 @@ export function setActiveSeason(event: H3Event, seasonId: number | null) {
 }
 
 async function activateSeason(event: H3Event, seasonId: number | null) {
+    // The manifest read can be slow (remote fetch) and must stay outside the
+    // transaction. Rollback snapshots are taken inside it, after the advisory
+    // lock, so a concurrent activation on another instance cannot be undone.
     const currentLive = await getHackathon(event);
     const liveConfig = hackathonUsesYaml() ? currentLive : null;
-    const [previousActive] = await event.context.drizzle
-        .select({ id: seasons.id })
-        .from(seasons)
-        .where(eq(seasons.is_active, 1))
-        .limit(1);
-    const [previousLive] = await event.context.drizzle.select().from(hackathon).limit(1);
+    let previousActive: { id: number } | undefined;
+    let previousLive: typeof hackathon.$inferSelect | undefined;
     let activationSettings: Record<string, unknown> | null = null;
 
     await event.context.drizzle.transaction(async (tx) => {
@@ -233,6 +234,13 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
         if (typeof probe.for === "function") {
             await tx.execute(sql`SELECT pg_advisory_xact_lock(${ACTIVATION_LOCK_KEY})`);
         }
+
+        [previousActive] = await tx
+            .select({ id: seasons.id })
+            .from(seasons)
+            .where(eq(seasons.is_active, 1))
+            .limit(1);
+        [previousLive] = await tx.select().from(hackathon).limit(1);
 
         let season: Season | undefined;
         if (seasonId !== null) {
@@ -316,6 +324,19 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             // whose manifest write did not apply.
             try {
                 await event.context.drizzle.transaction(async (tx) => {
+                    const rollbackProbe = tx.select().from(seasons).limit(1) as { for?: unknown };
+                    if (typeof rollbackProbe.for === "function") {
+                        await tx.execute(sql`SELECT pg_advisory_xact_lock(${ACTIVATION_LOCK_KEY})`);
+                    }
+                    // Another instance may have committed an activation after
+                    // ours. Never undo a newer switch with our stale snapshot.
+                    const [currentlyActive] = await tx
+                        .select({ id: seasons.id })
+                        .from(seasons)
+                        .where(eq(seasons.is_active, 1))
+                        .limit(1);
+                    if ((currentlyActive?.id ?? null) !== seasonId) return;
+
                     await tx.update(seasons).set({ is_active: 0 }).where(eq(seasons.is_active, 1));
                     if (previousActive) {
                         await tx

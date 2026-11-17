@@ -60,9 +60,11 @@ const runScript = async (options: RunOptions = {}) => {
     const spawn = createSpawn(options.outcomes ?? []);
     const mkdir = vi.fn(async () => undefined);
     const stat = vi.fn(async () => ({ size: options.statSize ?? 42 }));
+    const rename = vi.fn(async () => undefined);
+    const unlink = vi.fn(async () => undefined);
     const existsSync = vi.fn(() => options.exists ?? false);
     vi.doMock("node:child_process", () => ({ spawn }));
-    vi.doMock("node:fs/promises", () => ({ mkdir, stat }));
+    vi.doMock("node:fs/promises", () => ({ mkdir, stat, rename, unlink }));
     vi.doMock("node:fs", () => ({ existsSync }));
     vi.stubEnv("DATABASE_URL", options.databaseUrl ?? "");
     vi.stubEnv("PG_DUMP_BIN", options.dumpBinary ?? "");
@@ -75,7 +77,17 @@ const runScript = async (options: RunOptions = {}) => {
     await import("../../scripts/backup-postgres.mjs");
     await settle();
 
-    return { spawn, mkdir, stat, existsSync, info, errorLog, exitCode: process.exitCode };
+    return {
+        spawn,
+        mkdir,
+        stat,
+        rename,
+        unlink,
+        existsSync,
+        info,
+        errorLog,
+        exitCode: process.exitCode,
+    };
 };
 
 afterEach(() => {
@@ -103,7 +115,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(run.spawn).toHaveBeenNthCalledWith(
             1,
             "pg_dump",
-            ["--format=custom", "--no-owner", "--no-privileges", `--file=${outputPath}`],
+            ["--format=custom", "--no-owner", "--no-privileges", `--file=${outputPath}.partial`],
             expect.objectContaining({
                 cwd: repositoryRoot,
                 stdio: "inherit",
@@ -125,8 +137,8 @@ describe("PostgreSQL snapshot script", () => {
         expect(run.spawn).toHaveBeenNthCalledWith(
             2,
             "pg_restore",
-            ["--list", outputPath],
-            expect.objectContaining({ stdio: "ignore", windowsHide: true }),
+            ["--list", `${outputPath}.partial`],
+            expect.objectContaining({ stdio: ["ignore", "ignore", "pipe"], windowsHide: true }),
         );
         expect(run.mkdir).toHaveBeenCalledWith(resolve(repositoryRoot, ".tmp"), {
             recursive: true,
@@ -151,7 +163,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(firstCall?.[1]).toHaveLength(4);
         expect(firstCall?.[1]?.[3]).toMatch(
             new RegExp(
-                `^--file=${repositoryRoot.replaceAll("\\", "\\\\")}[\\\\/]\\.tmp-postgres-.+\\.dump$`,
+                `^--file=${repositoryRoot.replaceAll("\\", "\\\\")}[\\\\/]\\.tmp-postgres-.+\\.dump\\.partial$`,
             ),
         );
         expect(environment).toEqual(
@@ -168,7 +180,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(environment && "PGAPPNAME" in environment).toBe(false);
         expect(environment && "PGOPTIONS" in environment).toBe(false);
         expect(run.spawn.mock.calls[1]?.[0]).toBe("custom-restore");
-        expect(run.spawn.mock.calls[1]?.[2]?.stdio).toBe("ignore");
+        expect(run.spawn.mock.calls[1]?.[2]?.stdio).toEqual(["ignore", "ignore", "pipe"]);
         expect(run.info).toHaveBeenCalledWith(
             expect.stringContaining("Created and verified PostgreSQL snapshot for plain:"),
         );
@@ -287,6 +299,18 @@ describe("PostgreSQL snapshot script", () => {
         expect(run.errorLog).toHaveBeenCalledWith(
             "[PostgreSQL snapshot] pg_dump exited with SIGKILL.",
         );
+        expect(run.exitCode).toBe(1);
+    });
+
+    it("removes the partial dump on failure so the output path stays reusable", async () => {
+        const run = await runScript({
+            argv: ["--output", "snapshot.dump"],
+            databaseUrl: "postgres://localhost/app",
+            outcomes: ["success", { code: 1 }],
+        });
+
+        expect(run.rename).not.toHaveBeenCalled();
+        expect(run.unlink).toHaveBeenCalledWith(resolve(repositoryRoot, "snapshot.dump.partial"));
         expect(run.exitCode).toBe(1);
     });
 

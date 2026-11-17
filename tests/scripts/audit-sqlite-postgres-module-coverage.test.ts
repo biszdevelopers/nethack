@@ -808,7 +808,7 @@ describe("audit CLI", () => {
 
         const outputPath = expect.stringMatching(/reports[\\/]audit\.json$/);
         expect(mkdir).toHaveBeenCalledWith(expect.stringMatching(/reports$/), { recursive: true });
-        expect(open).toHaveBeenCalledWith(outputPath, "w", 0o600);
+        expect(open).toHaveBeenCalledWith(outputPath, "wx", 0o600);
 
         const file = open.mock.results[0]!.value;
         expect(file).toEqual(expect.any(Promise));

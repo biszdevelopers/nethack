@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     complete: vi.fn(),
     consumeFlow: vi.fn(),
     linkUser: vi.fn(),
+    getUser: vi.fn(),
     establishSession: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ vi.mock("~~/server/utils/basis-auth", () => ({
 }));
 vi.mock("~~/server/utils/database/users", () => ({
     findOrLinkBasisAuthUser: mocks.linkUser,
+    getUser: mocks.getUser,
 }));
 vi.mock("~~/server/utils/basis-auth-session", () => ({
     consumeBasisAuthFlowTransaction: mocks.consumeFlow,
@@ -61,6 +63,11 @@ beforeEach(() => {
         },
     });
     mocks.linkUser.mockResolvedValue({ id: 17 });
+    mocks.getUser.mockResolvedValue({
+        id: 17,
+        auth_issuer: "https://auth.example.test",
+        auth_subject: "subject-1",
+    });
 });
 
 describe("GET /api/auth/basis/callback", () => {
@@ -83,7 +90,7 @@ describe("GET /api/auth/basis/callback", () => {
         expect(sendRedirectMock).toHaveBeenCalledWith(expect.anything(), "/teams", 302);
     });
 
-    it("refuses to replace a signed-in session with a different account", async () => {
+    it("refuses a different identity before linking or mutating any user row", async () => {
         mocks.consumeFlow.mockReturnValue({
             state: "state",
             nonce: "nonce",
@@ -91,8 +98,17 @@ describe("GET /api/auth/basis/callback", () => {
             startedAt: 123,
             preLoginUserId: 9,
         });
+        mocks.getUser.mockResolvedValue({
+            id: 9,
+            auth_issuer: "https://auth.example.test",
+            auth_subject: "another-subject",
+        });
 
-        await expect(handler({ context: {} })).rejects.toMatchObject({ statusCode: 401 });
+        await expect(handler({ context: {} })).rejects.toMatchObject({
+            statusCode: 409,
+            statusMessage: "login_session_mismatch",
+        });
+        expect(mocks.linkUser).not.toHaveBeenCalled();
         expect(mocks.establishSession).not.toHaveBeenCalled();
     });
 

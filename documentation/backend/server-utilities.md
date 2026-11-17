@@ -479,14 +479,14 @@ Per-table database helper modules in `server/utils/database/`.
 
 ### members.ts
 
-| Function                                  | Description                               |
-| ----------------------------------------- | ----------------------------------------- |
-| `getTeamMembers(event, teamID)`           | Get current team members                  |
-| `getAllTeamMembers(event, teamID)`        | Get current and past team members         |
-| `getUserPastTeams(event, userID)`         | Get teams a user was previously in        |
-| `addUserPastTeam(event, userID, teamID)`  | Record a past team membership             |
-| `removeTeamMember(event, teamID, userID)` | Remove a member (records past team first) |
-| `addTeamMember(event, teamID, userID)`    | Add a member to a team                    |
+| Function | Description |
+| --- | --- |
+| `getTeamMembers(event, teamID)` | Get current team members |
+| `getAllTeamMembers(event, teamID)` | Get current and past team members |
+| `getUserPastTeams(event, userID)` | Get teams a user was previously in |
+| `addUserPastTeam(event, userID, teamID)` | Record a past team membership |
+| `removeTeamMember(event, teamID, userID)` | Remove a member (records past team first); rejects removing the last member with 409 so the team cannot be orphaned |
+| `addTeamMember(event, teamID, userID)` | Add a member to a team |
 
 ### hackathon.ts
 

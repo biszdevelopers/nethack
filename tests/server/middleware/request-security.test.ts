@@ -67,6 +67,7 @@ describe("request security middleware", () => {
         expect(() =>
             middleware(eventFor("POST", {}, "/api/_webhooks/update?validationToken=abc")),
         ).not.toThrow();
+        expect(() => middleware(eventFor("POST", {}, "/api/auth/basis/backchannel"))).not.toThrow();
         expect(() => middleware(eventFor("POST", {}, "/api/_webhooks/other"))).toThrow(
             "Cross-site request rejected",
         );

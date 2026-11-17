@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { eq, and, asc, isNull } from "drizzle-orm";
+import { eq, and, asc, isNull, count } from "drizzle-orm";
 import { users, teams, userPastTeams, teamInvites, seasons } from "~~/server/database/schema";
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
 import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
@@ -55,6 +55,10 @@ export async function addUserPastTeam(event: H3Event, userID: number, teamID: nu
 
 export async function removeTeamMember(event: H3Event, teamID: number, userID: number) {
     await event.context.drizzle.transaction(async (tx) => {
+        const [memberCount] = await tx
+            .select({ value: count() })
+            .from(users)
+            .where(eq(users.team_id, teamID));
         const changed = await changedRows(
             tx
                 .update(users)
@@ -67,6 +71,12 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
             throw createError({
                 status: 404,
                 message: "User not found or not in team",
+            });
+        }
+        if ((memberCount?.value ?? 0) <= 1) {
+            throw createError({
+                statusCode: 409,
+                message: "Every team must keep at least one member",
             });
         }
 

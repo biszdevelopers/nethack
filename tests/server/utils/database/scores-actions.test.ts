@@ -68,6 +68,7 @@ describe("score submission action boundaries", () => {
     });
 
     it("rejects published results even when the season remains marked active", async () => {
+        raw.prepare("UPDATE hackathon SET results_published = 1 WHERE id = 1").run();
         raw.prepare("UPDATE seasons SET results_published = 1 WHERE id = 42").run();
 
         await expect(submit()).rejects.toMatchObject({
@@ -249,7 +250,6 @@ describe("score submission action boundaries", () => {
     it("requests a row lock on the judging-season read when the driver supports it", async () => {
         const database = event.context.drizzle;
         const originalSelect = database.select.bind(database);
-        let interceptFirstSelect = true;
         let requestedLock: "update" | undefined;
 
         const exposeRowLock = (query: any): any =>
@@ -268,12 +268,7 @@ describe("score submission action boundaries", () => {
                 },
             });
 
-        database.select = (...args: unknown[]) => {
-            const query = originalSelect(...args);
-            if (!interceptFirstSelect) return query;
-            interceptFirstSelect = false;
-            return exposeRowLock(query);
-        };
+        database.select = (...args: unknown[]) => exposeRowLock(originalSelect(...args));
 
         const saved = await submit();
 

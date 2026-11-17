@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { open, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import {
@@ -333,8 +334,13 @@ export async function auditSqliteAgainstPostgres({
 }
 
 async function writeReport(report, outputPath) {
+    const relativePath = relative(PROJECT_ROOT, outputPath);
+    if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
+        throw new Error("The audit report path must remain inside the project workspace.");
+    }
+    if (existsSync(outputPath)) throw new Error(`Refusing to overwrite ${outputPath}.`);
     await mkdir(dirname(outputPath), { recursive: true });
-    const file = await open(outputPath, "w", 0o600);
+    const file = await open(outputPath, "wx", 0o600);
     try {
         await file.writeFile(`${JSON.stringify(report, null, 2)}\n`, "utf8");
     } finally {

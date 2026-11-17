@@ -140,8 +140,8 @@ export default defineNuxtConfig({
             trace: false,
         },
         rollupConfig: {
-            // Raised from 1 after an A/B build: 1m49s total vs 2m20s-2m36s,
-            // with no file-operation failures. Revert if the VPS sees FD pressure.
+            // Raised from 1 after A/B builds: 4 took 1m44s-1m50s, 8 took 2m02s,
+            // and 1 took 2m20s-2m36s. Keep 4; revert if the VPS sees FD pressure.
             maxParallelFileOps: 4,
             onwarn(warning, warn) {
                 if (warning.code === "UNRESOLVED_IMPORT") return;
