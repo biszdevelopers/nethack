@@ -118,8 +118,11 @@ export async function getTeamScoreFeedback(
     }
 
     const rawScore = validCount > 0 ? Math.round(total / validCount) : (team.score ?? null);
+    // The anonymity threshold counts reviewers, not readable score payloads.
+    // A saved evaluation still counts when its rubric is gone, matching the
+    // total evaluation counts used by the public list and detail endpoints.
     const feedbackWithheldForAnonymity =
-        options.publicView === true && validCount < MIN_PUBLIC_FEEDBACK_REVIEWERS;
+        options.publicView === true && evaluations.length < MIN_PUBLIC_FEEDBACK_REVIEWERS;
     const visibleFeedback = feedbackWithheldForAnonymity
         ? []
         : options.publicView === true

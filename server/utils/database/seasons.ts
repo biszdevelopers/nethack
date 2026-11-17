@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { getHackathon } from "./hackathon";
@@ -194,6 +194,9 @@ export async function updateSeasonTweaks(
     });
 }
 
+/** Advisory-lock key shared by every process that can switch the active season. */
+const ACTIVATION_LOCK_KEY = 0x4e45544841434b;
+
 let activationQueue: Promise<unknown> = Promise.resolve();
 
 /** Serialize activations so two admin requests cannot interleave their writes. */
@@ -215,6 +218,14 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
     let activationSettings: Record<string, unknown> | null = null;
 
     await event.context.drizzle.transaction(async (tx) => {
+        // The in-memory queue only covers one process. A transaction-scoped
+        // advisory lock also serializes activations across app instances;
+        // SQLite fixtures have no `FOR UPDATE`, so skip it there.
+        const probe = tx.select().from(seasons).limit(1) as { for?: unknown };
+        if (typeof probe.for === "function") {
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(${ACTIVATION_LOCK_KEY})`);
+        }
+
         let season: Season | undefined;
         if (seasonId !== null) {
             season = (await firstRow(

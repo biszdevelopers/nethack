@@ -9,17 +9,13 @@ import {
 } from "~~/server/database/schema";
 import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
+import { lockForUpdateIfSupported } from "./query";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type NewTeamScore = Pick<
     TeamScores,
     "team_id" | "judge_user_id" | "scores" | "reasoning" | "rubric_version_id"
 > & { season_id: number };
-
-function lockForUpdateIfSupported<T>(query: T): T {
-    const lockable = query as T & { for?: (lock: "update") => T };
-    return typeof lockable.for === "function" ? lockable.for("update") : query;
-}
 
 export async function createTeamScores(event: H3Event, scores: NewTeamScore): Promise<TeamScores> {
     // Read the manifest before opening the season row lock; a remote fetch can

@@ -7,8 +7,9 @@ import {
     teamAwards,
     userPastTeams,
     users,
+    seasons,
 } from "~~/server/database/schema";
-import { changedRows, firstRow } from "./query";
+import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
 
 // --- Active season filtered (default behavior) ---
 /**
@@ -154,33 +155,36 @@ export async function createTeam(event: H3Event, teamName: string): Promise<Team
         });
     }
 
-    const duplicate = await firstRow(
-        event.context.drizzle
-            .select({ id: teams.id })
-            .from(teams)
-            .where(
-                and(
-                    eq(teams.season_id, seasonId),
-                    eq(sql`lower(${teams.name})`, teamName.trim().toLowerCase()),
-                ),
-            )
-            .limit(1),
-    );
-    if (duplicate) {
-        throw createError({
-            statusCode: 409,
-            message: "A team with that name already exists in this season",
-        });
-    }
+    return event.context.drizzle.transaction(async (tx) => {
+        // Serialize creations for the season so the name check and the insert
+        // cannot both pass for two concurrent requests.
+        await lockForUpdateIfSupported(
+            tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+        );
 
-    const team = (await firstRow(
-        event.context.drizzle
-            .insert(teams)
-            .values({ name: teamName, season_id: seasonId })
-            .returning(),
-    )) as Team;
+        const duplicate = await firstRow(
+            tx
+                .select({ id: teams.id })
+                .from(teams)
+                .where(
+                    and(
+                        eq(teams.season_id, seasonId),
+                        eq(sql`lower(${teams.name})`, teamName.trim().toLowerCase()),
+                    ),
+                )
+                .limit(1),
+        );
+        if (duplicate) {
+            throw createError({
+                statusCode: 409,
+                message: "A team with that name already exists in this season",
+            });
+        }
 
-    return team;
+        return (await firstRow(
+            tx.insert(teams).values({ name: teamName, season_id: seasonId }).returning(),
+        )) as Team;
+    });
 }
 
 export async function updateTeam(

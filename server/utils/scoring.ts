@@ -5,8 +5,9 @@ import {
     getRubricTrack,
     validateRubricScores,
 } from "~~/shared/rubric";
-import { rubricVersions, teamScores, teams } from "~~/server/database/schema";
+import { rubricVersions, seasons, teamScores, teams } from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
+import { lockForUpdateIfSupported } from "./database/query";
 
 export interface RankedTeam extends Team {
     score: number;
@@ -252,7 +253,18 @@ export async function calculateSeasonScores(
     seasonId: number,
     persist = false,
 ): Promise<RankedTeam[]> {
-    return calculateSeasonScoresWithDatabase(event.context.drizzle, seasonId, persist);
+    const db = event.context.drizzle;
+    if (!persist) return calculateSeasonScoresWithDatabase(db, seasonId, false);
+
+    // Judge submissions hold this same season row lock while they insert a score
+    // and recalculate. Taking it here keeps a full recompute from overwriting a
+    // score that commits while the recompute is reading.
+    return db.transaction(async (tx) => {
+        await lockForUpdateIfSupported(
+            tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+        );
+        return calculateSeasonScoresWithDatabase(tx, seasonId, true);
+    });
 }
 
 /** Kept as a small compatibility wrapper for internal callers. */

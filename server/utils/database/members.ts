@@ -2,7 +2,7 @@ import type { H3Event } from "h3";
 import { eq, and, asc, isNull } from "drizzle-orm";
 import { users, teams, userPastTeams, teamInvites, seasons } from "~~/server/database/schema";
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
-import { changedRows, firstRow } from "./query";
+import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
 
 export async function getTeamMembers(event: H3Event, teamID: number): Promise<User[]> {
     return event.context.drizzle.select().from(users).where(eq(users.team_id, teamID));
@@ -171,6 +171,16 @@ export async function acceptTeamInvite(
             throw createError({ statusCode: 404, message: "Invitation not found" });
         }
 
+        // Lock the invited team (so concurrent accepts cannot bypass the member
+        // cap) and the accepting user (so two invites cannot be accepted at
+        // once). Locks are always taken in this order to avoid deadlocks.
+        await lockForUpdateIfSupported(
+            tx.select().from(teams).where(eq(teams.id, invite.team_id)).limit(1),
+        );
+        const lockedUser = await firstRow(
+            lockForUpdateIfSupported(tx.select().from(users).where(eq(users.id, user.id)).limit(1)),
+        );
+
         const team = await firstRow(
             tx.select().from(teams).where(eq(teams.id, invite.team_id)).limit(1),
         );
@@ -194,12 +204,14 @@ export async function acceptTeamInvite(
             });
         }
 
-        if (user.team_id) {
+        if (lockedUser?.team_id) {
             const currentTeam = await firstRow(
                 tx
                     .select()
                     .from(teams)
-                    .where(and(eq(teams.id, user.team_id), eq(teams.season_id, activeSeason.id)))
+                    .where(
+                        and(eq(teams.id, lockedUser.team_id), eq(teams.season_id, activeSeason.id)),
+                    )
                     .limit(1),
             );
             if (currentTeam) {

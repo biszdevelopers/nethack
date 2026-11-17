@@ -8,3 +8,12 @@ export async function firstRow<T>(query: PromiseLike<T[]>): Promise<T | undefine
 export async function changedRows<T>(query: PromiseLike<T[]>): Promise<number> {
     return (await query).length;
 }
+
+/**
+ * Add `FOR UPDATE` on PostgreSQL. SQLite Drizzle queries have no `.for()`, so
+ * the helper is a no-op there and the in-memory fixtures keep working.
+ */
+export function lockForUpdateIfSupported<T>(query: T): T {
+    const lockable = query as T & { for?: (lock: "update") => T };
+    return typeof lockable.for === "function" ? lockable.for("update") : query;
+}
