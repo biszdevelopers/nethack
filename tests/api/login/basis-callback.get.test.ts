@@ -83,6 +83,32 @@ describe("GET /api/auth/basis/callback", () => {
         expect(sendRedirectMock).toHaveBeenCalledWith(expect.anything(), "/teams", 302);
     });
 
+    it("refuses to replace a signed-in session with a different account", async () => {
+        mocks.consumeFlow.mockReturnValue({
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: 123,
+            preLoginUserId: 9,
+        });
+
+        await expect(handler({ context: {} })).rejects.toMatchObject({ statusCode: 401 });
+        expect(mocks.establishSession).not.toHaveBeenCalled();
+    });
+
+    it("allows a flow that returns the account that was signed in when it started", async () => {
+        mocks.consumeFlow.mockReturnValue({
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: 123,
+            preLoginUserId: 17,
+        });
+
+        await handler({ context: {} });
+        expect(mocks.establishSession).toHaveBeenCalled();
+    });
+
     it("fails closed without creating a session when state, nonce, or PKCE validation fails", async () => {
         mocks.complete.mockRejectedValue(new Error("state mismatch"));
 

@@ -16,6 +16,18 @@ export default defineEventHandler(
             const result = await completeBasisAuthFlow(getRequestURL(event), transaction);
             const user = await findOrLinkBasisAuthUser(event, result.identity);
 
+            // A login started while signed in must not silently replace that
+            // session with a different account (login CSRF / session fixation).
+            if (
+                transaction.preLoginUserId !== undefined &&
+                transaction.preLoginUserId !== user.id
+            ) {
+                throw createError({
+                    statusCode: 409,
+                    message: "This login flow belongs to a different session.",
+                });
+            }
+
             establishBasisAuthUserSession(event, user.id, {
                 accessToken: result.tokens.accessToken,
                 accessTokenExpiresAt: result.tokens.expiresAt,

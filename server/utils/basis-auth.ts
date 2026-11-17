@@ -159,7 +159,7 @@ export function getBasisAuthOidcConfiguration(config = getBasisAuthConfig()) {
     return discovered;
 }
 
-export async function beginBasisAuthFlow(postLoginRedirect?: string) {
+export async function beginBasisAuthFlow(postLoginRedirect?: string, preLoginUserId?: number) {
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
     const state = oidc.randomState();
@@ -186,6 +186,7 @@ export async function beginBasisAuthFlow(postLoginRedirect?: string) {
             codeVerifier,
             startedAt: Date.now(),
             postLoginRedirect,
+            preLoginUserId,
         },
     };
 }
