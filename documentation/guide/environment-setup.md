@@ -273,6 +273,8 @@ Use HTTPS for local development because secure session cookies require a trusted
 bun dev --https
 ```
 
+The `predev` step reuses an existing `documentation/.vitepress/dist/index.html` instead of rebuilding the docs site on every start; delete that directory (or run the docs build manually) to regenerate it. Production `prebuild` always rebuilds the docs.
+
 The server starts on **port 24598** (configured in `nuxt.config.ts` → `devServer.port`). Open:
 
 ```

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,14 +24,17 @@ export function runPrebuildSteps({
     platform = process.platform,
     root = projectRoot,
     spawn = spawnSync,
+    skipDocs = false,
 } = {}) {
-    runStep(
-        spawn,
-        "npm",
-        ["run", "build", "--prefix", "documentation"],
-        "VitePress documentation build",
-        { cwd: root, shell: platform === "win32" },
-    );
+    if (!skipDocs) {
+        runStep(
+            spawn,
+            "npm",
+            ["run", "build", "--prefix", "documentation"],
+            "VitePress documentation build",
+            { cwd: root, shell: platform === "win32" },
+        );
+    }
     runStep(
         spawn,
         process.execPath,
@@ -40,4 +44,10 @@ export function runPrebuildSteps({
     );
 }
 
-if (shouldRunPrebuild(process.argv[1], import.meta.url)) runPrebuildSteps();
+if (shouldRunPrebuild(process.argv[1], import.meta.url)) {
+    // Dev starts reuse an existing docs build; production always rebuilds.
+    const skipDocs =
+        process.argv.includes("--dev") &&
+        existsSync(resolve(projectRoot, "documentation/.vitepress/dist/index.html"));
+    runPrebuildSteps({ skipDocs });
+}

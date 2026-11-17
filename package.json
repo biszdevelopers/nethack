@@ -7,7 +7,7 @@
         "build": "cross-env NODE_OPTIONS=--no-deprecation nuxt build",
         "prebuild": "node scripts/prebuild.mjs",
         "dev": "cross-env NODE_OPTIONS=--no-deprecation nuxt dev",
-        "predev": "node scripts/prebuild.mjs",
+        "predev": "node scripts/prebuild.mjs --dev",
         "test": "vitest run --pool=forks --reporter=default --reporter=json --outputFile=.tmp-vitest/test-results.json && bun run test:meta .tmp-vitest/test-results.json",
         "test:postgres": "vitest run tests/server/database/postgres.integration.test.ts --pool=forks",
         "test:watch": "vitest",

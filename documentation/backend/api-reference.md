@@ -48,7 +48,7 @@ Validates the stored transaction and provider response, exchanges the code using
 | **Auth** | None |
 | **Query** | OIDC callback parameters (`code`, `state`, or provider error) |
 | **Response** | 302 to the stored safe redirect or `/dashboard` |
-| **Errors** | 401 for missing/expired transaction, state/nonce/PKCE failure, token/UserInfo failure, or identity conflict |
+| **Errors** | 401 for missing/expired transaction, state/nonce/PKCE failure, token/UserInfo failure, identity conflict, or a resolved account that differs from the one signed in when the flow began |
 
 ### GET `/api/auth/session`
 

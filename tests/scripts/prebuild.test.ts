@@ -58,6 +58,19 @@ describe("prebuild launcher", () => {
         );
     });
 
+    it("skips the docs build when asked to reuse an existing one", () => {
+        const spawn = vi.fn(() => ({ status: 0, error: undefined }));
+
+        runPrebuildSteps({ platform: "linux", spawn, skipDocs: true });
+
+        expect(spawn).toHaveBeenCalledTimes(1);
+        expect(spawn).toHaveBeenCalledWith(
+            process.execPath,
+            expect.arrayContaining([expect.stringContaining("generate-icon-server-bundle")]),
+            expect.objectContaining({ shell: false }),
+        );
+    });
+
     it("runs the steps when the module is executed directly", async () => {
         const spawn = vi.fn(() => ({ status: 0, error: undefined }));
         const scriptPath = resolve(import.meta.dirname, "../../scripts/prebuild.mjs");

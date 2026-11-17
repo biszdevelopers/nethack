@@ -195,7 +195,7 @@ export async function updateSeasonTweaks(
 }
 
 /** Advisory-lock key shared by every process that can switch the active season. */
-const ACTIVATION_LOCK_KEY = 0x4e45544841434b;
+const ACTIVATION_LOCK_KEY = 0x4e455448;
 
 let activationQueue: Promise<unknown> = Promise.resolve();
 

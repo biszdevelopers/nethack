@@ -23,7 +23,7 @@ The callback is derived rather than configured independently:
 ${CURRENT_URL_ORIGIN}/api/auth/basis/callback
 ```
 
-The PKCE verifier, state, nonce, start time, and optional safe relative redirect are kept for at most ten minutes in a dedicated encrypted, HTTP-only, SameSite=Lax transaction cookie. The callback consumes that transaction before exchanging the single-use code, validates the ID token, loads UserInfo, and links the local user.
+The PKCE verifier, state, nonce, start time, optional safe relative redirect, and the local user ID that was signed in when the flow began are kept for at most ten minutes in a dedicated encrypted, HTTP-only, SameSite=Lax transaction cookie. The callback consumes that transaction before exchanging the single-use code, validates the ID token, loads UserInfo, and links the local user. If the flow began while signed in, the callback rejects a login that resolves to a different local user, so a forced re-login cannot silently swap the victim's session for another account.
 
 The callback seals the access and refresh tokens with AES-256-GCM and writes them to the `basis-auth-tokens` cookie. The cookie is HTTP-only, SameSite=Lax, secure for public HTTPS origins (relaxed for loopback HTTP local production), and limited to 3,800 characters after compression. Its plaintext is never exposed to browser JavaScript. A separate short-lived `basis-auth-flow` cookie stores the PKCE transaction and is deleted when the callback consumes it.
 
