@@ -93,7 +93,7 @@ Delete users by ID.
 | Field | Details |
 | --- | --- |
 | **Auth** | `nethack.Users.delete` |
-| **Body** | `{ ids: number[] }` |
+| **Body** | `{ ids: number[] }` (at most `MAX_BULK_DELETE_IDS` = 100) |
 | **Response** | `{ message: string }` |
 | **Side effects** | Removes related team_scores, ballot_scores, ballots, peer_voting_scores, user_past_teams, and OAuth2 applications owned by the users |
 
@@ -424,7 +424,7 @@ Delete teams by ID.
 | Field | Details |
 | --- | --- |
 | **Auth** | Admin |
-| **Body** | `{ ids: number[] }` |
+| **Body** | `{ ids: number[] }` (at most `MAX_BULK_DELETE_IDS` = 100) |
 | **Response** | `{ message: string }` |
 | **Side effects** | Removes ballot_scores, team_scores, team_awards, user_past_teams, and unassigns users |
 

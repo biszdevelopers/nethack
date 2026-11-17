@@ -545,7 +545,7 @@ safeUrl(null); // → undefined
 
 **File:** `app/components/ModalConfirm.vue`
 
-Reusable confirmation modal wrapping `UModal`.
+Reusable confirmation modal wrapping `UModal`. The Confirm button is disabled and shows a loading state while an async `click` callback runs, so a double-click cannot trigger the action twice; the modal closes only after the callback resolves.
 
 **Props:**
 

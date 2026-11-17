@@ -36,7 +36,7 @@ All configurable length limits are defined as exported constants at the top of `
 | `MAX_ELECTION_CANDIDATES` | 50 | `ElectionVoteRequest.positions[].candidates` array length |
 | `MAX_ELECTION_TITLE_LENGTH` | 128 | `ElectionVoteRequest.positions[].title` |
 | `MAX_ELECTION_CANDIDATE_ID_LENGTH` | 64 | `ElectionVoteRequest.positions[].candidates[].id` |
-| `MAX_APPLICATION_IDS_DELETE` | 100 | `DeleteApplicationsRequest.ids` array length |
+| `MAX_BULK_DELETE_IDS` | 100 | `DeleteApplicationsRequest.ids`, `DeleteTeamsRequest.ids`, and `DeleteUsersRequest.ids` array lengths |
 
 ## Reusable Primitives
 

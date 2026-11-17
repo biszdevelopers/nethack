@@ -272,7 +272,7 @@ Combines `extractBearerToken` and `verifyAccessToken` into a single call.
 export async function resolveOAuth2User(event: H3Event, payload: OAuth2JWTPayload): Promise<User>;
 ```
 
-Resolves a user from the JWT payload's `user_id` or `sub` field. Throws 401 if the payload has no valid user ID, or 404 if the user is not found.
+Resolves a user from the JWT payload's `user_id` or `sub` field. Throws 401 (`invalid_token`) if the payload has no valid user ID or if no local user is linked to the basis-auth subject.
 
 **Context attached to `event.context.oauth2`:**
 

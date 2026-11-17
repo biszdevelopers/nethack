@@ -153,7 +153,7 @@ Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted a
 | `is_active` | `INTEGER NOT NULL DEFAULT 0` | Only one season can be active (CHECK 0 or 1) |
 | `announcement` | `TEXT` | Editable home-page announcement |
 
-Each season stores a snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+Each season stores a snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. Activating a season also carries that season's announcement into the live overrides, so a message saved for an upcoming season appears on the public home page as soon as it goes live. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
 
 The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 
