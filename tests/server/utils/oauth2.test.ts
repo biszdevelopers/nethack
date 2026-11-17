@@ -9,16 +9,16 @@ afterEach(() => {
 });
 
 describe("public application origin", () => {
-    it.each([undefined, ""])("uses the local development origin when unset: %s", (origin) => {
+    it.each([undefined, ""])("requires an environment origin when unset: %s", (origin) => {
         if (origin === undefined) delete process.env.CURRENT_URL_ORIGIN;
         else process.env.CURRENT_URL_ORIGIN = origin;
 
-        expect(getPublicOrigin()).toBe("http://localhost:3000");
+        expect(() => getPublicOrigin()).toThrow("CURRENT_URL_ORIGIN must be set");
     });
 
     it("removes trailing slashes from a configured public origin", () => {
-        process.env.CURRENT_URL_ORIGIN = "https://basishacks.example///";
+        process.env.CURRENT_URL_ORIGIN = "https://nethack.example///";
 
-        expect(getPublicOrigin()).toBe("https://basishacks.example");
+        expect(getPublicOrigin()).toBe("https://nethack.example");
     });
 });

@@ -6,6 +6,8 @@ definePageMeta({
     middleware: ["auth"],
 });
 
+useHead({ title: `DeepSeek | ${WEBSITE_NAME}` });
+
 const toast = useToast();
 
 // DeepSeek state
@@ -184,6 +186,7 @@ const deleteSession = async (sessionId: number) => {
                                 variant="ghost"
                                 size="sm"
                                 icon="i-lucide-trash"
+                                :aria-label="`Delete session ${session.id}`"
                                 :loading="deletingSessionId === session.id"
                                 @click="deleteSession(session.id)"
                             />

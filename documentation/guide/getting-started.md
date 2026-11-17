@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: Get the basishacks hackathon platform running on your local machine.
+description: Get the nethack hackathon platform running on your local machine.
 ---
 
 # Getting Started
 
-This guide walks you through setting up the **basishacks** development environment from scratch. By the end, you will have the application running locally with HTTPS on port 24598.
+This guide walks you through setting up the **nethack** development environment from scratch. By the end, you will have the application running locally with HTTPS on port 24598.
 
 <StatusBadge status="online" text="Docs build status: passing" />
 
@@ -48,12 +48,12 @@ If you need to manage multiple Node.js versions, consider using [fnm](https://gi
 
 ## Clone the Repository
 
-<TerminalWindow title="basishacks@setup:~" prompt="$">
+<TerminalWindow title="nethack@setup:~" prompt="$">
 
 ```bash
-git clone <repository-url> basishacks-r2
+git clone <repository-url> nethack
 git clone https://github.com/biszdevelopers/basis-schema.git basis-schema
-cd basishacks-r2
+cd nethack
 ```
 
 </TerminalWindow>
@@ -66,7 +66,7 @@ Install all project dependencies using Bun:
 bun i
 ```
 
-The [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) checkout must remain beside `basishacks-r2`. The Nuxt and Vitest configurations resolve its source from `../basis-schema`; no Bun link is required. Use Bun 1.3.14 to install from the committed lockfile.
+The [`@basis/schema`](https://github.com/biszdevelopers/basis-schema) checkout must remain beside `nethack`. The Nuxt and Vitest configurations resolve its source from `../basis-schema`; no Bun link is required. Use Bun 1.3.14 to install from the committed lockfile.
 
 If you prefer npm:
 
@@ -119,7 +119,7 @@ At minimum, set the following:
 
 ```bash
 # REQUIRED - PostgreSQL connection for development, CI, and production
-DATABASE_URL=postgresql://basishacks:secret@127.0.0.1:5432/basishacks
+DATABASE_URL=postgresql://nethack:secret@127.0.0.1:5432/nethack
 
 # OPTIONAL - Bounded pool size (default 10, range 2-64)
 DATABASE_POOL_MAX=10
@@ -134,7 +134,7 @@ BASIS_AUTH_CLIENT_SECRET=your_client_secret
 BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
 ```
 
-Set `CURRENT_URL_ORIGIN` to the basishacks origin and register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` with basis-auth. See [Environment Setup](/guide/environment-setup) for the full list.
+Set `CURRENT_URL_ORIGIN` to the nethack origin and register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` with basis-auth. See [Environment Setup](/guide/environment-setup) for the full list.
 
 ## Run the Development Server
 
@@ -213,8 +213,8 @@ The active Vitest suite covers the basis-auth authorization request, callback tr
 
 Once the server is running, follow these steps to log in for the first time:
 
-1. **Navigate to the login page** — Click the login button or go to `/login`.
-2. **Sign in with basis-auth** — Start login from basishacks and complete authentication at the configured basis-auth issuer.
+1. **Start the login flow** — Click the login button or go to `/api/login`.
+2. **Sign in with basis-auth** — Start login from nethack and complete authentication at the configured basis-auth issuer.
 3. **Access the dashboard** — After successful authentication, you are redirected to the dashboard.
 
 ### Alternative Login Methods

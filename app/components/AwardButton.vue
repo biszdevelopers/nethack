@@ -5,6 +5,7 @@
             :icon="props.award.icon"
             variant="subtle"
             :color="convertColor(props.award)"
+            :aria-label="`${props.award.name} award`"
         />
         <template #content>
             <div class="flex flex-col gap-1">

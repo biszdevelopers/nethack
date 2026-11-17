@@ -2,6 +2,8 @@ import DefaultTheme from "vitepress/theme";
 import type { Theme } from "vitepress";
 import "./style.css";
 
+import Layout from "./Layout.vue";
+
 import TerminalWindow from "./components/TerminalWindow.vue";
 import StatusBadge from "./components/StatusBadge.vue";
 import CopyButton from "./components/CopyButton.vue";
@@ -17,6 +19,7 @@ import { useEasterEggs } from "./composables/useEasterEggs";
 
 export default {
     extends: DefaultTheme,
+    Layout,
     enhanceApp({ app }) {
         app.component("TerminalWindow", TerminalWindow);
         app.component("StatusBadge", StatusBadge);

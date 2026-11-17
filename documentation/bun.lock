@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "basishacks-docs",
+      "name": "nethack-docs",
       "dependencies": {
         "figlet": "^1.11.0",
       },

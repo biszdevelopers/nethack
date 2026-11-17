@@ -1,11 +1,17 @@
 ---
 title: Database
-description: Database schema, access patterns, per-table helpers, type conventions, and migration strategy for basishacks.
+description: Database schema, access patterns, per-table helpers, type conventions, and migration strategy for nethack.
 ---
 
 # Database
 
-basishacks uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
+nethack uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
+
+## Historical SQLite comparison
+
+The selected local backup at `database/basishacks.sqlite` passes SQLite's integrity check and contains 93 teams, 71 of which have non-empty project descriptions. A read-only audit matched all 93 team IDs and all 71 descriptions against the configured PostgreSQL database, with no project-description conflicts. The descriptions were present in the target; the old public showcase exposed only curated pages and did not list each completed season's projects. The public archive now reads these records through the season-specific API.
+
+The importer copies `project_description` when the source schema has that column, but it only accepts an empty or exact fresh-seed target. Never rerun it against populated PostgreSQL data. The comparison also found legacy singleton, season, and user-field conflicts, which remain unchanged for review. The audit is read-only; `bun run db:backup` creates and verifies a PostgreSQL snapshot before any manually reviewed reconciliation.
 
 ## Tables
 
@@ -33,9 +39,10 @@ The legacy singleton (`id = 1`) is retained for export, import compatibility, an
 | `results_open_timestamp` | `BIGINT` | Results visibility timestamp in epoch milliseconds |
 | `theme_name` | `TEXT` | Hackathon theme name |
 | `theme_description` | `TEXT` | Hackathon theme description |
+| `announcement` | `TEXT` | Admin-editable home-page announcement |
 | `live_overrides` | `JSONB` | Portal-managed operational switches that override `HACKATHON.yml` |
 
-Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, and `max_votes_per_user` are stored in `live_overrides` and applied on top of the manifest. Schedule, theme, and the rubric remain manifest-owned, so the operational switches keep working with a remote, read-only manifest.
+Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`, and `announcement` are stored in `live_overrides` and applied on top of the manifest. The announcement also has a dedicated column so it can be read without parsing the JSON. Schedule, theme, and the rubric remain manifest-owned, so the operational switches and announcement keep working with a remote, read-only manifest.
 
 Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 
@@ -82,6 +89,7 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 | `profile_picture` | `TEXT` | Basis-auth picture URL or legacy local asset path |
 | `auth_issuer` | `TEXT` | Linked basis-auth issuer |
 | `auth_subject` | `TEXT` | Linked basis-auth subject |
+| `tokens_valid_after` | `BIGINT` | Backchannel logout barrier in Unix seconds; tokens with `iat` at or before it are rejected |
 | `is_admin` | `INTEGER NOT NULL DEFAULT 0` | Locally promoted administrator flag; designated initial administrators are matched by email |
 
 ::: warning The legacy `role` column is retired. Authorization comes from the validated basis-auth `permissions` claim, the participant compatibility bundle, and the local administrator flag. :::
@@ -110,7 +118,17 @@ Individual project scores within a ballot. Scores must be 1–5 or null.
 
 **Unique constraint**: `(ballot_id, project_id)`
 
-Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they are not stored in PostgreSQL. The database contains application users and event data, not browser token sessions.
+Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they are not stored in PostgreSQL. The database contains application users and event data, not browser token sessions. Access-token revocations and logout barriers are the exception: they must survive restarts and be shared by every process.
+
+### `revoked_access_tokens`
+
+| Column        | Type               | Description                                           |
+| ------------- | ------------------ | ----------------------------------------------------- |
+| `jti`         | `TEXT PRIMARY KEY` | Revoked access-token ID                               |
+| `valid_after` | `BIGINT NOT NULL`  | Unix seconds; the token is rejected at or after it    |
+| `expires_at`  | `BIGINT`           | Signed token expiry in Unix seconds, used for cleanup |
+
+Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted after `expires_at` plus a five-minute tolerance, with a seven-day fallback for entries that have no known expiry.
 
 ### `oauth2_applications`
 
@@ -128,13 +146,14 @@ Basis-auth access and refresh tokens are sealed into an HTTP-only cookie; they a
 
 ### `seasons`
 
-| Column      | Type                                | Description                                  |
-| ----------- | ----------------------------------- | -------------------------------------------- |
-| `id`        | `INTEGER PRIMARY KEY AUTOINCREMENT` | Season ID                                    |
-| `name`      | `TEXT NOT NULL UNIQUE`              | Season name                                  |
-| `is_active` | `INTEGER NOT NULL DEFAULT 0`        | Only one season can be active (CHECK 0 or 1) |
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | Season ID |
+| `name` | `TEXT NOT NULL UNIQUE` | Season name |
+| `is_active` | `INTEGER NOT NULL DEFAULT 0` | Only one season can be active (CHECK 0 or 1) |
+| `announcement` | `TEXT` | Editable home-page announcement |
 
-Each season stores a snapshot of its event settings. With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+Each season stores a snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
 
 The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 
@@ -207,6 +226,94 @@ Stores per-team award assignments and JSON metadata. Award details are joined fr
 | `meta`    | `TEXT NOT NULL`    | JSON metadata for the assignment (default `{}`) |
 
 **Primary key**: `(team_id, award)`
+
+### `rubric_templates`
+
+Reusable rubric definitions that administrators can copy into a season. Names are unique case-insensitively.
+
+| Column        | Type                   | Description                            |
+| ------------- | ---------------------- | -------------------------------------- |
+| `id`          | `SERIAL PRIMARY KEY`   | Template ID                            |
+| `name`        | `TEXT NOT NULL`        | Display name, unique per `lower(name)` |
+| `description` | `TEXT`                 | Optional description                   |
+| `definition`  | `JSONB NOT NULL`       | Complete `RubricDefinition`            |
+| `created_by`  | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL)  |
+| `created_at`  | `TIMESTAMPTZ NOT NULL` | Creation time                          |
+| `updated_at`  | `TIMESTAMPTZ NOT NULL` | Last update time                       |
+
+### `rubric_versions`
+
+Immutable per-season rubric snapshots. A finalized score keeps the version it was judged against.
+
+| Column               | Type                   | Description                                      |
+| -------------------- | ---------------------- | ------------------------------------------------ |
+| `id`                 | `SERIAL PRIMARY KEY`   | Version ID                                       |
+| `season_id`          | `INTEGER NOT NULL`     | FK to `seasons.id` (ON DELETE RESTRICT)          |
+| `version`            | `INTEGER NOT NULL`     | 1-based version within the season                |
+| `name`               | `TEXT NOT NULL`        | Version name                                     |
+| `definition`         | `JSONB NOT NULL`       | Frozen `RubricDefinition`                        |
+| `source_template_id` | `INTEGER`              | FK to `rubric_templates.id` (ON DELETE SET NULL) |
+| `created_by`         | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL)            |
+| `created_at`         | `TIMESTAMPTZ NOT NULL` | Creation time                                    |
+
+**Unique index**: `(season_id, version)`
+
+### `judging_drafts`
+
+Autosaved judge work that has not been finalized. One row per judge and team.
+
+| Column              | Type                   | Description                                     |
+| ------------------- | ---------------------- | ----------------------------------------------- |
+| `team_id`           | `INTEGER NOT NULL`     | FK to `teams.id` (ON DELETE CASCADE)            |
+| `judge_user_id`     | `INTEGER NOT NULL`     | FK to `users.id` (ON DELETE CASCADE)            |
+| `rubric_version_id` | `INTEGER NOT NULL`     | FK to `rubric_versions.id` (ON DELETE RESTRICT) |
+| `scores`            | `JSONB NOT NULL`       | Criterion scores keyed by criterion ID          |
+| `reasoning`         | `TEXT NOT NULL`        | Draft comment (default `''`)                    |
+| `updated_at`        | `TIMESTAMPTZ NOT NULL` | Last autosave                                   |
+
+**Primary key**: `(team_id, judge_user_id)`
+
+### `sc_votes`
+
+Legacy ballot rows retained by the SQLite importer for audit and history. The application does not read or write them for voting.
+
+| Column         | Type      | Description                           |
+| -------------- | --------- | ------------------------------------- |
+| `id`           | `SERIAL`  | Row ID                                |
+| `user_id`      | `INTEGER` | FK to `users.id` (ON DELETE SET NULL) |
+| `vote`         | `TEXT`    | Original legacy payload               |
+| `submitted_at` | `INTEGER` | Original submission time              |
+
+### `asset_objects`
+
+Content-addressed registry of managed uploads, used to deduplicate files and to collect unreferenced ones after the grace period.
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `collection` | `TEXT NOT NULL` | `assets` or `userassets` |
+| `asset_path` | `TEXT NOT NULL` | Path relative to the collection root |
+| `sha256` | `TEXT NOT NULL` | Content hash, 64 lowercase hex characters |
+| `byte_size` | `BIGINT NOT NULL` | Stored size in bytes |
+| `pinned` | `BOOLEAN NOT NULL` | Pinned objects are never collected |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
+| `unreferenced_at` | `TIMESTAMPTZ` | When the last reference was released; starts the grace period |
+
+**Primary key**: `(collection, asset_path)`. Check constraints enforce the collection name, the hash format, a non-negative size, and the content-addressed path shape.
+
+### `asset_references`
+
+Active permalink references to a stored object. Releasing the last reference sets `asset_objects.unreferenced_at`; cleanup waits at least seven days and re-checks the database under a lock.
+
+| Column           | Type                   | Description                           |
+| ---------------- | ---------------------- | ------------------------------------- |
+| `id`             | `TEXT PRIMARY KEY`     | Reference ID                          |
+| `collection`     | `TEXT NOT NULL`        | Collection of the referenced object   |
+| `asset_path`     | `TEXT NOT NULL`        | Path of the referenced object         |
+| `reference_type` | `TEXT NOT NULL`        | Only `permalink` is allowed           |
+| `created_by`     | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL) |
+| `created_at`     | `TIMESTAMPTZ NOT NULL` | Creation time                         |
+
+**Foreign key**: `(collection, asset_path)` to `asset_objects` with `ON DELETE CASCADE`.
 
 ## Access Patterns
 

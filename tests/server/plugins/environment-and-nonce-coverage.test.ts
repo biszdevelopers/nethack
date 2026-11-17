@@ -19,6 +19,8 @@ const baseline = () => {
     vi.stubEnv("BASIS_AUTH_CLIENT_ID", "client");
     vi.stubEnv("BASIS_AUTH_CLIENT_SECRET", "secret");
     vi.stubEnv("BASIS_AUTH_RESOURCE", "resource");
+    vi.stubEnv("BASIS_AUTH_RESOURCE_SECRET", "resource-secret");
+    vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "http://127.0.0.1:3001");
     vi.stubEnv("CURRENT_URL_ORIGIN", "https://site.example.test");
     vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
     vi.stubEnv("MICROSOFT_TENANT_ID", "");
@@ -88,6 +90,58 @@ describe("environment validation plugin", () => {
         await expectExit();
 
         expect(error).toHaveBeenCalledWith(expect.stringContaining("BASIS_AUTH_CLIENT_SECRET"));
+    });
+
+    it("rejects missing production backchannel settings", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("BASIS_AUTH_RESOURCE_SECRET", "");
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await expectExit();
+
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("BASIS_AUTH_RESOURCE_SECRET"));
+    });
+
+    it("warns instead of exiting for a loopback production build without backchannel settings", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "http://127.0.0.1:3005");
+        vi.stubEnv("HOST", "127.0.0.1");
+        vi.stubEnv("BASIS_AUTH_RESOURCE_SECRET", "");
+        vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "");
+
+        await runPlugin();
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("14408"));
+    });
+
+    it("rejects a non-HTTP internal basis-auth URL", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "ftp://127.0.0.1:3001");
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await expectExit();
+
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("BASIS_AUTH_INTERNAL_URL"));
+    });
+
+    it("warns in development when the backchannel settings are absent", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.stubEnv("BASIS_AUTH_RESOURCE_SECRET", "");
+        vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "");
+
+        await runPlugin();
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("14408"));
+    });
+
+    it("warns in development for a non-HTTP internal basis-auth URL", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "ftp://127.0.0.1:3001");
+
+        await runPlugin();
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("BASIS_AUTH_INTERNAL_URL"));
     });
 
     it("rejects an invalid public production origin", async () => {

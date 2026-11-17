@@ -38,29 +38,31 @@ const freshSeed = () => {
                 theme_name: null,
                 theme_description: null,
             },
-            seasons: {
-                id: 1,
-                name: "Season 1",
-                is_active: 1,
-                status: "not_started",
-                voting_enabled: 0,
-                results_published: 0,
-                judging_open: 0,
-                show_scores: 0,
-                show_ranking: 0,
-                max_votes_per_user: 0,
-                schedule_start: null,
-                schedule_end: null,
-                start_timestamp: 0,
-                end_timestamp: 0,
-                voting_start_timestamp: 0,
-                voting_end_timestamp: 0,
-                results_open_timestamp: 0,
-                theme_name: null,
-                theme_description: null,
-                score_curve_preset: "original",
-                rubric_version_id: 1,
-            },
+            seasons: [
+                {
+                    id: 1,
+                    name: "Season 1",
+                    is_active: 1,
+                    status: "not_started",
+                    voting_enabled: 0,
+                    results_published: 0,
+                    judging_open: 0,
+                    show_scores: 0,
+                    show_ranking: 0,
+                    max_votes_per_user: 0,
+                    schedule_start: null,
+                    schedule_end: null,
+                    start_timestamp: 0,
+                    end_timestamp: 0,
+                    voting_start_timestamp: 0,
+                    voting_end_timestamp: 0,
+                    results_open_timestamp: 0,
+                    theme_name: null,
+                    theme_description: null,
+                    score_curve_preset: "original",
+                    rubric_version_id: 1,
+                },
+            ],
             rubric_templates: {
                 id: 1,
                 name: "BIBS-C Default",
@@ -88,29 +90,30 @@ describe("SQLite import PostgreSQL target seed checks", () => {
         expect(inspectFreshImportTarget(target)).toEqual({
             hackathonId: 1,
             rubricSeed: { seasonId: 1, templateId: 1, rubricVersionId: 1 },
+            extraSeasonIds: [],
         });
     });
 
     it("recognizes PostgreSQL bigint seed values returned as decimal strings", () => {
         const target = freshSeed();
-        for (const table of ["hackathon", "seasons"] as const) {
-            for (const field of [
-                "start_timestamp",
-                "end_timestamp",
-                "voting_start_timestamp",
-                "voting_end_timestamp",
-                "results_open_timestamp",
-            ]) {
-                target.rows[table][field] = "0";
-            }
+        for (const field of [
+            "start_timestamp",
+            "end_timestamp",
+            "voting_start_timestamp",
+            "voting_end_timestamp",
+            "results_open_timestamp",
+        ]) {
+            target.rows.hackathon[field] = "0";
+            target.rows.seasons[0].start_timestamp = "0";
         }
 
         expect(inspectFreshImportTarget(target)).toEqual({
             hackathonId: 1,
             rubricSeed: { seasonId: 1, templateId: 1, rubricVersionId: 1 },
+            extraSeasonIds: [],
         });
 
-        target.rows.seasons.start_timestamp = "9007199254740993";
+        target.rows.seasons[0].start_timestamp = "9007199254740993";
         expect(inspectFreshImportTarget(target)).toBeNull();
     });
 
@@ -132,15 +135,66 @@ describe("SQLite import PostgreSQL target seed checks", () => {
         await clearFreshImportTargetSeeds(sql, {
             hackathonId: 1,
             rubricSeed: { seasonId: 1, templateId: 1, rubricVersionId: 1 },
+            extraSeasonIds: [2],
         });
 
         expect(statements.map(({ sql: statement, values }) => [statement, values])).toEqual([
+            ["DELETE FROM seasons WHERE id = $value", [2]],
             ["UPDATE seasons SET rubric_version_id = NULL WHERE id = $value", [1]],
             ["DELETE FROM rubric_versions WHERE id = $value", [1]],
             ["DELETE FROM seasons WHERE id = $value", [1]],
             ["DELETE FROM rubric_templates WHERE id = $value", [1]],
             ["DELETE FROM hackathon WHERE id = $value", [1]],
         ]);
+    });
+
+    it("handles a single season row and a target with no season rows", () => {
+        const single = freshSeed();
+        (single.rows as any).seasons = single.rows.seasons[0];
+        expect(inspectFreshImportTarget(single)).toMatchObject({
+            hackathonId: 1,
+            extraSeasonIds: [],
+        });
+
+        const missing = freshSeed();
+        missing.counts.seasons = 0;
+        delete (missing.rows as any).seasons;
+        expect(inspectFreshImportTarget(missing)).toBeNull();
+    });
+
+    it("accepts the inactive next-season shell that db:migrate also seeds", () => {
+        const target = freshSeed();
+        target.counts.seasons = 2;
+        target.rows.seasons.push({
+            id: 2,
+            name: "R1 2026–2027",
+            is_blank_start: 1,
+            is_active: 0,
+            status: "not_started",
+            voting_enabled: 0,
+            results_published: 0,
+            judging_open: 0,
+            show_scores: 0,
+            show_ranking: 0,
+            max_votes_per_user: 0,
+            schedule_start: null,
+            schedule_end: null,
+            start_timestamp: 0,
+            end_timestamp: 0,
+            voting_start_timestamp: 0,
+            voting_end_timestamp: 0,
+            results_open_timestamp: 0,
+            theme_name: null,
+            theme_description: null,
+            score_curve_preset: "original",
+            rubric_version_id: null,
+        });
+
+        expect(inspectFreshImportTarget(target)).toEqual({
+            hackathonId: 1,
+            rubricSeed: { seasonId: 1, templateId: 1, rubricVersionId: 1 },
+            extraSeasonIds: [2],
+        });
     });
 
     it("rejects every populated application table outside the exact fresh seed", () => {
@@ -157,7 +211,7 @@ describe("SQLite import PostgreSQL target seed checks", () => {
 
     it("rejects partial, modified, or extra seed rows", () => {
         const modifiedSeason = freshSeed();
-        modifiedSeason.rows.seasons.status = "in_progress";
+        modifiedSeason.rows.seasons[0].status = "in_progress";
         expect(inspectFreshImportTarget(modifiedSeason)).toBeNull();
 
         const partialSeed = freshSeed();
@@ -166,7 +220,21 @@ describe("SQLite import PostgreSQL target seed checks", () => {
 
         const extraSeason = freshSeed();
         extraSeason.counts.seasons = 2;
+        extraSeason.rows.seasons.push({ ...extraSeason.rows.seasons[0], id: 2 });
         expect(inspectFreshImportTarget(extraSeason)).toBeNull();
+
+        const modifiedExtraSeason = freshSeed();
+        modifiedExtraSeason.counts.seasons = 2;
+        modifiedExtraSeason.rows.seasons.push({
+            ...modifiedExtraSeason.rows.seasons[0],
+            id: 2,
+            name: "R1 2026–2027",
+            is_active: 0,
+            is_blank_start: 1,
+            rubric_version_id: null,
+            theme_name: "Modified shell",
+        });
+        expect(inspectFreshImportTarget(modifiedExtraSeason)).toBeNull();
 
         const modifiedRubric = freshSeed();
         modifiedRubric.rows.rubric_versions.definition = { tracks: {} };

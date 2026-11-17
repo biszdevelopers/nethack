@@ -23,4 +23,10 @@ describe("ProjectCard.vue regressions", () => {
         expect(source).toContain("immediate: !props.team");
         expect(source).toContain("props.team ?? fetchedTeam.value");
     });
+
+    it("shows the AI-use disclosure alongside the project description", () => {
+        expect(source).toContain("AI-use disclosure");
+        expect(source).toContain("team.project.sourcing");
+        expect(source).toContain("This team did not provide an AI-use disclosure.");
+    });
 });

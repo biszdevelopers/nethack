@@ -1,10 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
-   BASISHACKS — Modern Terminal Emulator Theme
-   Network Hackathon Documentation
+   NETHACK — Documentation Theme
+   Shares the main site's Monaspace Neon typography and terminal look.
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── Font Imports ────────────────────────────────────────────── */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=VT323&display=swap");
+@font-face {
+    font-family: "Monaspace Neon";
+    src: url("/docs/fonts/Monaspace-Neon.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
 
 /* ── CSS Custom Properties ──────────────────────────────────── */
 :root {
@@ -14,9 +19,13 @@
     --bh-brand-dark: #006638;
 
     /* Light mode — light terminal emulator */
-    --bh-green: #00884a;
+    --bh-green: #006b3a;
+    --bh-link-hover: #004f2b;
     --bh-green-dim: #3a6e4f;
-    --bh-green-subtle: rgba(0, 136, 74, 0.08);
+    --bh-green-subtle: rgba(0, 107, 58, 0.08);
+    --bh-info: #1d6a96;
+    --bh-warn: #7a5c00;
+    --bh-danger: #a32121;
     --bh-text: #1f2328;
     --bh-text-muted: #57606a;
     --bh-bg: #ffffff;
@@ -39,9 +48,10 @@
     --bh-terminal-header: #f6f8fa;
     --bh-terminal-text: #1f2328;
 
-    /* Typography */
-    --bh-font-mono: "IBM Plex Mono", "Space Mono", "Courier New", Courier, monospace;
-    --bh-font-display: "VT323", "IBM Plex Mono", "Space Mono", monospace;
+    /* Typography — identical to the application shell */
+    --bh-font-mono:
+        "Monaspace Neon", ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
+    --bh-font-display: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
     --bh-transition-speed: 0.15s;
 
     /* Legacy CRT aliases (used by home page components) */
@@ -56,18 +66,20 @@
     --crt-text: var(--bh-text);
 
     /* VitePress variable overrides */
+    --vp-font-family-base: var(--bh-font-mono);
+    --vp-font-family-mono: var(--bh-font-mono);
     --vp-c-bg: var(--bh-bg);
     --vp-c-bg-alt: var(--bh-bg-soft);
     --vp-c-bg-elv: var(--bh-bg-soft);
     --vp-c-bg-elv-mute: var(--bh-bg-mute);
     --vp-c-text-1: var(--bh-text);
     --vp-c-text-2: var(--bh-text-muted);
-    --vp-c-text-3: #6a8a6a;
+    --vp-c-text-3: var(--bh-text-muted);
     --vp-c-border: var(--bh-border);
     --vp-c-divider: var(--bh-border);
     --vp-c-gutter: var(--bh-border);
     --vp-c-brand-1: var(--bh-green);
-    --vp-c-brand-2: var(--bh-brand-light);
+    --vp-c-brand-2: var(--bh-link-hover);
     --vp-c-brand-3: var(--bh-brand-dark);
     --vp-c-brand-soft: var(--bh-green-subtle);
     --vp-button-brand-bg: var(--bh-btn-bg);
@@ -88,31 +100,35 @@
 }
 
 .dark {
-    /* Dark mode — modern terminal emulator */
-    --bh-green: #23d18b;
+    /* Dark mode — matches the main application surface */
+    --bh-green: #22c55e;
+    --bh-link-hover: #4ade80;
     --bh-green-dim: #16a34a;
-    --bh-green-subtle: rgba(35, 209, 139, 0.1);
-    --bh-text: #d4d4d4;
-    --bh-text-muted: #8b949e;
-    --bh-bg: #0d1117;
-    --bh-bg-soft: #161b22;
-    --bh-bg-mute: #21262d;
-    --bh-border: #30363d;
-    --bh-code-bg: #0d1117;
-    --bh-selection-bg: rgba(35, 209, 139, 0.2);
-    --bh-selection-text: #d4d4d4;
-    --bh-shadow: rgba(0, 0, 0, 0.35);
-    --bh-scrollbar-thumb: #30363d;
-    --bh-scrollbar-track: #0d1117;
-    --bh-btn-bg: #238636;
+    --bh-green-subtle: rgba(34, 197, 94, 0.1);
+    --bh-info: #4499cc;
+    --bh-warn: #ccaa00;
+    --bh-danger: #cc3333;
+    --bh-text: #e6edf3;
+    --bh-text-muted: #94a3b8;
+    --bh-bg: #0a0f1a;
+    --bh-bg-soft: #111827;
+    --bh-bg-mute: #162033;
+    --bh-border: #233047;
+    --bh-code-bg: #0d1424;
+    --bh-selection-bg: rgba(34, 197, 94, 0.22);
+    --bh-selection-text: #e6edf3;
+    --bh-shadow: rgba(0, 0, 0, 0.45);
+    --bh-scrollbar-thumb: #2b3a55;
+    --bh-scrollbar-track: #0a0f1a;
+    --bh-btn-bg: #16a34a;
     --bh-btn-text: #ffffff;
-    --bh-btn-hover: #2ea043;
-    --bh-table-stripe: #161b22;
+    --bh-btn-hover: #22c55e;
+    --bh-table-stripe: #111827;
     --bh-crt-glow: none;
-    --bh-terminal-bg: #0d1117;
-    --bh-terminal-border: #30363d;
-    --bh-terminal-header: #161b22;
-    --bh-terminal-text: #d4d4d4;
+    --bh-terminal-bg: #0d1424;
+    --bh-terminal-border: #233047;
+    --bh-terminal-header: #111827;
+    --bh-terminal-text: #e6edf3;
 
     /* Legacy CRT aliases */
     --crt-green: var(--bh-green);
@@ -132,7 +148,7 @@
     --vp-c-bg-elv-mute: var(--bh-bg-mute);
     --vp-c-text-1: var(--bh-text);
     --vp-c-text-2: var(--bh-text-muted);
-    --vp-c-text-3: #6a9a6a;
+    --vp-c-text-3: #6b8299;
     --vp-c-border: var(--bh-border);
     --vp-c-divider: var(--bh-border);
     --vp-c-gutter: var(--bh-border);
@@ -151,7 +167,7 @@
     --vp-code-copy-code-active-text: var(--bh-green);
     --vp-custom-block-tip-border: var(--bh-green);
     --vp-custom-block-tip-text: var(--bh-text);
-    --vp-custom-block-tip-bg: rgba(51, 255, 102, 0.08);
+    --vp-custom-block-tip-bg: rgba(34, 197, 94, 0.08);
     --vp-custom-block-tip-title: var(--bh-green);
     --vp-sidebar-bg-color: var(--bh-bg-soft);
     --vp-nav-bg-color: var(--bh-bg);
@@ -318,8 +334,9 @@ a {
     text-decoration: none;
 }
 
-a:hover {
-    color: var(--bh-brand-light);
+a:hover,
+.vp-doc a:hover {
+    color: var(--bh-link-hover);
     text-decoration: underline;
 }
 
@@ -449,30 +466,30 @@ tr:hover td {
 }
 
 .custom-block.warning {
-    border-color: #ccaa00;
+    border-color: var(--bh-warn);
     background: rgba(204, 170, 0, 0.08);
 }
 
 .custom-block.warning .custom-block-title {
-    color: #ccaa00 !important;
+    color: var(--bh-warn) !important;
 }
 
 .custom-block.danger {
-    border-color: #cc3333;
+    border-color: var(--bh-danger);
     background: rgba(204, 51, 51, 0.08);
 }
 
 .custom-block.danger .custom-block-title {
-    color: #cc3333 !important;
+    color: var(--bh-danger) !important;
 }
 
 .custom-block.info {
-    border-color: #4499cc;
+    border-color: var(--bh-info);
     background: rgba(68, 153, 204, 0.08);
 }
 
 .custom-block.info .custom-block-title {
-    color: #4499cc !important;
+    color: var(--bh-info) !important;
 }
 
 /* ── Badges ─────────────────────────────────────────────────── */
@@ -768,17 +785,14 @@ tr:hover td {
 }
 
 .boot-line {
-    opacity: 0;
     animation: boot-appear 0.15s ease forwards;
 }
 
 @keyframes boot-appear {
     from {
-        opacity: 0;
         transform: translateY(4px);
     }
     to {
-        opacity: 1;
         transform: translateY(0);
     }
 }
@@ -938,7 +952,6 @@ tr:hover td {
 }
 
 .bh-terminal .terminal-line {
-    opacity: 0;
     animation: term-appear 0.2s ease forwards;
     white-space: pre-wrap;
     word-break: break-all;
@@ -946,10 +959,10 @@ tr:hover td {
 
 @keyframes term-appear {
     from {
-        opacity: 0;
+        transform: translateY(2px);
     }
     to {
-        opacity: 1;
+        transform: translateY(0);
     }
 }
 
@@ -1093,20 +1106,20 @@ tr:hover td {
 }
 
 .vp-status-badge.status-warn {
-    color: #ccaa00;
-    border-color: #ccaa00;
+    color: var(--bh-warn);
+    border-color: var(--bh-warn);
     background: rgba(204, 170, 0, 0.08);
 }
 
 .vp-status-badge.status-error {
-    color: #cc3333;
-    border-color: #cc3333;
+    color: var(--bh-danger);
+    border-color: var(--bh-danger);
     background: rgba(204, 51, 51, 0.08);
 }
 
 .vp-status-badge.status-info {
-    color: #4499cc;
-    border-color: #4499cc;
+    color: var(--bh-info);
+    border-color: var(--bh-info);
     background: rgba(68, 153, 204, 0.08);
 }
 
@@ -1573,6 +1586,95 @@ tr:hover td {
     letter-spacing: 0;
 }
 
+/* ── Final polish: match the application's calmer, high-contrast surface ── */
+.vp-portal-return {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.75rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--bh-border);
+    border-radius: 999px;
+    color: var(--bh-text-muted);
+    font-family: var(--bh-font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    transition:
+        color 0.15s ease,
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+}
+
+.vp-portal-return:hover {
+    border-color: var(--bh-green);
+    background: var(--bh-green-subtle);
+    color: var(--bh-green);
+    text-decoration: none;
+}
+
+.vp-portal-return-mobile {
+    margin: 0.5rem 1.25rem 0.75rem;
+}
+
+@media (max-width: 768px) {
+    .vp-portal-return:not(.vp-portal-return-mobile) {
+        display: none;
+    }
+}
+
+.VPNavBar {
+    backdrop-filter: blur(14px);
+    background-color: color-mix(in srgb, var(--bh-bg) 88%, transparent) !important;
+}
+
+.VPNavBrand .title {
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.dark .VPNavBrand .title {
+    text-shadow: 0 0 18px color-mix(in srgb, var(--bh-green) 55%, transparent);
+}
+
+.vp-doc h1 {
+    font-weight: 800;
+    letter-spacing: -0.035em;
+}
+
+.vp-doc h2,
+.vp-doc h3 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.vp-doc a {
+    text-underline-offset: 3px;
+}
+
+.vp-doc table,
+.vp-doc div[class*="language-"],
+.custom-block {
+    border-radius: 12px;
+}
+
+.vp-doc div[class*="language-"] {
+    box-shadow: 0 8px 30px color-mix(in srgb, var(--bh-shadow) 70%, transparent);
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+    letter-spacing: 0.01em;
+}
+
+.VPSidebarItem .item {
+    border-radius: 6px;
+}
+
+.VPFeature {
+    border-radius: 14px;
+}
+
 /* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
     *,
@@ -1586,4 +1688,10 @@ tr:hover td {
     html {
         scroll-behavior: auto;
     }
+}
+
+/* Line numbers are annotated text; keep them above the contrast threshold. */
+.vp-doc .line-numbers-wrapper,
+.vp-doc .line-numbers-wrapper .line-number {
+    color: var(--bh-text-muted);
 }

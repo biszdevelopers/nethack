@@ -71,6 +71,34 @@
             "when": 1794736648912,
             "tag": "0009_great_santa_claus",
             "breakpoints": true
+        },
+        {
+            "idx": 10,
+            "version": "7",
+            "when": 1794743068575,
+            "tag": "0010_clear_puma",
+            "breakpoints": true
+        },
+        {
+            "idx": 11,
+            "version": "7",
+            "when": 1794745154133,
+            "tag": "0011_even_blackheart",
+            "breakpoints": true
+        },
+        {
+            "idx": 12,
+            "version": "7",
+            "when": 1794784628499,
+            "tag": "0012_adorable_stature",
+            "breakpoints": true
+        },
+        {
+            "idx": 13,
+            "version": "7",
+            "when": 1794822305329,
+            "tag": "0013_opposite_night_nurse",
+            "breakpoints": true
         }
     ]
 }

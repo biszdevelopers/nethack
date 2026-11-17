@@ -150,8 +150,8 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
 
 <template>
     <div>
-        <h2 class="text-3xl bold mb-4 flex gap-4">
-            <span>
+        <h1 class="text-3xl bold mb-4 flex flex-wrap items-center gap-4">
+            <span class="min-w-0 break-words">
                 Your team:
                 <span class="glow">{{ team.name }}</span>
             </span>
@@ -209,9 +209,9 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                     </UForm>
                 </template>
             </UModal>
-        </h2>
+        </h1>
 
-        <ul class="grid lg:grid-cols-2 gap-4 mb-4">
+        <ul class="grid grid-cols-1 gap-4 lg:grid-cols-2 mb-4">
             <li v-for="user in users" :key="user.id">
                 <UCard variant="subtle">
                     <h3 class="flex flex-wrap items-center gap-2">
@@ -244,18 +244,18 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                             </template>
                         </ModalConfirm>
                     </h3>
-                    <p v-if="user.name">{{ user.email }}</p>
+                    <p v-if="user.name" class="break-words">{{ user.email }}</p>
                 </UCard>
             </li>
         </ul>
 
         <template v-if="invites?.invites.length">
             <h3 class="text-xl bold mb-2">Pending invitations</h3>
-            <ul class="grid lg:grid-cols-2 gap-4 mb-4">
+            <ul class="grid grid-cols-1 gap-4 lg:grid-cols-2 mb-4">
                 <li v-for="invite in invites.invites" :key="invite.id">
                     <UCard variant="subtle">
                         <div class="flex flex-wrap items-center gap-2">
-                            <span>{{ invite.email }}</span>
+                            <span class="min-w-0 break-words">{{ invite.email }}</span>
                             <div class="flex-1" />
                             <UButton
                                 :disabled="disabled"

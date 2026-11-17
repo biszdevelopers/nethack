@@ -29,6 +29,18 @@ const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
             </UBadge>
         </div>
         <SafeComark class="my-4 mx-[2ch] text-wrap">{{ team.project.description }}</SafeComark>
+        <div class="mb-4 border-t border-default pt-3">
+            <p class="text-sm font-semibold text-muted">AI-use disclosure</p>
+            <SafeComark
+                v-if="team.project.sourcing"
+                class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed"
+            >
+                {{ team.project.sourcing }}
+            </SafeComark>
+            <p v-else class="mt-1 text-sm text-muted">
+                This team did not provide an AI-use disclosure.
+            </p>
+        </div>
         <div class="flex flex-wrap gap-2">
             <UTooltip :text="safeRepoUrl ?? 'Repo link not available'">
                 <UButton

@@ -90,14 +90,14 @@ const columns: TableColumn<AdminTeam>[] = [
                     : table.getIsAllPageRowsSelected(),
                 "onUpdate:modelValue": (value: boolean | "indeterminate") =>
                     table.toggleAllPageRowsSelected(!!value),
-                ariaLabel: "Select all",
+                "aria-label": "Select all teams",
             }),
         cell: ({ row }) =>
             h(UCheckbox, {
                 modelValue: row.getIsSelected(),
                 "onUpdate:modelValue": (value: boolean | "indeterminate") =>
                     row.toggleSelected(!!value),
-                ariaLabel: "Select row",
+                "aria-label": `Select ${row.original.name ?? `team ${row.original.id}`}`,
             }),
     },
     {

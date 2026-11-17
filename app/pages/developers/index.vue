@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatDateTime } from "~/utils/datetime";
+
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -47,6 +49,12 @@ const links = [
         to: "/developers/season",
     },
     {
+        label: "Documentation",
+        description: "Embedded operations and technical reference.",
+        icon: "i-lucide-book-open",
+        to: "/developers/docs",
+    },
+    {
         label: "Users",
         description: "Search accounts, promote administrators, and remove users.",
         icon: "i-lucide-user",
@@ -75,14 +83,14 @@ const links = [
 function formatTimestamp(ts: unknown): string {
     const num = Number(ts);
     if (!Number.isFinite(num) || num <= 0) return "Not set";
-    return new Date(num).toLocaleString();
+    return formatDateTime(num);
 }
 </script>
 
 <template>
     <UDashboardPanel id="developers-home">
         <template #header>
-            <UDashboardNavbar title="Mod Portal">
+            <UDashboardNavbar title="Mod Portal" :as="{ title: 'span' }">
                 <template #leading>
                     <UDashboardSidebarCollapse />
                 </template>

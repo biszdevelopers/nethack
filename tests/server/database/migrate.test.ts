@@ -93,6 +93,7 @@ describe("PostgreSQL migrations", () => {
 
         const selectResults: unknown[][] = [[], [{ id: 10, name: "BIBS-C Default" }], []];
         let selectIndex = 0;
+        let databaseInsertIndex = 0;
         const makeInsert = (table: string) => {
             const builder = {
                 values: vi.fn(() => builder),
@@ -125,7 +126,7 @@ describe("PostgreSQL migrations", () => {
             insert: (table: unknown) => makeInsert(table === undefined ? "unknown" : "seeded"),
         };
         const database = {
-            insert: () => makeInsert("hackathon"),
+            insert: () => makeInsert(databaseInsertIndex++ === 0 ? "hackathon" : "r1-season"),
             update: () => {
                 const builder = {
                     set: () => builder,
@@ -148,6 +149,7 @@ describe("PostgreSQL migrations", () => {
             "seed:hackathon",
             "begin-default-seed-transaction",
             "seed:seeded",
+            "seed:r1-season",
         ]);
         expect(mocks.getPostgresClient).toHaveBeenCalledOnce();
     });

@@ -83,6 +83,7 @@ const links_noteam = ref<ButtonProps[]>([
 
 <template>
     <div>
+        <h1 class="sr-only">General</h1>
         <div v-if="data?.team == null && hackathon?.status !== 'not_started'">
             <UPageCTA
                 :links="links_noteam"

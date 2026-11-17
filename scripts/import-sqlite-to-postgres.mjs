@@ -569,11 +569,17 @@ export async function ensureEmptyTarget(
     }
 
     const rows = {};
-    for (const tableName of ["hackathon", "seasons", "rubric_templates", "rubric_versions"]) {
+    for (const tableName of ["hackathon", "rubric_templates", "rubric_versions"]) {
         if (counts[tableName] === 1) {
             const [row] = await sql.unsafe(`SELECT * FROM ${quote(tableName)}`);
             rows[tableName] = row;
         }
+    }
+    if (counts.seasons === 1) {
+        const [row] = await sql.unsafe(`SELECT * FROM ${quote("seasons")}`);
+        rows.seasons = row;
+    } else if (counts.seasons) {
+        rows.seasons = await sql.unsafe(`SELECT * FROM ${quote("seasons")} ORDER BY id`);
     }
 
     let existingUser;

@@ -1,6 +1,6 @@
 ---
 title: Server Utilities
-description: All server-side utility modules in the basishacks backend
+description: All server-side utility modules in the nethack backend
 ---
 
 # Server Utilities
@@ -194,9 +194,47 @@ Clears the in-memory rate limit history. Exposed primarily for tests.
 ```ts
 export function getPublicOrigin(): string;
 export function getBasisAuthCallbackUrl(): string;
+export function getBasisAuthInternalConfig():
+    | { internalUrl: string; resourceSecret: string }
+    | undefined;
 ```
 
-`getPublicOrigin()` normalizes `CURRENT_URL_ORIGIN`; `getBasisAuthCallbackUrl()` appends `/api/auth/basis/callback`.
+`getPublicOrigin()` normalizes `CURRENT_URL_ORIGIN`; `getBasisAuthCallbackUrl()` appends `/api/auth/basis/callback`. `getBasisAuthInternalConfig()` returns the private listener settings, or `undefined` when `BASIS_AUTH_INTERNAL_URL` and `BASIS_AUTH_RESOURCE_SECRET` are not both set.
+
+### Backchannel and revocation state
+
+```ts
+// basis-auth-jwks.ts
+export function getBasisAuthJwks(issuer: string): RemoteJWKSet;
+export async function verifyBasisAuthJwt(
+    token: string,
+    options: { typ: string; audience: string },
+): Promise<JWTPayload>;
+
+// basis-auth-backchannel.ts
+export function handleBackchannelTest(form: URLSearchParams): void;
+export function sendBasisAuthWebhookProof(nonce: string, challenge: string): Promise<void>;
+export async function applyBasisAuthLogoutToken(event: H3Event, token: string): Promise<void>;
+export async function applyBasisAuthAccessTokenRevocation(
+    event: H3Event,
+    form: URLSearchParams,
+): Promise<void>;
+
+// basis-auth-state.ts
+export function invalidAccessToken(): never;
+export async function isAccessTokenRevoked(event: H3Event, jti: string): Promise<boolean>;
+export async function revokeAccessToken(
+    event: H3Event,
+    input: { jti: string; validAfter: number; expiresAt: number | null },
+): Promise<void>;
+export async function endBasisAuthSubjectSessions(event: H3Event, subject: string): Promise<void>;
+export async function assertAccessTokenActive(
+    event: H3Event,
+    claims: Pick<AccessTokenClaims, "sub" | "iat" | "jti">,
+): Promise<void>;
+```
+
+`verifyBasisAuthJwt` is the single RS256/issuer/`typ` verifier used by both the access-token path and the backchannel events. `assertAccessTokenActive` combines the `revoked_access_tokens` denylist, the per-subject `users.tokens_valid_after` logout barrier, and the live `disabled` / `tokensValidAfter` state from the basis-auth private listener. The listener lookup is cached for one minute per subject and fails closed, with a 15-second backoff after a failure.
 
 ---
 
@@ -207,10 +245,10 @@ JWT verification and OAuth2 Bearer token handling using the `jose` library.
 ### `verifyAccessToken`
 
 ```ts
-export async function verifyAccessToken(token: string): Promise<OAuth2JWTPayload>;
+export async function verifyAccessToken(token: string, event: H3Event): Promise<OAuth2JWTPayload>;
 ```
 
-Verifies a basis-auth access token against its remote JWKS, requiring RS256, exact issuer and resource audience, `typ=at+jwt`, expiry, and the shared `@basis/schema` claims contract. The wrapper can enforce OAuth scopes and shared delegated permissions independently. Throws 401 for invalid or expired tokens.
+Verifies a basis-auth access token against its remote JWKS, requiring RS256, exact issuer and resource audience, `typ=at+jwt`, expiry, and the shared `@basis/schema` claims contract. It then applies `assertAccessTokenActive`, so deny-listed `jti` values, tokens older than a backchannel logout barrier, and disabled basis-auth users are rejected too. The wrapper can enforce OAuth scopes and shared delegated permissions independently. Throws 401 for invalid, revoked, or expired tokens.
 
 ### `extractBearerToken`
 

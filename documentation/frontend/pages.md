@@ -1,11 +1,11 @@
 ---
 title: Pages
-description: File-based routes in the basishacks frontend — home, dashboard, voting, judging, mod portal, and OAuth2 flows.
+description: File-based routes in the nethack frontend — home, dashboard, voting, judging, mod portal, and OAuth2 flows.
 ---
 
 # Pages
 
-The basishacks frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
+The nethack frontend contains **28 page files** in `app/pages/`, mapped to routes via Nuxt's file-based routing. All pages use `<script setup lang="ts">`.
 
 ## Public Pages
 
@@ -16,6 +16,7 @@ The basishacks frontend contains **28 page files** in `app/pages/`, mapped to ro
 The home page. Fetches the active hackathon season from `/api/seasons/active` and renders:
 
 - **Welcome message** with the `WEBSITE_NAME` constant
+- **Announcement** — admin-editable copy from `announcement` is shown above the schedule when set; the page contains no hardcoded season or event text
 - **Status alert** — links to `/dashboard` when the hackathon has started or finished
 - **Schedule section** — conditionally renders `LargeCountdown` components based on hackathon status:
 
@@ -83,7 +84,7 @@ Static rules page listing hackathon requirements:
 
 **File:** `app/pages/showcase/index.vue`
 
-Season showcase index. The featured top section links to the current Beneath the Surface experience, and the archive section beneath it links to the previous Signal experience.
+Season showcase index. The featured section links to the Beneath the Surface experience, the curated archive card links to Signal, and the season-driven project archive lists previous seasons that have started.
 
 **Layout:** `fullwidth-nostick`
 
@@ -137,6 +138,14 @@ Season 1's data-driven winners showcase for **Beneath the Surface**. Its `Showca
 Each winner receives a full-viewport, project-specific visual chapter. Project names, team names, and links come from the Season 1 API; the frozen title and summary remain visible if a record cannot be loaded. "Open project" launches a `UModal` with the shared `ProjectCard` using the already loaded public team record, while the repository button links out directly. The hero and closing headings use Unbounded, and each chapter heading uses its own locally hosted display font (Orbitron, Silkscreen, Creepster, Space Mono, Cormorant Garamond, Chakra Petch). Ranks appear as shimmering metallic `#1`/`#2`/`#3` medals (gold/silver/bronze, like the previous season), and pathways as sonar chips labeled junior or senior.
 
 **Motion:** GSAP and ScrollTrigger create the hero entrance, depth progress, desktop pinned sections, scroll-linked reveals, ambient layers, and pointer parallax. Mobile layouts use natural scrolling. `prefers-reduced-motion` disables pinning, scrubbing, parallax, and ambient movement while keeping all content visible.
+
+### `/showcase/seasons/:id`
+
+**File:** `app/pages/showcase/seasons/[id].vue`
+
+Historical project archive for an inactive season that has started. The page loads the selected season, then `SeasonProjectArchive` fetches submitted projects from `/api/teams?season_id=:id` and displays their names, descriptions, safe demo and repository links, awards, and ranks when results are published. Blank upcoming seasons are not listed or addressable through this archive.
+
+**Layout:** `fullwidth-nostick`
 
 **Components used:** `ShowcaseBeneathTheSurface`, `GoBackUp`
 
@@ -202,9 +211,9 @@ Read-only review of the signed-in judge's finalized evaluations for one season. 
 - Left list of every evaluated project, selectable with Previous and Next controls
 - Project name, team, track, repository and demo links, description, and AI-use disclosure, each labeled; missing values are stated explicitly instead of being omitted
 - The judge's weighted score, rubric name and version, per-criterion scores, and anonymous feedback
-- An alert when saved evaluations reference a rubric that is no longer available
+- Evaluations whose immutable rubric is missing or invalid remain in the list with their project details and written feedback; the page shows an explicit "Saved rubric unavailable" alert instead of hiding the comment
 
-The page requests `GET /api/judging/history/:seasonId`; the response only contains the requesting judge's own evaluations.
+The API always returns a row for every finalized evaluation, including legacy rows whose rubric can no longer be reconstructed, so past comments and disclosures are never silently dropped.
 
 **Layout:** `fullwidth` with the footer hidden
 
@@ -217,8 +226,8 @@ Active judging interface. Protected by `auth` middleware. Accessible only by jud
 **Flow:**
 
 1. Loads the judge's pending projects from `/api/teams?judging=true` (excluding the judge's own team), their personal progress from `/api/ballot/summary`, and the active rubric from `/api/judging/rubric`.
-2. Shows one project at a time. The project pane lists every competitor-submitted field: team, pathway, project name, project description, AI-use disclosure, repository, demo, and submission status. Missing values are named explicitly (for example, "Alixa did not provide a project description") rather than leaving blank space. The right pane shows Scoring Guidelines, the rubric, and the feedback form. The divider between the panes is draggable with a pointer or the arrow keys and remembers its position; both panes scroll independently on wider screens and stack on mobile.
-3. The toolbar shows the project number, evaluated count, Previous and Next, **Next unscored**, and **All projects**. All projects opens a navigator listing every page of the queue with each project's scored state, plus filters for all, not scored, and scored projects.
+2. Shows one project at a time. The project pane lists every competitor-submitted field: team, pathway, project name, project description, AI-use disclosure, repository, demo, and submission status. Descriptions and disclosures render through `SafeComark`, so Markdown is parsed with raw HTML disabled and single newlines preserved. Missing values are named explicitly (for example, "Alixa did not provide a project description") rather than leaving blank space. The right pane shows Scoring Guidelines, the rubric, and the feedback form. The divider between the panes is draggable with a pointer or the arrow keys and remembers its position; both panes scroll independently on wider screens and stack on mobile.
+3. The toolbar shows the project number, evaluated count, Previous and Next, **Next unscored**, and **All projects**. All projects opens a navigator listing every page of the queue with each project's scored state, plus filters for all, not scored, and scored projects. After a successful final submission the page re-reads the current queue page and the progress summary from the server, so an evaluated project can never be reported as unscored and **Next unscored** always scans committed state.
 4. Saves scores and feedback to `/api/judging/drafts/{teamId}` after a short pause while the judge works. Each draft stays pinned to the rubric version shown when scoring began, even if an organizer publishes a newer version mid-session. The form gives guidance to keep comments specific, respectful, project-focused, and anonymous; editable prompt starters can be inserted into the comment. Teams see anonymous comments only after results are published and at least three judges have evaluated their team; authorized administrators can see judge identities in the admin feedback view.
 5. The page offers a retry action when draft loading or saving fails. Retrying a dirty draft saves it against its pinned version without reloading or reinterpreting its scores. If the server will never accept the draft (for example, judging closed or the rubric was replaced), **Discard and reload** replaces the unsaved text with the last saved draft so the judge is not trapped, and the page blocks leaving only when unsaved changes cannot be saved.
 6. Opens the **Review before you finalize** dialog over the scoring workspace before the final `POST /api/teams/{teamId}/scores` submission. A successful evaluation becomes read-only and the queue advances to the next pending project.
@@ -338,6 +347,14 @@ DeepSeek AI chat interface.
 
 **Layout:** `developers-dashboard`
 
+### `/developers/docs`
+
+**File:** `app/pages/developers/docs.vue`
+
+Admin-only documentation viewer. Embeds the protected VitePress site at `/docs/` in a full-height same-origin iframe, so organizers keep the portal sidebar while reading the reference. The navbar action opens the standalone `/docs/` site in a new tab. The docs theme's **Portal** link uses `target="_top"` to return the outer portal window from inside the frame.
+
+**Layout:** `developers-dashboard`
+
 ### `/developers/debug`
 
 **File:** `app/pages/developers/debug.vue`
@@ -354,7 +371,7 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). The page is
 
 - **Overview** — theme, schedule, and the current visitor-facing toggles for the selected season, with shortcuts to the editing tabs. The schedule uses the same stored values as the editable fields.
 - **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id`. A new season starts as a copy of the live settings so switching cannot blank the event. A banner shows whether the selected season is live or stored, with a one-click activation action.
-- **Event settings** — status, vote cap, voting/judging/results toggles, theme, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. Status, voting, judging, results, and show-score/show-ranking are PostgreSQL overrides, so they can be switched even when the manifest is remote. Each field is compared with the selected season's own value, not another season's. Schedule and theme write to a local `HACKATHON.yml` (comments preserved); a remote manifest keeps those fields read-only and explains where to edit them. Other seasons keep their own editable stored settings.
+- **Event settings** — status, vote cap, voting/judging/results toggles, theme, visitor announcement, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. Status, voting, judging, results, show-score/show-ranking, and the announcement are PostgreSQL overrides, so they can be switched even when the manifest is remote. Each field is compared with the selected season's own value, not another season's. Schedule and theme write to a local `HACKATHON.yml` (comments preserved); a remote manifest keeps those fields read-only and explains where to edit them. Other seasons keep their own editable stored settings.
 - **Scoring** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version; the history shows which version is active. Organizers can copy a prior season, load its rubric to customize, and apply or copy reusable named templates. A track used by a submitted project must be reassigned before removal.
 - **Data** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted, and the exported live settings include portal overrides.
 
@@ -362,7 +379,7 @@ Hackathon Administration page (admin-only, hard 403 for non-admins). The page is
 
 ## Login Flow
 
-`/api/login` redirects directly to basis-auth, so basishacks no longer renders a native authorization or consent page. basis-auth owns provider login and consent UI; basishacks handles only its callback and local session.
+`/api/login` redirects directly to basis-auth, so nethack no longer renders a native authorization or consent page. basis-auth owns provider login and consent UI; nethack handles only its callback and local session.
 
 ## User Profile
 
@@ -376,7 +393,8 @@ Public user profile page.
 
 - Fetches user data from `/api/users/{id}`
 - If the user has a `profile_theme` with mode `url`, sets the background image from `/userast/{value}`
-- Full-height container with default background overlay
+- Renders the member card with avatar and an `h1` name on top of the themed background, so the page never looks blank
+- Public responses omit the email address, so only the display name is shown
 
 **Layout:** `fullwidth` (set programmatically via `setPageLayout`)
 
@@ -384,7 +402,7 @@ Public user profile page.
 
 **File:** `app/pages/user/index.vue`
 
-Redirects an authenticated user to their own profile page (`/user/{id}`). If the user is not logged in, redirects to `/login`.
+Redirects an authenticated user to their own profile page (`/user/{id}`). If the user is not logged in, redirects to `/api/login?redirect=/user`.
 
 ## Debug
 

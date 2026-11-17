@@ -70,7 +70,12 @@ export function validateE2eConfiguration(env = process.env) {
     }
 
     const databaseUrl = parseDatabaseUrl(env.DATABASE_URL);
-    const appOrigin = env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3005";
+    const appOrigin = env.PLAYWRIGHT_BASE_URL;
+    if (!appOrigin) {
+        throw new Error(
+            "PLAYWRIGHT_BASE_URL must be set in .env for the isolated browser harness.",
+        );
+    }
     let appUrl;
     try {
         appUrl = new URL(appOrigin);

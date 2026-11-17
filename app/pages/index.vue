@@ -7,7 +7,15 @@ const { data, error } = await useApiFetch("/api/seasons/active", { $fetch: globa
 if (error.value) {
     throw error.value;
 }
-const hackathon = computed(() => data.value!);
+const hackathon = computed(() => {
+    if (!data.value) {
+        throw createError({
+            statusCode: 502,
+            statusMessage: "The active season could not be loaded.",
+        });
+    }
+    return data.value;
+});
 
 const status = computed(() => hackathon.value.status);
 const startDate = computed(() => new Date(hackathon.value.start_timestamp));
@@ -17,6 +25,7 @@ const votingEndDate = computed(() => new Date(hackathon.value.voting_end_timesta
 const resultsOpenDate = computed(() => new Date(hackathon.value.results_open_timestamp));
 
 const themeDescription = computed(() => hackathon.value.theme_description || "");
+const announcement = computed(() => hackathon.value.announcement?.trim() || "");
 const hasStart = computed(() => hackathon.value.start_timestamp > 0);
 const hasEnd = computed(() => hackathon.value.end_timestamp > 0);
 const hasVotingStart = computed(() => hackathon.value.voting_start_timestamp > 0);
@@ -32,10 +41,13 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
             !
         </h1>
         <p class="mb-4">
-            This is the official website of the 2025-26 BIBS-C Network Hackathon (
+            The BIBS-C Network Hackathon brings creativity and technology together as teams turn
+            ideas into prototypes and build for the future with
             <span class="text-primary glow">{{ WEBSITE_NAME }}</span>
-            ), a week where creativity meets technology, where ideas transform into prototypes, and
-            where brilliant minds come together to build the future.
+            .
+        </p>
+        <p v-if="announcement" class="mb-4 whitespace-pre-wrap text-muted">
+            {{ announcement }}
         </p>
         <ULink href="/dashboard">
             <UAlert v-if="status !== 'not_started'" variant="soft" class="mb-4">
@@ -74,7 +86,9 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
 
         <UCollapsible class="mb-4">
             <template #default="{ open }">
-                <p>{{ open ? "▼" : "▶" }} Detailed schedule</p>
+                <button type="button" class="text-left">
+                    {{ open ? "▼" : "▶" }} Detailed schedule
+                </button>
             </template>
 
             <template #content>
@@ -133,11 +147,7 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
         <ul class="mb-4">
             <li>
                 * Check out the projects made in
-                <ULink
-                    href="https://nethack.biszweb.club/showcase"
-                    target="_blank"
-                    class="inline-flex min-h-11 items-center"
-                >
+                <ULink to="/showcase" class="inline-flex min-h-11 items-center">
                     last year's network hackathon!
                 </ULink>
                 Maybe you'll find inspiration there.

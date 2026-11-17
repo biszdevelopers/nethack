@@ -49,6 +49,8 @@ describe("PostgreSQL Drizzle schema definitions", () => {
         ]);
         expect(seasons.checks.map((constraint) => constraint.name)).toEqual([
             "seasons_is_active_check",
+            "seasons_is_blank_start_check",
+            "seasons_board_approval_pair_check",
             "seasons_score_curve_preset_check",
         ]);
     });

@@ -3,7 +3,7 @@
         <h1 class="text-4xl font-bold glow">Presentation!</h1>
         <p class="mt-8">
             <span class="text-primary">{{ WEBSITE_NAME }}</span>
-            events after April 2026 will feature an additional presentation event.
+            events include an additional presentation stage.
         </p>
         <p class="mt-8">
             Teams scoring top 10 will be invited to present their projects in front of judges and
@@ -15,6 +15,10 @@
 </template>
 
 <script lang="ts" setup>
+import { WEBSITE_NAME } from "~/utils/consts";
+
+useHead({ title: `Presentation | ${WEBSITE_NAME}` });
+
 definePageMeta({
     layout: "dashboard",
     middleware: "auth",

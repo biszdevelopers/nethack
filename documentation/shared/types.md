@@ -62,6 +62,7 @@ These interfaces match the SQL schema exactly. They include all columns, includi
 | `results_open_timestamp` | `number`          | Results visibility timestamp           |
 | `theme_name`             | `string \| null`  | Hackathon theme name                   |
 | `theme_description`      | `string \| null`  | Hackathon theme description            |
+| `announcement`           | `string \| null`  | Admin-editable home-page announcement  |
 
 ### `Team`
 
@@ -179,11 +180,12 @@ Pending invitation stored in `team_invites`.
 
 ### `Season`
 
-| Field       | Type     | Description                            |
-| ----------- | -------- | -------------------------------------- |
-| `id`        | `number` | Primary key                            |
-| `name`      | `string` | Season display name                    |
-| `is_active` | `number` | Whether this season is active (0 or 1) |
+| Field          | Type             | Description                            |
+| -------------- | ---------------- | -------------------------------------- |
+| `id`           | `number`         | Primary key                            |
+| `name`         | `string`         | Season display name                    |
+| `is_active`    | `number`         | Whether this season is active (0 or 1) |
+| `announcement` | `string \| null` | Editable home-page announcement        |
 
 ### `UserPastTeams`
 
@@ -324,13 +326,13 @@ Invitations addressed to the authenticated user's email.
 
 ### `BallotSummaryItem`
 
-| Field             | Type     | Description                    |
-| ----------------- | -------- | ------------------------------ |
-| `season_id`       | `number` | Season ID                      |
-| `season_name`     | `string` | Season display name            |
-| `project_count`   | `number` | Total projects in the season   |
-| `submitted_count` | `number` | Submitted projects             |
-| `scored_count`    | `number` | Projects that have been judged |
+| Field             | Type     | Description                                        |
+| ----------------- | -------- | -------------------------------------------------- |
+| `season_id`       | `number` | Season ID                                          |
+| `season_name`     | `string` | Season display name                                |
+| `project_count`   | `number` | Total projects in the season                       |
+| `submitted_count` | `number` | Submitted projects                                 |
+| `scored_count`    | `number` | Submitted projects the current judge has evaluated |
 
 ### `GetBallotSummaryResponse`
 

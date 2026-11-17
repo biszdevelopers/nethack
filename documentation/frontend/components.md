@@ -1,11 +1,11 @@
 ---
 title: Components
-description: Vue components used across the basishacks frontend — navigation, forms, scoring, avatars, awards, and visual effects.
+description: Vue components used across the nethack frontend — navigation, forms, scoring, avatars, awards, and visual effects.
 ---
 
 # Components
 
-The basishacks frontend contains **26 Vue components** organized in `app/components/`. All components use `<script setup lang="ts">` and the `@nuxt/ui` component library.
+The nethack frontend contains **36 Vue components** organized in `app/components/`. All components use `<script setup lang="ts">` and the `@nuxt/ui` component library.
 
 ## Navigation & Layout
 
@@ -17,7 +17,7 @@ The main navigation header rendered at the top of every page. Uses `UHeader` fro
 
 **Features:**
 
-- Displays `basishacks_2026` as the site title
+- Displays `nethack` as the site title
 - Navigation menu with conditional items based on user role and hackathon status
 - Color mode toggle button
 - User avatar link to `/profile` (or a generic account icon when logged out)
@@ -167,7 +167,7 @@ Shows the weighted score preview, individual scores, and anonymous feedback in a
 
 **File:** `app/components/VotingProjectCard.vue`
 
-Interactive card displaying a project for peer voting. Shows project name, team name, pathway badge, description rendered with `Comark`, and repo/demo links, plus star increment and decrement controls.
+Interactive card displaying a project for peer voting. Shows project name, team name, pathway badge, description rendered with `SafeComark`, the AI-use disclosure, and repo/demo links, plus star increment and decrement controls.
 
 **Props:**
 
@@ -267,7 +267,7 @@ Horizontal scroll card used in the showcase marquee. Displays project rank, awar
 
 **File:** `app/components/ProjectCard.vue`
 
-Fetches and displays a team's project card by ID. Shows project name, team name, description rendered with `SafeComark`, repo/demo links, and awarded badges via `AwardButton`. `SafeComark` extracts the supplied slot text and passes it to Comark as markdown, so descriptions render consistently in every card context.
+Fetches and displays a team's project card by ID. Shows project name, team name, description rendered with `SafeComark`, the AI-use disclosure (or an explicit "not provided" state), repo/demo links, and awarded badges via `AwardButton`. `SafeComark` extracts the supplied slot text and passes it to Comark as markdown, so descriptions render consistently in every card context.
 
 **Props:**
 
@@ -280,6 +280,12 @@ Fetches and displays a team's project card by ID. Shows project name, team name,
 ```
 
 When a parent already has a public `GetTeamResponse`, it can pass `:team="team"` instead. This avoids a second request to the authenticated single-team endpoint, which is how public showcase modals render project details.
+
+### ScoreFeedbackPanel
+
+**File:** `app/components/ScoreFeedbackPanel.vue`
+
+Renders the project context (description and AI-use disclosure) plus the judge feedback for one team. The admin view (`admin`) reveals judge names, criterion scores, and rubric metadata; the public view shows only anonymous comments after the anonymity threshold is met. Loading project context through `/api/teams/:id` keeps the disclosure visible in the admin team-review modal and on past results cards even when the caller does not already hold the public team record.
 
 ### ResultsProjectLinks
 
@@ -310,6 +316,20 @@ The page uses locally hosted display fonts (registered in `nuxt.config.ts`, file
 Each chapter announces its result with a shimmering metallic medal (`#1` gold, `#2` silver, `#3` bronze — echoing the previous season's showcase) plus a pathway chip: a pulsing sonar dot next to the pathway label (junior or senior). Shimmer and ping animations are disabled under `prefers-reduced-motion`.
 
 GSAP and ScrollTrigger are loaded after mount so server rendering remains safe. Responsive `matchMedia()` timelines pin and scrub sections only on desktop; reduced-motion visitors see the complete static composition. All timelines, ScrollTriggers, pointer handlers, and inline animation styles are reverted when the component unmounts.
+
+## Showcase Archives
+
+### ShowcaseSeasonArchive
+
+**File:** `app/components/showcase/ShowcaseSeasonArchive.vue`
+
+Loads public seasons and links to a project archive for each inactive season that has started. Blank upcoming and paused seasons are omitted.
+
+### SeasonProjectArchive
+
+**File:** `app/components/showcase/SeasonProjectArchive.vue`
+
+Receives the selected season ID, name, and results visibility. It fetches submitted projects and displays descriptions, safe external links, awards, and ranks when results have been published.
 
 ## Awards
 
@@ -403,7 +423,7 @@ Hover-triggered popover that lazy-loads full user data on first hover. Shows the
 | Prop | Type | Description |
 | --- | --- | --- |
 | `user` | `number \| APIUser` | User ID (lazy fetch) or full user object |
-| `external` | `boolean` | When true, shows an indicator that the user is not registered in basishacks |
+| `external` | `boolean` | When true, shows an indicator that the user is not registered in nethack |
 
 **Lazy loading:** If `user` is a number, fetches `/api/users/{id}` on first hover. Shows skeleton placeholders during loading. Caches the result after the first fetch.
 
@@ -491,7 +511,7 @@ An `<a>` tag that validates its `href` attribute through `isSafeUrl()` before re
 
 **File:** `app/components/SafeComark.vue`
 
-Wraps the `Comark` component (inline Markdown renderer) with XSS-safe configuration. Disables raw HTML (`html: false`) and replaces `<a>` tags with `SafeLink` to prevent unsafe links. Used wherever user-provided content is rendered (project descriptions, sourcing notes, etc.).
+Wraps the `Markdown` component from `@comark/vue` (inline Markdown renderer) with an XSS-safe configuration. It extracts the slot text, disables the default plugin set so raw HTML is never parsed, adds only the line-break plugin, and replaces `<a>` tags with `SafeLink` to prevent unsafe links. Used wherever user-provided content is rendered (project descriptions, sourcing notes, etc.).
 
 ```vue
 <SafeComark>{{ team.project.description }}</SafeComark>

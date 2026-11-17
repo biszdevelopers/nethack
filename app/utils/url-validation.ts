@@ -11,9 +11,7 @@ export function isSafeUrl(url: string): boolean {
     if (url.startsWith("/")) {
         if (url.startsWith("//")) return false;
         try {
-            return (
-                new URL(url, "https://basishacks.invalid").origin === "https://basishacks.invalid"
-            );
+            return new URL(url, "https://nethack.invalid").origin === "https://nethack.invalid";
         } catch {
             return false;
         }

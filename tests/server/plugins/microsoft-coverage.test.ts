@@ -348,7 +348,7 @@ describe("Microsoft Graph integration branches", () => {
                     { emailAddress: { address: "participant@example.test" } },
                 ],
             });
-            expect(body.body.content).toContain("basishacks");
+            expect(body.body.content).toContain("nethack");
         });
 
         it("creates and caches direct chats, and reports Graph failures or missing IDs", async () => {

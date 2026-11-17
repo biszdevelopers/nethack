@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "basishacks",
+      "name": "nethack",
       "dependencies": {
         "@comark/vue": "^0.9.2",
         "@iconify/utils": "^3.1.7",

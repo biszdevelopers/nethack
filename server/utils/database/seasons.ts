@@ -63,6 +63,20 @@ export function isUnconfiguredSeason(season: Season): boolean {
     );
 }
 
+/** Return the missing season-owned details that must be present before activation. */
+export function getSeasonActivationBlockers(season: Season): string[] {
+    if (season.is_blank_start !== 1) return [];
+    const blockers: string[] = [];
+    if (!season.theme_name?.trim()) blockers.push("theme");
+    if (season.start_timestamp <= 0 || season.end_timestamp <= 0) blockers.push("event dates");
+    if (season.voting_start_timestamp <= 0 || season.voting_end_timestamp <= 0) {
+        blockers.push("voting dates");
+    }
+    if (!season.rubric_version_id) blockers.push("judging rubric");
+    if (!season.board_approved_at || !season.board_approved_by) blockers.push("board approval");
+    return blockers;
+}
+
 function pickTweaks(source: Record<string, unknown>): Record<string, unknown> {
     const tweaks: Record<string, unknown> = {};
     for (const field of SEASON_TWEAK_FIELDS) {
@@ -212,23 +226,35 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
                     message: "Season not found",
                 });
             }
+
+            // Keep the existing activation behavior for ordinary legacy season
+            // shells. Blank-start seasons are intentional and must remain blank
+            // until an administrator configures and approves them.
+            if (
+                season.is_blank_start !== 1 &&
+                season.is_active !== 1 &&
+                isUnconfiguredSeason(season)
+            ) {
+                const seed = pickSeasonConfig(currentLive as Record<string, unknown> | null);
+                if (Object.keys(seed).length > 0) {
+                    await tx.update(seasons).set(seed).where(eq(seasons.id, season.id));
+                    Object.assign(season, seed);
+                }
+            }
+
+            const blockers = getSeasonActivationBlockers(season);
+            if (blockers.length > 0) {
+                throw createError({
+                    statusCode: 409,
+                    statusMessage: "season_not_ready",
+                    message: `Configure this season's ${blockers.join(", ")} before activation.`,
+                });
+            }
         }
 
         if (liveConfig && season?.is_active !== 1) {
             const { id, submitted_count, live_overrides, ...settings } = liveConfig;
             await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));
-        }
-
-        // Activating a season that was never configured must not blank the
-        // event, so seed it from the live configuration first.
-        const seed = pickSeasonConfig(currentLive as Record<string, unknown> | null);
-        if (
-            season &&
-            season.is_active !== 1 &&
-            isUnconfiguredSeason(season) &&
-            Object.keys(seed).length > 0
-        ) {
-            await tx.update(seasons).set(seed).where(eq(seasons.id, season.id));
         }
 
         await tx.update(seasons).set({ is_active: 0 });
@@ -245,7 +271,7 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
                 // Activating in manifest mode must move the operational switches
                 // with it. PostgreSQL stores them so no manifest write is needed.
                 const stored = pickSeasonConfig(season as unknown as Record<string, unknown>);
-                activationSettings = isUnconfiguredSeason(season) ? { ...stored, ...seed } : stored;
+                activationSettings = stored;
                 const operationalOverrides = Object.fromEntries(
                     Object.entries(activationSettings).filter(([key]) =>
                         (LIVE_OVERRIDE_KEYS as readonly string[]).includes(key),

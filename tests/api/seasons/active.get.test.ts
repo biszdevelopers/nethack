@@ -76,4 +76,14 @@ describe("GET /api/seasons/active", () => {
 
         expect(result).toHaveProperty("judging_open", true);
     });
+
+    it("exposes the admin-editable announcement before the event starts", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "not_started", announcement: "Preparation news" });
+        seedSeason(ctx);
+
+        const result = await handler(createEvent());
+
+        expect(result).toHaveProperty("announcement", "Preparation news");
+    });
 });

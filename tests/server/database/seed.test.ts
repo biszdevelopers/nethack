@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DrizzleDatabase } from "~~/server/database";
-import { seedDefaultSeasonAndRubrics, seedHackathon } from "~~/server/database/migrate";
+import {
+    seedDefaultSeasonAndRubrics,
+    seedHackathon,
+    seedNextSeason,
+} from "~~/server/database/migrate";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import type { seasons } from "~~/server/database/schema";
 import { hackathon, rubricTemplates, rubricVersions } from "~~/server/database/schema";
@@ -133,6 +137,41 @@ const rubricVersion = (id: number, season_id: number, version = 1) => ({
 });
 
 describe("PostgreSQL default data seeding", () => {
+    it("creates an inactive blank next-season shell without copying event settings or a rubric", async () => {
+        const { database, calls } = createSeedDatabase();
+
+        await seedNextSeason(database);
+
+        expect(calls).toEqual([
+            {
+                operation: "insert",
+                table: "seasons",
+                value: {
+                    name: "Next season",
+                    is_blank_start: 1,
+                    is_active: 0,
+                    status: "not_started",
+                    voting_enabled: 0,
+                    results_published: 0,
+                    judging_open: 0,
+                    show_scores: 0,
+                    show_ranking: 0,
+                    max_votes_per_user: 0,
+                    schedule_start: null,
+                    schedule_end: null,
+                    start_timestamp: 0,
+                    end_timestamp: 0,
+                    voting_start_timestamp: 0,
+                    voting_end_timestamp: 0,
+                    results_open_timestamp: 0,
+                    theme_name: null,
+                    theme_description: null,
+                    rubric_version_id: null,
+                },
+            },
+        ]);
+    });
+
     it("seeds the global event only when it does not already exist", async () => {
         const { database, calls } = createSeedDatabase();
 
@@ -234,6 +273,36 @@ describe("PostgreSQL default data seeding", () => {
         expect(
             calls.some((call) => call.operation === "insert" && call.table === "rubricVersions"),
         ).toBe(false);
+    });
+
+    it("does not add a default rubric to an explicitly blank-start season", async () => {
+        const blankShell = {
+            id: 9,
+            name: "Next season",
+            is_active: 0,
+            is_blank_start: 1,
+            status: "not_started",
+            theme_name: null,
+            theme_description: null,
+            start_timestamp: 0,
+            end_timestamp: 0,
+            voting_start_timestamp: 0,
+            voting_end_timestamp: 0,
+            results_open_timestamp: 0,
+            rubric_version_id: null,
+        };
+        const { database, calls } = createSeedDatabase({
+            selects: { seasons: [[blankShell], [blankShell]], rubricTemplates: [[template]] },
+        });
+
+        await seedDefaultSeasonAndRubrics(database);
+
+        expect(
+            calls.some((call) => call.operation === "insert" && call.table === "rubricVersions"),
+        ).toBe(false);
+        expect(calls.some((call) => call.operation === "update" && call.table === "seasons")).toBe(
+            false,
+        );
     });
 
     it("repairs a season pointer that references a different season's rubric", async () => {

@@ -28,6 +28,7 @@ export default defineEventHandler(
             show_ranking: !!hackathon.show_ranking,
             theme_name: showTheme ? hackathon.theme_name : null,
             theme_description: showTheme ? hackathon.theme_description : null,
+            announcement: hackathon.announcement ?? null,
         };
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

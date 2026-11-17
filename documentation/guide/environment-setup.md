@@ -1,11 +1,11 @@
 ---
 title: Environment Setup
-description: Configure environment variables, install tooling, and prepare your IDE for basishacks development.
+description: Configure environment variables, install tooling, and prepare your IDE for nethack development.
 ---
 
 # Environment Setup
 
-This guide covers everything you need to configure before developing basishacks, from environment variables to IDE setup.
+This guide covers everything you need to configure before developing nethack, from environment variables to IDE setup.
 
 ## Prerequisites
 
@@ -57,9 +57,9 @@ bun --version
 ## Clone and Install
 
 ```bash
-git clone <repository-url> basishacks-r2
+git clone <repository-url> nethack
 git clone https://github.com/biszdevelopers/basis-schema.git basis-schema
-cd basishacks-r2
+cd nethack
 bun i
 ```
 
@@ -105,14 +105,16 @@ cp .env.example .env
 
 | Variable | Description | Example |
 | --- | --- | --- |
-| `DATABASE_URL` | Required PostgreSQL connection URL | `postgresql://basishacks:secret@127.0.0.1:5432/basishacks` |
+| `DATABASE_URL` | Required PostgreSQL connection URL | `postgresql://nethack:secret@127.0.0.1:5432/nethack` |
 | `BASIS_AUTH_COOKIE_SECRET` | Session and token-record encryption key. **Must be at least 32 bytes.** | Output of `openssl rand -base64 32` |
 | `BASIS_AUTH_ISSUER` | Exact basis-auth issuer URL | `http://localhost:3000` |
-| `BASIS_AUTH_CLIENT_ID` | Registered confidential basishacks client ID | Provider-generated value |
-| `BASIS_AUTH_CLIENT_SECRET` | Server-only basishacks client secret | Provider-generated value |
-| `BASIS_AUTH_RESOURCE` | Resource audience registered for basishacks | `devconnect://nethack.bisz.dev` |
+| `BASIS_AUTH_CLIENT_ID` | Registered confidential nethack client ID | Provider-generated value |
+| `BASIS_AUTH_CLIENT_SECRET` | Server-only nethack client secret | Provider-generated value |
+| `BASIS_AUTH_RESOURCE` | Resource audience registered for nethack | `devconnect://nethack.bisz.dev` |
+| `BASIS_AUTH_RESOURCE_SECRET` | Resource secret issued by basis-auth | Provider-generated value |
+| `BASIS_AUTH_INTERNAL_URL` | basis-auth private listener origin | `http://127.0.0.1:3001` |
 
-::: tip Login is delegated to basis-auth. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` for each environment. :::
+::: tip Login is delegated to basis-auth. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` for each environment. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/backchannel` as the resource's backchannel logout URL; sign-in fails with `14408 invalid_resource` while that URL is unverified. :::
 
 #### Generating a Session Password
 
@@ -138,7 +140,7 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CURRENT_URL_ORIGIN` | Public HTTPS origin used for the callback and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. Required in production; local development defaults to `http://localhost:3000`. | `http://localhost:3000` |
+| `CURRENT_URL_ORIGIN` | Required public origin used for canonical page URLs, the basis-auth callback, and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. | Set it in `.env`; the example uses a local origin |
 
 #### Live manifest and local caches
 
@@ -185,7 +187,9 @@ These are read by development scripts, never by the running server.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `PLAYWRIGHT_BASE_URL` | Base URL used by the end-to-end Playwright suite | dev server origin |
+| `BASISHACKS_E2E_DATABASE_URL` | Separate loopback PostgreSQL URL for the disposable database named `basishacks_e2e`; never read by the app server | Set it in `.env` for browser tests |
+| `PLAYWRIGHT_BASE_URL` | Required loopback HTTP origin for the isolated end-to-end Playwright app | Set it in `.env`; the sample shows the test origin |
+| `ASSET_STORAGE_DIR` | Absolute asset storage root honored only while `NODE_ENV=test`, so Vitest can redirect uploads into a temporary directory; ignored in every other runtime | unset |
 | `VPS_RELEASE_OUTPUT_DIR` | Directory `bun run release:package` writes the deployable bundle into | `release-package` |
 | `VPS_RELEASE_INCLUDE_NODE_MODULES` | Set to `1` to copy production `node_modules` into the release bundle | unset |
 | `BENCHMARK_HEADERS_JSON` | JSON object of extra request headers for `bun run benchmark:vps` | unset |
@@ -194,7 +198,7 @@ These are read by development scripts, never by the running server.
 
 ```bash
 # REQUIRED - PostgreSQL connection
-DATABASE_URL=postgresql://basishacks:replace_me@127.0.0.1:5432/basishacks
+DATABASE_URL=postgresql://nethack:replace_me@127.0.0.1:5432/nethack
 
 # REQUIRED - Session and token encryption key, must be at least 32 bytes
 BASIS_AUTH_COOKIE_SECRET=your_random_string_at_least_32_bytes_long
@@ -204,6 +208,8 @@ BASIS_AUTH_ISSUER=http://localhost:3000
 BASIS_AUTH_CLIENT_ID=your_basis_auth_client_id
 BASIS_AUTH_CLIENT_SECRET=your_basis_auth_client_secret
 BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
+BASIS_AUTH_RESOURCE_SECRET=your_basis_auth_resource_secret
+BASIS_AUTH_INTERNAL_URL=http://127.0.0.1:3001
 
 # OPTIONAL - Live event configuration source: local | manifest URL | database
 YAML_SOURCE_HACKATHON=local
@@ -348,10 +354,10 @@ Example:
 
 ```ts
 // Correct (project style)
-const name = "basishacks";
+const name = "nethack";
 
 // Wrong
-const name = "basishacks";
+const name = "nethack";
 ```
 
 ## Production Configuration
@@ -360,7 +366,7 @@ In production on the VPS, environment variables are configured through the serve
 
 ```bash
 # Example: setting environment variables before starting the server
-DATABASE_URL=postgresql://basishacks:secret@127.0.0.1:5432/basishacks bun run start
+DATABASE_URL=postgresql://nethack:secret@127.0.0.1:5432/nethack bun run start
 ```
 
 Configure credentials in a protected server environment file. For systemd, set `DATABASE_URL` and `DATABASE_POOL_MAX=10` in the service's `EnvironmentFile`; upload storage is always project-root `/assets`, not an environment variable. Make that directory writable by the service account. In-place pull/build/start updates preserve it because git ignores it; preserve or restore it before serving from a re-clone, and back it up separately. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for the unit files, import steps, and service hardening.
@@ -438,9 +444,19 @@ If the server logs `[MS Graph] MS Token Endpoint returned 401` or similar, the `
 
 ### basis-auth Configuration Missing
 
-The server validates `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, and `BASIS_AUTH_RESOURCE` at startup:
+The server validates `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE`, `BASIS_AUTH_RESOURCE_SECRET`, and `BASIS_AUTH_INTERNAL_URL` at startup:
 
-- **Production:** any missing value is fatal.
-- **Development/test:** missing values produce a warning; login remains unavailable until configured.
+- **Production:** any missing value, or an internal URL that is not HTTP(S), is fatal.
+- **Development/test:** missing values produce a warning; login and revocation state remain unavailable until configured.
 
-The client ID and secret come from basis-auth registration. The callback registered there must exactly match `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`.
+The client ID and secret come from basis-auth registration. The callback registered there must exactly match `${CURRENT_URL_ORIGIN}/api/auth/basis/callback`. The resource secret comes from the resource Secret tab and is also used to sign the backchannel webhook proof.
+
+### Login Fails With "Unable to Login" or Error `14408`
+
+basis-auth refuses authorization-code sign-in while the resource has no verified backchannel logout URL. The authorize endpoint returns an `invalid_resource` error and the browser shows the generic login error page. Confirm the code by reading the `basis_bridge_error` cookie payload from the authorization response, for example:
+
+```bash
+curl -sD - -o /dev/null "https://auth.example.org/oauth/authorize?client_id=...&redirect_uri=...&response_type=code&scope=openid&resource=...&state=s&nonce=n&code_challenge=...&code_challenge_method=S256"
+```
+
+If the payload contains `"code":14408`, register and verify `${CURRENT_URL_ORIGIN}/api/auth/basis/backchannel` in the resource's Backchannel tab. The URL must be reachable from the basis-auth server, so a `localhost` development server cannot satisfy it for a remote issuer; register the deployed origin instead, then sign in locally. `14407` / `14501` mean the resource audience is not registered or not attached to the client, and `14100` means the redirect URI is not registered exactly.

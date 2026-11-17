@@ -1,6 +1,6 @@
 import type { PermissionRequirement } from "@basis/schema/permissions";
 
-/** Canonical permissions issued by basis-auth for the basishacks resource. */
+/** Canonical permissions issued by basis-auth for the nethack resource. */
 export const NethackPermissions = {
     all: "nethack.all",
     Profile: { updateSelf: "nethack.Profile.updateSelf" },

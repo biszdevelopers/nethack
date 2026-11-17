@@ -15,6 +15,8 @@ if (error.value) {
 const userID = computed(() => userRef.value?.id ?? 0);
 const user = computed(() => data.value);
 
+useHead(() => ({ title: `${user.value?.name || "Your profile"} | ${WEBSITE_NAME}` }));
+
 async function doLogout() {
     try {
         await clear();
@@ -152,7 +154,7 @@ onMounted(() => {
                 <p class="text-muted text-xs">Select the theme of your profile.</p>
                 <p class="text-muted text-xs">
                     This setting will affect the background display of your
-                    <ULink :to="profileLink">profile page</ULink>
+                    <ULink :to="profileLink" class="underline">profile page</ULink>
                     and your
                     <UserPopover :user="user">
                         <span class="underline">profile card</span>

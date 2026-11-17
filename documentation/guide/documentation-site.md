@@ -1,11 +1,21 @@
 ---
 title: Documentation Site
-description: Theme, interactive components, and live dependency tables for the basishacks VitePress docs.
+description: Theme, interactive components, and live dependency tables for the nethack VitePress docs.
 ---
 
 # Documentation Site
 
-This site is built with [VitePress](https://vitepress.dev) and a custom terminal-inspired theme. The theme lives in `documentation/.vitepress/theme/`.
+This site is built with [VitePress](https://vitepress.dev) and a custom theme that mirrors the main application. The theme lives in `documentation/.vitepress/theme/`.
+
+## Typography and Color
+
+The docs use the same **Monaspace Neon** webfont as the application. The font file in `documentation/public/fonts/` is served under `/docs/fonts/` and declared with `@font-face` in `documentation/.vitepress/theme/style.css`. The `--bh-font-mono` and `--bh-font-display` tokens therefore match the app shell, and VitePress's own `--vp-font-family-base` / `--vp-font-family-mono` variables point at the same stack.
+
+## Portal Integration
+
+The administrator portal embeds the docs at `/developers/docs` in a full-height iframe and keeps the standalone `/docs/` route available. The custom `Layout.vue` adds a return link to the nav bar (and the mobile nav screen) with `target="_top"`. It detects the frame at runtime: embedded views show **Portal** (`/developers`) and standalone views show **Home** (`/`), so the link returns the outer application window instead of trying to load `/developers` inside the frame.
+
+The themes mirror the application surfaces (light: `#ffffff` with `#006b3a` primary; dark: `#0a0f1a` with `#22c55e` primary). All colors are exposed as `--bh-*` custom properties, and the site follows the same light/dark support as the application.
 
 ## Theme Components
 
@@ -27,10 +37,10 @@ Show a colored status pill:
 Wrap shell snippets in a terminal chrome:
 
 ````md
-<TerminalWindow title="basishacks@api-test:~" prompt="$">
+<TerminalWindow title="nethack@api-test:~" prompt="$">
 
 ```bash
-curl -s https://localhost:24598/api/health
+curl -s https://localhost:24598/api/seasons/active
 ```
 
 </TerminalWindow>
@@ -80,6 +90,16 @@ Render live dependency tables parsed from the root `package.json`. The data is l
 <PackageVersions />
 ```
 
+### TestCount
+
+Render the authoritative test count from `tests/.test-meta.json`:
+
+```md
+<TestCount />
+```
+
+The value is loaded by `documentation/.vitepress/data/tests.data.ts` and refreshes when the metadata file changes.
+
 The component displays:
 
 - Production dependencies
@@ -94,7 +114,7 @@ The component displays:
 - Component source: `documentation/.vitepress/theme/components/`
 - Component registration: `documentation/.vitepress/theme/index.ts`
 
-The CSS uses CSS custom properties prefixed with `--bh-*` and overrides VitePress's own variables for consistent light/dark modes.
+The CSS uses CSS custom properties prefixed with `--bh-*` and overrides VitePress's own variables. VitePress's light/dark toggle is enabled and its appearance follows the reader's system preference by default.
 
 ## Live Dependency Data
 

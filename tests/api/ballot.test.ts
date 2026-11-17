@@ -12,7 +12,7 @@ import {
     type TestContext,
 } from "./helpers";
 import { eq } from "drizzle-orm";
-import { peerVotingScores, teams } from "~~/server/database/schema";
+import { peerVotingScores, teams, teamScores } from "~~/server/database/schema";
 
 // The summary handler explicitly imports requireUser, so vi.mock is needed for it.
 // The get/post handlers use requireUser as a Nitro auto-import (global), so they
@@ -556,6 +556,41 @@ describe("GET /api/ballot/summary", () => {
 
         expect(result.current).toMatchObject({
             project_count: 1,
+            submitted_count: 1,
+            scored_count: 0,
+        });
+    });
+
+    it("does not count evaluations for unsubmitted teams", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx);
+        const season = seedSeason(ctx, { name: "Current" });
+        seedTeam(ctx, { name: "Submitted", season_id: season.id, project_submitted: 1 });
+        const draftTeam = seedTeam(ctx, {
+            name: "Unsubmitted",
+            season_id: season.id,
+            project_submitted: 0,
+        });
+        const judge = seedUser(ctx, { email: "judge@basischina.com", role: "judge" });
+        ctx.drizzle
+            .insert(teamScores)
+            .values({
+                team_id: draftTeam.id,
+                judge_user_id: judge.id,
+                season_id: season.id,
+                rubric_version_id: season.rubric_version_id!,
+                scores: "{}",
+                reasoning: "Left-over draft",
+            } as any)
+            .run();
+
+        const { requireUser } = await import("~~/server/utils/auth");
+        (requireUser as any).mockResolvedValue({ id: judge.id, role: "judge" });
+
+        const result = await summaryHandler(createEvent());
+
+        expect(result.current).toMatchObject({
+            project_count: 2,
             submitted_count: 1,
             scored_count: 0,
         });

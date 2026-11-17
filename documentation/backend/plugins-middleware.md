@@ -1,6 +1,6 @@
 ---
 title: Plugins & Middleware
-description: Nitro plugins and server middleware in the basishacks backend
+description: Nitro plugins and server middleware in the nethack backend
 ---
 
 # Plugins & Middleware
@@ -51,6 +51,10 @@ Comprehensive environment variable validation plugin that runs at server startup
 #### basis-auth client configuration
 
 `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, and `BASIS_AUTH_RESOURCE` are required together. Missing values stop production startup and warn during development.
+
+#### basis-auth backchannel configuration
+
+`BASIS_AUTH_RESOURCE_SECRET` and `BASIS_AUTH_INTERNAL_URL` are required together, and the URL must use HTTP or HTTPS. They are needed to verify the resource's backchannel logout URL and to receive logout and revocation events; without them authorization-code sign-in fails with `14408 invalid_resource`. Missing or malformed values stop production startup and warn during development.
 
 #### Microsoft Graph configuration
 

@@ -49,16 +49,16 @@
             <div v-if="cursorAuraVisible" class="team1-cursor-aura" :style="team1AuraStyle" />
             <Transition name="slide-right">
                 <div v-if="team1showDescriptionRef" class="team1-description transition-content">
-                    <h1
+                    <p
                         class="block lg:hidden text-8xl text-left metallic-gold uppercase mb-12 bold"
                     >
                         #1
-                    </h1>
+                    </p>
 
                     <h3 class="text-2xl text-left text-neutral-400 uppercase leading-16">
                         Featuring 白鹿青崖间
                     </h3>
-                    <h1 class="text-4xl sm:text-6xl text-left leading-16 bold glow">Syl</h1>
+                    <h2 class="text-4xl sm:text-6xl text-left leading-16 bold glow">Syl</h2>
 
                     <p class="mt-16 text-neutral-400">
                         ... by 6 scenes, the player can experience the story of a fallen
@@ -77,7 +77,7 @@
                         <ResultsProjectLinks
                             github-link="https://github.com/Rua-You/Syl"
                             demo-link="https://rua-you.itch.io/syl"
-                            video-link="/assets/ee2c39cc-c590-4c36-a73e-43d335c76a86.mp4"
+                            video-link=""
                         />
                     </div>
                 </div>
@@ -99,13 +99,14 @@
             <div class="xl:mt-auto max-xl:flex items-center justify-start max-xl:w-full">
                 <img
                     src="/assets/d3048fe7-b43b-4a95-a0a8-1d654819ddb3"
+                    alt=""
                     class="max-xl:h-[40vh] xl:w-[20vw] max-xl:-scale-y-100"
                 />
             </div>
 
             <div class="max-h-[20vh] xl:min-h-screen flex flex-col justify-center w-full">
                 <div class="flex flex-col items-center justify-center">
-                    <h1 class="hidden max-sm:block metallic-silver text-8xl z-4 bold mb-4">#2</h1>
+                    <p class="hidden max-sm:block metallic-silver text-8xl z-4 bold mb-4">#2</p>
 
                     <h3 class="bold z-3 text-2xl text-neutral-400 uppercase leading-16">
                         =^^= presents
@@ -113,7 +114,7 @@
                     <div class="metallic-silver team2-background-number select-none max-sm:hidden">
                         #2
                     </div>
-                    <h1
+                    <h2
                         :class="team2Visible ? 'animate' : ''"
                         class="text-4xl text-left leading-16 bold relative z-10 hidden lg:block"
                     >
@@ -125,12 +126,12 @@
                         <span class="word word-6">Recognition</span>
                         <span class="word word-7">Robotic</span>
                         <span class="word word-8">Head</span>
-                    </h1>
-                    <h1
+                    </h2>
+                    <h2
                         class="text-4xl text-center lg:leading-16 bold relative z-10 lg:hidden max-lg:mb-8"
                     >
                         Super Cool But Creepy Visual Recognition Robotic Head
-                    </h1>
+                    </h2>
                     <p class="z-3 w-full max-w-xl text-center px-4 sm:px-8">
                         A robotic head that looks cool and is able to recognize learned faces and
                         colors, and provide personalized reactions
@@ -164,6 +165,7 @@
             <div class="xl:mt-auto max-xl:flex items-center justify-end max-xl:w-full">
                 <img
                     src="/assets/aea63660-a483-4308-bd3c-0934bb1e3339"
+                    alt=""
                     class="max-xl:h-[40vh] xl:w-[20vw]"
                 />
             </div>
@@ -311,11 +313,6 @@ useHead({
             rel: "preload",
             as: "video",
             href: "/assets/3f9cbe2c-c8ea-42f4-94f6-4a4a0cb01549", // team3 demo
-        },
-        {
-            rel: "preload",
-            as: "video",
-            href: "/assets/ee2c39cc-c590-4c36-a73e-43d335c76a86", // team3 demo
         },
     ],
 });
@@ -568,8 +565,8 @@ onUnmounted(() => {
     57%,
     100% {
         text-shadow:
-            0 0 0.05em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%),
-            0 0 0.1em color-mix(in srgb, currentColor 75%, var(--background-color-default) 25%);
+            0 0 0.05em color-mix(in srgb, currentColor 75%, #000 25%),
+            0 0 0.1em color-mix(in srgb, currentColor 75%, #000 25%);
         opacity: 1;
     }
     /* The "Broken" Moments (Dim/Off) */

@@ -42,6 +42,9 @@ export const hackathon = pgTable(
         results_open_timestamp: bigint("results_open_timestamp", { mode: "number" }).notNull(),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
+        // Editable visitor-facing copy shown above the schedule. Stored in
+        // PostgreSQL even when the rest of the live settings come from YAML.
+        announcement: text("announcement"),
         // Operational settings changed through the portal are stored here so
         // they keep applying even when HACKATHON.yml is remote and read-only.
         live_overrides: jsonb("live_overrides")
@@ -128,6 +131,9 @@ export const users = pgTable(
         profile_picture: text("profile_picture"),
         auth_issuer: text("auth_issuer"),
         auth_subject: text("auth_subject"),
+        // basis-auth backchannel logout barrier: tokens issued at or before this
+        // Unix second are rejected even if the cookie or token is still intact.
+        tokens_valid_after: bigint("tokens_valid_after", { mode: "number" }),
         is_admin: integer("is_admin").notNull().default(0),
     },
     (table) => [
@@ -205,6 +211,11 @@ export const seasons = pgTable(
     {
         id: serial("id").primaryKey(),
         name: text("name").notNull().unique(),
+        is_blank_start: integer("is_blank_start").notNull().default(0),
+        board_approved_at: timestamp("board_approved_at", { withTimezone: true }),
+        // Keep the approver's user ID as historical evidence even if that
+        // account is later removed; this is not a live ownership relation.
+        board_approved_by: integer("board_approved_by"),
         is_active: integer("is_active").notNull().default(0),
         status: text("status").notNull().default("not_started"),
         voting_enabled: integer("voting_enabled").notNull().default(0),
@@ -228,6 +239,7 @@ export const seasons = pgTable(
             .default(0),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
+        announcement: text("announcement"),
         score_curve_preset: text("score_curve_preset")
             .$type<ScoreCurvePreset>()
             .notNull()
@@ -246,6 +258,11 @@ export const seasons = pgTable(
             .on(table.is_active)
             .where(sql`${table.is_active} = 1`),
         check("seasons_is_active_check", sql`${table.is_active} IN (0, 1)`),
+        check("seasons_is_blank_start_check", sql`${table.is_blank_start} IN (0, 1)`),
+        check(
+            "seasons_board_approval_pair_check",
+            sql`(${table.board_approved_at} IS NULL AND ${table.board_approved_by} IS NULL) OR (${table.board_approved_at} IS NOT NULL AND ${table.board_approved_by} IS NOT NULL)`,
+        ),
         check(
             "seasons_score_curve_preset_check",
             sql`${table.score_curve_preset} IN ('original', 'gentle', 'moderate', 'strong')`,
@@ -461,4 +478,15 @@ export const assetReferences = pgTable(
         index("asset_references_object").on(table.collection, table.asset_path),
         check("asset_references_type_check", sql`${table.reference_type} = 'permalink'`),
     ],
+);
+
+/** Access tokens whose basis-auth refresh or logout already revoked them by `jti`. */
+export const revokedAccessTokens = pgTable(
+    "revoked_access_tokens",
+    {
+        jti: text("jti").primaryKey(),
+        valid_after: bigint("valid_after", { mode: "number" }).notNull(),
+        expires_at: bigint("expires_at", { mode: "number" }),
+    },
+    (table) => [index("revoked_access_tokens_expires_at").on(table.expires_at)],
 );

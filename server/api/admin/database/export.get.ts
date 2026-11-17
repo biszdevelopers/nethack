@@ -21,7 +21,7 @@ export default defineEventHandler(
         setResponseHeader(
             event,
             "Content-Disposition",
-            `attachment; filename="basishacks-export.${query.format}"`,
+            `attachment; filename="nethack-export.${query.format}"`,
         );
 
         const stream = Readable.from(

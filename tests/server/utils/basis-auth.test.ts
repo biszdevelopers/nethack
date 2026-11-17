@@ -595,7 +595,7 @@ describe("basis-auth session refresh", () => {
         const current = event();
         const tokens = {
             accessToken: "valid-access-token",
-            accessTokenExpiresAt: Date.now() + 60_000,
+            accessTokenExpiresAt: Date.now() + 120_000,
             refreshToken: "refresh-token",
         };
         establishBasisAuthUserSession(current, 17, tokens);

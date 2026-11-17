@@ -1,11 +1,11 @@
 ---
 title: Runtime Architecture
-description: How basishacks runs in local development versus production, including database initialization, Nitro plugins, and event context augmentations.
+description: How nethack runs in local development versus production, including database initialization, Nitro plugins, and event context augmentations.
 ---
 
 # Runtime Architecture
 
-basishacks runs on PostgreSQL in local development, CI, and production. The Bun and Node.js processes share the same PostgreSQL schema and use Drizzle ORM with the `postgres` driver; no runtime-specific database adapter is selected.
+nethack runs on PostgreSQL in local development, CI, and production. The Bun and Node.js processes share the same PostgreSQL schema and use Drizzle ORM with the `postgres` driver; no runtime-specific database adapter is selected.
 
 ## Local Development
 

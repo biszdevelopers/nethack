@@ -13,11 +13,11 @@ export default defineEventHandler(
         const session = await getFreshBasisAuthUserSession(event);
         if (!session) {
             clearBasisAuthUserSession(event);
-            throw new APIError("invalid_token", "The login session has expired", 401);
+            throw new APIError("invalid_token", "Invalid access token", 401);
         }
 
         try {
-            const payload = await verifyAccessToken(session.tokens.accessToken);
+            const payload = await verifyAccessToken(session.tokens.accessToken, event);
             const user = await getUser(event, session.userId);
             return {
                 user: { id: session.userId },

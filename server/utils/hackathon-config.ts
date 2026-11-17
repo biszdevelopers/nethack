@@ -42,6 +42,7 @@ const hackathonSchema = z.strictObject({
     results_open_timestamp: timestamp,
     theme_name: z.string().nullable(),
     theme_description: z.string().nullable(),
+    announcement: z.string().nullable().default(null),
     rubric: z
         .object({ name: z.string().trim().min(1).max(100) })
         .and(RubricDefinitionSchema)
@@ -212,6 +213,7 @@ const writableConfigKeys = new Set<keyof HackathonConfig>([
     "results_open_timestamp",
     "theme_name",
     "theme_description",
+    "announcement",
 ]);
 
 let pendingWrite: Promise<unknown> = Promise.resolve();

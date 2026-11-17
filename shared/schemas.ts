@@ -486,6 +486,7 @@ export const AdminUpdateHackathonRequest = z.object({
         .optional(),
     theme_name: z.string().max(200).nullable().optional(),
     theme_description: z.string().max(2000).nullable().optional(),
+    announcement: z.string().max(2000).nullable().optional(),
 });
 export type AdminUpdateHackathonRequest = z.infer<typeof AdminUpdateHackathonRequest>;
 
@@ -498,6 +499,7 @@ export const LIVE_OVERRIDE_KEYS = [
     "show_scores",
     "show_ranking",
     "max_votes_per_user",
+    "announcement",
 ] as const;
 
 export const LiveOverrides = AdminUpdateHackathonRequest.pick({
@@ -508,6 +510,7 @@ export const LiveOverrides = AdminUpdateHackathonRequest.pick({
     show_scores: true,
     show_ranking: true,
     max_votes_per_user: true,
+    announcement: true,
 });
 export type LiveOverrides = z.infer<typeof LiveOverrides>;
 
@@ -521,6 +524,7 @@ export const CreateSeasonRequest = z.object({
         .union([z.literal(0), z.literal(1)])
         .optional()
         .default(0),
+    copy_live_settings: z.boolean().optional().default(true),
 });
 export type CreateSeasonRequest = z.infer<typeof CreateSeasonRequest>;
 
@@ -530,3 +534,6 @@ export const UpdateSeasonRequest = z.object({
     is_active: z.union([z.literal(0), z.literal(1)]).optional(),
 });
 export type UpdateSeasonRequest = z.infer<typeof UpdateSeasonRequest>;
+
+export const UpdateSeasonApprovalRequest = z.object({ approved: z.boolean() });
+export type UpdateSeasonApprovalRequest = z.infer<typeof UpdateSeasonApprovalRequest>;

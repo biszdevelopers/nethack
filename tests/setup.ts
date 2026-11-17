@@ -123,6 +123,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
 
     // Apply migrations that add tables/columns not in init.sql
     db.exec(`
+    ALTER TABLE hackathon ADD COLUMN announcement TEXT;
     CREATE TABLE IF NOT EXISTS seasons (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -130,8 +131,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_seasons_active ON seasons(is_active) WHERE is_active = 1;
 
-    ALTER TABLE seasons ADD COLUMN status TEXT NOT NULL DEFAULT 'not_started';
-    ALTER TABLE seasons ADD COLUMN voting_enabled INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE seasons ADD COLUMN status TEXT NOT NULL DEFAULT 'not_started';    ALTER TABLE seasons ADD COLUMN voting_enabled INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN results_published INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN show_scores INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN show_ranking INTEGER NOT NULL DEFAULT 0;
@@ -146,8 +146,12 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE seasons ADD COLUMN results_open_timestamp INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE seasons ADD COLUMN theme_name TEXT;
     ALTER TABLE seasons ADD COLUMN theme_description TEXT;
+    ALTER TABLE seasons ADD COLUMN announcement TEXT;
     ALTER TABLE seasons ADD COLUMN score_curve_preset TEXT NOT NULL DEFAULT 'original';
     ALTER TABLE seasons ADD COLUMN rubric_version_id INTEGER;
+    ALTER TABLE seasons ADD COLUMN is_blank_start INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE seasons ADD COLUMN board_approved_at TEXT;
+    ALTER TABLE seasons ADD COLUMN board_approved_by INTEGER;
 
     ALTER TABLE teams ADD COLUMN season_id INTEGER NOT NULL DEFAULT 1;
     CREATE INDEX IF NOT EXISTS teams_season ON teams (season_id);
@@ -165,7 +169,16 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE users ADD COLUMN auth_issuer TEXT;
     ALTER TABLE users ADD COLUMN auth_subject TEXT;
     ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN tokens_valid_after INTEGER;
     CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
+
+    CREATE TABLE IF NOT EXISTS revoked_access_tokens (
+      jti TEXT PRIMARY KEY NOT NULL,
+      valid_after INTEGER NOT NULL,
+      expires_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS revoked_access_tokens_expires_at
+      ON revoked_access_tokens (expires_at);
 
     ALTER TABLE team_scores ADD COLUMN season_id INTEGER;
     ALTER TABLE team_scores ADD COLUMN rubric_version_id INTEGER;
@@ -279,6 +292,7 @@ export function resetTestDatabase(wrapper: SQLiteDatabase): void {
     DELETE FROM user_past_teams;
     DELETE FROM users;
     DELETE FROM oauth2_applications;
+    DELETE FROM revoked_access_tokens;
     DELETE FROM teams;
     DELETE FROM seasons;
     DELETE FROM hackathon;

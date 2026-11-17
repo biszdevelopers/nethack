@@ -22,7 +22,11 @@ const {
     error,
     refresh,
     status: summaryStatus,
-} = await useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", { server: false });
+} = await useApiFetch<GetBallotSummaryResponse>("/api/ballot/summary", {
+    server: false,
+    // Always re-read progress after a judge returns from the queue.
+    getCachedData: () => undefined,
+});
 
 const currentSummary = computed(() => summary.value?.current ?? null);
 const judgingOpen = computed(
@@ -55,6 +59,22 @@ async function openQueue() {
                 score before final submission.
             </p>
         </header>
+
+        <UAlert
+            v-if="can(NethackPermissions.all)"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-shield-check"
+            title="Administrator review"
+            description="Open every team's judge feedback, including comments and AI-use disclosures."
+            class="mb-6"
+        >
+            <template #actions>
+                <UButton to="/developers/teams" variant="outline" class="min-h-11">
+                    Open team review
+                </UButton>
+            </template>
+        </UAlert>
 
         <UAlert
             v-if="error"

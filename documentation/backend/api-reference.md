@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: Complete reference for all API endpoints in the basishacks backend
+description: Complete reference for all API endpoints in the nethack backend
 ---
 
 # API Reference
@@ -15,7 +15,7 @@ Every API endpoint in the system enforces the following security measures:
 
 | Measure | Implementation |
 | --- | --- |
-| **Rate limiting** | All endpoints are wrapped with `applyRateLimit()` using one of four tier configs (`DEFAULT`, `AUTH`, `VOTE`, `UPLOAD`). Returns 429 with `Retry-After` header when exceeded. |
+| **Rate limiting** | All endpoints are wrapped with `applyRateLimit()` using one of five tier configs (`DEFAULT`, `JUDGING_DRAFT`, `AUTH`, `VOTE`, `UPLOAD`). Returns 429 with `Retry-After` header when exceeded. |
 | **Input validation** | `readValidatedBody(event, Schema.parse)` or `getValidatedQuery(event, Schema.parse)` with bounded Zod schemas. Streaming and webhook bodies retain their byte limits before schema validation. |
 | **Length-bounded inputs** | All string fields in Zod schemas have explicit `min()`/`max()` bounds to prevent resource exhaustion. Example: `name: z.string().min(1).max(50)`. |
 | **Authentication** | Protected APIs validate a basis-auth token from the encrypted HTTP-only cookie or an explicit bearer header. The separate browser session cookie alone is not authorization. |
@@ -57,6 +57,19 @@ Validates the cookie-held access token and returns `{ user: { id }, expiresAt, p
 ### POST `/api/auth/logout`
 
 Attempts to revoke the stored refresh-token family, always clears the local session, and returns the canonical success envelope.
+
+### POST `/api/auth/basis/backchannel`
+
+The resource's backchannel logout receiver. basis-auth posts form-encoded events and verifies the URL before saving it.
+
+| Field | Details |
+| --- | --- |
+| **Auth** | basis-auth only; requests are rate limited per peer |
+| **Body** | `action=test&nonce&challenge`, `logout_token`, or `action=revoke_access_token&jti&valid_after&revocation_token` |
+| **Success** | `202` for a webhook challenge, `204` after a logout token or revocation is persisted |
+| **Errors** | `400` for a malformed challenge, an unverifiable event token, or a revocation token that does not match the form fields |
+
+A `logout_token` sets `users.tokens_valid_after` for its subject, which invalidates every local session that predates the logout. A revocation adds the signed `jti` to `revoked_access_tokens` from its signed `valid_after` time. The webhook proof is signed with `BASIS_AUTH_RESOURCE_SECRET` and posted to `/internal/backchannel/validate` after the `202` response.
 
 ::: info Retired endpoints The native `/.well-known/openid-configuration`, `/api/oauth2/*`, and `/api/applications/*` surfaces have been removed. Register and manage clients in basis-auth. :::
 
@@ -206,8 +219,8 @@ Read the signed-in judge's finalized evaluations for one season, including past 
 | **Auth** | Judge with `nethack.Judging.assignmentsRead` |
 | **Params** | `seasonId` — positive integer |
 | **Response** | `GetJudgingHistoryResponse` — `{ season, items, unavailable_evaluations }` |
-| **Items** | `team` (`APITeam`), rubric name and version, track name, normalized weighted score, criterion scores, and anonymous feedback |
-| **Edge cases** | Returns `404` for an unknown season and an empty list when the judge has no evaluations. Evaluations whose saved rubric or score payload cannot be read are counted in `unavailable_evaluations` instead of failing the request |
+| **Items** | `team` (`APITeam` with description and AI-use disclosure), rubric name and version, track name, normalized weighted score, criterion scores, anonymous feedback, and an optional `unavailable` flag |
+| **Edge cases** | Returns `404` for an unknown season and an empty list when the judge has no evaluations. An evaluation whose saved rubric or score payload cannot be read is still returned with `unavailable: true`, `normalized_score: null`, the project details, and the written feedback; it is also counted in `unavailable_evaluations` |
 
 ### GET `/api/teams/:id/scores`
 
@@ -324,7 +337,7 @@ Submit peer voting ballot.
 
 ### GET `/api/ballot/summary`
 
-Developer endpoint returning per-season judging progress (project, submitted, and scored counts). The judge's own team is excluded from all three counts so progress can reach completion.
+Developer endpoint returning per-season judging progress (project, submitted, and scored counts). The judge's own team is excluded from all three counts so progress can reach completion. `scored_count` counts only distinct **submitted** teams the current judge has evaluated, so a leftover score on an unsubmitted team cannot make the queue look complete.
 
 | Field        | Details                                                             |
 | ------------ | ------------------------------------------------------------------- |
@@ -351,7 +364,7 @@ Get the currently active season (public).
 | Field | Details |
 | --- | --- |
 | **Auth** | None |
-| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles); theme is hidden when hackathon status is `not_started` or `paused` |
+| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); theme is hidden when hackathon status is `not_started` or `paused` |
 
 ### PATCH `/api/seasons/active`
 
@@ -460,7 +473,7 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
+Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -487,6 +500,17 @@ Rename, activate, or deactivate a season. Any `is_active` change additionally re
 | **Auth**     | Admin; `is_active` changes require the season-activate permission |
 | **Body**     | `{ id: number, name?: string, is_active?: 0 \| 1 }`               |
 | **Response** | `{ seasons: Season[] }`                                           |
+
+### PATCH `/api/admin/seasons/:id/approval`
+
+Record or revoke board approval for a blank-start season. The server records the authenticated administrator's user ID and the approval timestamp. Approval cannot be revoked while that season is active.
+
+| Field          | Details                                        |
+| -------------- | ---------------------------------------------- |
+| **Auth**       | `nethack.Seasons.update`                       |
+| **Validation** | `{ approved: boolean }`                        |
+| **Response**   | `{ id, board_approved_at, board_approved_by }` |
+| **Rate limit** | Yes                                            |
 
 ### DELETE `/api/admin/seasons/[id]`
 
@@ -583,11 +607,11 @@ The optional validation token and each bounded notification field are validated 
 
 ---
 
-<TerminalWindow title="basishacks@api-test:~" prompt="$">
+<TerminalWindow title="nethack@api-test:~" prompt="$">
 
 ```bash
 # Quick health check
-curl -s https://localhost:24598/api/health | jq .
+curl -s https://localhost:24598/api/seasons/active | jq .
 
 # List teams (authenticated)
 curl -s -H "Cookie: session=..." \

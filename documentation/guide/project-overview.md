@@ -1,19 +1,20 @@
 ---
 title: Project Overview
-description: High-level overview of the basishacks hackathon platform, including features, technology stack, directory structure, and key concepts.
+description: High-level overview of the nethack hackathon platform, including features, technology stack, directory structure, and key concepts.
 ---
 
 # Project Overview
 
-**basishacks** is the official website for the **BIBS-C Network Hackathon** (season 2, 2025–26). It is a full-stack Nuxt 4 application that serves as the central platform for organizing and running the hackathon event.
+**nethack** is the official website for the **BIBS-C Network Hackathon**. It is a full-stack Nuxt 4 application that serves as the central platform for organizing and running the event. Historical seasons remain as records, and an inactive `Next season` shell is prepared for organizers to configure and obtain board approval. All visitor-facing season copy, including the home-page announcement, is editable from the admin portal; no season or event text is hardcoded in the application.
 
-## What basishacks Does
+## What nethack Does
 
 The platform manages the entire hackathon lifecycle:
 
 | Feature | Description |
 | --- | --- |
 | **Hackathon Management & Scheduling** | Control event state (`not_started`, `in_progress`, `voting`, `finished`, `paused`), schedule start and end times, and manage the event timeline. |
+| **Editable Announcements** | The home-page message is an admin-editable season field stored in PostgreSQL, so organizers can publish preparation news without editing code or a remote manifest. Empty announcements are hidden. |
 | **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. Invited users accept from their dashboard before they join. |
 | **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, and sourcing information. Submissions are accepted only during `not_started` or `in_progress` states. |
 | **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. |
@@ -22,9 +23,9 @@ The platform manages the entire hackathon lifecycle:
 | **Mod Portal** | Administrative dashboard for managing users, teams, seasons, and debug tools. |
 | **Graph API** | Independent meeting scheduling and Teams chat integration. It is not an authentication provider. |
 | **DeepSeek AI Chatbot** | In-memory chat session store powered by the OpenAI SDK for DeepSeek AI interactions in debug routes. |
-| **SafeLink / SafeComark Components** | Client-side components that sanitize user-provided links and markdown content, preventing XSS and open redirects in rendered project descriptions. |
-| **Security Middleware** | A middleware pipeline including HTTP security headers (6 headers, 10 CSP directives), debug route lockdown (`DISABLE_DEBUG_ROUTES`), and rate limiting (4 tiers). |
-| **Season Showcases** | Public, art-directed winner experiences, including the six-project Beneath the Surface showcase. |
+| **SafeLink / SafeComark Components** | Client-side components that sanitize user-provided links and markdown content. `SafeComark` renders `@comark/vue`'s `Markdown` with default plugins disabled, line breaks preserved, and every link mapped to `SafeLink`. |
+| **Security Middleware** | A middleware pipeline including HTTP security headers (6 headers, 10 CSP directives), debug route lockdown (`DISABLE_DEBUG_ROUTES`), and rate limiting (5 tiers). |
+| **Season Showcases** | Public, art-directed winner experiences and a season-driven archive of submitted project descriptions, demos, repositories, awards, and published ranks from past rounds. |
 
 ## Technology Stack
 
@@ -37,12 +38,13 @@ The platform manages the entire hackathon lifecycle:
 | **Package Manager** | Bun 1.3.14 or npm | Both can install the locked dependencies. |
 | **Database** | PostgreSQL via Drizzle ORM | Bun and Node.js share the bounded `postgres` driver pool. |
 | **Auth** | basis-auth OIDC | Encrypted HTTP-only token cookies; bearer tokens are also supported for service clients. |
-| **JWT** | `jose` ^6.2.3 | JWT signing and verification for OAuth2 access tokens. |
-| **AI** | `openai` ^6.45.0 | OpenAI SDK used for DeepSeek API integration. |
+| **JWT** | `jose` ^6.2.17 | JWT signing and verification for OAuth2 access tokens. |
+| **AI** | `openai` ^7.57.0 | OpenAI SDK used for DeepSeek API integration. |
 | **Validation** | Zod 4.x (^4.6.7) | Schema validation for all API inputs. |
-| **Fonts** | `@nuxt/fonts` ^0.14.0 | Local font provider. |
+| **Markdown** | `@comark/vue` ^0.9.2 | Safe runtime Markdown rendering for project descriptions and disclosures. |
+| **Fonts** | `@nuxt/fonts` ^1.2.0 | Local font provider; Monaspace Neon for the app and docs. |
 | **Icons** | `@nuxt/icon` with fluent, heroicons, lucide, material-symbols, and simple-icons | Scanned client icons and a bounded server-rendered icon bundle. |
-| **Animation** | `gsap` ^3.15.0 | ScrollTrigger timelines and responsive motion for the Beneath the Surface showcase. |
+| **Animation** | `gsap` ^3.15.1 | ScrollTrigger timelines and responsive motion for the Beneath the Surface showcase. |
 | **Linting** | `@nuxt/eslint` ^1.17.0 + Oxfmt ^0.78.0 | Semicolons enabled, double quotes. |
 | **Deployment** | Node.js server (VPS) | Bun also supported; Nitro `node-server` preset. |
 
@@ -97,7 +99,7 @@ The platform supports multiple hackathon seasons stored in the `seasons` table. 
 
 - **Name**: the display name of the season.
 - **Active status**: only one season can be active at a time (partial unique index on `is_active`).
-- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`). The active season uses settings from `HACKATHON.yml`.
+- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The active season uses settings from `HACKATHON.yml` plus PostgreSQL live overrides (including the announcement).
 
 Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed.
 
@@ -106,7 +108,7 @@ Season management happens through the `/api/seasons/` endpoints and the Hackatho
 ## Directory Structure
 
 ```
-basishacks-r2/
+nethack/
 ├── app/                        # Nuxt app (Vue frontend)
 │   ├── assets/css/             # Global styles (Tailwind + custom utilities)
 │   ├── components/             # Vue components
@@ -168,7 +170,7 @@ basishacks-r2/
 │       │   └── users.ts
 │       ├── auth.ts             # requireUser / optionalUser permission helpers
 │       ├── convert.ts          # DB row to public API object transformers
-│       ├── rateLimit.ts        # In-memory rate limiter (4 tiers: general/auth/vote/upload)
+│       ├── rateLimit.ts        # In-memory rate limiter (5 tiers: general/judging-draft/auth/vote/upload)
 │       ├── basis-auth.ts       # OIDC discovery, PKCE login, callback and UserInfo
 │       ├── oauth2.ts           # Public-origin helper
 │       ├── oauth2-jwt.ts       # basis-auth resource-token validation

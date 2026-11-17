@@ -9,6 +9,7 @@ const schemaPath = resolve(import.meta.dirname, "..", "..", "sql", "archive", "i
 const initSQL = readFileSync(schemaPath, "utf-8");
 
 const migrationSQL = `
+  ALTER TABLE hackathon ADD COLUMN announcement TEXT;
   CREATE TABLE IF NOT EXISTS seasons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -32,8 +33,12 @@ const migrationSQL = `
   ALTER TABLE seasons ADD COLUMN results_open_timestamp INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE seasons ADD COLUMN theme_name TEXT;
   ALTER TABLE seasons ADD COLUMN theme_description TEXT;
+  ALTER TABLE seasons ADD COLUMN announcement TEXT;
   ALTER TABLE seasons ADD COLUMN score_curve_preset TEXT NOT NULL DEFAULT 'original';
   ALTER TABLE seasons ADD COLUMN rubric_version_id INTEGER;
+  ALTER TABLE seasons ADD COLUMN is_blank_start INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE seasons ADD COLUMN board_approved_at TEXT;
+  ALTER TABLE seasons ADD COLUMN board_approved_by INTEGER;
 
   ALTER TABLE teams ADD COLUMN season_id INTEGER NOT NULL DEFAULT 1;
   CREATE INDEX IF NOT EXISTS teams_season ON teams (season_id);
@@ -51,7 +56,16 @@ const migrationSQL = `
   ALTER TABLE users ADD COLUMN auth_issuer TEXT;
   ALTER TABLE users ADD COLUMN auth_subject TEXT;
   ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN tokens_valid_after INTEGER;
   CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
+
+  CREATE TABLE IF NOT EXISTS revoked_access_tokens (
+    jti TEXT PRIMARY KEY NOT NULL,
+    valid_after INTEGER NOT NULL,
+    expires_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS revoked_access_tokens_expires_at
+    ON revoked_access_tokens (expires_at);
 
   ALTER TABLE team_scores ADD COLUMN season_id INTEGER;
   ALTER TABLE team_scores ADD COLUMN rubric_version_id INTEGER;
@@ -210,6 +224,7 @@ export function resetTestContext(ctx: TestContext): void {
     DELETE FROM team_invites;
     DELETE FROM user_past_teams;
     DELETE FROM oauth2_applications;
+    DELETE FROM revoked_access_tokens;
     DELETE FROM users;
     DELETE FROM teams;
     DELETE FROM seasons;

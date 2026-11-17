@@ -1,11 +1,11 @@
 ---
 title: Voting
-description: How peer voting works in basishacks.
+description: How peer voting works in nethack.
 ---
 
 # Voting
 
-basishacks uses a single peer voting system. Participants distribute stars across hackathon projects during the `voting` phase. There is no separate election voting system in the current codebase.
+nethack uses a single peer voting system. Participants distribute stars across hackathon projects during the `voting` phase. There is no separate election voting system in the current codebase.
 
 ## Peer Voting
 

@@ -1,3 +1,7 @@
+<script setup lang="ts">
+useHead({ title: `Rules | ${WEBSITE_NAME}` });
+</script>
+
 <template>
     <div class="mt-4 space-y-8 text-gray-900 dark:text-gray-100">
         <header class="space-y-4">
@@ -518,7 +522,12 @@
                     <strong class="text-blue-700 dark:text-blue-300">Games:</strong>
                     Your game must be playable directly in a web browser or available as a
                     downloadable executable. Platforms such as
-                    <ULink href="https://itch.io" target="_blank" rel="noopener noreferrer">
+                    <ULink
+                        href="https://itch.io"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="underline"
+                    >
                         itch.io
                     </ULink>
                     may be used to host browser-playable games or downloads.

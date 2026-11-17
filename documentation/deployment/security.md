@@ -1,11 +1,11 @@
 ---
 title: Security Considerations
-description: Security measures and best practices in the basishacks platform
+description: Security measures and best practices in the nethack platform
 ---
 
 # Security Considerations
 
-The basishacks platform implements multiple layers of security to protect user data, prevent abuse, and ensure safe operation across all deployment environments.
+The nethack platform implements multiple layers of security to protect user data, prevent abuse, and ensure safe operation across all deployment environments.
 
 ## HTTP Security Headers
 
@@ -37,9 +37,11 @@ The following environment variables directly affect platform security and must b
 | Variable | Requirement | Purpose |
 | --- | --- | --- |
 | `BASIS_AUTH_COOKIE_SECRET` | At least 32 bytes | Encryption key for sessions and server-side token records |
-| `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates basishacks at the basis-auth token endpoint |
+| `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates nethack at the basis-auth token endpoint |
 | `BASIS_AUTH_ISSUER` | Exact trusted issuer; HTTPS required in production except for loopback HTTP local testing | Discovery and issuer validation |
 | `BASIS_AUTH_RESOURCE` | Exact registered audience | Resource-token audience validation |
+| `BASIS_AUTH_RESOURCE_SECRET` | Provider-generated resource secret | Signs the backchannel webhook proof and authenticates private listener calls |
+| `BASIS_AUTH_INTERNAL_URL` | HTTP(S) origin of the private listener, default `http://127.0.0.1:3001` | Webhook verification and user-state checks |
 | `CURRENT_URL_ORIGIN` | Public HTTPS origin, without a path; loopback HTTP accepted only while bound to loopback | Callback URL and same-origin validation for cookie-authenticated mutations |
 | `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10). Forwarded client addresses are used only when the socket peer exists and the forwarded chain is valid. |
 | `MICROSOFT_TENANT_ID` | Valid Microsoft Entra ID tenant | Required for Microsoft Graph API integration |
@@ -72,7 +74,7 @@ See [Rate Limiting](./rate-limiting.md) for full details.
 
 `server/middleware/00.request-security.ts` checks every `POST`, `PUT`, `PATCH`, and `DELETE` request. Cookie-authenticated browser requests must send a matching `Origin` or `Referer`; requests marked `Sec-Fetch-Site: cross-site` are rejected. Production startup requires `CURRENT_URL_ORIGIN` to be an HTTPS origin with no path, query, fragment, or credentials, or a loopback HTTP origin while the server binds to loopback. Requests authenticated with an explicit `Authorization` header bypass this browser-cookie check and remain protected by token validation and route permissions.
 
-The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its upload slot and reading its separate 10 MiB allowance for base64-encoded images. Each user may buffer one profile update at a time, and the process allows at most four concurrent profile updates; excess requests are rejected with `503 Service Unavailable` and `Retry-After: 2` before the request body is read. This bounds concurrent decoded-image buffers while keeping the existing 7 MiB per-image validation and prevents one slow user from blocking everybody else. Microsoft Graph webhook payloads have a stricter 64 KiB streaming cap before JSON parsing. The webhook handlers fail closed if `MICROSOFT_WEBHOOK_STATE` is missing and validate the state on every notification in a batch. The same persistent value is sent to Graph when the subscription is created; set `MICROSOFT_WEBHOOK_ID` from the initial startup log so subsequent starts refresh that subscription instead of creating duplicates. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/basishacks-request-limits.conf` inside the site configuration. Do not proxy compressed request bodies to the webhook endpoints.
+The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its upload slot and reading its separate 10 MiB allowance for base64-encoded images. Each user may buffer one profile update at a time, and the process allows at most four concurrent profile updates; excess requests are rejected with `503 Service Unavailable` and `Retry-After: 2` before the request body is read. This bounds concurrent decoded-image buffers while keeping the existing 7 MiB per-image validation and prevents one slow user from blocking everybody else. Microsoft Graph webhook payloads have a stricter 64 KiB streaming cap before JSON parsing. The webhook handlers fail closed if `MICROSOFT_WEBHOOK_STATE` is missing and validate the state on every notification in a batch. The same persistent value is sent to Graph when the subscription is created; set `MICROSOFT_WEBHOOK_ID` from the initial startup log so subsequent starts refresh that subscription instead of creating duplicates. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/nethack-request-limits.conf` inside the site configuration. Do not proxy compressed request bodies to the webhook endpoints.
 
 ```nginx
 client_max_body_size 10m;
@@ -117,9 +119,10 @@ Critical authentication configuration is validated at server startup in `server/
 | --- | --- | --- | --- |
 | `BASIS_AUTH_COOKIE_SECRET` | Must be set and at least 32 bytes (UTF-8 encoded) | `process.exit(1)` with fatal error message | Stderr warning, continues |
 | `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE` | All must be set | Fatal startup error when any is missing | Warning; login unavailable until configured |
+| `BASIS_AUTH_RESOURCE_SECRET`, `BASIS_AUTH_INTERNAL_URL` | Both must be set and the URL must be HTTP(S) | Fatal startup error | Warning; sign-in fails with `14408` until the backchannel is configured |
 | `MICROSOFT_*` env vars | All three must be set for Graph features | Warning if partially configured | Warning if partially configured |
 
-Resource access tokens are verified against basis-auth JWKS and are never signed by basishacks.
+Resource access tokens are verified against basis-auth JWKS and are never signed by nethack.
 
 ## Database Security
 
@@ -162,7 +165,7 @@ All redirect parameters in the login flow are validated to prevent open redirect
 - **`login.get.ts`** — The `postLoginRedirect` parameter is allowed only when it does not start with `http://`, `https://`, or `//` (protocol-relative). Only relative paths are accepted.
 - **`dccallback.get.ts`** — The OAuth2 onsite login callback validates redirects before following them, ensuring they point to relative paths only.
 - **`SafeLink.vue`** — User-provided links in rendered content (e.g. project descriptions) are rendered through the `SafeLink` component, which validates URLs with `isSafeUrl()` — only relative paths rooted at `/` and `http:`/`https:` URLs are rendered as clickable links; unsafe URLs are shown as plain strikethrough text.
-- **`SafeComark.vue`** — Markdown content rendered from user input uses the `SafeLink` component as its link renderer via `Comark`, and HTML rendering is disabled.
+- **`SafeComark.vue`** — Markdown content rendered from user input uses the `SafeLink` component as its link renderer via `@comark/vue`, disables the default HTML/component plugins, and preserves single line breaks with the `breaks` plugin.
 
 ## Unified Client Credential Errors
 
@@ -196,7 +199,7 @@ Access and refresh tokens are sealed with AES-256-GCM into the HTTP-only `basis-
 
 - All Microsoft Graph API calls are centralized in `server/plugins/microsoft.ts` for auditability
 - Graph configuration reads the tenant and client ID from `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID`.
-- Graph features are independent from basis-auth and cannot authenticate a basishacks session.
+- Graph features are independent from basis-auth and cannot authenticate a nethack session.
 
 ## OAuth2 Client Secret Storage
 
@@ -220,7 +223,7 @@ if (part === hash) return true;
 
 ## Resource Access Tokens
 
-Protected basishacks APIs accept basis-auth access tokens with the following required properties:
+Protected nethack APIs accept basis-auth access tokens with the following required properties:
 
 - **Signature:** basis-auth JWKS, RS256 only
 - **Issuer:** exact `BASIS_AUTH_ISSUER`
@@ -228,8 +231,13 @@ Protected basishacks APIs accept basis-auth access tokens with the following req
 - **Type:** `at+jwt`
 - **Lifetime:** token must be unexpired
 - **Claims:** string `sub`, `client_id`, and `scope`
+- **Revocation:** the `jti` must not be deny-listed, `iat` must be after the subject's logout barrier, and the private listener must not report the subject as disabled
 
-Token verification uses `jose.jwtVerify()` and a remotely refreshed basis-auth JWKS. The stable `sub` is mapped through `users.auth_issuer` and `users.auth_subject`.
+Token verification uses `jose.jwtVerify()` and a remotely refreshed basis-auth JWKS. The stable `sub` is mapped through `users.auth_issuer` and `users.auth_subject`. Every rejected token returns the same public shape: HTTP `401`, `WWW-Authenticate: Bearer error="invalid_token"`, and the `Invalid access token` description.
+
+## Backchannel Logout
+
+basis-auth requires a verified backchannel logout URL for the resource before authorization-code sign-in works. `POST /api/auth/basis/backchannel` answers the webhook challenge, applies `logout_token` events, and denylists revoked access-token `jti` values. The receiver authenticates to the private listener with `BASIS_AUTH_RESOURCE_SECRET` and signs `HMAC-SHA256(challenge)`; it never trusts unsigned form fields. See [basis-auth Integration](/architecture/oauth2#backchannel-logout-and-revocation).
 
 ## PKCE Support
 
@@ -254,7 +262,7 @@ A comprehensive XSS audit has been performed across all frontend components (`ap
 - **No `v-html` usage**: zero instances. All user-controlled text renders through Vue's auto-escaping `{{ }}` interpolation.
 - **No `innerHTML`** or `dangerouslySetInnerHTML`: zero instances.
 - **SafeLink component**: validates all `href` attributes via `isSafeUrl()` before rendering; unsafe URLs render as inert `<span>` elements.
-- **SafeComark component**: renders user project descriptions with HTML escaping before Markdown processing.
+- **SafeComark component**: renders user project descriptions with the default Comark HTML plugin disabled, then maps links through `SafeLink`.
 - **URL safety**: all project demo/repo URLs use `safeUrl()` computed properties; new uploaded objects use server-generated SHA-256 content-addressed filenames.
 - **Form maxlength attributes**: all key form inputs (`ProjectForm.vue`, `JudgingCard.vue`, `voting.vue`) now have `:maxlength` bound to the `MAX_*` constants from `shared/schemas.ts`, preventing users from exceeding validation limits before submission.
 

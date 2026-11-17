@@ -3,6 +3,7 @@ import { apiFetch } from "~~/app/composables/useApiFetch";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
+import { formatDateTime, fromDateTimeLocalString, toDateTimeLocalString } from "~/utils/datetime";
 import AdminRubricManager from "~/components/admin/RubricManager.vue";
 definePageMeta({
     layout: "developers-dashboard",
@@ -50,19 +51,15 @@ const configReadOnly = computed(
 function tsToDatetime(ts: unknown): string {
     const num = Number(ts);
     if (!Number.isFinite(num) || num <= 0) return "";
-    const d = new Date(num);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return toDateTimeLocalString(num);
 }
 function datetimeToTs(s: string): number {
-    if (!s) return 0;
-    return new Date(s).getTime();
+    return fromDateTimeLocalString(s);
 }
 function formatTimestamp(ts: unknown): string {
     const num = Number(ts);
     if (!Number.isFinite(num) || num <= 0) return "Not set";
-    return new Date(num).toLocaleString();
+    return formatDateTime(num);
 }
 /** Format a datetime-local form value so the overview matches the editable fields. */
 function formatFormTimestamp(value: unknown): string {
@@ -76,7 +73,7 @@ async function downloadDatabase(format: "json" | "csv") {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `basishacks-export.${format}`;
+    link.download = `nethack-export.${format}`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -92,6 +89,7 @@ const allFieldKeys = [
     "max_votes_per_user",
     "theme_name",
     "theme_description",
+    "announcement",
     "start_timestamp",
     "end_timestamp",
     "voting_start_timestamp",
@@ -348,6 +346,46 @@ async function renameSeason() {
     }
 }
 
+const boardApprovalSaving = ref(false);
+const boardApprovalRecorded = computed(() =>
+    Boolean(selectedSeason.value?.board_approved_at && selectedSeason.value?.board_approved_by),
+);
+
+async function updateBoardApproval(approved: boolean) {
+    const season = selectedSeason.value;
+    if (!season || season.is_blank_start !== 1) return;
+    if (
+        !confirm(
+            approved
+                ? `Confirm that the board approved ${season.name}? This will be recorded with your administrator account and the current time.`
+                : `Revoke the recorded board approval for ${season.name}?`,
+        )
+    ) {
+        return;
+    }
+
+    boardApprovalSaving.value = true;
+    try {
+        await apiFetch(`/api/admin/seasons/${season.id}/approval`, {
+            method: "PATCH",
+            body: { approved },
+        });
+        await refreshAdmin();
+        toast.add({
+            title: approved ? "Board approval recorded." : "Board approval revoked.",
+            color: "success",
+        });
+    } catch (error) {
+        toast.add({
+            title: "Could not update board approval",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        boardApprovalSaving.value = false;
+    }
+}
+
 const activating = ref(false);
 
 async function setActiveSeason() {
@@ -377,14 +415,14 @@ async function setActiveSeason() {
 
 const creatingSeason = ref(false);
 
-async function createSeason() {
+async function createSeason(copyLiveSettings = true) {
     const name = prompt("New season name:");
     if (!name || !name.trim()) return;
     creatingSeason.value = true;
     try {
         const result = await apiFetch<{ seasons: Season[] }>("/api/admin/seasons", {
             method: "POST",
-            body: { name: name.trim() },
+            body: { name: name.trim(), copy_live_settings: copyLiveSettings },
         });
         await refreshAdmin();
         selectedSeasonId.value =
@@ -422,7 +460,7 @@ async function deleteSeason() {
 <template>
     <UDashboardPanel id="hackathon-admin">
         <template #header>
-            <UDashboardNavbar title="Hackathon Administration">
+            <UDashboardNavbar title="Hackathon Administration" :as="{ title: 'span' }">
                 <template #leading>
                     <UDashboardSidebarCollapse />
                 </template>
@@ -491,7 +529,10 @@ async function deleteSeason() {
                     v-model="activeTab"
                     :items="tabItems"
                     :content="false"
-                    :ui="{ list: 'w-full overflow-x-auto', trigger: 'whitespace-nowrap' }"
+                    :ui="{
+                        list: 'w-full overflow-x-auto',
+                        trigger: 'whitespace-nowrap data-[state=active]:bg-primary',
+                    }"
                     class="w-full"
                 />
 
@@ -605,9 +646,17 @@ async function deleteSeason() {
                                 class="min-h-11"
                                 variant="outline"
                                 :loading="creatingSeason"
-                                @click="createSeason"
+                                @click="createSeason(true)"
                             >
                                 New season
+                            </UButton>
+                            <UButton
+                                class="min-h-11"
+                                variant="outline"
+                                :loading="creatingSeason"
+                                @click="createSeason(false)"
+                            >
+                                Blank season
                             </UButton>
                             <UButton
                                 v-if="selectedSeason && !selectedSeasonIsActive"
@@ -621,9 +670,49 @@ async function deleteSeason() {
                             </UButton>
                         </div>
                         <p class="text-sm text-ui-text-muted mt-3">
-                            A new season starts as a copy of the current live settings. Activating a
-                            season switches the public site, voting, and judging to it immediately.
+                            New season copies the current live settings; Blank season starts with
+                            event switches off and no theme, schedule, or rubric. A season must have
+                            event dates, voting dates, a theme, a rubric, and recorded board
+                            approval before activation. Activation switches the public site, voting,
+                            and judging immediately.
                         </p>
+                    </UCard>
+
+                    <UCard v-if="selectedSeason?.is_blank_start === 1">
+                        <template #header>
+                            <h2 class="font-semibold">Board approval</h2>
+                        </template>
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <div class="max-w-2xl text-sm text-ui-text-muted">
+                                <p>
+                                    Blank-season activation requires the board's approval in
+                                    addition to its theme, dates, and rubric. Record this only after
+                                    approval has been granted.
+                                </p>
+                                <p v-if="boardApprovalRecorded" class="mt-2">
+                                    Approval recorded by administrator #{{
+                                        selectedSeason.board_approved_by
+                                    }}
+                                    on
+                                    {{ formatDateTime(selectedSeason.board_approved_at!) }}.
+                                </p>
+                                <p v-else class="mt-2">No board approval is recorded.</p>
+                            </div>
+                            <UButton
+                                class="min-h-11"
+                                :color="boardApprovalRecorded ? 'neutral' : 'primary'"
+                                :variant="boardApprovalRecorded ? 'outline' : 'solid'"
+                                :loading="boardApprovalSaving"
+                                :disabled="selectedSeasonIsActive"
+                                @click="updateBoardApproval(!boardApprovalRecorded)"
+                            >
+                                {{
+                                    boardApprovalRecorded
+                                        ? "Revoke board approval"
+                                        : "Record board approval"
+                                }}
+                            </UButton>
+                        </div>
                     </UCard>
 
                     <UCard v-if="selectedSeason">
@@ -749,6 +838,23 @@ async function deleteSeason() {
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @change="saveField('theme_description')"
+                                />
+                            </UFormField>
+
+                            <UFormField
+                                label="Visitor announcement"
+                                name="announcement"
+                                class="w-full md:col-span-2"
+                                help="Shown above the schedule on the home page. Leave empty to hide it. This saves to PostgreSQL and works with a remote HACKATHON.yml."
+                            >
+                                <UTextarea
+                                    v-model="hackathonForm.announcement"
+                                    name="announcement"
+                                    :rows="3"
+                                    :maxlength="2000"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                    @change="saveField('announcement')"
                                 />
                             </UFormField>
                         </fieldset>

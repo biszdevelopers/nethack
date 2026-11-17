@@ -8,6 +8,8 @@ definePageMeta({
     middleware: ["auth"],
 });
 
+useHead({ title: `Debug | ${WEBSITE_NAME}` });
+
 const fileListError = ref("");
 const filesUnavailable = ref(false);
 const loadingFiles = ref(false);
@@ -128,6 +130,7 @@ onMounted(refreshFiles);
                                 color="neutral"
                                 variant="ghost"
                                 size="sm"
+                                aria-label="Refresh file list"
                                 @click="refreshFiles()"
                             />
                         </div>

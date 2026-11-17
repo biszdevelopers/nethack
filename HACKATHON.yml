@@ -22,6 +22,7 @@ voting_end_timestamp: 1794767462000
 results_open_timestamp: 1794767462000
 theme_name: Beneath The Surface
 theme_description: There is Something beneath the surface...
+announcement: ""
 
 rubric:
     name: Imported legacy rubric

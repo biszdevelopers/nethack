@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
     getScoreRankVisibilityResolver,
+    getSeasonActivationBlockers,
     isUnconfiguredSeason,
     pickSeasonConfig,
     setActiveSeason,
@@ -133,30 +134,93 @@ describe("season visibility and action boundaries", () => {
         ).toEqual({ is_active: 1 });
     });
 
-    it("seeds a never-configured season from the live event before activating it", async () => {
+    it("seeds an ordinary unconfigured season from live settings when activated", async () => {
+        event.context.drizzle
+            .prepare(
+                "UPDATE hackathon SET status = 'in_progress', theme_name = 'Current theme', theme_description = 'Current description', start_timestamp = 100, end_timestamp = 200, voting_start_timestamp = 300, voting_end_timestamp = 400 WHERE id = 1",
+            )
+            .run();
+        event.context.drizzle
+            .prepare(
+                "INSERT INTO seasons(id, name, is_active) VALUES(11, 'Legacy blank season', 0)",
+            )
+            .run();
+
+        await setActiveSeason(event, 11);
+
+        expect(
+            event.context.drizzle
+                .prepare(
+                    "SELECT status, theme_name, theme_description, start_timestamp, end_timestamp, is_active FROM seasons WHERE id = 11",
+                )
+                .first(),
+        ).toEqual({
+            status: "in_progress",
+            theme_name: "Current theme",
+            theme_description: "Current description",
+            start_timestamp: 100,
+            end_timestamp: 200,
+            is_active: 1,
+        });
+    });
+
+    it("rejects activation of a blank-start season without changing its settings", async () => {
         event.context.drizzle
             .prepare(
                 "UPDATE hackathon SET status = 'voting', theme_name = 'Live theme', theme_description = 'Live description' WHERE id = 1",
             )
             .run();
         event.context.drizzle
-            .prepare("INSERT INTO seasons(id, name, is_active) VALUES(9, 'Blank', 0)")
+            .prepare(
+                "INSERT INTO seasons(id, name, is_active, is_blank_start) VALUES(9, 'Blank', 0, 1)",
+            )
             .run();
 
-        await setActiveSeason(event, 9);
+        await expect(setActiveSeason(event, 9)).rejects.toMatchObject({
+            statusCode: 409,
+            statusMessage: "season_not_ready",
+        });
 
         expect(
             event.context.drizzle
                 .prepare(
-                    "SELECT status, theme_name, theme_description, is_active FROM seasons WHERE id = 9",
+                    "SELECT status, theme_name, theme_description, start_timestamp, is_active FROM seasons WHERE id = 9",
                 )
                 .first(),
         ).toEqual({
-            status: "voting",
-            theme_name: "Live theme",
-            theme_description: "Live description",
-            is_active: 1,
+            status: "not_started",
+            theme_name: null,
+            theme_description: null,
+            start_timestamp: 0,
+            is_active: 0,
         });
+    });
+
+    it("reports every readiness requirement for a blank-start season", () => {
+        expect(
+            getSeasonActivationBlockers({
+                is_blank_start: 1,
+                theme_name: null,
+                start_timestamp: 0,
+                end_timestamp: 0,
+                voting_start_timestamp: 0,
+                voting_end_timestamp: 0,
+                rubric_version_id: null,
+            } as Season),
+        ).toEqual(["theme", "event dates", "voting dates", "judging rubric", "board approval"]);
+        expect(
+            getSeasonActivationBlockers({
+                is_blank_start: 1,
+                theme_name: "Network Futures",
+                start_timestamp: 1,
+                end_timestamp: 2,
+                voting_start_timestamp: 3,
+                voting_end_timestamp: 4,
+                rubric_version_id: 5,
+                board_approved_at: new Date(),
+                board_approved_by: 2,
+            } as Season),
+        ).toEqual([]);
     });
 
     it("picks only event settings from a live configuration", () => {

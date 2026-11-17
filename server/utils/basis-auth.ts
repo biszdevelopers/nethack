@@ -108,11 +108,24 @@ export function getBasisAuthCallbackUrl(): string {
     return new URL(BASIS_AUTH_CALLBACK_PATH, getPublicOrigin()).href;
 }
 
+/**
+ * Private listener settings. The backchannel receiver cannot verify a webhook
+ * or receive events without them, so production treats them as required.
+ */
+export function getBasisAuthInternalConfig():
+    | { internalUrl: string; resourceSecret: string }
+    | undefined {
+    const internalUrl = process.env.BASIS_AUTH_INTERNAL_URL?.trim();
+    const resourceSecret = process.env.BASIS_AUTH_RESOURCE_SECRET?.trim();
+    if (!internalUrl || !resourceSecret) return undefined;
+    return { internalUrl: internalUrl.replace(/\/+$/, ""), resourceSecret };
+}
+
 export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
     if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//"))
         return undefined;
-    const parsed = new URL(value, "https://basishacks.invalid");
-    return parsed.origin === "https://basishacks.invalid"
+    const parsed = new URL(value, "https://nethack.invalid");
+    return parsed.origin === "https://nethack.invalid"
         ? `${parsed.pathname}${parsed.search}${parsed.hash}`
         : undefined;
 }
@@ -250,7 +263,8 @@ export async function refreshBasisAuthTokens(refreshToken: string) {
     return normalizeTokenSet(await oidc.refreshTokenGrant(oidcConfiguration, refreshToken));
 }
 
-const REFRESH_BUFFER_MS = 30_000;
+// Refresh a minute early so a retry or clock skew cannot strand the session.
+const REFRESH_BUFFER_MS = 60_000;
 const refreshes = new Map<string, Promise<StoredBasisAuthTokens>>();
 
 /** Read the encrypted token cookie and rotate it when its access token is near expiry. */

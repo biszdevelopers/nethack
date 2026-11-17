@@ -13,30 +13,49 @@ export default defineEventHandler(
         await requireUser(event, NethackPermissions.Seasons.create);
 
         const body = await readValidatedBody(event, CreateSeasonRequest.parse);
+        const copyLiveSettings = body.copy_live_settings !== false;
+        const isActive = body.is_active ?? 0;
 
-        if (body.is_active === 1) {
+        if (isActive === 1 && !copyLiveSettings) {
+            throw createError({
+                statusCode: 409,
+                message: "A blank-start season must be configured and approved before activation.",
+            });
+        }
+
+        if (isActive === 1) {
             await requireUser(event, NethackPermissions.Seasons.activate);
         }
 
-        // A new season starts as a copy of the live event so switching to it
-        // never blanks the theme, schedule, or status by accident.
-        const active = await getActiveSeason(event);
         const seed: Record<string, unknown> = {};
-        try {
-            Object.assign(
-                seed,
-                pickSeasonConfig((await getHackathon(event)) as Record<string, unknown>),
-            );
-        } catch {
-            // An unavailable configuration source must not block season creation.
+        if (copyLiveSettings) {
+            // Preserve the existing behavior unless the caller explicitly
+            // requests a blank season shell.
+            const active = await getActiveSeason(event);
+            try {
+                Object.assign(
+                    seed,
+                    pickSeasonConfig((await getHackathon(event)) as Record<string, unknown>),
+                );
+            } catch {
+                // An unavailable configuration source must not block season creation.
+            }
+            if (active) seed.score_curve_preset = active.score_curve_preset;
         }
-        if (active) seed.score_curve_preset = active.score_curve_preset;
+        const seasonInput = {
+            name: body.name,
+            // A new row cannot be inserted as active while the current season
+            // is protected by the one-active-season database constraint.
+            // Activate it only after insertion through the transactional switch.
+            is_active: 0,
+            is_blank_start: copyLiveSettings ? 0 : 1,
+        };
 
         let created: { id: number } | undefined;
         try {
             [created] = await event.context.drizzle
                 .insert(seasons)
-                .values({ ...seed, ...body } as typeof seasons.$inferInsert)
+                .values({ ...seed, ...seasonInput } as typeof seasons.$inferInsert)
                 .returning({ id: seasons.id });
         } catch (error) {
             const code = (error as { code?: string }).code;
@@ -49,7 +68,7 @@ export default defineEventHandler(
             throw error;
         }
 
-        if (body.is_active === 1 && created) {
+        if (isActive === 1 && created) {
             await setActiveSeason(event, created.id);
         }
 

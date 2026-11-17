@@ -29,10 +29,23 @@ const safeDemoUrl = computed(() => safeUrl(team.value?.project.demo_url));
         </template>
 
         <template #default>
-            <SafeComark v-if="team.project.description" class="whitespace-pre-wrap">
+            <SafeComark v-if="team.project.description" class="whitespace-pre-wrap break-words">
                 {{ team.project.description }}
             </SafeComark>
             <p v-else class="text-default">(No Project Description)</p>
+
+            <div class="mt-4 border-t border-default pt-3">
+                <p class="text-sm font-semibold text-muted">AI-use disclosure</p>
+                <SafeComark
+                    v-if="team.project.sourcing"
+                    class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed"
+                >
+                    {{ team.project.sourcing }}
+                </SafeComark>
+                <p v-else class="mt-1 text-sm text-muted">
+                    This team did not provide an AI-use disclosure.
+                </p>
+            </div>
         </template>
 
         <template #footer>

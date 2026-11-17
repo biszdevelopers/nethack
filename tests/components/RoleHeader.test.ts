@@ -14,12 +14,20 @@ describe("RoleHeader.vue", () => {
         expect(source).not.toContain("useUserSession()");
     });
 
-    it("renders the hackathon title basishacks_2026", () => {
-        expect(source).toContain("basishacks_2026");
+    it("keeps the theme toggle reachable on narrow screens", () => {
+        expect(source).toContain("UColorModeButton");
+        expect(source).toContain("sm:hidden");
+    });
+
+    it("renders the shared nethack brand constant", () => {
+        expect(source).toContain("{{ WEBSITE_NAME }}");
     });
 
     it("keeps the brand and mobile header controls usable on narrow touch screens", () => {
-        expect(source).toContain("text-base text-primary sm:text-xl");
+        expect(source).toContain("title: 'min-h-11 items-center'");
+        expect(source).toContain(
+            "flex items-center text-base leading-none text-primary sm:text-xl",
+        );
         expect(source).toContain("min-h-11 min-w-11");
         expect(source).toContain(":ui=\"{ link: 'min-h-11' }\"");
     });

@@ -1,0 +1,2 @@
+ALTER TABLE "seasons" ADD COLUMN "is_blank_start" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "seasons" ADD CONSTRAINT "seasons_is_blank_start_check" CHECK ("seasons"."is_blank_start" IN (0, 1));

@@ -1,19 +1,9 @@
 import type { H3Event } from "h3";
 import { accessTokenClaimsSchema, type AccessTokenClaims } from "@basis/schema/auth";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getUserByBasisAuthSubject } from "./database/users";
 import { getBasisAuthConfig, getFreshBasisAuthUserSession } from "./basis-auth";
-
-const jwksByIssuer = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-
-function getBasisAuthJwks(issuer: string) {
-    let jwks = jwksByIssuer.get(issuer);
-    if (!jwks) {
-        jwks = createRemoteJWKSet(new URL("/oauth/jwks", issuer));
-        jwksByIssuer.set(issuer, jwks);
-    }
-    return jwks;
-}
+import { verifyBasisAuthJwt } from "./basis-auth-jwks";
+import { assertAccessTokenActive, invalidAccessToken } from "./basis-auth-state";
 
 // ------------------------------------------------------------------
 // Low-level: verify a raw JWT string
@@ -23,33 +13,24 @@ export type OAuth2JWTPayload = AccessTokenClaims;
 
 /**
  * Verify a raw JWT access token and return its payload.
- * Throws 401 errors for invalid or expired tokens.
+ * Throws 401 errors for invalid, revoked, or expired tokens.
  */
-export async function verifyAccessToken(token: string): Promise<OAuth2JWTPayload> {
-    if (!token) {
-        throw createError({
-            statusCode: 401,
-            statusMessage: "invalid_token",
-            message: "Empty access token",
-        });
-    }
+export async function verifyAccessToken(token: string, event: H3Event): Promise<OAuth2JWTPayload> {
+    if (!token) invalidAccessToken();
 
-    const config = getBasisAuthConfig();
+    let payload: OAuth2JWTPayload;
     try {
-        const { payload } = await jwtVerify(token, getBasisAuthJwks(config.issuer), {
-            algorithms: ["RS256"],
-            issuer: config.issuer,
-            audience: config.resource,
-            typ: "at+jwt",
-        });
-        return accessTokenClaimsSchema.parse(payload);
+        payload = accessTokenClaimsSchema.parse(
+            await verifyBasisAuthJwt(token, {
+                typ: "at+jwt",
+                audience: getBasisAuthConfig().resource,
+            }),
+        );
     } catch {
-        throw createError({
-            statusCode: 401,
-            statusMessage: "invalid_token",
-            message: "Invalid or expired access token",
-        });
+        invalidAccessToken();
     }
+    await assertAccessTokenActive(event, payload);
+    return payload;
 }
 
 // ------------------------------------------------------------------
@@ -63,21 +44,11 @@ export async function verifyAccessToken(token: string): Promise<OAuth2JWTPayload
 export function extractBearerToken(event: H3Event): string {
     const authHeader = getHeader(event, "authorization");
     if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) {
-        throw createError({
-            statusCode: 401,
-            statusMessage: "invalid_token",
-            message: "Missing or invalid Authorization header",
-        });
+        invalidAccessToken();
     }
 
     const token = authHeader.slice(7).trim();
-    if (!token) {
-        throw createError({
-            statusCode: 401,
-            statusMessage: "invalid_token",
-            message: "Empty access token",
-        });
-    }
+    if (!token) invalidAccessToken();
 
     return token;
 }
@@ -95,14 +66,8 @@ export async function verifyOAuth2JWT(event: H3Event): Promise<OAuth2JWTPayload>
     const token = authorization
         ? extractBearerToken(event)
         : (await getFreshBasisAuthUserSession(event))?.tokens.accessToken;
-    if (!token) {
-        throw createError({
-            statusCode: 401,
-            statusMessage: "invalid_token",
-            message: "Missing or expired basis-auth token cookie",
-        });
-    }
-    return await verifyAccessToken(token);
+    if (!token) invalidAccessToken();
+    return await verifyAccessToken(token, event);
 }
 
 // ------------------------------------------------------------------
@@ -113,13 +78,7 @@ export async function verifyOAuth2JWT(event: H3Event): Promise<OAuth2JWTPayload>
  * Resolve the stable basis-auth subject, then fetch its linked local user.
  */
 export async function resolveOAuth2User(event: H3Event, payload: Pick<OAuth2JWTPayload, "sub">) {
-    if (!payload.sub) {
-        throw createError({
-            statusCode: 401,
-            statusMessage: "invalid_token",
-            message: "Token missing user identification",
-        });
-    }
+    if (!payload.sub) invalidAccessToken();
 
     const user = await getUserByBasisAuthSubject(event, getBasisAuthConfig().issuer, payload.sub);
     if (!user) {

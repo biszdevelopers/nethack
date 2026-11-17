@@ -1,30 +1,38 @@
 import { defineConfig } from "vitepress";
 
 export default defineConfig({
-    title: "basishacks",
-    description: "Documentation for the BIBS-C Network Hackathon platform",
+    title: "nethack",
+    description: "Documentation for the nethack BIBS-C Network Hackathon platform",
+    base: "/docs/",
     lang: "en-US",
-    appearance: "dark",
+    appearance: true,
     cleanUrls: true,
     lastUpdated: true,
     head: [
-        ["link", { rel: "icon", type: "image/x-icon", href: "/favicon.ico" }],
-        ["link", { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16x16.png" }],
-        ["link", { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32x32.png" }],
-        ["link", { rel: "apple-touch-icon", sizes: "180x180", href: "/apple-touch-icon.png" }],
-        ["link", { rel: "manifest", href: "/site.webmanifest" }],
+        ["link", { rel: "icon", type: "image/x-icon", href: "/docs/favicon.ico" }],
+        [
+            "link",
+            { rel: "icon", type: "image/png", sizes: "16x16", href: "/docs/favicon-16x16.png" },
+        ],
+        [
+            "link",
+            { rel: "icon", type: "image/png", sizes: "32x32", href: "/docs/favicon-32x32.png" },
+        ],
+        ["link", { rel: "apple-touch-icon", sizes: "180x180", href: "/docs/apple-touch-icon.png" }],
+        ["link", { rel: "manifest", href: "/docs/site.webmanifest" }],
         ["meta", { name: "theme-color", content: "#00884a" }],
         ["meta", { name: "msapplication-TileColor", content: "#0a0a0a" }],
-        ["meta", { name: "msapplication-TileImage", content: "/android-chrome-192x192.png" }],
+        ["meta", { name: "msapplication-TileImage", content: "/docs/android-chrome-192x192.png" }],
     ],
     themeConfig: {
-        siteTitle: "basishacks docs",
+        siteTitle: "nethack docs",
         nav: [
             { text: "Guide", link: "/guide/getting-started" },
             { text: "Architecture", link: "/architecture/overview" },
             { text: "Frontend", link: "/frontend/components" },
             { text: "Backend", link: "/backend/api-reference" },
             { text: "Shared", link: "/shared/schemas" },
+            { text: "Deployment", link: "/deployment/security" },
         ],
         sidebar: {
             "/guide/": [
@@ -94,6 +102,10 @@ export default defineConfig({
                     items: [
                         { text: "Security", link: "/deployment/security" },
                         { text: "PostgreSQL & VPS", link: "/deployment/postgresql-migration" },
+                        {
+                            text: "Protected Documentation",
+                            link: "/deployment/protected-documentation",
+                        },
                         { text: "Rate Limiting", link: "/deployment/rate-limiting" },
                         { text: "Performance", link: "/deployment/performance" },
                     ],
@@ -103,21 +115,23 @@ export default defineConfig({
         search: {
             provider: "local",
         },
-        socialLinks: [{ icon: "github", link: "https://github.com" }],
+        socialLinks: [{ icon: "github", link: "https://github.com/biszdevelopers/nethack" }],
         footer: {
             message: "BIBS-C Network Hackathon Documentation",
-            copyright: "Copyright © 2025-2026 BISZ Developers' Club & BINJ Hack Club",
+            copyright: "Copyright © 2026-2027 BISZ Developers' Club & BINJ Hack Club",
         },
         outline: {
             level: [2, 3],
             label: "On this page",
         },
         editLink: {
-            pattern: "https://github.com/basishacks/basishacks-r2/edit/main/documentation/:path",
+            pattern: "https://github.com/biszdevelopers/nethack/edit/main/documentation/:path",
             text: "Edit this page",
         },
     },
     markdown: {
         lineNumbers: true,
+        // github-dark alone renders comments at 3.4:1, below WCAG AA.
+        theme: { light: "github-light", dark: "github-dark-high-contrast" },
     },
 });

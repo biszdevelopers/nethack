@@ -35,6 +35,11 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
             id: "tools",
             label: "Tools",
             items: [
+                {
+                    label: "Documentation",
+                    icon: "i-lucide-book-open",
+                    to: "/developers/docs",
+                },
                 { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
                 {
                     label: "DeepSeek",
@@ -80,7 +85,7 @@ const name = computed(() => user.value?.name || "Log In");
                         class="bold glow text-primary mx-auto"
                         @click="() => void navigateTo('/')"
                     >
-                        b
+                        n
                     </UButton>
                 </div>
             </template>

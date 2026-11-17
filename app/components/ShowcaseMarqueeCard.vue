@@ -49,7 +49,15 @@ const emit = defineEmits<{
                 {{ team.pathway === "junior" ? "Junior" : "Senior" }}
             </UBadge>
         </div>
-        <h4 class="text-xl font-bold truncate">{{ team.project?.name || "(No Project Name)" }}</h4>
+        <h4 class="text-xl font-bold truncate">
+            <button
+                type="button"
+                class="w-full truncate text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                @click.stop="emit('click')"
+            >
+                {{ team.project?.name || "(No Project Name)" }}
+            </button>
+        </h4>
         <p class="text-sm truncate mt-1">
             {{ team.project?.description || "(No Project Description)" }}
         </p>

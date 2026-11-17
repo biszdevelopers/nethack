@@ -69,6 +69,58 @@ const PRISTINE_SEASON_SEED = {
 const PRISTINE_TEMPLATE_NAME = "BIBS-C Default";
 const PRISTINE_TEMPLATE_DESCRIPTION = "The original BIBS-C judging rubric.";
 
+/**
+ * `db:migrate` also creates the inactive next-season shell. It is part of the
+ * fresh seed state, so imports must recognize and clear it too. Older targets
+ * may still carry the legacy shell name, so accept both.
+ */
+const PRISTINE_NEXT_SEASON_SEEDS = [
+    {
+        name: "Next season",
+        is_blank_start: 1,
+        is_active: 0,
+        status: "not_started",
+        voting_enabled: 0,
+        results_published: 0,
+        judging_open: 0,
+        show_scores: 0,
+        show_ranking: 0,
+        max_votes_per_user: 0,
+        schedule_start: null,
+        schedule_end: null,
+        start_timestamp: 0,
+        end_timestamp: 0,
+        voting_start_timestamp: 0,
+        voting_end_timestamp: 0,
+        results_open_timestamp: 0,
+        theme_name: null,
+        theme_description: null,
+        rubric_version_id: null,
+    },
+    {
+        name: "R1 2026–2027",
+        is_blank_start: 1,
+        is_active: 0,
+        status: "not_started",
+        voting_enabled: 0,
+        results_published: 0,
+        judging_open: 0,
+        show_scores: 0,
+        show_ranking: 0,
+        max_votes_per_user: 0,
+        schedule_start: null,
+        schedule_end: null,
+        start_timestamp: 0,
+        end_timestamp: 0,
+        voting_start_timestamp: 0,
+        voting_end_timestamp: 0,
+        results_open_timestamp: 0,
+        theme_name: null,
+        theme_description: null,
+        rubric_version_id: null,
+    },
+];
+
 function matchesFields(row, expected) {
     return (
         Boolean(row) &&
@@ -113,7 +165,7 @@ function countOf(counts, tableName) {
  */
 export function inspectFreshImportTarget({ counts, rows }) {
     const hackathonCount = countOf(counts, "hackathon");
-    const rubricSeedTables = ["seasons", "rubric_templates", "rubric_versions"];
+    const rubricSeedTables = ["rubric_templates", "rubric_versions"];
     const hasAnyRows = Object.values(counts).some((count) => Number(count ?? 0) > 0);
     if (!hasAnyRows) return { hackathonId: undefined, rubricSeed: undefined };
 
@@ -128,14 +180,21 @@ export function inspectFreshImportTarget({ counts, rows }) {
         return null;
     }
 
-    const season = rows.seasons;
+    const seasons = Array.isArray(rows.seasons) ? rows.seasons : rows.seasons ? [rows.seasons] : [];
     const template = rows.rubric_templates;
     const version = rows.rubric_versions;
+    const season = seasons.find((row) =>
+        matchesFields(row, { ...PRISTINE_SEASON_SEED, rubric_version_id: version?.id }),
+    );
+    const remaining = seasons.filter((row) => row !== season);
+    const nextSeason = remaining.find((row) =>
+        PRISTINE_NEXT_SEASON_SEEDS.some((seed) => matchesFields(row, seed)),
+    );
     if (
-        !matchesFields(season, {
-            ...PRISTINE_SEASON_SEED,
-            rubric_version_id: version?.id,
-        }) ||
+        !season ||
+        remaining.length > 1 ||
+        (remaining.length === 1 && !nextSeason) ||
+        countOf(counts, "seasons") !== seasons.length ||
         !matchesFields(template, {
             id: 1,
             name: PRISTINE_TEMPLATE_NAME,
@@ -156,7 +215,12 @@ export function inspectFreshImportTarget({ counts, rows }) {
         return null;
     }
 
-    const allowedSeedCounts = new Set(["hackathon", ...rubricSeedTables]);
+    const allowedSeedCounts = new Set([
+        "hackathon",
+        "seasons",
+        "rubric_templates",
+        "rubric_versions",
+    ]);
     for (const [tableName, count] of Object.entries(counts)) {
         if (Number(count ?? 0) > 0 && !allowedSeedCounts.has(tableName)) {
             return null;
@@ -170,6 +234,7 @@ export function inspectFreshImportTarget({ counts, rows }) {
             templateId: template.id,
             rubricVersionId: version.id,
         },
+        extraSeasonIds: remaining.map((row) => row.id),
     };
 }
 
@@ -179,6 +244,9 @@ export async function clearFreshImportTargetSeeds(sql, seedPlan) {
         throw new TypeError("A verified fresh import target seed plan is required.");
     }
 
+    for (const seasonId of seedPlan.extraSeasonIds ?? []) {
+        await sql`DELETE FROM seasons WHERE id = ${seasonId}`;
+    }
     if (seedPlan.rubricSeed) {
         await sql`UPDATE seasons SET rubric_version_id = NULL WHERE id = ${seedPlan.rubricSeed.seasonId}`;
         await sql`DELETE FROM rubric_versions WHERE id = ${seedPlan.rubricSeed.rubricVersionId}`;

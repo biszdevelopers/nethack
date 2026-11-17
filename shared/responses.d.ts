@@ -64,10 +64,11 @@ interface JudgingHistoryItem {
     rubric_name: string;
     rubric_version: number;
     track_name: string;
-    normalized_score: number;
+    normalized_score: number | null;
     scores: Record<string, number>;
     criteria: ScoreFeedbackCriterionResponse[];
     reasoning: string;
+    unavailable?: boolean;
 }
 
 interface GetJudgingHistoryResponse {
@@ -131,6 +132,12 @@ interface PublicSeason {
     results_open_timestamp: number;
     theme_name: string | null;
     theme_description: string | null;
+}
+
+interface BoardApprovalResponse {
+    id: number;
+    board_approved_at: Date | null;
+    board_approved_by: number | null;
 }
 
 type CreateTeamResponse = APITeam;
