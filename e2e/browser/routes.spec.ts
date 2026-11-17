@@ -109,6 +109,38 @@ async function sweep(page: Page, routes: readonly string[]) {
                     `${route} at ${width}px should expose exactly one top-level heading`,
                 ).toBe(1);
 
+                const themeToggle = page.locator('button[aria-label*="Switch to"]').first();
+                if (await themeToggle.isVisible().catch(() => false)) {
+                    const offset = await themeToggle.evaluate((button) => {
+                        const icon = [...button.querySelectorAll(".iconify")].find(
+                            (element) => getComputedStyle(element).display !== "none",
+                        );
+                        if (!icon) return null;
+                        const buttonBox = button.getBoundingClientRect();
+                        const iconBox = icon.getBoundingClientRect();
+                        return {
+                            x: Math.abs(
+                                buttonBox.left +
+                                    buttonBox.width / 2 -
+                                    (iconBox.left + iconBox.width / 2),
+                            ),
+                            y: Math.abs(
+                                buttonBox.top +
+                                    buttonBox.height / 2 -
+                                    (iconBox.top + iconBox.height / 2),
+                            ),
+                        };
+                    });
+                    expect(
+                        offset,
+                        `${route} at ${width}px should render a theme toggle icon`,
+                    ).not.toBeNull();
+                    expect(
+                        Math.max(offset!.x, offset!.y),
+                        `${route} at ${width}px should centre the theme toggle icon`,
+                    ).toBeLessThanOrEqual(1.5);
+                }
+
                 if (status < 400) {
                     expect(
                         await page.evaluate(() =>

@@ -41,6 +41,14 @@ button:disabled {
 }
 
 /*
+ * UButton aligns inline content to the start, which leaves icon-only and
+ * block buttons visibly off-centre. Zero specificity keeps utilities additive.
+ */
+:where(button[data-slot="base"], a[data-slot="base"]) {
+    justify-content: center;
+}
+
+/*
  * Surface entrance animations use a 200 ms opacity fade. Mid-fade, text is
  * translucent and drops below AA on light surfaces, so animate position only.
  */

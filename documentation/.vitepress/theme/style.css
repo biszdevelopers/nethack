@@ -20,6 +20,7 @@
 
     /* Light mode — light terminal emulator */
     --bh-green: #006b3a;
+    --bh-link-hover: #004f2b;
     --bh-green-dim: #3a6e4f;
     --bh-green-subtle: rgba(0, 107, 58, 0.08);
     --bh-info: #1d6a96;
@@ -78,7 +79,7 @@
     --vp-c-divider: var(--bh-border);
     --vp-c-gutter: var(--bh-border);
     --vp-c-brand-1: var(--bh-green);
-    --vp-c-brand-2: var(--bh-brand-light);
+    --vp-c-brand-2: var(--bh-link-hover);
     --vp-c-brand-3: var(--bh-brand-dark);
     --vp-c-brand-soft: var(--bh-green-subtle);
     --vp-button-brand-bg: var(--bh-btn-bg);
@@ -101,6 +102,7 @@
 .dark {
     /* Dark mode — matches the main application surface */
     --bh-green: #22c55e;
+    --bh-link-hover: #4ade80;
     --bh-green-dim: #16a34a;
     --bh-green-subtle: rgba(34, 197, 94, 0.1);
     --bh-info: #4499cc;
@@ -332,8 +334,9 @@ a {
     text-decoration: none;
 }
 
-a:hover {
-    color: var(--bh-brand-light);
+a:hover,
+.vp-doc a:hover {
+    color: var(--bh-link-hover);
     text-decoration: underline;
 }
 
