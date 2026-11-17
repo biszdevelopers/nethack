@@ -364,7 +364,7 @@ Get the currently active season (public).
 | Field | Details |
 | --- | --- |
 | **Auth** | None |
-| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); theme is hidden when hackathon status is `not_started` or `paused` |
+| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); `is_judging_open` and `is_voting_open` are the server-computed gates the judging and ballot APIs enforce (judging requires `voting` status, judging enabled, results unpublished; voting requires `voting` status and voting enabled), so the UI never duplicates those conditions; theme is hidden when hackathon status is `not_started` or `paused` |
 
 ### PATCH `/api/seasons/active`
 

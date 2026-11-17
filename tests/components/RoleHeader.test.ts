@@ -48,7 +48,7 @@ describe("RoleHeader.vue", () => {
     });
 
     it("conditionally shows Voting when judging access is absent during voting", () => {
-        expect(source).toContain('hackathon.value?.status === "voting"');
+        expect(source).toContain("hackathon.value?.is_voting_open");
         expect(source).toContain("!can(NethackPermissions.Judging.assignmentsRead)");
         expect(source).toContain('to: "/voting"');
     });

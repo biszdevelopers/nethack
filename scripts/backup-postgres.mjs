@@ -89,7 +89,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
 
     // Write to a temporary file so a failed dump never leaves a partial file at
     // the final path (which would make every retry fail the overwrite guard).
-    const partialPath = `${outputPath}.partial`;
+    // The PID suffix keeps two concurrent runs from clobbering each other's dump.
+    const partialPath = `${outputPath}.${process.pid}.partial`;
     await unlink(partialPath).catch(() => undefined);
     let published = false;
     try {

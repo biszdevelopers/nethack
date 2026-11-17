@@ -133,12 +133,13 @@ describe("PostgreSQL snapshot script", () => {
             statSize: 4096,
         });
         const outputPath = resolve(repositoryRoot, ".tmp/snapshot.dump");
+        const partialPath = `${outputPath}.${process.pid}.partial`;
         const environment = run.spawn.mock.calls[0]?.[2]?.env;
 
         expect(run.spawn).toHaveBeenNthCalledWith(
             1,
             "pg_dump",
-            ["--format=custom", "--no-owner", "--no-privileges", `--file=${outputPath}.partial`],
+            ["--format=custom", "--no-owner", "--no-privileges", `--file=${partialPath}`],
             expect.objectContaining({
                 cwd: repositoryRoot,
                 stdio: "inherit",
@@ -160,7 +161,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(run.spawn).toHaveBeenNthCalledWith(
             2,
             "pg_restore",
-            ["--list", `${outputPath}.partial`],
+            ["--list", partialPath],
             expect.objectContaining({ stdio: ["ignore", "ignore", "pipe"], windowsHide: true }),
         );
         expect(run.mkdir).toHaveBeenCalledWith(resolve(repositoryRoot, ".tmp"), {
@@ -186,7 +187,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(firstCall?.[1]).toHaveLength(4);
         expect(firstCall?.[1]?.[3]).toMatch(
             new RegExp(
-                `^--file=${repositoryRoot.replaceAll("\\", "\\\\")}[\\\\/]\\.tmp-postgres-.+\\.dump\\.partial$`,
+                `^--file=${repositoryRoot.replaceAll("\\", "\\\\")}[\\\\/]\\.tmp-postgres-.+\\.dump\\.${process.pid}\\.partial$`,
             ),
         );
         expect(environment).toEqual(
@@ -334,7 +335,9 @@ describe("PostgreSQL snapshot script", () => {
 
         expect(run.rename).not.toHaveBeenCalled();
         expect(run.unlink).toHaveBeenCalledTimes(2);
-        expect(run.unlink).toHaveBeenCalledWith(resolve(repositoryRoot, "snapshot.dump.partial"));
+        expect(run.unlink).toHaveBeenCalledWith(
+            resolve(repositoryRoot, `snapshot.dump.${process.pid}.partial`),
+        );
         expect(run.exitCode).toBe(1);
     });
 

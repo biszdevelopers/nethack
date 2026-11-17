@@ -287,6 +287,9 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             }
         }
 
+        // The manifest is cached per instance, so a concurrent activation on
+        // another instance cannot be fully serialized by the advisory lock here.
+        // Multi-instance season switching needs coordinated cache invalidation.
         if (liveConfig && season?.is_active !== 1) {
             const { id, submitted_count, live_overrides, ...settings } = liveConfig;
             await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));

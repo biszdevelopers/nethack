@@ -1,4 +1,6 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
+import { isJudgingOpen } from "~~/server/utils/judging";
+import { isVotingOpen } from "~~/server/utils/voting";
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         const season = await getActiveSeason(event);
@@ -24,6 +26,8 @@ export default defineEventHandler(
             voting_end_timestamp: hackathon.voting_end_timestamp,
             results_open_timestamp: hackathon.results_open_timestamp,
             judging_open: !!hackathon.judging_open,
+            is_judging_open: isJudgingOpen(hackathon),
+            is_voting_open: isVotingOpen(hackathon),
             show_scores: !!hackathon.show_scores,
             show_ranking: !!hackathon.show_ranking,
             theme_name: showTheme ? hackathon.theme_name : null,

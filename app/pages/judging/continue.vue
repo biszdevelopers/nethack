@@ -31,7 +31,9 @@ definePageMeta({
 useHead({ title: `Judging queue | ${WEBSITE_NAME}` });
 
 const { data: hackathon } = await useApiFetch("/api/seasons/active", { $fetch: globalThis.$fetch });
-if (hackathon.value?.status !== "voting" || !hackathon.value.judging_open) {
+// The server computes this with the same gate the queue endpoint enforces;
+// duplicating the predicate here drifted once results were published.
+if (!hackathon.value?.is_judging_open) {
     throw await navigateTo("/");
 }
 

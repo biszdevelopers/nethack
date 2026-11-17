@@ -77,6 +77,29 @@ describe("GET /api/seasons/active", () => {
         expect(result).toHaveProperty("judging_open", true);
     });
 
+    it("reports voting open only while the voting toggle is on", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 0 });
+        seedSeason(ctx);
+        expect(await handler(createEvent())).toHaveProperty("is_voting_open", false);
+
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
+        seedSeason(ctx);
+        expect(await handler(createEvent())).toHaveProperty("is_voting_open", true);
+    });
+
+    it("reports judging closed once results are published, matching the queue endpoint", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", judging_open: 1, results_published: 1 });
+        seedSeason(ctx);
+
+        const result = await handler(createEvent());
+
+        expect(result).toHaveProperty("judging_open", true);
+        expect(result).toHaveProperty("is_judging_open", false);
+    });
+
     it("exposes the admin-editable announcement before the event starts", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "not_started", announcement: "Preparation news" });

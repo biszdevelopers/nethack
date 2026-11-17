@@ -55,6 +55,11 @@ export async function addUserPastTeam(event: H3Event, userID: number, teamID: nu
 
 export async function removeTeamMember(event: H3Event, teamID: number, userID: number) {
     await event.context.drizzle.transaction(async (tx) => {
+        // Serialize removals per team so two concurrent removals cannot both
+        // observe the same count and leave the team with no members.
+        await lockForUpdateIfSupported(
+            tx.select().from(teams).where(eq(teams.id, teamID)).limit(1),
+        );
         const [memberCount] = await tx
             .select({ value: count() })
             .from(users)

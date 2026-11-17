@@ -65,7 +65,7 @@ Judging writes and the judging queue close as soon as `results_published` is ena
 
 For both season-tweaks routes, the `id` must be a positive safe integer. Missing or malformed IDs return `400`; a valid ID for a season that does not exist returns `404`. The public `GET` response uses the `PublicSeason` allowlist and redacts theme values while a season has not started or is paused.
 
-`GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, `theme_description`, and `announcement`. Theme fields are hidden when the hackathon status is `not_started` or `paused`; the announcement is always returned so organizers can publish preparation news before an event starts.
+`GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, `theme_description`, and `announcement`. It also returns the server-computed gates `is_judging_open` (`status` is `voting`, judging enabled, results unpublished) and `is_voting_open` (`status` is `voting`, voting enabled), so the judging and voting UIs never duplicate the conditions their APIs enforce. Theme fields are hidden when the hackathon status is `not_started` or `paused`; the announcement is always returned so organizers can publish preparation news before an event starts.
 
 `PATCH /api/seasons/active` accepts `SetActiveSeasonRequest`:
 

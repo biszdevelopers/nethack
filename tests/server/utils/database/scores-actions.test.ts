@@ -78,6 +78,16 @@ describe("score submission action boundaries", () => {
         expectNoSavedScore();
     });
 
+    it("rejects publication from the locked season row when the pre-lock live snapshot is stale", async () => {
+        raw.prepare("UPDATE seasons SET results_published = 1 WHERE id = 42").run();
+
+        await expect(submit()).rejects.toMatchObject({
+            statusCode: 409,
+            statusMessage: "Judging is not open for this season.",
+        });
+        expectNoSavedScore();
+    });
+
     it("falls back to the season flag when no live hackathon row exists", async () => {
         raw.prepare("DELETE FROM hackathon WHERE id = 1").run();
 
