@@ -25,23 +25,23 @@ useHead({ title: `${season.name} project archive | ${WEBSITE_NAME}` });
 </script>
 
 <template>
-    <main class="min-h-screen bg-[#05080d] text-white">
-        <header class="border-b border-white/10 px-6 py-16 sm:px-10 lg:px-16 lg:py-24">
+    <main class="min-h-screen bg-default text-default">
+        <header class="border-b border-default px-6 py-16 sm:px-10 lg:px-16 lg:py-24">
             <div class="mx-auto max-w-7xl">
                 <NuxtLink
                     to="/showcase"
-                    class="inline-flex min-h-11 items-center gap-2 font-mono text-sm text-cyan-200 hover:text-white"
+                    class="inline-flex min-h-11 items-center gap-2 font-mono text-sm text-primary hover:text-default"
                 >
                     <UIcon name="i-lucide-arrow-left" />
                     All showcases
                 </NuxtLink>
-                <p class="mt-10 font-mono text-xs tracking-[0.25em] text-cyan-300 uppercase">
+                <p class="mt-10 font-mono text-xs tracking-[0.25em] text-primary uppercase">
                     Season archive
                 </p>
                 <h1 class="mt-3 break-words text-4xl font-black tracking-tight sm:text-6xl">
                     {{ season.name }}
                 </h1>
-                <p v-if="season.theme_name" class="mt-4 max-w-3xl text-lg text-white/65">
+                <p v-if="season.theme_name" class="mt-4 max-w-3xl text-lg text-muted">
                     {{ season.theme_name }}
                 </p>
             </div>

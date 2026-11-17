@@ -17,17 +17,17 @@ const archivedSeasons = computed(() =>
 
 <template>
     <section
-        class="border-t border-white/10 bg-[#05080d] px-6 py-20 text-white sm:px-10 lg:px-16 lg:py-28"
+        class="border-t border-default bg-default px-6 py-20 text-default sm:px-10 lg:px-16 lg:py-28"
     >
         <div class="mx-auto max-w-7xl">
             <div class="mb-10 max-w-2xl">
-                <p class="font-mono text-xs tracking-[0.28em] text-cyan-300 uppercase">
+                <p class="font-mono text-xs tracking-[0.28em] text-primary uppercase">
                     Project archive
                 </p>
                 <h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
                     Every past round, in one place
                 </h2>
-                <p class="mt-4 text-sm leading-6 text-white/60 sm:text-base">
+                <p class="mt-4 text-sm leading-6 text-muted sm:text-base">
                     Browse submitted projects and descriptions from previous seasons.
                 </p>
             </div>
@@ -38,7 +38,7 @@ const archivedSeasons = computed(() =>
                 title="Season archives are unavailable"
                 :description="getErrorMessage(error)"
             />
-            <p v-else-if="archivedSeasons.length === 0" class="text-white/60">
+            <p v-else-if="archivedSeasons.length === 0" class="text-muted">
                 Past season archives will appear here when they are available.
             </p>
             <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -46,21 +46,21 @@ const archivedSeasons = computed(() =>
                     v-for="season in archivedSeasons"
                     :key="season.id"
                     :to="`/showcase/seasons/${season.id}`"
-                    class="group flex min-h-52 min-w-0 flex-col justify-between border border-white/10 bg-white/[0.03] p-6 transition hover:border-cyan-300/50 hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cyan-300"
+                    class="group flex min-h-52 min-w-0 flex-col justify-between border border-default bg-elevated/40 p-6 transition hover:border-primary hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
                 >
                     <div class="min-w-0">
-                        <p class="font-mono text-xs tracking-[0.2em] text-cyan-200/70 uppercase">
+                        <p class="font-mono text-xs tracking-[0.2em] text-primary uppercase">
                             {{ season.status.replaceAll("_", " ") }}
                         </p>
                         <h3 class="mt-3 break-words text-2xl font-semibold tracking-tight">
                             {{ season.name }}
                         </h3>
-                        <p v-if="season.theme_name" class="mt-2 break-words text-sm text-white/60">
+                        <p v-if="season.theme_name" class="mt-2 break-words text-sm text-muted">
                             {{ season.theme_name }}
                         </p>
                     </div>
                     <span
-                        class="mt-8 inline-flex items-center gap-2 font-mono text-sm text-cyan-200"
+                        class="mt-8 inline-flex items-center gap-2 font-mono text-sm text-primary"
                     >
                         Open project archive
                         <UIcon

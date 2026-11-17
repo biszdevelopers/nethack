@@ -15,7 +15,7 @@ useHead({
 </script>
 
 <template>
-    <main class="showcase-index bg-[#05080d] text-white">
+    <main class="showcase-index bg-default text-default">
         <section class="featured-showcase relative isolate min-h-[82vh] overflow-hidden">
             <div class="featured-grid absolute inset-0" aria-hidden="true" />
             <div class="featured-glow absolute inset-0" aria-hidden="true" />
@@ -33,7 +33,7 @@ useHead({
                         <br />
                         the Surface
                     </h1>
-                    <p class="mt-8 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+                    <p class="mt-8 max-w-2xl text-base leading-7 text-muted sm:text-lg">
                         Descend through six project worlds shaped by hidden systems, unseen layers,
                         and signals waiting below the surface.
                     </p>
@@ -51,27 +51,25 @@ useHead({
             </div>
         </section>
 
-        <section
-            class="border-t border-white/10 bg-[#090909] px-6 py-20 sm:px-10 lg:px-16 lg:py-28"
-        >
+        <section class="border-t border-default bg-elevated px-6 py-20 sm:px-10 lg:px-16 lg:py-28">
             <div class="mx-auto max-w-7xl">
                 <div class="mb-10 flex flex-wrap items-end justify-between gap-5">
                     <div>
-                        <p class="font-mono text-xs tracking-[0.28em] text-red-300 uppercase">
+                        <p class="font-mono text-xs tracking-[0.28em] text-error uppercase">
                             Previous season
                         </p>
                         <h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
                             From the archive
                         </h2>
                     </div>
-                    <p class="max-w-md text-sm leading-6 text-white/55 sm:text-base">
+                    <p class="max-w-md text-sm leading-6 text-muted sm:text-base">
                         Revisit the projects that broke through the noise and made themselves heard.
                     </p>
                 </div>
 
                 <NuxtLink
                     to="/showcase/signal"
-                    class="signal-card group relative block min-h-[30rem] overflow-hidden border border-white/10 bg-black sm:min-h-[36rem]"
+                    class="signal-card group relative block min-h-[30rem] overflow-hidden border border-white/10 bg-black text-white sm:min-h-[36rem]"
                 >
                     <div
                         class="signal-image absolute inset-0 transition duration-700 group-hover:scale-105"
@@ -115,16 +113,28 @@ useHead({
 <style scoped>
 .featured-showcase {
     background:
+        radial-gradient(circle at 72% 20%, rgba(0, 160, 200, 0.16), transparent 34%),
+        linear-gradient(145deg, #f2fbfe 0%, #e9f4f9 48%, #ffffff 100%);
+}
+
+.dark .featured-showcase {
+    background:
         radial-gradient(circle at 72% 20%, rgba(0, 217, 255, 0.14), transparent 34%),
         linear-gradient(145deg, #08111b 0%, #05080d 48%, #020304 100%);
 }
 
 .featured-grid {
     background-image:
-        linear-gradient(rgba(87, 220, 255, 0.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(87, 220, 255, 0.07) 1px, transparent 1px);
+        linear-gradient(rgba(0, 110, 140, 0.09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 110, 140, 0.09) 1px, transparent 1px);
     background-size: 64px 64px;
     mask-image: linear-gradient(to bottom, black, transparent 88%);
+}
+
+.dark .featured-grid {
+    background-image:
+        linear-gradient(rgba(87, 220, 255, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(87, 220, 255, 0.07) 1px, transparent 1px);
 }
 
 .featured-glow {

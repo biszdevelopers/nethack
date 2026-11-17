@@ -25,63 +25,60 @@ const orderedProjects = computed(() =>
     <section class="mx-auto w-full max-w-7xl px-6 pb-20 sm:px-10 lg:px-16">
         <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
-                <p class="font-mono text-xs tracking-[0.24em] text-cyan-300 uppercase">
+                <p class="font-mono text-xs tracking-[0.24em] text-primary uppercase">
                     {{ seasonName }}
                 </p>
                 <h2 class="mt-2 text-2xl font-bold sm:text-3xl">Submitted projects</h2>
             </div>
-            <p class="max-w-xl text-sm text-white/60">
+            <p class="max-w-xl text-sm text-muted">
                 Project names, descriptions, and links are preserved with their original season.
             </p>
         </div>
 
-        <p v-if="error" class="border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
-            Projects are unavailable: {{ getErrorMessage(error) }}
-        </p>
-        <p
-            v-else-if="orderedProjects.length === 0"
-            class="border border-white/10 p-6 text-white/60"
-        >
+        <UAlert
+            v-if="error"
+            color="error"
+            title="Projects are unavailable"
+            :description="getErrorMessage(error)"
+        />
+        <p v-else-if="orderedProjects.length === 0" class="border border-default p-6 text-muted">
             No submitted projects were recorded for this season.
         </p>
         <div v-else class="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <article
                 v-for="team in orderedProjects"
                 :key="team.id"
-                class="flex min-w-0 flex-col border border-white/10 bg-white/[0.03] p-5 sm:p-7"
+                class="flex min-w-0 flex-col border border-default bg-elevated/40 p-5 sm:p-7"
             >
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="min-w-0">
-                        <p class="font-mono text-xs break-words text-white/60">{{ team.name }}</p>
+                        <p class="font-mono text-xs break-words text-muted">{{ team.name }}</p>
                         <h3 class="mt-2 break-words text-xl font-semibold">
                             {{ team.project.name || "Untitled project" }}
                         </h3>
                     </div>
-                    <span
-                        v-if="resultsPublished && team.rank"
-                        class="inline-flex items-center rounded-md bg-cyan-300/15 px-2 py-1 text-xs font-medium text-cyan-200 ring ring-white/15 ring-inset"
-                    >
+                    <UBadge v-if="resultsPublished && team.rank" color="primary" variant="subtle">
                         Rank #{{ team.rank }}
-                    </span>
+                    </UBadge>
                 </div>
 
                 <SafeComark
-                    class="mt-4 flex-1 whitespace-pre-wrap break-words text-sm leading-6 text-white/70"
+                    class="mt-4 flex-1 whitespace-pre-wrap break-words text-sm leading-6 text-muted"
                 >
                     {{ team.project.description || "No project description was recorded." }}
                 </SafeComark>
 
-                <div class="mt-4 border-t border-white/10 pt-3">
-                    <p class="font-mono text-[0.7rem] tracking-[0.18em] text-white/60 uppercase">
+                <div class="mt-4 border-t border-default pt-3">
+                    <p class="font-mono text-[0.7rem] tracking-[0.18em] text-muted uppercase">
                         AI-use disclosure
                     </p>
                     <SafeComark
                         v-if="team.project.sourcing"
-                        class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-white/70"
+                        class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted"
                     >
                         {{ team.project.sourcing }}
                     </SafeComark>
-                    <p v-else class="mt-2 text-sm leading-6 text-white/60">
+                    <p v-else class="mt-2 text-sm leading-6 text-muted">
                         No AI-use disclosure was recorded.
                     </p>
                 </div>
@@ -95,7 +92,6 @@ const orderedProjects = computed(() =>
                         rel="noopener noreferrer"
                         variant="outline"
                         size="sm"
-                        class="border-white/20 text-white hover:bg-white/10"
                     >
                         Demo
                     </UButton>
@@ -107,17 +103,17 @@ const orderedProjects = computed(() =>
                         rel="noopener noreferrer"
                         variant="outline"
                         size="sm"
-                        class="border-white/20 text-white hover:bg-white/10"
                     >
                         Repository
                     </UButton>
-                    <span
+                    <UBadge
                         v-for="award in team.awards"
                         :key="award.namespace"
-                        class="inline-flex items-center rounded-md bg-white/10 px-2 py-1 text-xs font-medium text-white/80 ring ring-white/15 ring-inset"
+                        color="neutral"
+                        variant="subtle"
                     >
                         {{ award.name }}
-                    </span>
+                    </UBadge>
                 </div>
             </article>
         </div>
