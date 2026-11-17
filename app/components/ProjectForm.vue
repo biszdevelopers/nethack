@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick } from "vue";
 import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import {
@@ -214,11 +215,18 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
 }
 
 async function confirmSubmit() {
-    if (pendingSubmitEvent) {
+    const event = pendingSubmitEvent;
+    pendingSubmitEvent = null;
+    if (event) {
         showConfirmModal.value = false;
-        await performSubmit(pendingSubmitEvent);
-        pendingSubmitEvent = null;
+        await performSubmit(event);
     }
+}
+
+async function submitProject() {
+    intent.value = "submit";
+    await nextTick();
+    (formRef.value as any)?.submit();
 }
 </script>
 
@@ -344,10 +352,7 @@ async function confirmSubmit() {
                 :disabled="disabled"
                 class="min-h-11"
                 type="button"
-                @click="
-                    intent = 'submit';
-                    (formRef as any)?.submit();
-                "
+                @click="submitProject"
             >
                 Submit
             </UButton>

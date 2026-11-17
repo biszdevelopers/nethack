@@ -51,7 +51,7 @@ async function openQueue() {
 </script>
 
 <template>
-    <main class="mx-auto mt-4 w-full max-w-4xl pb-8">
+    <div class="mx-auto mt-4 w-full max-w-4xl pb-8">
         <header class="mb-6">
             <h1 class="mt-2 text-4xl font-bold text-primary glow">Judging</h1>
             <p class="mt-3 max-w-prose text-muted">
@@ -179,5 +179,5 @@ async function openQueue() {
                 Your completed evaluations from previous seasons will appear here.
             </p>
         </section>
-    </main>
+    </div>
 </template>

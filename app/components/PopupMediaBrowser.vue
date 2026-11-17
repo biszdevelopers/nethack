@@ -1,7 +1,12 @@
 <template>
     <UModal :title="title">
         <slot name="trigger">
-            <UButton variant="ghost" class="text-ui-muted" :disabled="disabled">
+            <UButton
+                :variant="buttonVariant as any"
+                :icon="buttonIcon"
+                class="text-ui-muted"
+                :disabled="disabled"
+            >
                 <slot name="buttonLabel">
                     {{ buttonLabel }}
                 </slot>

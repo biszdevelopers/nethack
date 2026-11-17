@@ -92,9 +92,11 @@ describe("participant action paths", () => {
         expect(onSubmit).toContain('if (intent.value === "submit")');
         expect(onSubmit).toContain("pendingSubmitEvent = event");
         expect(onSubmit).toContain("showConfirmModal.value = true");
-        expect(confirmSubmit).toContain("if (pendingSubmitEvent)");
-        expect(confirmSubmit).toContain("await performSubmit(pendingSubmitEvent)");
+        expect(confirmSubmit).toContain("const event = pendingSubmitEvent");
         expect(confirmSubmit).toContain("pendingSubmitEvent = null");
+        expect(confirmSubmit).toContain("if (event)");
+        expect(confirmSubmit).toContain("await performSubmit(event)");
+        expect(confirmSubmit).toContain("await nextTick()");
     });
 
     it("uses separate save and submit endpoints, reports failures, and refreshes after a save", () => {

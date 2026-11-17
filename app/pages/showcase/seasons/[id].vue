@@ -25,7 +25,7 @@ useHead({ title: `${season.name} project archive | ${WEBSITE_NAME}` });
 </script>
 
 <template>
-    <main class="min-h-screen bg-default text-default">
+    <div class="min-h-screen bg-default text-default">
         <header class="border-b border-default px-6 py-16 sm:px-10 lg:px-16 lg:py-24">
             <div class="mx-auto max-w-7xl">
                 <NuxtLink
@@ -52,5 +52,5 @@ useHead({ title: `${season.name} project archive | ${WEBSITE_NAME}` });
             :season-name="season.name"
             :results-published="season.results_published === 1"
         />
-    </main>
+    </div>
 </template>

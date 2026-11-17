@@ -104,6 +104,7 @@ async function onNameSubmit(event: FormSubmitEvent<UpdateTeamRequest>, close: ()
                 color: "success",
                 title: message,
             });
+            if (event.data.name) nameState.name = event.data.name;
             emit("refresh");
             await refresh();
         });
