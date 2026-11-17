@@ -87,6 +87,24 @@ describe("setActiveSeason with a local manifest", () => {
         ).toEqual({ status: "finished", theme_name: "Archived theme" });
     });
 
+    it("carries the activated season's announcement into the live overrides", async () => {
+        insertSeason("name, is_active, status", "'Current', 1, 'voting'");
+        insertSeason(
+            "name, is_active, status, announcement",
+            "'Next', 0, 'voting', 'Season two is live'",
+        );
+
+        await setActiveSeason(event, 2);
+
+        const live = event.context.drizzle
+            .prepare("SELECT announcement, live_overrides FROM hackathon WHERE id = 1")
+            .first() as { announcement: string; live_overrides: string };
+        expect(live.announcement).toBe("Season two is live");
+        expect(JSON.parse(live.live_overrides)).toMatchObject({
+            announcement: "Season two is live",
+        });
+    });
+
     it("seeds an unconfigured season from live settings before writing", async () => {
         insertSeason("name, is_active, status, theme_name", "'Current', 1, 'voting', 'Live theme'");
         insertSeason("name, is_active", "'Blank', 0");

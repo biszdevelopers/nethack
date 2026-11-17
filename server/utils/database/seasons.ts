@@ -34,6 +34,7 @@ const SEASON_CONFIG_FIELDS = [
     "results_open_timestamp",
     "theme_name",
     "theme_description",
+    "announcement",
 ] as const;
 
 export type SeasonTweaks = Partial<Pick<Season, (typeof SEASON_TWEAK_FIELDS)[number]>>;
