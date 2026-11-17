@@ -172,7 +172,7 @@ export async function assertAccessTokenActive(
 
     const local = await firstRow(
         event.context.drizzle
-            .select({ tokens_valid_after: users.tokens_valid_after })
+            .select()
             .from(users)
             .where(
                 and(
@@ -185,6 +185,10 @@ export async function assertAccessTokenActive(
     if (local?.tokens_valid_after != null && claims.iat <= local.tokens_valid_after) {
         invalidAccessToken();
     }
+    // Reuse this row for the user lookup later in the same request instead of
+    // issuing an identical indexed SELECT. The subject is stored with it so a
+    // different token on the same event can never reuse the wrong row.
+    if (local) event.context.basisAuthValidatedUser = { subject: claims.sub, user: local };
 
     let state: SubjectState | undefined;
     try {

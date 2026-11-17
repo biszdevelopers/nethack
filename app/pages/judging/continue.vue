@@ -145,18 +145,20 @@ const navigatorPages = computed(() =>
     }),
 );
 const navigatorVisiblePages = computed(() =>
-    navigatorPages.value.map((group) => ({
-        page: group.page,
-        items: group.items
-            .map((item, index) => ({ item, index }))
-            .filter(({ item }) =>
-                navigatorFilter.value === "all"
-                    ? true
-                    : navigatorFilter.value === "evaluated"
-                      ? item.evaluated
-                      : !item.evaluated,
-            ),
-    })),
+    navigatorPages.value
+        .map((group) => ({
+            page: group.page,
+            items: group.items
+                .map((item, index) => ({ item, index }))
+                .filter(({ item }) =>
+                    navigatorFilter.value === "all"
+                        ? true
+                        : navigatorFilter.value === "evaluated"
+                          ? item.evaluated
+                          : !item.evaluated,
+                ),
+        }))
+        .filter((group) => group.items.length > 0),
 );
 
 watch(
@@ -739,13 +741,7 @@ onBeforeRouteLeave(async () => {
                 </p>
 
                 <template v-else>
-                    <section
-                        v-for="group in navigatorVisiblePages.filter(
-                            (group) => group.items.length > 0,
-                        )"
-                        :key="group.page"
-                        class="mb-4"
-                    >
+                    <section v-for="group in navigatorVisiblePages" :key="group.page" class="mb-4">
                         <h3 class="mb-2 text-sm font-semibold text-muted">
                             Page {{ group.page }} of {{ totalPages }}
                         </h3>
@@ -794,7 +790,7 @@ onBeforeRouteLeave(async () => {
                         </ul>
                     </section>
                     <p
-                        v-if="navigatorVisiblePages.every((group) => group.items.length === 0)"
+                        v-if="navigatorVisiblePages.length === 0"
                         class="rounded-lg border border-default p-3 text-sm text-muted"
                     >
                         No projects match this filter.

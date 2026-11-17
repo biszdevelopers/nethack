@@ -272,7 +272,7 @@ Combines `extractBearerToken` and `verifyAccessToken` into a single call.
 export async function resolveOAuth2User(event: H3Event, payload: OAuth2JWTPayload): Promise<User>;
 ```
 
-Resolves a user from the JWT payload's `user_id` or `sub` field. Throws 401 (`invalid_token`) if the payload has no valid user ID or if no local user is linked to the basis-auth subject.
+Resolves a user from the JWT payload's `user_id` or `sub` field. Throws 401 (`invalid_token`) if the payload has no valid user ID or if no local user is linked to the basis-auth subject. On the standard authenticated request path it reuses the full user row already fetched and verified by `assertAccessTokenActive`, avoiding a second identical lookup; the reuse is guarded by the token subject so a different token on the same event can never inherit another user's row.
 
 **Context attached to `event.context.oauth2`:**
 
@@ -490,10 +490,11 @@ Per-table database helper modules in `server/utils/database/`.
 
 ### hackathon.ts
 
-| Function                       | Description                                                    |
-| ------------------------------ | -------------------------------------------------------------- |
-| `getHackathon(event)`          | Read live settings from YAML or the PostgreSQL rollback source |
-| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode               |
+| Function | Description |
+| --- | --- |
+| `getHackathon(event)` | Read live settings from YAML or the PostgreSQL rollback source; merged once per request and reused by repeated read helpers |
+| `invalidateHackathonCache(event)` | Drop the per-request cached state after a route mutates hackathon or season settings |
+| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode |
 
 ### ballots.ts
 

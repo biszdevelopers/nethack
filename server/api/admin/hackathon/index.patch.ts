@@ -2,7 +2,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { AdminUpdateHackathonRequest, LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
-import { getLiveOverrides } from "~~/server/utils/database/hackathon";
+import { getLiveOverrides, invalidateHackathonCache } from "~~/server/utils/database/hackathon";
 import { getSeasons } from "~~/server/utils/database/seasons";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import {
@@ -132,6 +132,7 @@ export default defineEventHandler(
             }
         }
 
+        invalidateHackathonCache(event);
         const updated = await getHackathon(event);
         const allSeasons = await getSeasons(event);
         return { hackathon: updated, seasons: allSeasons };

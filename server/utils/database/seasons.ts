@@ -2,7 +2,7 @@ import type { H3Event } from "h3";
 import { eq, asc, sql } from "drizzle-orm";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
-import { getHackathon } from "./hackathon";
+import { getHackathon, invalidateHackathonCache } from "./hackathon";
 import { firstRow } from "./query";
 import {
     getHackathonConfigSource,
@@ -201,7 +201,15 @@ let activationQueue: Promise<unknown> = Promise.resolve();
 
 /** Serialize activations so two admin requests cannot interleave their writes. */
 export function setActiveSeason(event: H3Event, seasonId: number | null) {
-    const run = activationQueue.then(() => activateSeason(event, seasonId));
+    invalidateHackathonCache(event);
+    const run = activationQueue.then(async () => {
+        invalidateHackathonCache(event);
+        try {
+            return await activateSeason(event, seasonId);
+        } finally {
+            invalidateHackathonCache(event);
+        }
+    });
     activationQueue = run.catch(() => undefined);
     return run;
 }

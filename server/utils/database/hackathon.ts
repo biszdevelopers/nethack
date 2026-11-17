@@ -18,17 +18,30 @@ export async function getLiveOverrides(event: H3Event): Promise<LiveOverrides> {
 }
 
 export async function getHackathon(event: H3Event): Promise<Hackathon | null> {
+    if (event.context.cachedHackathon !== undefined) return event.context.cachedHackathon;
+
+    let result: Hackathon | null;
     if (hackathonUsesYaml()) {
         const { rubric, ...settings } = await readHackathonConfig();
         // PostgreSQL owns the operational switches (status, voting, judging,
         // results, score/rank visibility) so the portal never needs a writable
         // manifest. Schedule, theme, and the rubric still come from the manifest.
         const overrides = await getLiveOverrides(event);
-        return { ...settings, ...overrides, live_overrides: overrides };
+        result = { ...settings, ...overrides, live_overrides: overrides };
+    } else {
+        const row = await firstRow(event.context.drizzle.select().from(hackathon).limit(1));
+        result = (row ?? null) as Hackathon | null;
     }
-    const row = await firstRow(event.context.drizzle.select().from(hackathon).limit(1));
 
-    return (row ?? null) as Hackathon | null;
+    // Config is immutable within one request; write routes invalidate this via
+    // invalidateHackathonCache before reading it again.
+    event.context.cachedHackathon = result;
+    return result;
+}
+
+/** Call after a route mutates hackathon/seasons state it later reads back. */
+export function invalidateHackathonCache(event: H3Event): void {
+    delete event.context.cachedHackathon;
 }
 
 export async function updateHackathon(
@@ -42,6 +55,7 @@ export async function updateHackathon(
         });
     }
     await event.context.drizzle.update(hackathon).set(data).where(eq(hackathon.id, 1));
+    invalidateHackathonCache(event);
 
     return getHackathon(event);
 }
