@@ -586,6 +586,18 @@ describe("basis-auth authorization-code flow", () => {
 
         await expect(revokeBasisAuthToken("refresh-token")).rejects.toBe(failure);
     });
+
+    it("bounds a hanging revocation call with a deadline", async () => {
+        vi.useFakeTimers();
+        oidc.tokenRevocation.mockReturnValueOnce(new Promise(() => undefined));
+
+        const pending = revokeBasisAuthToken("refresh-token");
+        const assertion = expect(pending).rejects.toThrow(
+            "basis-auth token revocation timed out after 8000ms",
+        );
+        await vi.advanceTimersByTimeAsync(8000);
+        await assertion;
+    });
 });
 
 describe("basis-auth session refresh", () => {

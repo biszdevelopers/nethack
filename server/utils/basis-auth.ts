@@ -19,6 +19,20 @@ import { getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
+const OIDC_TIMEOUT_MS = 8000;
+
+/** Bound every openid-client network call; the library has no default deadline. */
+function withOidcDeadline<T>(work: Promise<T>, label: string): Promise<T> {
+    let rejectDeadline!: (error: Error) => void;
+    const deadline = new Promise<never>((_, reject) => {
+        rejectDeadline = reject;
+    });
+    const timer = setTimeout(
+        () => rejectDeadline(new Error(`basis-auth ${label} timed out after ${OIDC_TIMEOUT_MS}ms`)),
+        OIDC_TIMEOUT_MS,
+    );
+    return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
 export const BASIS_AUTH_REQUESTED_SCOPES = [
     "openid",
     "profile",
@@ -137,8 +151,8 @@ export function getBasisAuthOidcConfiguration(config = getBasisAuthConfig()) {
     const cacheKey = `${config.issuer}\0${config.clientId}\0${config.clientSecret}`;
     let discovered = discoveredConfigurations.get(cacheKey);
     if (!discovered) {
-        discovered = oidc
-            .discovery(
+        discovered = withOidcDeadline(
+            oidc.discovery(
                 new URL(config.issuer),
                 config.clientId,
                 {
@@ -149,12 +163,13 @@ export function getBasisAuthOidcConfiguration(config = getBasisAuthConfig()) {
                 config.issuer.startsWith("http://")
                     ? { execute: [oidc.allowInsecureRequests] }
                     : undefined,
-            )
-            .catch((error) => {
-                // A temporary discovery outage must not poison this process forever.
-                discoveredConfigurations.delete(cacheKey);
-                throw error;
-            });
+            ),
+            "discovery",
+        ).catch((error) => {
+            // A temporary discovery outage must not poison this process forever.
+            discoveredConfigurations.delete(cacheKey);
+            throw error;
+        });
         discoveredConfigurations.set(cacheKey, discovered);
     }
     return discovered;
@@ -215,17 +230,23 @@ export async function completeBasisAuthFlow(
         callbackUrl.pathname + callbackUrl.search,
         getPublicOrigin(),
     );
-    const tokens = await oidc.authorizationCodeGrant(oidcConfiguration, canonicalCallbackUrl, {
-        pkceCodeVerifier: transaction.codeVerifier,
-        expectedState: transaction.state,
-        expectedNonce: transaction.nonce,
-    });
+    const tokens = await withOidcDeadline(
+        oidc.authorizationCodeGrant(oidcConfiguration, canonicalCallbackUrl, {
+            pkceCodeVerifier: transaction.codeVerifier,
+            expectedState: transaction.state,
+            expectedNonce: transaction.nonce,
+        }),
+        "token exchange",
+    );
     const claims = tokens.claims();
     if (!claims?.sub || !tokens.access_token || !tokens.refresh_token) {
         throw new Error("basis-auth did not return a complete token set");
     }
 
-    const userInfo = await oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub);
+    const userInfo = await withOidcDeadline(
+        oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub),
+        "UserInfo",
+    );
     if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
     }
@@ -262,7 +283,12 @@ function normalizeTokenSet(tokens: {
 export async function refreshBasisAuthTokens(refreshToken: string) {
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
-    return normalizeTokenSet(await oidc.refreshTokenGrant(oidcConfiguration, refreshToken));
+    return normalizeTokenSet(
+        await withOidcDeadline(
+            oidc.refreshTokenGrant(oidcConfiguration, refreshToken),
+            "token refresh",
+        ),
+    );
 }
 
 // Refresh a minute early so a retry or clock skew cannot strand the session.
@@ -302,7 +328,10 @@ export async function getFreshBasisAuthUserSession(
 export async function revokeBasisAuthToken(refreshToken: string) {
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
-    await oidc.tokenRevocation(oidcConfiguration, refreshToken, {
-        token_type_hint: "refresh_token",
-    });
+    await withOidcDeadline(
+        oidc.tokenRevocation(oidcConfiguration, refreshToken, {
+            token_type_hint: "refresh_token",
+        }),
+        "token revocation",
+    );
 }
