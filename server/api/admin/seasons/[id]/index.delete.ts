@@ -4,6 +4,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam } from "~~/shared/schemas";
 import {
     judgingDrafts,
+    peerVotingScores,
     rubricVersions,
     seasons,
     teamScores,
@@ -60,6 +61,17 @@ export default defineEventHandler(
                 await tx.update(seasons).set({ rubric_version_id: null }).where(eq(seasons.id, id));
                 await tx.delete(rubricVersions).where(eq(rubricVersions.season_id, id));
             }
+
+            // Peer votes cascade on season_id, so deleting the season would
+            // silently erase ballot history that no other guard protects.
+            const voteReference = await firstRow(
+                tx
+                    .select({ user_id: peerVotingScores.user_id })
+                    .from(peerVotingScores)
+                    .where(eq(peerVotingScores.season_id, id))
+                    .limit(1),
+            );
+            if (voteReference) return "hasHistory" as const;
 
             await tx.delete(seasons).where(eq(seasons.id, id));
             return "deleted" as const;

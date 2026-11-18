@@ -211,6 +211,12 @@ function saveField(key: string) {
     return saveQueue;
 }
 
+/** Flush pending edits before the season picker replaces the form they were read from. */
+async function selectSeason(id: number | null) {
+    await saveQueue;
+    selectedSeasonId.value = id;
+}
+
 async function writeField(key: string) {
     if (configReadOnly.value && !(LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
         return;
@@ -628,10 +634,11 @@ async function deleteSeason() {
                         <div class="flex flex-wrap items-end gap-3">
                             <UFormField label="Season" class="w-full sm:w-auto sm:max-w-xs">
                                 <USelect
-                                    v-model="selectedSeasonId"
+                                    :model-value="selectedSeasonId"
                                     :items="seasonItems"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
+                                    @update:model-value="selectSeason"
                                 />
                             </UFormField>
                             <UButton

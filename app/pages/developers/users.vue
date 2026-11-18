@@ -17,6 +17,9 @@ const UButton = resolveComponent("UButton");
 const UBadge = resolveComponent("UBadge");
 const UCheckbox = resolveComponent("UCheckbox");
 
+const { user: sessionUser } = useBasisAuthSession();
+const currentUserId = computed(() => sessionUser.value?.id);
+
 const toast = useToast();
 const table = useTemplateRef<any>("table");
 const modalOpen = ref(false);
@@ -77,7 +80,7 @@ async function onDelete() {
 }
 
 async function toggleAdmin(user: AdminUser) {
-    if (isInitialAdminEmail(user.email)) return;
+    if (isInitialAdminEmail(user.email) || user.id === currentUserId.value) return;
     try {
         await apiFetch(`/api/users/${user.id}/admin`, {
             method: "PATCH",
@@ -179,7 +182,9 @@ const columns: TableColumn<AdminUser>[] = [
                     : row.original.is_admin
                       ? "Demote"
                       : "Promote",
-                disabled: isInitialAdminEmail(row.original.email),
+                disabled:
+                    isInitialAdminEmail(row.original.email) ||
+                    row.original.id === currentUserId.value,
                 onClick: () => toggleAdmin(row.original),
             }),
     },

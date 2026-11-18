@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { eq, and, asc, isNull, count } from "drizzle-orm";
+import { eq, and, or, asc, isNull, count, sql } from "drizzle-orm";
 import { users, teams, userPastTeams, teamInvites, seasons } from "~~/server/database/schema";
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
 import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
@@ -93,11 +93,38 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
 }
 
 export async function addTeamMember(event: H3Event, teamID: number, userID: number) {
+    const target = await firstRow(
+        event.context.drizzle
+            .select({ season_id: teams.season_id })
+            .from(teams)
+            .where(eq(teams.id, teamID))
+            .limit(1),
+    );
+    if (!target) {
+        throw createError({ statusCode: 404, message: "User not found or already in a team" });
+    }
+    const previous = await firstRow(
+        event.context.drizzle
+            .select({ team_id: users.team_id })
+            .from(users)
+            .where(eq(users.id, userID))
+            .limit(1),
+    );
+    // A team_id left over from an earlier season must not block joining the
+    // active season's team, but a current-season membership still must.
     const changed = await changedRows(
         event.context.drizzle
             .update(users)
             .set({ team_id: teamID })
-            .where(and(eq(users.id, userID), isNull(users.team_id)))
+            .where(
+                and(
+                    eq(users.id, userID),
+                    or(
+                        isNull(users.team_id),
+                        sql`${users.team_id} IN (SELECT id FROM teams WHERE season_id <> ${target.season_id})`,
+                    ),
+                ),
+            )
             .returning({ id: users.id }),
     );
 
@@ -106,6 +133,9 @@ export async function addTeamMember(event: H3Event, teamID: number, userID: numb
             status: 404,
             message: "User not found or already in a team",
         });
+    }
+    if (previous?.team_id && previous.team_id !== teamID) {
+        await addUserPastTeam(event, userID, previous.team_id);
     }
 }
 
@@ -242,6 +272,12 @@ export async function acceptTeamInvite(
             throw createError({ statusCode: 409, message: "This team is full" });
         }
 
+        if (lockedUser?.team_id) {
+            await tx
+                .insert(userPastTeams)
+                .values({ user_id: user.id, team_id: lockedUser.team_id })
+                .onConflictDoNothing();
+        }
         await tx.update(users).set({ team_id: team.id }).where(eq(users.id, user.id));
         await tx.delete(teamInvites).where(eq(teamInvites.email, invite.email));
 

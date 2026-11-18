@@ -11,7 +11,13 @@ import {
     seedUser,
     type TestContext,
 } from "../helpers";
-import { judgingDrafts, rubricVersions, seasons, teamScores } from "~~/server/database/schema";
+import {
+    judgingDrafts,
+    peerVotingScores,
+    rubricVersions,
+    seasons,
+    teamScores,
+} from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -143,6 +149,26 @@ describe("DELETE /api/admin/seasons/[id]", () => {
             ).toBeDefined();
         },
     );
+
+    it("preserves an inactive season that contains peer voting history", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        seedSeason(ctx, { name: "Current season", is_active: 1 });
+        const target = seedSeason(ctx, { name: "Voted season", is_active: 0 });
+        const voter = seedUser(ctx, { email: "voter@example.test" });
+        ctx.drizzle
+            .insert(peerVotingScores)
+            .values({ user_id: voter.id, season_id: target.id, score: "{}" })
+            .run();
+        mockParams.values.id = String(target.id);
+
+        await expect(deleteHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This season contains team or judging history and cannot be deleted.",
+        });
+        expect(
+            ctx.drizzle.select().from(seasons).where(eq(seasons.id, target.id)).get(),
+        ).toBeDefined();
+    });
 
     it("preserves the active season", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });

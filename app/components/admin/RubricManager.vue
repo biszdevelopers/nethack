@@ -271,6 +271,7 @@ async function createVersion(
     source: { sourceTemplateId: number } | { copyFromSeasonId: number },
     name: string,
 ) {
+    if (yamlManaged.value) return;
     savingVersion.value = true;
     try {
         await api(`/api/admin/seasons/${props.seasonId}/rubric`, {
@@ -507,7 +508,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
                         icon="i-lucide-copy"
                         variant="outline"
                         class="min-h-11 justify-center"
-                        :disabled="loading || savingVersion || copySeasonId === null"
+                        :disabled="yamlManaged || loading || savingVersion || copySeasonId === null"
                         @click="copyFromSeason(false)"
                     >
                         Copy as version
@@ -609,7 +610,9 @@ async function removeTemplate(template: RubricTemplateSummary) {
             <RubricTemplateLibrary
                 :templates="templates"
                 :selected-template-id="selectedTemplateId"
-                :disabled="savingTemplate || savingVersion || deletingTemplateId !== null"
+                :disabled="
+                    yamlManaged || savingTemplate || savingVersion || deletingTemplateId !== null
+                "
                 @apply="applyTemplate"
                 @select="createFromTemplate"
                 @remove="removeTemplate"
