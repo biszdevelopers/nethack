@@ -233,10 +233,17 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 expect([200, 409]).toContain(result.status);
             });
 
-            await step("judging closes once results are published", async () => {
-                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(false);
+            await step("published results do not veto the judging toggle", async () => {
+                // The judging_open toggle remains authoritative: publishing
+                // results does not silently close the queue.
+                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(true);
                 const queue = await api(judge, "/api/teams?judging=true");
-                expect(queue.status).toBe(403);
+                expect(queue.status).toBe(200);
+                // Explicitly turning the toggle off closes judging.
+                await setSwitch(admin, "judging_open", 0);
+                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(false);
+                expect((await api(judge, "/api/teams?judging=true")).status).toBe(403);
+                await setSwitch(admin, "judging_open", 1);
             });
 
             await step("published participant feedback is anonymized", async () => {

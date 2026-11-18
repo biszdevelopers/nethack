@@ -67,19 +67,15 @@ describe("score submission action boundaries", () => {
         expectNoSavedScore();
     });
 
-    it("rejects published results even when the season remains marked active", async () => {
+    it("accepts a score with published results, leaving the judging_open toggle authoritative", async () => {
         raw.prepare("UPDATE hackathon SET results_published = 1 WHERE id = 1").run();
         raw.prepare("UPDATE seasons SET results_published = 1 WHERE id = 42").run();
 
-        await expect(submit()).rejects.toMatchObject({
-            statusCode: 409,
-            statusMessage: "Judging is not open for this season.",
-        });
-        expectNoSavedScore();
+        await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
     });
 
-    it("rejects publication from the locked season row when the pre-lock live snapshot is stale", async () => {
-        raw.prepare("UPDATE seasons SET results_published = 1 WHERE id = 42").run();
+    it("still rejects a score when the season is not active", async () => {
+        raw.prepare("UPDATE seasons SET is_active = 0 WHERE id = 42").run();
 
         await expect(submit()).rejects.toMatchObject({
             statusCode: 409,

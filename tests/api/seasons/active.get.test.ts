@@ -89,7 +89,7 @@ describe("GET /api/seasons/active", () => {
         expect(await handler(createEvent())).toHaveProperty("is_voting_open", true);
     });
 
-    it("reports judging closed once results are published, matching the queue endpoint", async () => {
+    it("lets the judging toggle dictate state even when results are published", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "voting", judging_open: 1, results_published: 1 });
         seedSeason(ctx);
@@ -97,6 +97,17 @@ describe("GET /api/seasons/active", () => {
         const result = await handler(createEvent());
 
         expect(result).toHaveProperty("judging_open", true);
+        expect(result).toHaveProperty("is_judging_open", true);
+    });
+
+    it("reports judging closed when the judging toggle is off", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", judging_open: 0, results_published: 0 });
+        seedSeason(ctx);
+
+        const result = await handler(createEvent());
+
+        expect(result).toHaveProperty("judging_open", false);
         expect(result).toHaveProperty("is_judging_open", false);
     });
 

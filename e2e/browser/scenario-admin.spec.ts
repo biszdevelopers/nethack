@@ -103,16 +103,23 @@ test.describe.serial("scenario matrix — administrator situations", () => {
                 await setSwitch(admin, "show_ranking", 0);
             });
 
-            await step("results_published switch changes computed judging gate", async () => {
-                await setStatus(admin, "voting");
-                await setSwitch(admin, "judging_open", 1);
-                await setSwitch(admin, "results_published", 1);
-                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(false);
-                await setSwitch(admin, "results_published", 0);
-                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(true);
-                await setStatus(admin, "not_started");
-                await setSwitch(admin, "judging_open", 0);
-            });
+            await step(
+                "judging toggle dictates the gate regardless of published results",
+                async () => {
+                    await setStatus(admin, "voting");
+                    await setSwitch(admin, "results_published", 1);
+                    await setSwitch(admin, "judging_open", 1);
+                    expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(
+                        true,
+                    );
+                    await setSwitch(admin, "judging_open", 0);
+                    expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(
+                        false,
+                    );
+                    await setSwitch(admin, "results_published", 0);
+                    await setStatus(admin, "not_started");
+                },
+            );
 
             await step("max_votes_per_user accepts a positive integer", async () => {
                 const result = await patchHackathon(admin, { max_votes_per_user: 5 });

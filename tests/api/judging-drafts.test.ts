@@ -536,12 +536,18 @@ describe("judging draft rubric recovery", () => {
         await expect(deleteDraftHandler(createEvent())).resolves.toEqual({ deleted: true });
     });
 
-    it("refuses to delete a draft once results are published", async () => {
+    it("lets the judging toggle dictate draft deletion even with results published", async () => {
         ctx.drizzle
             .update(hackathon)
-            .set({ results_published: 1 })
+            .set({ results_published: 1, judging_open: 1 })
             .where(eq(hackathon.id, 1))
             .run();
+
+        await expect(deleteDraftHandler(createEvent())).resolves.toEqual({ deleted: true });
+    });
+
+    it("refuses to delete a draft when the judging toggle is off", async () => {
+        ctx.drizzle.update(hackathon).set({ judging_open: 0 }).where(eq(hackathon.id, 1)).run();
 
         await expect(deleteDraftHandler(createEvent())).rejects.toMatchObject({
             statusCode: 409,

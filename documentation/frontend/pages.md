@@ -192,7 +192,7 @@ Judge landing page. Protected by `auth` middleware and the judge assignment perm
 **Content:**
 
 - **Current evaluations** — shows judge-specific progress for submitted projects in the active season, with an accessible progress bar
-- **Continue judging** — opens the active queue when the server-reported `is_judging_open` flag is true (`voting` status, judging enabled, and results not published)
+- **Continue judging** — opens the active queue when the server-reported `is_judging_open` flag is true (`voting` status and the `judging_open` portal toggle on)
 - **Review your evaluations** — links to the active season's history when judging is closed
 - **Past evaluations** — shows the judge's completed progress for prior seasons; each card links to that season's read-only history
 
@@ -221,7 +221,7 @@ The API always returns a row for every finalized evaluation, including legacy ro
 
 **File:** `app/pages/judging/continue.vue`
 
-Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the server-reported `is_judging_open` flag is true (`voting` status, judging enabled, and results not published). The page consumes that flag from `GET /api/seasons/active` rather than recomputing the gate, so it cannot disagree with the queue, draft, and submission endpoints that enforce the same check.
+Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the server-reported `is_judging_open` flag is true (`voting` status and the `judging_open` portal toggle on). The toggle is authoritative and is not vetoed by published results. The page consumes that flag from `GET /api/seasons/active` rather than recomputing the gate, so it cannot disagree with the queue, draft, and submission endpoints that enforce the same check.
 
 **Flow:**
 

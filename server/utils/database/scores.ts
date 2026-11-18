@@ -10,8 +10,6 @@ import {
 import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { lockForUpdateIfSupported } from "./query";
-import { getHackathon, getLiveOverrides } from "./hackathon";
-import { hackathonUsesYaml } from "../hackathon-config";
 
 type NewTeamScore = Pick<
     TeamScores,
@@ -19,28 +17,15 @@ type NewTeamScore = Pick<
 > & { season_id: number };
 
 export async function createTeamScores(event: H3Event, scores: NewTeamScore): Promise<TeamScores> {
-    // Resolve schedule/theme before the season row lock; a remote manifest fetch
-    // can take seconds and must not serialize judge submissions. The publication
-    // gate below is deliberately re-read inside the lock instead.
-    const liveHackathon = await getHackathon(event);
-
     return event.context.drizzle.transaction(async (tx) => {
         const seasonQuery = lockForUpdateIfSupported(
             tx.select().from(seasons).where(eq(seasons.id, scores.season_id)).limit(1),
         );
         const [season] = await seasonQuery;
+        // The `judging_open` portal toggle is authoritative and is enforced by
+        // the calling endpoint via isJudgingOpen(). Published results no longer
+        // silently veto scoring, so the toggle always dictates the state.
         if (!season || season.is_active !== 1) {
-            throw createError({ statusCode: 409, message: "Judging is not open for this season." });
-        }
-        // Read publication state from the locked state, never the pre-lock
-        // snapshot: in database mode the season row is the source of truth, and
-        // in manifest mode the live override lives in the database and is a
-        // cheap read (unlike the manifest fetch kept outside the lock).
-        const resultsPublished = hackathonUsesYaml()
-            ? ((await getLiveOverrides(event)).results_published ??
-              liveHackathon?.results_published)
-            : season.results_published;
-        if (resultsPublished) {
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }
 
