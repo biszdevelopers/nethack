@@ -130,6 +130,16 @@ describe("PATCH /api/admin/hackathon", () => {
         await expect(patchHandler(createEvent())).rejects.toThrow();
     });
 
+    it("rejects undefined optional fields with only a routing hint", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        mockBody.value = { season_id: 1, theme_name: undefined };
+
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "No fields to update",
+        });
+    });
+
     it("rejects empty body", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = {};
@@ -137,14 +147,19 @@ describe("PATCH /api/admin/hackathon", () => {
         await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
     });
 
-    it("rejects a body whose fields are all nullish", async () => {
+    it("allows explicitly clearing nullable text fields", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { schedule_start: null, theme_description: null };
+        ctx.drizzle
+            .update(hackathon)
+            .set({ schedule_start: "old start", theme_description: "old theme" })
+            .where(eq(hackathon.id, 1))
+            .run();
 
-        await expect(patchHandler(createEvent())).rejects.toMatchObject({
-            statusCode: 400,
-            message: "No fields to update",
-        });
+        await expect(patchHandler(createEvent())).resolves.toBeDefined();
+        const row = ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get();
+        expect(row!.schedule_start).toBeNull();
+        expect(row!.theme_description).toBeNull();
     });
 
     it("returns 404 for an unknown season in database mode", async () => {

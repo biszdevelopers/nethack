@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { open, mkdir } from "node:fs/promises";
+import { open, mkdir, rename, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -340,11 +340,20 @@ async function writeReport(report, outputPath) {
     }
     if (existsSync(outputPath)) throw new Error(`Refusing to overwrite ${outputPath}.`);
     await mkdir(dirname(outputPath), { recursive: true });
-    const file = await open(outputPath, "wx", 0o600);
+    const partialPath = `${outputPath}.${process.pid}.partial`;
+    await unlink(partialPath).catch(() => undefined);
+    let published = false;
     try {
-        await file.writeFile(`${JSON.stringify(report, null, 2)}\n`, "utf8");
+        const file = await open(partialPath, "wx", 0o600);
+        try {
+            await file.writeFile(`${JSON.stringify(report, null, 2)}\n`, "utf8");
+        } finally {
+            await file.close();
+        }
+        await rename(partialPath, outputPath);
+        published = true;
     } finally {
-        await file.close();
+        if (!published) await unlink(partialPath).catch(() => undefined);
     }
 }
 

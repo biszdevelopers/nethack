@@ -99,9 +99,15 @@ async function main(argv = process.argv.slice(2), env = process.env) {
             ["--format=custom", "--no-owner", "--no-privileges", `--file=${partialPath}`],
             environment,
         );
-        await run(env.PG_RESTORE_BIN || "pg_restore", ["--list", partialPath], environment, {
-            quiet: true,
-        });
+        // `--list` only parses the TOC, so a truncated data section still passes.
+        // Emitting SQL to stdout forces pg_restore through every data block,
+        // which catches corruption before the snapshot is published.
+        await run(
+            env.PG_RESTORE_BIN || "pg_restore",
+            ["--exit-on-error", "--file=-", partialPath],
+            environment,
+            { quiet: true },
+        );
         await rename(partialPath, outputPath);
         published = true;
     } finally {

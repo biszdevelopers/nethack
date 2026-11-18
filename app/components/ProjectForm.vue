@@ -65,7 +65,8 @@ async function triggerAutosave() {
             method: "PATCH",
             body: {
                 name: formState.name,
-                pathway: formState.pathway,
+                // The schema rejects an empty pathway; omit it until a track is chosen.
+                ...(formState.pathway ? { pathway: formState.pathway } : {}),
                 project: {
                     name: formState.project.name,
                     description: formState.project.description,

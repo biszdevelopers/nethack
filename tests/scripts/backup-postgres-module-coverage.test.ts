@@ -161,7 +161,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(run.spawn).toHaveBeenNthCalledWith(
             2,
             "pg_restore",
-            ["--list", partialPath],
+            ["--exit-on-error", "--file=-", partialPath],
             expect.objectContaining({ stdio: ["ignore", "ignore", "pipe"], windowsHide: true }),
         );
         expect(run.mkdir).toHaveBeenCalledWith(resolve(repositoryRoot, ".tmp"), {

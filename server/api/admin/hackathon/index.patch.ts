@@ -27,10 +27,11 @@ export default defineEventHandler(
         // Extract season_id — it's a routing hint, not a config field
         const { season_id, ...rawConfig } = body as Record<string, any>;
 
-        // Strip null/undefined — they'd violate NOT NULL constraints
+        // Keep explicit nulls: the schema and DB both allow clearing these
+        // text fields. Only undefined means "not provided".
         const configFields: Record<string, any> = {};
         for (const [key, value] of Object.entries(rawConfig)) {
-            if (value !== null && value !== undefined) configFields[key] = value;
+            if (value !== undefined) configFields[key] = value;
         }
 
         if (Object.keys(configFields).length === 0) {

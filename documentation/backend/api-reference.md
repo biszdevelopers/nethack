@@ -473,7 +473,7 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
+Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Nullable text fields (`announcement`, `theme_name`, `theme_description`, `schedule_start`, `schedule_end`) accept an explicit `null` to clear them. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import jdenticon from "jdenticon";
@@ -34,10 +35,12 @@ async function readCachedPicture(cacheKey: string) {
 async function writeCachedPicture(cacheKey: string, contentType: string, bytes: Buffer) {
     // Callers reject types outside PROVIDER_IMAGE_TYPES, so the extension always exists.
     const extension = extensionByType[contentType]!;
+    const path = cachePath(cacheKey, extension);
+    // A PID-only temp name collides when two requests cache the same picture
+    // concurrently; the UUID keeps each write (and its cleanup) independent.
+    const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
     try {
-        const path = cachePath(cacheKey, extension);
         await mkdir(dirname(path), { recursive: true });
-        const temporary = `${path}.${process.pid}.tmp`;
         await writeFile(temporary, bytes, { mode: 0o600 });
         await rename(temporary, path);
         for (const other of new Set(Object.values(extensionByType))) {
@@ -47,6 +50,8 @@ async function writeCachedPicture(cacheKey: string, contentType: string, bytes: 
         }
     } catch {
         // The provider remains authoritative; a cache failure must not break the response.
+    } finally {
+        await rm(temporary, { force: true });
     }
 }
 

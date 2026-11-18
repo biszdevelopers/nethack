@@ -174,6 +174,32 @@ describe("basis-auth subject state", () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    it("does not block a healthy subject when another subject is backing off", async () => {
+        configureInternalApi();
+        vi.resetModules();
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("CURRENT_URL_ORIGIN", "https://hacks.example.test");
+        const { assertAccessTokenActive } = await import("~~/server/utils/basis-auth-state");
+        const now = Math.floor(Date.now() / 1000);
+        const fetchMock = vi.fn(async (request: Request | URL | string) => {
+            const url = String(request);
+            return url.includes("failing")
+                ? new Response(null, { status: 503 })
+                : new Response(JSON.stringify({ user: { disabled: false } }), { status: 200 });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        await expect(
+            assertAccessTokenActive(event, { sub: "failing", iat: now, jti: "backoff-1" }),
+        ).rejects.toMatchObject({ statusCode: 401 });
+        // A different subject must still be looked up rather than rejected by
+        // the failing subject's backoff window.
+        await expect(
+            assertAccessTokenActive(event, { sub: "healthy", iat: now, jti: "backoff-2" }),
+        ).resolves.toBeUndefined();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
     it("treats an unknown subject as definitive and retries on the next request", async () => {
         configureInternalApi();
         vi.resetModules();
