@@ -13,16 +13,22 @@ describe("prebuild launcher", () => {
         expect(shouldRunPrebuild(`${scriptPath}.test`, moduleUrl)).toBe(false);
     });
 
-    it("uses the Windows shell only for npm and launches Node directly", () => {
+    it("launches VitePress and the icon generator through node without a shell", () => {
         const spawn = vi.fn(() => ({ status: 0, error: undefined }));
 
-        runPrebuildSteps({ platform: "win32", root: "C:/workspace", spawn });
+        runPrebuildSteps({ root: "C:/workspace", spawn });
 
         expect(spawn).toHaveBeenNthCalledWith(
             1,
-            "npm",
-            ["run", "build", "--prefix", "documentation"],
-            expect.objectContaining({ cwd: "C:/workspace", shell: true }),
+            process.execPath,
+            [
+                resolve("C:/workspace", "documentation/node_modules/vitepress/bin/vitepress.js"),
+                "build",
+            ],
+            expect.objectContaining({
+                cwd: resolve("C:/workspace", "documentation"),
+                shell: false,
+            }),
         );
         expect(spawn).toHaveBeenNthCalledWith(
             2,
@@ -32,28 +38,13 @@ describe("prebuild launcher", () => {
         );
     });
 
-    it("runs npm without a shell on non-Windows systems and uses default options", () => {
-        const spawn = vi.fn(() => ({ status: 0, error: undefined }));
-
-        runPrebuildSteps({ platform: "linux", spawn });
-
-        expect(spawn).toHaveBeenNthCalledWith(
-            1,
-            "npm",
-            expect.any(Array),
-            expect.objectContaining({ cwd: expect.any(String), shell: false }),
-        );
-    });
-
     it("propagates spawn errors and nonzero command exits", () => {
         const spawnError = new Error("Node could not start");
         const spawnFailure = vi.fn(() => ({ status: null, error: spawnError }));
-        expect(() => runPrebuildSteps({ platform: "linux", spawn: spawnFailure })).toThrow(
-            spawnError,
-        );
+        expect(() => runPrebuildSteps({ spawn: spawnFailure })).toThrow(spawnError);
 
         const commandFailure = vi.fn(() => ({ status: 1, error: undefined }));
-        expect(() => runPrebuildSteps({ platform: "linux", spawn: commandFailure })).toThrow(
+        expect(() => runPrebuildSteps({ spawn: commandFailure })).toThrow(
             "VitePress documentation build failed with exit code 1.",
         );
     });
@@ -61,7 +52,7 @@ describe("prebuild launcher", () => {
     it("skips the docs build when asked to reuse an existing one", () => {
         const spawn = vi.fn(() => ({ status: 0, error: undefined }));
 
-        runPrebuildSteps({ platform: "linux", spawn, skipDocs: true });
+        runPrebuildSteps({ spawn, skipDocs: true });
 
         expect(spawn).toHaveBeenCalledTimes(1);
         expect(spawn).toHaveBeenCalledWith(

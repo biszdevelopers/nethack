@@ -20,19 +20,16 @@ export function shouldRunPrebuild(argvEntry, moduleUrl) {
     return typeof argvEntry === "string" && resolve(argvEntry) === fileURLToPath(moduleUrl);
 }
 
-export function runPrebuildSteps({
-    platform = process.platform,
-    root = projectRoot,
-    spawn = spawnSync,
-    skipDocs = false,
-} = {}) {
+export function runPrebuildSteps({ root = projectRoot, spawn = spawnSync, skipDocs = false } = {}) {
     if (!skipDocs) {
+        // Invoke VitePress through node directly. Calling npm via a Windows
+        // shell with an args array triggers DEP0190; node needs no shell.
         runStep(
             spawn,
-            "npm",
-            ["run", "build", "--prefix", "documentation"],
+            process.execPath,
+            [resolve(root, "documentation/node_modules/vitepress/bin/vitepress.js"), "build"],
             "VitePress documentation build",
-            { cwd: root, shell: platform === "win32" },
+            { cwd: resolve(root, "documentation"), shell: false },
         );
     }
     runStep(
