@@ -49,7 +49,7 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
         <p v-if="announcement" class="mb-4 whitespace-pre-wrap text-muted">
             {{ announcement }}
         </p>
-        <ULink href="/dashboard">
+        <ULink href="/dashboard" aria-label="Go to your dashboard">
             <UAlert v-if="status !== 'not_started'" variant="soft" class="mb-4">
                 <template #title>
                     <span class="bold">

@@ -3,13 +3,8 @@ import { UpdateSeasonRequest } from "~~/shared/schemas";
 import { seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { firstRow } from "~~/server/utils/database/query";
+import { firstRow, isUniqueViolation } from "~~/server/utils/database/query";
 import { setActiveSeason } from "~~/server/utils/database/seasons";
-
-function isUniqueViolation(error: unknown) {
-    const code = (error as { code?: string }).code;
-    return code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE";
-}
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {

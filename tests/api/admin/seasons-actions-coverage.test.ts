@@ -16,7 +16,12 @@ const mocks = vi.hoisted(() => ({
     insertReturning: vi.fn(),
 }));
 
-vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
+vi.mock("~~/server/utils/database/query", () => ({
+    firstRow: mocks.firstRow,
+    isUniqueViolation: (error: unknown) =>
+        (error as { code?: string })?.code === "23505" ||
+        (error as { cause?: { code?: string } })?.cause?.code === "23505",
+}));
 vi.mock("~~/server/utils/database/seasons", () => ({
     setActiveSeason: mocks.setActiveSeason,
     getActiveSeason: mocks.getActiveSeason,

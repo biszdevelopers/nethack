@@ -7,6 +7,7 @@ import {
     pickSeasonConfig,
     setActiveSeason,
 } from "~~/server/utils/database/seasons";
+import { isUniqueViolation } from "~~/server/utils/database/query";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -58,8 +59,7 @@ export default defineEventHandler(
                 .values({ ...seed, ...seasonInput } as typeof seasons.$inferInsert)
                 .returning({ id: seasons.id });
         } catch (error) {
-            const code = (error as { code?: string }).code;
-            if (code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE") {
+            if (isUniqueViolation(error)) {
                 throw createError({
                     statusCode: 409,
                     message: "A season with that name already exists",

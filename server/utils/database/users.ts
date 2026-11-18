@@ -9,7 +9,7 @@ import {
     peerVotingScores,
     oauth2Applications,
 } from "~~/server/database/schema";
-import { changedRows, firstRow } from "./query";
+import { changedRows, firstRow, isUniqueViolation } from "./query";
 import { isInitialAdminEmail } from "~~/shared/permissions";
 
 export async function getUser(event: H3Event, userID: number): Promise<User | null> {
@@ -142,8 +142,7 @@ export async function findOrLinkBasisAuthUser(
     } catch (error) {
         // Two simultaneous first logins can race the unique identity/email
         // indexes. The loser re-reads the winner's committed row.
-        const code = (error as { code?: string }).code;
-        if (code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE") {
+        if (isUniqueViolation(error)) {
             const existing = await firstRow(
                 event.context.drizzle
                     .select()

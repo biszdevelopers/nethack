@@ -13,6 +13,16 @@ const between = (source: string, start: string, end: string) => {
     return source.slice(startIndex, endIndex);
 };
 
+describe("public action paths", () => {
+    const home = readSource("pages", "index.vue");
+
+    it("gives the dashboard link an accessible name even before the event starts", () => {
+        // The inner UAlert is v-if'd on status, leaving an empty link when the
+        // event has not started. The link itself must always carry a name.
+        expect(home).toContain('<ULink href="/dashboard" aria-label="Go to your dashboard">');
+    });
+});
+
 describe("participant action paths", () => {
     const voting = readSource("pages", "voting.vue");
     const votingCard = readSource("components", "VotingProjectCard.vue");

@@ -22,3 +22,24 @@ export function lockForUpdateIfSupported<T>(query: T): T {
 export function supportsRowLocks(query: unknown): boolean {
     return typeof (query as { for?: unknown } | null)?.for === "function";
 }
+
+/**
+ * Detect a unique-constraint violation from either the driver error or the
+ * `DrizzleQueryError` that wraps it in `.cause`.
+ */
+export function isUniqueViolation(error: unknown): boolean {
+    const codes = databaseErrorCodes(error);
+    return codes.includes("23505") || codes.includes("SQLITE_CONSTRAINT_UNIQUE");
+}
+
+/** Collect driver error codes from an error and its wrapped causes. */
+export function databaseErrorCodes(error: unknown): string[] {
+    const codes: string[] = [];
+    let current: unknown = error;
+    for (let depth = 0; depth < 3 && current; depth += 1) {
+        const code = (current as { code?: string }).code;
+        if (typeof code === "string") codes.push(code);
+        current = (current as { cause?: unknown }).cause;
+    }
+    return codes;
+}
