@@ -17,9 +17,12 @@ describe("public action paths", () => {
     const home = readSource("pages", "index.vue");
 
     it("gives the dashboard link an accessible name even before the event starts", () => {
-        // The inner UAlert is v-if'd on status, leaving an empty link when the
-        // event has not started. The link itself must always carry a name.
-        expect(home).toContain('<ULink href="/dashboard" aria-label="Go to your dashboard">');
+        // The visible UAlert only renders after the event starts; a visually
+        // hidden span names the link in the not_started state. Using a static
+        // aria-label instead would clash with the alert's visible text and
+        // trip axe's label-content-name-mismatch rule.
+        expect(home).toContain('<ULink href="/dashboard">');
+        expect(home).toContain('<span v-if="status === \'not_started\'" class="sr-only">');
     });
 });
 

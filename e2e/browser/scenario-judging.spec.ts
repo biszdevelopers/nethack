@@ -5,6 +5,7 @@ import {
     login,
     makeSubmittedTeam,
     restoreState,
+    resetScenarioState,
     rubricVersionId,
     scoreTeam,
     setStatus,
@@ -33,6 +34,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
         const suffix = Date.now().toString(36);
 
         try {
+            await resetScenarioState(browser);
             let index = 0;
             const step = async (name: string, body: () => Promise<void>) => {
                 await test.step(`J${String(++index).padStart(2, "0")} — ${name}`, body);

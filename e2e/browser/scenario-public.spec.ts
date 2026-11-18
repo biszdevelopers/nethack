@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { api, baseURL } from "./scenario-helpers";
+import { api, baseURL, resetScenarioState } from "./scenario-helpers";
 
 const a11yTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 const PUBLIC_ROUTES = [
@@ -28,6 +28,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
         const page = await pageOf();
 
         try {
+            await resetScenarioState(browser);
             let index = 1;
             for (const route of PUBLIC_ROUTES) {
                 const n = String(index).padStart(2, "0");

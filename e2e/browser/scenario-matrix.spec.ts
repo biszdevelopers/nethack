@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL;
 if (!baseURL) throw new Error("Set PLAYWRIGHT_BASE_URL in .env for the browser tests.");
@@ -54,6 +54,43 @@ async function sessionUser(page: Page): Promise<number> {
     const result = await api(page, "/api/auth/session");
     expect(result.status).toBe(200);
     return result.body.user.id;
+}
+
+/** Bring a shared DB to a clean baseline so suites can run in one invocation. */
+async function resetScenarioState(browser: Browser): Promise<void> {
+    const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
+    try {
+        const page = await context.newPage();
+        await login(page, "admin@e2e.basishacks.invalid", "/developers/season");
+        await api(page, "/api/admin/hackathon", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                status: "not_started",
+                voting_enabled: 0,
+                results_published: 0,
+                judging_open: 0,
+                show_scores: 0,
+                show_ranking: 0,
+                announcement: null,
+            }),
+        });
+        const teams = await api(page, "/api/admin/teams");
+        if (teams.status === 200 && Array.isArray(teams.body) && teams.body.length > 0) {
+            await api(page, "/api/admin/teams", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: teams.body.map((t: any) => t.id).slice(0, 100) }),
+            });
+        }
+        await api(page, "/api/admin/seasons", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: 1, is_active: 1 }),
+        });
+    } finally {
+        await context.close();
+    }
 }
 
 async function setSwitch(page: Page, key: string, value: number): Promise<void> {
@@ -150,6 +187,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
         let rubricVersionId = 0;
 
         try {
+            await resetScenarioState(browser);
             await test.step("G01 — anonymous visitor loads the public home page", async () => {
                 await admin.goto("/");
                 await expect(admin.getByRole("heading").first()).toBeVisible();

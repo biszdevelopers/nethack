@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 
 export const baseURL = process.env.PLAYWRIGHT_BASE_URL;
 if (!baseURL) throw new Error("Set PLAYWRIGHT_BASE_URL in .env for the browser tests.");
@@ -142,6 +142,44 @@ export async function scoreTeam(
         }),
     });
     expect(result.status, `score: ${JSON.stringify(result.body)}`).toBe(200);
+}
+
+/**
+ * Bring a shared E2E database to a clean baseline. Each suite calls this at
+ * its start so the five scenario suites can run in one `test:e2e` invocation
+ * alongside the journey specs without leaking teams or season state.
+ */
+export async function resetScenarioState(browser: Browser): Promise<void> {
+    const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
+    try {
+        const page = await context.newPage();
+        await login(page, "admin@e2e.basishacks.invalid", "/developers/season");
+        await patchHackathon(page, {
+            status: "not_started",
+            voting_enabled: 0,
+            results_published: 0,
+            judging_open: 0,
+            show_scores: 0,
+            show_ranking: 0,
+            announcement: null,
+        });
+        const teams = await api(page, "/api/admin/teams");
+        if (teams.status === 200 && Array.isArray(teams.body) && teams.body.length > 0) {
+            const ids = teams.body.map((team: any) => team.id).slice(0, 100);
+            await api(page, "/api/admin/teams", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids }),
+            });
+        }
+        await api(page, "/api/admin/seasons", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: 1, is_active: 1 }),
+        });
+    } finally {
+        await context.close();
+    }
 }
 
 export async function restoreState(page: Page): Promise<void> {

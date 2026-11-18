@@ -4,6 +4,7 @@ import {
     baseURL,
     login,
     patchHackathon,
+    resetScenarioState,
     restoreState,
     setStatus,
     setSwitch,
@@ -29,6 +30,7 @@ test.describe.serial("scenario matrix — administrator situations", () => {
         const suffix = Date.now().toString(36);
 
         try {
+            await resetScenarioState(browser);
             let index = 1;
             const step = async (name: string, body: () => Promise<void>) => {
                 await test.step(`A${String(index).padStart(2, "0")} — ${name}`, body);
