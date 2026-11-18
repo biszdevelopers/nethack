@@ -294,6 +294,22 @@ export async function refreshBasisAuthTokens(refreshToken: string) {
 // Refresh a minute early so a retry or clock skew cannot strand the session.
 const REFRESH_BUFFER_MS = 60_000;
 const refreshes = new Map<string, Promise<StoredBasisAuthTokens>>();
+// Short-lived coordination state for cross-request refresh races. Remembering a
+// completed rotation stops a second tab holding the old token from clearing the
+// valid cookie; remembering logout stops an in-flight refresh from restoring a
+// session after the user signed out.
+const TOKEN_EVENT_TTL_MS = 60_000;
+const rotatedTokens = new Map<string, { tokens: StoredBasisAuthTokens; at: number }>();
+const loggedOutTokens = new Map<string, number>();
+
+function pruneTokenEvents(now: number): void {
+    for (const [token, value] of rotatedTokens) {
+        if (now - value.at > TOKEN_EVENT_TTL_MS) rotatedTokens.delete(token);
+    }
+    for (const [token, at] of loggedOutTokens) {
+        if (now - at > TOKEN_EVENT_TTL_MS) loggedOutTokens.delete(token);
+    }
+}
 
 /** Read the encrypted token cookie and rotate it when its access token is near expiry. */
 export async function getFreshBasisAuthUserSession(
@@ -303,29 +319,53 @@ export async function getFreshBasisAuthUserSession(
     if (!session) return undefined;
     if (session.tokens.accessTokenExpiresAt > Date.now() + REFRESH_BUFFER_MS) return session;
 
-    let pending = refreshes.get(session.tokens.refreshToken);
+    const refreshToken = session.tokens.refreshToken;
+    pruneTokenEvents(Date.now());
+    // A logout that landed after this request started must win: never re-seal a
+    // session for a token that has already been revoked.
+    if (loggedOutTokens.has(refreshToken)) {
+        clearBasisAuthUserSession(event);
+        return undefined;
+    }
+
+    let pending = refreshes.get(refreshToken);
     if (!pending) {
-        pending = refreshBasisAuthTokens(session.tokens.refreshToken)
+        pending = refreshBasisAuthTokens(refreshToken)
             .then((tokens) => ({
                 accessToken: tokens.accessToken,
                 accessTokenExpiresAt: tokens.expiresAt,
                 refreshToken: tokens.refreshToken,
             }))
-            .finally(() => refreshes.delete(session.tokens.refreshToken));
-        refreshes.set(session.tokens.refreshToken, pending);
+            .finally(() => refreshes.delete(refreshToken));
+        refreshes.set(refreshToken, pending);
     }
 
     try {
         const tokens = await pending;
+        if (loggedOutTokens.has(refreshToken)) {
+            clearBasisAuthUserSession(event);
+            return undefined;
+        }
+        rotatedTokens.set(refreshToken, { tokens, at: Date.now() });
         establishBasisAuthUserSession(event, session.userId, tokens);
         return { userId: session.userId, tokens };
     } catch {
+        // Another request may already have rotated this exact refresh token.
+        // Reuse its result instead of clobbering the newer valid cookie.
+        const rotated = rotatedTokens.get(refreshToken);
+        if (rotated && !loggedOutTokens.has(refreshToken)) {
+            establishBasisAuthUserSession(event, session.userId, rotated.tokens);
+            return { userId: session.userId, tokens: rotated.tokens };
+        }
         clearBasisAuthUserSession(event);
         return undefined;
     }
 }
 
 export async function revokeBasisAuthToken(refreshToken: string) {
+    // Record the intent before the network call so an in-flight refresh cannot
+    // re-seal the cookie after logout's deletion response reaches the browser.
+    loggedOutTokens.set(refreshToken, Date.now());
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
     await withOidcDeadline(
