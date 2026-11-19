@@ -88,6 +88,9 @@ export const teams = pgTable(
         index("teams_rank").on(table.rank),
         index("teams_season").on(table.season_id),
         index("teams_season_submitted").on(table.season_id, table.project_submitted),
+        // Target for the composite score FK below; a score must belong to the
+        // same season as its team.
+        uniqueIndex("teams_id_season_unique").on(table.id, table.season_id),
     ],
 );
 
@@ -114,6 +117,11 @@ export const teamScores = pgTable(
     (table) => [
         primaryKey({ columns: [table.team_id, table.judge_user_id] }),
         index("team_scores_season_judge").on(table.season_id, table.judge_user_id),
+        foreignKey({
+            columns: [table.team_id, table.season_id],
+            foreignColumns: [teams.id, teams.season_id],
+            name: "team_scores_team_season_fk",
+        }).onDelete("cascade"),
     ],
 );
 
@@ -266,6 +274,10 @@ export const seasons = pgTable(
         check(
             "seasons_score_curve_preset_check",
             sql`${table.score_curve_preset} IN ('original', 'gentle', 'moderate', 'strong')`,
+        ),
+        check(
+            "seasons_status_check",
+            sql`${table.status} IN ('not_started', 'in_progress', 'voting', 'finished', 'paused')`,
         ),
     ],
 );

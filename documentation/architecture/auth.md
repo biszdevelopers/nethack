@@ -62,6 +62,8 @@ For accounts carrying the former `participant`, `judge`, or `admin` permission, 
 
 The browser never receives the access or refresh token. Protected browser requests rely on the encrypted HTTP-only cookie; explicit bearer clients can still call the same APIs. The frontend unwraps `APIResponse.data`, converts failed envelopes with `APIError.from`, and redirects to `/api/login` once on a 401 without looping through auth endpoints. Token rotation and refresh happen server-side.
 
+Backchannel revocations are recorded with an insert-first, guarded-update sequence. Each statement is atomic, so concurrent retries carrying different `valid_after` values always converge on the earliest one, and a known expiry is never replaced by null.
+
 ## Retired provider surface
 
 nethack no longer exposes its native authorization, token, UserInfo, authorization-session, or application-management routes and pages. The legacy `oauth2_applications` table and existing rows remain untouched for audit and rollback. Graph integration is separate and cannot authenticate a nethack session.

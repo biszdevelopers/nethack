@@ -165,6 +165,8 @@ A partial unique index ensures at most one active season:
 CREATE UNIQUE INDEX idx_seasons_active ON seasons(is_active) WHERE is_active = 1;
 ```
 
+PostgreSQL also constrains `seasons.status` to `not_started`, `in_progress`, `voting`, `finished`, or `paused`, so a malformed legacy value cannot make the public theme check treat a season as published.
+
 ### `user_past_teams`
 
 Junction table tracking which teams a user has belonged to historically.
@@ -417,10 +419,14 @@ Apply pending migrations explicitly during release workflows with `bun run db:mi
 
 SQLite is a source format for the one-time VPS cutover only. The importer is read-only against its SQLite backup, accepts an empty PostgreSQL target or the complete exact seed created by fresh migrations, and executes the import in one transaction. Partial or modified seed state and other target data are rejected. It preserves IDs and relationships, sets PostgreSQL identity sequences, checks row counts and foreign-key references, and writes the legacy-only columns and old score migration artifact to `sqlite_legacy_data`.
 
+JSON columns are normalized before binding: a SQLite TEXT value that already contains JSON is parsed so PostgreSQL stores an object, and a plain string stays a JSON string. Season status values are validated against the allowed set, and a score is assigned to its team's season even when a legacy `season_id` disagrees, so scoring and feedback always read the same rows.
+
 Run a source-only check with `bun run db:import-sqlite:check`, then apply with `bun run db:import-sqlite -- --confirm`. See [PostgreSQL and VPS deployment](/deployment/postgresql-migration) for backup, maintenance-window, and rollback steps.
 
 ## Foreign keys and transactions
 
 PostgreSQL enforces relationships declared in the Drizzle schema. Use transactions for operations that update related rows, and preserve the configured `ON DELETE` behavior when changing relationship constraints. The importer checks both the source's references and the target's referential integrity before committing.
+
+`team_scores` carries a composite foreign key to `teams(id, season_id)`, so a score cannot be stored against a team from a different season. Deleting the last member of a team is blocked with `409`; an administrator must delete the team explicitly first, keeping every remaining team manageable.
 
 All ordinary application reads and writes should use Drizzle's parameterized query builders. Use the documented migration runner for schema changes; do not issue ad hoc production schema changes outside a reviewed migration.

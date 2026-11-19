@@ -344,6 +344,7 @@ In-memory store for DeepSeek AI chat sessions.
 interface ChatSession {
     id: number;
     sessionName: string;
+    owner_user_id: number;
     createdAt: number;
     messages: ChatCompletionMessage[];
 }
@@ -352,6 +353,7 @@ interface ChatSession {
 ### Limits
 
 - `MAX_SESSIONS` = 100
+- `MAX_SESSIONS_PER_OWNER` = 20
 - `MAX_MESSAGES_PER_SESSION` = 200
 - `SESSION_TTL_MS` = 24 hours
 
@@ -359,12 +361,14 @@ interface ChatSession {
 
 | Function | Description |
 | --- | --- |
-| `createSession(sessionName)` | Creates a new session with auto-incrementing ID; evicts expired/oldest sessions when at capacity |
-| `getDeepSeekSession(sessionId)` | Returns a session by ID |
-| `getAllSessions()` | Returns all sessions |
+| `createSession(sessionName, ownerUserId)` | Creates a new session with auto-incrementing ID; sweeps expired sessions and evicts the owner's oldest before the global oldest |
+| `getDeepSeekSession(sessionId)` | Returns a live session by ID after sweeping expired entries |
+| `getAllSessions(ownerUserId?)` | Returns live sessions, optionally for one owner |
 | `deleteSession(sessionId)` | Deletes a session; returns whether a session was removed |
-| `addMessage(sessionId, message)` | Appends a message to a session; trims history to the most recent 200 |
-| `getMessages(sessionId)` | Returns a shallow copy of all messages for a session |
+| `addMessage(sessionId, message)` | Appends a message to a live session; trims history to the most recent 200 |
+| `getMessages(sessionId)` | Returns a shallow copy of all messages for a live session |
+
+Every access sweeps sessions older than the 24-hour TTL, so an expired session is never returned even when the store is below capacity.
 
 **Note:** All data is in-memory and lost on server restart.
 

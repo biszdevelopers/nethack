@@ -403,29 +403,15 @@ describe("POST /api/teams", () => {
         await expect(createHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 
-    it("deletes the created team when adding the creator fails", async () => {
+    it("never leaves a team without its creator", async () => {
         seedUser(ctx, { email: "user@basischina.com" });
 
         mockSession.value = { user: { id: 1 } };
-        mockBody.value = { name: "Race Team" };
+        mockBody.value = { name: "Atomic Team" };
 
-        vi.stubGlobal(
-            "addTeamMember",
-            vi.fn().mockRejectedValue({
-                statusCode: 404,
-                message: "User not found or already in a team",
-            }),
-        );
-
-        await expect(createHandler(createEvent())).rejects.toMatchObject({
-            statusCode: 404,
-        });
-
-        const team = ctx.drizzle.select().from(teams).where(eq(teams.name, "Race Team")).get();
-        expect(team).toBeUndefined();
-
-        const membersDb = await import("~~/server/utils/database/members");
-        vi.stubGlobal("addTeamMember", membersDb.addTeamMember);
+        const team = await createHandler(createEvent());
+        const owner = ctx.drizzle.select().from(users).where(eq(users.id, 1)).get();
+        expect(owner!.team_id).toBe(team.id);
     });
 });
 
@@ -1000,11 +986,11 @@ describe("GET /api/teams/:id/users", () => {
         expect(ids).toEqual([alice.id, bob.id].sort((a, b) => a - b));
     });
 
-    it("recognizes a past member through their history and includes the legacy roster", async () => {
+    it("does not expose a former member's roster emails after they leave", async () => {
         ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
         seedSeason(ctx, { name: "Current Season", is_active: 1 });
         const legacyTeam = seedTeam(ctx, { name: "Legacy Team", season_id: 1 });
-        const currentMember = seedUser(ctx, {
+        seedUser(ctx, {
             email: "legacy-current@basischina.com",
             name: "Current Member",
             team_id: legacyTeam.id,
@@ -1019,11 +1005,16 @@ describe("GET /api/teams/:id/users", () => {
             .run();
         mockSession.value = { user: { id: pastMember.id } };
         mockParams.values.id = String(legacyTeam.id);
-
-        const result = await membersHandler(createEvent());
-        expect(result.map((member: any) => member.id).sort()).toEqual(
-            [currentMember.id, pastMember.id].sort(),
+        (globalThis as any).requireUser.mockImplementation(
+            async (_event: unknown, permission?: string) => {
+                if (permission) throw { statusCode: 403, message: "Forbidden" };
+                return ctx.drizzle.select().from(users).where(eq(users.id, pastMember.id)).get();
+            },
         );
+
+        await expect(membersHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+        });
     });
 
     it("uses current members when there is no active season", async () => {

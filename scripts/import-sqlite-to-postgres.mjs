@@ -381,8 +381,20 @@ export function normalizeLegacyTimestamp(value, field, entity = "hackathon") {
     );
 }
 
+export const EVENT_STATUSES = ["not_started", "in_progress", "voting", "finished", "paused"];
+
+export function normalizeEventStatus(value, entity = "event") {
+    if (!EVENT_STATUSES.includes(value)) {
+        throw new Error(
+            `Unknown ${entity} status "${value}"; expected one of ${EVENT_STATUSES.join(", ")}.`,
+        );
+    }
+    return value;
+}
+
 function normalizeSeasonTimestamps(row) {
     const normalized = { ...row };
+    normalized.status = normalizeEventStatus(normalized.status, "season");
     for (const field of LEGACY_TIMESTAMP_FIELDS) {
         if (field in normalized) {
             normalized[field] =
@@ -404,6 +416,7 @@ export function normalizeLegacyHackathonRow(row) {
         }
         normalized[field] = normalizeLegacyTimestamp(normalized[field], field);
     }
+    normalized.status = normalizeEventStatus(normalized.status, "hackathon");
     return normalized;
 }
 
@@ -633,6 +646,22 @@ export async function ensureEmptyTarget(
 }
 
 /** Peer votes belong to the season they were cast in; SQLite sources predate that column. */
+/**
+ * Normalize a JSONB value for the PostgreSQL driver. SQLite commonly stores
+ * JSON columns as TEXT; passing that text through unchanged makes the driver
+ * encode it as a JSON *string*. Parse it so the driver stores the object.
+ */
+export function toJsonValue(value) {
+    if (typeof value === "string") {
+        try {
+            return JSON.parse(value);
+        } catch {
+            return value;
+        }
+    }
+    return value ?? null;
+}
+
 export function peerVotingSeasonOverrides(seasonId) {
     return () => ({ season_id: seasonId });
 }
@@ -658,9 +687,7 @@ export async function insertRows(sql, tableName, rows, columnsByTable, overrides
         const valueRows = batch.map((row) => {
             const merged = { ...row, ...overrides(row) };
             const placeholders = columns.map((column) => {
-                params.push(
-                    jsonColumns.has(column) ? JSON.stringify(merged[column]) : merged[column],
-                );
+                params.push(jsonColumns.has(column) ? toJsonValue(merged[column]) : merged[column]);
                 return `$${params.length}${jsonColumns.has(column) ? "::jsonb" : ""}`;
             });
             return `(${placeholders.join(", ")})`;
@@ -677,7 +704,7 @@ export async function insertLegacyArchive(sql, rows) {
     for (let start = 0; start < rows.length; start += rowsPerBatch) {
         const values = [];
         const tuples = rows.slice(start, start + rowsPerBatch).map((row) => {
-            values.push(row.table_name, row.row_key, JSON.stringify(row.payload));
+            values.push(row.table_name, row.row_key, toJsonValue(row.payload));
             const offset = values.length - 2;
             return `($${offset}, $${offset + 1}, $${offset + 2}::jsonb)`;
         });
@@ -706,9 +733,12 @@ export async function insertRubricVersions(sql, seasons) {
 }
 
 export function importSeasonForScore(row, teams, activeSeasonId) {
-    if (row.season_id !== null && row.season_id !== undefined) return Number(row.season_id);
+    // A score belongs to its team's season. Prefer that over a disagreeing
+    // legacy `season_id`, so scoring and feedback cannot read different rows.
     const teamSeason = teams.get(Number(row.team_id));
-    return Number(teamSeason ?? activeSeasonId ?? 1);
+    if (teamSeason !== undefined) return Number(teamSeason);
+    if (row.season_id !== null && row.season_id !== undefined) return Number(row.season_id);
+    return Number(activeSeasonId ?? 1);
 }
 
 function getTeamScoreImportSummary(sourceInfo) {

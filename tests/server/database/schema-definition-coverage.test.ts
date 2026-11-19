@@ -52,6 +52,7 @@ describe("PostgreSQL Drizzle schema definitions", () => {
             "seasons_is_blank_start_check",
             "seasons_board_approval_pair_check",
             "seasons_score_curve_preset_check",
+            "seasons_status_check",
         ]);
     });
 });

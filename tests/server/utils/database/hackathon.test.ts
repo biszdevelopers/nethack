@@ -4,6 +4,7 @@ import {
     getHackathon,
     getLiveOverrides,
     invalidateHackathonCache,
+    mergeLiveOverrides,
     updateHackathon,
 } from "~~/server/utils/database/hackathon";
 
@@ -12,6 +13,28 @@ describe("hackathon database helpers", () => {
 
     beforeEach(async () => {
         event = await createMockEvent();
+    });
+
+    describe("mergeLiveOverrides", () => {
+        it("merges an object and replaces a missing or malformed value", () => {
+            expect(mergeLiveOverrides({ show_scores: 1 }, { voting_enabled: 0 })).toEqual({
+                show_scores: 1,
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides(null, { voting_enabled: 0 })).toEqual({
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides([1, 2], { voting_enabled: 0 })).toEqual({
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides('{"show_scores":1}', { voting_enabled: 0 })).toEqual({
+                show_scores: 1,
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides("{", { voting_enabled: 0 })).toEqual({
+                voting_enabled: 0,
+            });
+        });
     });
 
     describe("getLiveOverrides", () => {

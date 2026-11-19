@@ -317,7 +317,7 @@ Placeholder page for the presentation event. States that top 10 teams will be in
 
 **File:** `app/pages/developers/index.vue`
 
-Mod portal landing page. Summarizes the live event — active season, status, theme, schedule, and the visitor-facing toggles — and links to each management area. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
+Mod portal landing page. Summarizes the live event — active season, status, theme, schedule, and the visitor-facing toggles — and links to each management area. The badges show effective visibility: voting and judging are off while the event is paused, and scores and rankings are shown as visible only when results are published and the matching switch is on. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
 
 **Layout:** `developers-dashboard`
 

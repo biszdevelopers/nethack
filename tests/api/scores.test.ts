@@ -474,7 +474,7 @@ describe("POST /api/teams/:id/scores", () => {
 
         await expect(scoresHandler(createEvent())).rejects.toMatchObject({
             statusCode: 409,
-            statusMessage: "The active season has no judging rubric.",
+            statusMessage: "The submitted rubric version does not belong to the active season.",
         });
     });
 

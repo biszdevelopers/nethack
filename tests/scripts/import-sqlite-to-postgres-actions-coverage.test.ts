@@ -17,6 +17,7 @@ import {
     insertRubricVersions,
     main,
     makeLegacySeason,
+    normalizeEventStatus,
     normalizeLegacyHackathonRow,
     normalizeLegacyTimestamp,
     openSource,
@@ -30,6 +31,7 @@ import {
     sourceColumns,
     sourceTables,
     targetRows,
+    toJsonValue,
     validateSource,
     validateSourceTables,
     validateTargetForeignKeys,
@@ -1081,7 +1083,15 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         ).toBe(1);
         expect(statements.at(-1)?.statement).toContain('INSERT INTO "teams"');
         expect(statements.at(-1)?.statement).toContain("::jsonb");
-        expect(statements.at(-1)?.params).toEqual([JSON.stringify({ impact: 5 }), "Fixture", 1]);
+        expect(statements.at(-1)?.params).toEqual([{ impact: 5 }, "Fixture", 1]);
+
+        await insertRows(
+            sql,
+            "teams",
+            [{ scores: '{"impact":5}', name: "Serialized" }],
+            new Map([["teams", columns]]),
+        );
+        expect(statements.at(-1)?.params[0]).toEqual({ impact: 5 });
         await expect(
             insertRows(
                 sql,
@@ -1135,6 +1145,14 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         expect(importSeasonForScore({ team_id: 2 }, new Map([[2, 8]]), 4)).toBe(8);
         expect(importSeasonForScore({ team_id: 2 }, new Map(), 4)).toBe(4);
         expect(importSeasonForScore({}, new Map(), undefined)).toBe(1);
+        expect(importSeasonForScore({ season_id: 7, team_id: 2 }, new Map([[2, 8]]), 4)).toBe(8);
+        expect(normalizeEventStatus("voting")).toBe("voting");
+        expect(() => normalizeEventStatus("archived", "season")).toThrow(
+            'Unknown season status "archived"',
+        );
+        expect(toJsonValue('{"impact":5}')).toEqual({ impact: 5 });
+        expect(toJsonValue("plain text")).toBe("plain text");
+        expect(toJsonValue(undefined)).toBeNull();
 
         const relationSql = {
             unsafe: vi.fn(async () => [{ count: 0 }]),
@@ -1250,7 +1268,10 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
             return {
                 tableName: archiveParams[offset],
                 rowKey: archiveParams[offset + 1],
-                payload: JSON.parse(String(archiveParams[offset + 2])),
+                payload:
+                    typeof archiveParams[offset + 2] === "string"
+                        ? JSON.parse(String(archiveParams[offset + 2]))
+                        : archiveParams[offset + 2],
             };
         });
         expect(archivedRows).toEqual(

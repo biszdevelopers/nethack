@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
 import {
     createUserAssetContentAddressed,
+    deleteUnreferencedProfileAsset,
     getUserAssetContentAddress,
     withAssetLifecycleLocks,
 } from "~~/server/utils/assets";
@@ -186,6 +187,15 @@ export default defineEventHandler(
                         .returning({ id: users.id });
                     if (changed.length === 0) {
                         throw createError({ status: 404, message: "User not found" });
+                    }
+                    if (themePath && previousTheme && previousTheme !== themePath) {
+                        // A failed cleanup must not reject a valid profile save;
+                        // the daily GC remains the fallback.
+                        try {
+                            await deleteUnreferencedProfileAsset(tx, previousTheme);
+                        } catch {
+                            // Ignored intentionally.
+                        }
                     }
                 });
             }

@@ -48,6 +48,17 @@ export async function revokeAccessToken(
     input: { jti: string; validAfter: number; expiresAt: number | null },
 ): Promise<void> {
     const db = event.context.drizzle;
+    // Insert first, then narrow with guarded updates. Every statement is
+    // atomic, so concurrent deliveries always converge on the earliest
+    // `valid_after` and a known expiry.
+    await db
+        .insert(revokedAccessTokens)
+        .values({
+            jti: input.jti,
+            valid_after: input.validAfter,
+            expires_at: input.expiresAt,
+        })
+        .onConflictDoNothing({ target: revokedAccessTokens.jti });
     await db
         .update(revokedAccessTokens)
         .set({ valid_after: input.validAfter })
@@ -65,14 +76,6 @@ export async function revokeAccessToken(
                 and(eq(revokedAccessTokens.jti, input.jti), isNull(revokedAccessTokens.expires_at)),
             );
     }
-    await db
-        .insert(revokedAccessTokens)
-        .values({
-            jti: input.jti,
-            valid_after: input.validAfter,
-            expires_at: input.expiresAt,
-        })
-        .onConflictDoNothing({ target: revokedAccessTokens.jti });
     await db
         .delete(revokedAccessTokens)
         .where(

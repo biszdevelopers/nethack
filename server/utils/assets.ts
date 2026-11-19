@@ -537,6 +537,61 @@ export async function withAssetLifecycleLocks<T>(
     });
 }
 
+/**
+ * Remove a superseded profile image immediately when nothing still references
+ * it. Call inside the lifecycle lock that covers the replaced path, so disk
+ * usage is bounded by current avatars instead of waiting for the daily GC.
+ */
+export async function deleteUnreferencedProfileAsset(
+    transaction: AssetLifecycleTransaction,
+    assetPath: string | null,
+): Promise<boolean> {
+    if (!assetPath || !PROFILE_ASSET_NAME.test(assetPath)) return false;
+
+    const themeReference = (
+        await transaction
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.profile_theme, `url|${assetPath}`))
+            .limit(1)
+    )[0];
+    if (themeReference) return false;
+
+    const reference = (
+        await transaction
+            .select({ id: assetReferences.id })
+            .from(assetReferences)
+            .where(
+                and(
+                    eq(assetReferences.collection, "userassets"),
+                    eq(assetReferences.asset_path, assetPath),
+                ),
+            )
+            .limit(1)
+    )[0];
+    if (reference) return false;
+
+    const pinned = (
+        await transaction
+            .select({ asset_path: assetObjects.asset_path })
+            .from(assetObjects)
+            .where(
+                and(
+                    eq(assetObjects.collection, "userassets"),
+                    eq(assetObjects.asset_path, assetPath),
+                    eq(assetObjects.pinned, true),
+                ),
+            )
+            .limit(1)
+    )[0];
+    if (pinned) return false;
+
+    const filePath = resolveAssetPath("userassets", assetPath);
+    await ensureNoSymlinkDirectories("userassets", dirname(filePath));
+    await rm(filePath, { force: true });
+    return true;
+}
+
 export interface ProfileAssetGcOptions {
     /** Current time in milliseconds, injectable for deterministic tests. */
     now?: number;

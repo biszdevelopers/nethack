@@ -33,13 +33,19 @@ const statusLabel = computed(
     () => statusLabels[hackathon.value?.status ?? "not_started"] ?? "Not started",
 );
 
-const toggles = computed(() => [
-    { label: "Voting", value: hackathon.value?.voting_enabled },
-    { label: "Judging", value: hackathon.value?.judging_open },
-    { label: "Results published", value: hackathon.value?.results_published },
-    { label: "Scores visible", value: hackathon.value?.show_scores },
-    { label: "Ranking visible", value: hackathon.value?.show_ranking },
-]);
+const toggles = computed(() => {
+    const paused = hackathon.value?.status === "paused";
+    const published = Boolean(hackathon.value?.results_published);
+    return [
+        { label: "Voting", value: !paused && Boolean(hackathon.value?.voting_enabled) },
+        { label: "Judging", value: !paused && Boolean(hackathon.value?.judging_open) },
+        { label: "Results published", value: published },
+        // Scores and ranks stay hidden to participants until publication,
+        // regardless of the individual visibility switches.
+        { label: "Scores visible", value: published && Boolean(hackathon.value?.show_scores) },
+        { label: "Ranking visible", value: published && Boolean(hackathon.value?.show_ranking) },
+    ];
+});
 
 const links = [
     {

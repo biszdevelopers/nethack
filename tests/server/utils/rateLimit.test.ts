@@ -894,4 +894,53 @@ describe("applyRateLimit", () => {
         await wrapped(event);
         expect(handler).toHaveBeenCalledTimes(1);
     });
+
+    it("bounds tracked identifiers under a flood without rejecting current clients", async () => {
+        clearRateLimitHistory();
+        let counter = 0;
+        const handler = vi.fn().mockResolvedValue({ ok: true });
+        const wrapped = applyRateLimit(handler, {
+            maxRequests: 5,
+            windowMs: 60_000,
+            keyGenerator: () => `flood:${counter++}`,
+        });
+        const event = makeMockEvent();
+
+        for (let index = 0; index < 10_001; index += 1) {
+            await wrapped(event);
+        }
+
+        expect(handler).toHaveBeenCalledTimes(10_001);
+    });
+
+    it("drops expired identifiers before evicting active ones", async () => {
+        clearRateLimitHistory();
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+            let counter = 0;
+            const handler = vi.fn().mockResolvedValue({ ok: true });
+            const wrapped = applyRateLimit(handler, {
+                maxRequests: 5,
+                windowMs: 60_000,
+                keyGenerator: () => `old:${counter++}`,
+            });
+            const event = makeMockEvent();
+            for (let index = 0; index < 10_000; index += 1) {
+                await wrapped(event);
+            }
+
+            vi.setSystemTime(new Date("2026-01-01T00:02:00Z"));
+            const fresh = vi.fn().mockResolvedValue({ ok: true });
+            const wrappedFresh = applyRateLimit(fresh, {
+                maxRequests: 5,
+                windowMs: 60_000,
+                keyGenerator: () => `new:${counter++}`,
+            });
+
+            await expect(wrappedFresh(event)).resolves.toEqual({ ok: true });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });

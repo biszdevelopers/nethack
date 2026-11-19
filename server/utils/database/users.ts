@@ -2,6 +2,7 @@ import type { H3Event } from "h3";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
     users,
+    teams,
     teamScores,
     ballots,
     ballotScores,
@@ -243,6 +244,18 @@ export async function deleteUsersInTransaction(
 ) {
     if (userIDs.length === 0) return;
 
+    const memberships = await tx
+        .select({ team_id: users.team_id })
+        .from(users)
+        .where(inArray(users.id, userIDs));
+    const affectedTeamIds = [
+        ...new Set(
+            memberships
+                .map(({ team_id }) => team_id)
+                .filter((teamId): teamId is number => teamId !== null),
+        ),
+    ];
+
     await tx.delete(teamScores).where(inArray(teamScores.judge_user_id, userIDs));
     await tx
         .delete(ballotScores)
@@ -265,6 +278,23 @@ export async function deleteUsersInTransaction(
         .set({ owner_id: null })
         .where(inArray(oauth2Applications.owner_id, userIDs));
     await tx.delete(users).where(inArray(users.id, userIDs));
+
+    // A team with no members can neither manage its project nor invite a
+    // replacement. Roll back the whole delete and let the administrator make
+    // the destructive team deletion explicit.
+    for (const teamId of affectedTeamIds) {
+        const remaining = await firstRow(
+            tx.select({ id: users.id }).from(users).where(eq(users.team_id, teamId)).limit(1),
+        );
+        if (remaining) continue;
+        const team = await firstRow(
+            tx.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1),
+        );
+        throw createError({
+            statusCode: 409,
+            message: `Deleting these users would leave team "${team?.name ?? teamId}" without members. Delete the team first.`,
+        });
+    }
 }
 
 export async function deleteUsers(event: H3Event, userIDs: number[]) {

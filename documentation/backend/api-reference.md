@@ -160,7 +160,7 @@ Create a new team.
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
 | **Validation** | `CreateTeamRequest` — `{ name: string }` |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the creator is always added to the new team; team names are unique per season (case-insensitive, `409` on conflict) |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the creator is assigned inside the same transaction, so a team never exists without a member; a creator already in an active-season team gets `403`; team names are unique per season (case-insensitive, `409` on conflict) |
 | **Response** | `APITeam` |
 
 ### GET `/api/teams/:id`
@@ -233,11 +233,11 @@ Read the team's full judge feedback with the all-permissions grant. This admin v
 
 ### GET `/api/teams/:id/users`
 
-List current and past members of a team. The complete roster, including email addresses, is available only to a current or past team member or an administrator with the all-permissions grant.
+List current and past members of a team. The complete roster, including email addresses, is available only to the team's current members or an administrator with the all-permissions grant; a former member no longer receives the roster.
 
 | Field        | Details                                                     |
 | ------------ | ----------------------------------------------------------- |
-| **Auth**     | Current/past team member or all-permissions grant           |
+| **Auth**     | Current team member or all-permissions grant                |
 | **Response** | `GetTeamMembersResponse` — `{ id, email, name, team_id }[]` |
 
 ### POST `/api/teams/:id/users`
@@ -531,7 +531,7 @@ Download an anonymized JSON snapshot or CSV export of the database.
 | --- | --- |
 | **Auth** | Admin |
 | **Query** | `format` — `json` (default) or `csv` |
-| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded, and formula-like CSV values are neutralized |
+| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded, and formula-like CSV values are neutralized. The export is generated inside one read-only `REPEATABLE READ` transaction, so paginated tables form a consistent snapshot instead of repeating or omitting rows under concurrent writes |
 
 ---
 

@@ -46,5 +46,8 @@ describe("team deletion boundaries", () => {
         await expect(
             updateTeamPartial(event, 999, 1, { name: "Missing Team" }),
         ).rejects.toMatchObject({ statusCode: 404 });
+        await expect(
+            updateTeamPartial(event, 999, 1, { project_description: "Missing" }),
+        ).rejects.toMatchObject({ statusCode: 404 });
     });
 });

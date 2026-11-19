@@ -72,7 +72,10 @@ export default defineEventHandler(
                 .limit(1),
         );
         if (!version) {
-            throw createError({ status: 409, message: "The active season has no judging rubric." });
+            throw createError({
+                statusCode: 409,
+                message: "The submitted rubric version does not belong to the active season.",
+            });
         }
         const track = getRubricTrack(version.definition, team.pathway);
         if (!track) {

@@ -2,7 +2,8 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { AdminUpdateHackathonRequest, LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
-import { getLiveOverrides, invalidateHackathonCache } from "~~/server/utils/database/hackathon";
+import { invalidateHackathonCache, mergeLiveOverrides } from "~~/server/utils/database/hackathon";
+import { firstRow, lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import { getSeasons } from "~~/server/utils/database/seasons";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import {
@@ -73,19 +74,32 @@ export default defineEventHandler(
                 await writeHackathonConfig(statics);
             }
 
-            const overrides = { ...(await getLiveOverrides(event)), ...operational };
+            // Merge the stored overrides under a row lock so two administrators
+            // saving different switches cannot silently drop each other's.
             // Keep the same lock order as season activation: seasons first,
             // then hackathon. The reverse order can deadlock concurrent writes.
-            if (activeSeason) {
-                await event.context.drizzle
-                    .update(seasons)
-                    .set({ ...statics, ...operational })
-                    .where(eq(seasons.id, activeSeason.id));
-            }
-            await event.context.drizzle
-                .update(hackathon)
-                .set({ ...statics, ...operational, live_overrides: overrides })
-                .where(eq(hackathon.id, 1));
+            await event.context.drizzle.transaction(async (tx) => {
+                if (activeSeason) {
+                    await tx
+                        .update(seasons)
+                        .set({ ...statics, ...operational })
+                        .where(eq(seasons.id, activeSeason.id));
+                }
+                const locked = await firstRow(
+                    lockForUpdateIfSupported(
+                        tx
+                            .select({ live_overrides: hackathon.live_overrides })
+                            .from(hackathon)
+                            .where(eq(hackathon.id, 1))
+                            .limit(1),
+                    ),
+                );
+                const overrides = mergeLiveOverrides(locked?.live_overrides, operational);
+                await tx
+                    .update(hackathon)
+                    .set({ ...statics, ...operational, live_overrides: overrides })
+                    .where(eq(hackathon.id, 1));
+            });
         } else if (hackathonUsesYaml()) {
             // Historical and future seasons keep editable stored settings, but
             // editing them is a season-level change, not a live-event change.

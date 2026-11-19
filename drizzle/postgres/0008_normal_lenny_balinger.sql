@@ -14,7 +14,12 @@ SET "season_id" = COALESCE(
     (SELECT MIN("id") FROM "seasons")
 )
 WHERE "season_id" IS NULL;--> statement-breakpoint
-DELETE FROM "peer_voting_scores" WHERE "season_id" IS NULL;--> statement-breakpoint
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM "peer_voting_scores" WHERE "season_id" IS NULL) THEN
+        RAISE EXCEPTION 'peer_voting_scores contains votes but no season can be assigned; create or restore a season before upgrading';
+    END IF;
+END $$;--> statement-breakpoint
 ALTER TABLE "peer_voting_scores" ALTER COLUMN "season_id" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "team_invites" ADD CONSTRAINT "team_invites_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "team_invites" ADD CONSTRAINT "team_invites_invited_by_users_id_fk" FOREIGN KEY ("invited_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint

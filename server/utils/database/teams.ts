@@ -155,7 +155,15 @@ export function assertSeasonStillActive(season: { is_active: number } | undefine
     }
 }
 
-export async function createTeam(event: H3Event, teamName: string): Promise<Team> {
+/**
+ * Create a team and assign its owner in one transaction. A team must never
+ * exist without a member, even if the process stops mid-request.
+ */
+export async function createTeam(
+    event: H3Event,
+    teamName: string,
+    ownerUserID: number,
+): Promise<Team> {
     const activeSeason = await getActiveSeason(event);
     const seasonId = activeSeason?.id;
     if (!seasonId) {
@@ -173,6 +181,32 @@ export async function createTeam(event: H3Event, teamName: string): Promise<Team
             tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
         );
         assertSeasonStillActive(lockedSeason);
+
+        const [owner] = await lockForUpdateIfSupported(
+            tx
+                .select({ id: users.id, team_id: users.team_id })
+                .from(users)
+                .where(eq(users.id, ownerUserID))
+                .limit(1),
+        );
+        if (!owner) {
+            throw createError({ statusCode: 401, message: "Logged in user not found" });
+        }
+        if (owner.team_id !== null) {
+            const currentTeam = await firstRow(
+                tx
+                    .select({ id: teams.id })
+                    .from(teams)
+                    .where(and(eq(teams.id, owner.team_id), eq(teams.season_id, seasonId)))
+                    .limit(1),
+            );
+            if (currentTeam) {
+                throw createError({
+                    statusCode: 403,
+                    message: "Cannot create a team while in a team",
+                });
+            }
+        }
 
         const duplicate = await firstRow(
             tx
@@ -193,9 +227,17 @@ export async function createTeam(event: H3Event, teamName: string): Promise<Team
             });
         }
 
-        return (await firstRow(
+        const team = (await firstRow(
             tx.insert(teams).values({ name: teamName, season_id: seasonId }).returning(),
         )) as Team;
+        await tx.update(users).set({ team_id: team.id }).where(eq(users.id, ownerUserID));
+        if (owner.team_id !== null) {
+            await tx
+                .insert(userPastTeams)
+                .values({ user_id: ownerUserID, team_id: owner.team_id })
+                .onConflictDoNothing();
+        }
+        return team;
     });
 }
 
@@ -248,16 +290,42 @@ export async function updateTeamPartial(
 ) {
     if (Object.keys(updates).length === 0) return;
 
-    if (updates.name !== undefined) {
-        const duplicate = await firstRow(
+    const where = options.requireUnsubmitted
+        ? and(eq(teams.id, teamID), eq(teams.project_submitted, 0))
+        : eq(teams.id, teamID);
+
+    if (updates.name === undefined) {
+        // A single statement is already atomic; no season-wide lock is needed
+        // for ordinary autosaves, which would otherwise serialize every team.
+        const changed = await changedRows(
             event.context.drizzle
+                .update(teams)
+                .set(updates)
+                .where(where)
+                .returning({ id: teams.id }),
+        );
+        if (changed === 0) {
+            throw createError({ statusCode: 404, message: "Team not found" });
+        }
+        return;
+    }
+
+    // Serialize renames with team creation on the season row, so two
+    // concurrent renames cannot both pass the duplicate-name check.
+    await event.context.drizzle.transaction(async (tx) => {
+        await lockForUpdateIfSupported(
+            tx.select({ id: seasons.id }).from(seasons).where(eq(seasons.id, seasonID)).limit(1),
+        );
+
+        const duplicate = await firstRow(
+            tx
                 .select({ id: teams.id })
                 .from(teams)
                 .where(
                     and(
                         eq(teams.season_id, seasonID),
                         ne(teams.id, teamID),
-                        eq(sql`lower(${teams.name})`, updates.name.trim().toLowerCase()),
+                        eq(sql`lower(${teams.name})`, updates.name!.trim().toLowerCase()),
                     ),
                 )
                 .limit(1),
@@ -268,21 +336,18 @@ export async function updateTeamPartial(
                 message: "A team with that name already exists in this season",
             });
         }
-    }
 
-    const where = options.requireUnsubmitted
-        ? and(eq(teams.id, teamID), eq(teams.project_submitted, 0))
-        : eq(teams.id, teamID);
-    const changed = await changedRows(
-        event.context.drizzle.update(teams).set(updates).where(where).returning({ id: teams.id }),
-    );
+        const changed = await changedRows(
+            tx.update(teams).set(updates).where(where).returning({ id: teams.id }),
+        );
 
-    if (changed === 0) {
-        throw createError({
-            statusCode: 404,
-            message: "Team not found",
-        });
-    }
+        if (changed === 0) {
+            throw createError({
+                statusCode: 404,
+                message: "Team not found",
+            });
+        }
+    });
 }
 
 export async function deleteTeamsInTransaction(

@@ -5,6 +5,23 @@ import { LiveOverrides } from "~~/shared/schemas";
 import { firstRow } from "./query";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
+/** Merge stored operational overrides with an incoming partial update. */
+export function mergeLiveOverrides(stored: unknown, incoming: LiveOverrides): LiveOverrides {
+    // PostgreSQL jsonb returns an object; SQLite fixtures store JSON text.
+    let value = stored;
+    if (typeof value === "string") {
+        try {
+            value = JSON.parse(value);
+        } catch {
+            return { ...incoming };
+        }
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return { ...incoming };
+    }
+    return { ...(value as LiveOverrides), ...incoming };
+}
+
 /** Portal-managed switches that apply on top of a YAML manifest. */
 export async function getLiveOverrides(event: H3Event): Promise<LiveOverrides> {
     const row = await firstRow(

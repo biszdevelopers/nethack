@@ -29,14 +29,16 @@ const sessionRoles = ref<Record<number, string>>({});
 const sessionToolCallIds = ref<Record<number, string>>({});
 const roleValues = ref(["user", "tool_result"]);
 
+const sessionsError = ref("");
+
 onMounted(async () => {
     try {
         sessions.value = await apiFetch("/api/debug/deepseek/sessions");
         for (const session of sessions.value) {
             sessionRoles.value[session.id] ??= "user";
         }
-    } catch {
-        // Debug routes may be disabled in this environment.
+    } catch (error) {
+        sessionsError.value = getErrorMessage(error);
     }
 });
 
@@ -174,7 +176,14 @@ const deleteSession = async (sessionId: number) => {
 
             <div class="mt-6 space-y-4">
                 <h2 class="text-lg font-semibold">Active Sessions</h2>
-                <div v-if="sessions.length === 0" class="text-muted">No active sessions</div>
+                <UAlert
+                    v-if="sessionsError"
+                    color="error"
+                    variant="subtle"
+                    title="Sessions could not be loaded"
+                    :description="sessionsError"
+                />
+                <div v-else-if="sessions.length === 0" class="text-muted">No active sessions</div>
 
                 <UCard v-for="session in sessions" :key="session.id">
                     <template #header>

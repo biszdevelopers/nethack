@@ -1,6 +1,6 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { CreateTeamRequest } from "~~/shared/schemas";
-import { deleteTeams } from "~~/server/utils/database/teams";
+import { createTeam } from "~~/server/utils/database/teams";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 export default defineEventHandler(
@@ -24,14 +24,9 @@ export default defineEventHandler(
 
         const { name } = await readValidatedBody(event, CreateTeamRequest.parse);
 
-        const team = await createTeam(event, name);
-        try {
-            // Every team must have an owner; otherwise nobody can join it again.
-            await addTeamMember(event, team.id, userID);
-        } catch (error) {
-            await deleteTeams(event, [team.id]);
-            throw error;
-        }
+        // Creation assigns the owner in the same transaction, so a team can
+        // never be left without a member.
+        const team = await createTeam(event, name, userID);
 
         return convertTeamToPublic(team, false, []);
     }, DEFAULT_RATE_LIMIT_CONFIG),

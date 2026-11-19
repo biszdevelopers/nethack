@@ -65,6 +65,31 @@ describe("createSession", () => {
         expect(session).toHaveProperty("createdAt");
         expect(session).toHaveProperty("messages");
     });
+
+    it("evicts only the oldest session owned by the same user at the owner cap", () => {
+        const first = createSession("Owner A first", 5);
+        for (let index = 0; index < 19; index += 1) {
+            createSession(`Owner A ${index}`, 5);
+        }
+        const other = createSession("Owner B", 6);
+
+        const created = createSession("Owner A newest", 5);
+
+        expect(getDeepSeekSession(first.id)).toBeUndefined();
+        expect(getAllSessions(5)).toHaveLength(20);
+        expect(getAllSessions(5).some((session) => session.id === created.id)).toBe(true);
+        expect(getDeepSeekSession(other.id)).toBeDefined();
+    });
+});
+
+describe("session expiry", () => {
+    it("drops a session once its 24-hour TTL has passed, even below capacity", () => {
+        const session = createSession("Expired");
+        session.createdAt = Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000);
+
+        expect(getDeepSeekSession(session.id)).toBeUndefined();
+        expect(getAllSessions()).toEqual([]);
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -335,25 +360,18 @@ describe("MAX_SESSIONS eviction", () => {
         expect(getAllSessions()).toHaveLength(100);
     });
 
-    it("sweeps expired sessions when creating a new one at capacity", () => {
-        // Create a session that is already past the 24-hour TTL
+    it("sweeps expired sessions on access, not only at capacity", () => {
         const realNow = Date.now();
         const expiredTime = realNow - 25 * 60 * 60 * 1000;
         vi.spyOn(Date, "now").mockReturnValue(expiredTime);
         const expiredSession = createSession("Expired Session");
         vi.restoreAllMocks();
 
-        // Fill the store to just under the cap with fresh sessions
         for (let i = 0; i < 99; i++) {
             createSession(`Session ${i}`);
         }
-        expect(getAllSessions()).toHaveLength(100);
-        expect(getDeepSeekSession(expiredSession.id)).toBeDefined();
-
-        // Creating one more triggers sweepExpiredSessions, deleting the expired entry
-        createSession("Overflow Session");
-        expect(getAllSessions()).toHaveLength(100);
         expect(getDeepSeekSession(expiredSession.id)).toBeUndefined();
+        expect(getAllSessions()).toHaveLength(99);
     });
 });
 

@@ -203,4 +203,26 @@ describe("bulk user deletion boundaries", () => {
             deleteUsersInTransaction(event.context.drizzle as any, []),
         ).resolves.toBeUndefined();
     });
+
+    it("reports the team id when the team row is already gone", async () => {
+        let selectCount = 0;
+        const transaction = {
+            select: () => ({
+                from: () => ({
+                    where: () => {
+                        selectCount += 1;
+                        if (selectCount === 1) return Promise.resolve([{ team_id: 5 }]);
+                        return { limit: async () => [] };
+                    },
+                }),
+            }),
+            delete: () => ({ where: async () => [] }),
+            update: () => ({ set: () => ({ where: async () => [] }) }),
+        };
+
+        await expect(deleteUsersInTransaction(transaction as any, [1])).rejects.toMatchObject({
+            statusCode: 409,
+            message: expect.stringContaining('team "5"'),
+        });
+    });
 });
