@@ -91,9 +91,38 @@ test.describe.serial("scenario matrix — administrator situations", () => {
                 await setStatus(admin, "not_started");
             });
 
+            await step("voting toggle applies outside the voting phase", async () => {
+                await setStatus(admin, "in_progress");
+                await setSwitch(admin, "voting_enabled", 1);
+                expect((await api(admin, "/api/seasons/active")).body.is_voting_open).toBe(true);
+                await setSwitch(admin, "voting_enabled", 0);
+                expect((await api(admin, "/api/seasons/active")).body.is_voting_open).toBe(false);
+                await setStatus(admin, "not_started");
+            });
+
             await step("judging_open switch round-trips", async () => {
                 await setSwitch(admin, "judging_open", 1);
                 await setSwitch(admin, "judging_open", 0);
+            });
+
+            await step("judging toggle applies after the event is finished", async () => {
+                await setStatus(admin, "finished");
+                await setSwitch(admin, "judging_open", 1);
+                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(true);
+                await setSwitch(admin, "judging_open", 0);
+                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(false);
+                await setStatus(admin, "not_started");
+            });
+
+            await step("paused overrides both activity toggles", async () => {
+                await setSwitch(admin, "voting_enabled", 1);
+                await setSwitch(admin, "judging_open", 1);
+                await setStatus(admin, "paused");
+                expect((await api(admin, "/api/seasons/active")).body.is_voting_open).toBe(false);
+                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(false);
+                await setSwitch(admin, "voting_enabled", 0);
+                await setSwitch(admin, "judging_open", 0);
+                await setStatus(admin, "not_started");
             });
 
             await step("show_scores / show_ranking switches round-trip", async () => {
@@ -124,6 +153,7 @@ test.describe.serial("scenario matrix — administrator situations", () => {
             await step("max_votes_per_user accepts a positive integer", async () => {
                 const result = await patchHackathon(admin, { max_votes_per_user: 5 });
                 expect(result.status).toBe(200);
+                await setSwitch(admin, "max_votes_per_user", 0);
             });
 
             await step("negative timestamps are rejected", async () => {

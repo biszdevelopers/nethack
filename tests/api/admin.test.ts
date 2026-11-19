@@ -32,6 +32,7 @@ beforeAll(async () => {
     vi.stubGlobal("getAllTeams", teamsDb.getAllTeams);
     vi.stubGlobal("getTeam", teamsDb.getTeam);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
 
     const scoresDb = await import("~~/server/utils/database/scores");
     vi.stubGlobal("getTeamScoresByTeamID", scoresDb.getTeamScoresByTeamID);

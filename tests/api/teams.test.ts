@@ -67,6 +67,7 @@ beforeAll(async () => {
     vi.stubGlobal("getTeamById", teamsDb.getTeamById);
     vi.stubGlobal("createTeam", teamsDb.createTeam);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
 
     const membersDb = await import("~~/server/utils/database/members");
     vi.stubGlobal("getTeamMembers", membersDb.getTeamMembers);
@@ -135,6 +136,28 @@ describe("GET /api/teams", () => {
         expect(result).toHaveLength(2);
         expect(result[0]).toHaveProperty("name", "Team Alpha");
         expect(result[1]).toHaveProperty("name", "Team Beta");
+    });
+
+    it("excludes other seasons from the default active-season listing", async () => {
+        const past = seedSeason(ctx, { name: "Past Listing Season", is_active: 0 });
+        seedTeam(ctx, { name: "Active Team", project_submitted: 1 });
+        seedTeam(ctx, {
+            name: "Past Team",
+            season_id: past.id,
+            project_submitted: 1,
+        });
+
+        const result = await listHandler(createEvent());
+
+        expect(result).toHaveLength(1);
+        expect(result[0]).toHaveProperty("name", "Active Team");
+    });
+
+    it("returns no teams when no season is active", async () => {
+        seedTeam(ctx, { name: "Orphaned Team", project_submitted: 1 });
+        ctx.drizzle.update(seasons).set({ is_active: 0 }).where(eq(seasons.id, 1)).run();
+
+        await expect(listHandler(createEvent())).resolves.toEqual([]);
     });
 
     it("returns teams filtered by season_id", async () => {
@@ -284,13 +307,31 @@ describe("GET /api/teams", () => {
         expect(result.items.every((item: JudgeQueueItem) => item.evaluated)).toBe(true);
     });
 
-    it("does not expose the judging queue outside the voting phase", async () => {
+    it("does not expose the judging queue while the event is paused", async () => {
         seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
-        ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
+        ctx.drizzle
+            .update(hackathon)
+            .set({ status: "paused", judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
         mockSession.value = { user: { id: seedUser(ctx, { role: "judge" }).id } };
         mockQueryState.value = { judging: "true", page: 1, page_size: 20 };
 
         await expect(listHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    it("exposes the judging queue outside the voting phase when the toggle is on", async () => {
+        seedTeam(ctx, { name: "Submitted Team", project_submitted: 1, pathway: "junior" });
+        ctx.drizzle
+            .update(hackathon)
+            .set({ status: "finished", judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+        mockSession.value = { user: { id: seedUser(ctx, { role: "judge" }).id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 20 };
+
+        const result = await listHandler(createEvent());
+        expect(result.items).toHaveLength(1);
     });
 });
 
@@ -691,7 +732,7 @@ describe("PATCH /api/teams/:id", () => {
         expect(updated!.project_demo_url).toBe("https://demo.example.com");
     });
 
-    it("returns 403 when project is already submitted", async () => {
+    it("returns 409 when project is already submitted", async () => {
         const team = seedTeam(ctx, { name: "Submitted Team", project_submitted: 1 });
         seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
 
@@ -699,7 +740,7 @@ describe("PATCH /api/teams/:id", () => {
         mockParams.values["id"] = String(team.id);
         mockBody.value = { name: "New Name" };
 
-        await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
     });
 });
 
@@ -803,7 +844,7 @@ describe("POST /api/teams/:id/submit", () => {
         vi.stubGlobal("getUser", originalGetUser);
     });
 
-    it("returns 403 when project is already submitted", async () => {
+    it("returns 409 when project is already submitted", async () => {
         const team = seedTeam(ctx, {
             name: "My Team",
             pathway: "junior",
@@ -825,7 +866,7 @@ describe("POST /api/teams/:id/submit", () => {
         };
 
         await expect(submitHandler(createEvent())).rejects.toMatchObject({
-            statusCode: 403,
+            statusCode: 409,
             message: "Project is already submitted",
         });
     });

@@ -5,7 +5,7 @@ import { clearBasisAuthUserSession } from "~~/server/utils/basis-auth-session";
 import { getUser } from "~~/server/utils/database/users";
 import { verifyAccessToken } from "~~/server/utils/oauth2-jwt";
 import { applyRateLimit, AUTH_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { effectiveNethackPermissions } from "~~/shared/permissions";
+import { effectiveNethackPermissions } from "~~/server/utils/effective-permissions";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -19,10 +19,16 @@ export default defineEventHandler(
         try {
             const payload = await verifyAccessToken(session.tokens.accessToken, event);
             const user = await getUser(event, session.userId);
+            if (!user) {
+                // The local account was removed; do not keep reporting a valid
+                // session that every protected route will reject. The catch
+                // below clears the stale cookie.
+                throw new APIError("invalid_token", "Invalid access token", 401);
+            }
             return {
                 user: { id: session.userId },
                 expiresAt: session.tokens.accessTokenExpiresAt,
-                permissions: effectiveNethackPermissions(payload.permissions, user ?? undefined),
+                permissions: effectiveNethackPermissions(payload.permissions, user),
             };
         } catch (error) {
             clearBasisAuthUserSession(event);

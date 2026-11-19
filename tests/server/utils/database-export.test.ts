@@ -60,34 +60,45 @@ const rowsByTable: Record<string, Record<string, unknown>[]> = {
 
 function mockDatabase() {
     const queriedTables: string[] = [];
+    const orderByCalls: Record<string, unknown[]> = {};
     const db = {
         select: () => ({
             from: (table: unknown) => {
                 const name = getTableName(table as typeof schema.teamScores);
                 queriedTables.push(name);
                 return {
-                    orderBy: () => ({
-                        limit: () => ({
-                            offset: async () => rowsByTable[name] ?? [],
-                        }),
-                    }),
+                    orderBy: (...order: unknown[]) => {
+                        orderByCalls[name] = order;
+                        return {
+                            limit: () => ({
+                                offset: async () => rowsByTable[name] ?? [],
+                            }),
+                        };
+                    },
                 };
             },
         }),
     };
-    return { db, queriedTables };
+    return { db, queriedTables, orderByCalls };
 }
 
 async function collectExport(format: "json" | "csv", liveOverrides: LiveOverrides = {}) {
-    const { db, queriedTables } = mockDatabase();
+    const { db, queriedTables, orderByCalls } = mockDatabase();
     const chunks: string[] = [];
     for await (const chunk of snapshotDatabaseExport(db as never, format, liveOverrides)) {
         chunks.push(chunk);
     }
-    return { output: chunks.join(""), queriedTables };
+    return { output: chunks.join(""), queriedTables, orderByCalls };
 }
 
 describe("admin database export judge privacy", () => {
+    it("orders every paginated table by a stable key", async () => {
+        const { orderByCalls } = await collectExport("json");
+
+        expect(orderByCalls.users?.length).toBe(1);
+        expect(orderByCalls.peer_voting_scores?.length).toBe(1);
+    });
+
     it("omits judge IDs, draft correlations, and legacy user mappings from JSON", async () => {
         const { output, queriedTables } = await collectExport("json");
         const parsed = JSON.parse(output) as { tables: Record<string, Record<string, unknown>[]> };

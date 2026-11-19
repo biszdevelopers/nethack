@@ -9,7 +9,7 @@ nethack uses a single peer voting system. Participants distribute stars across h
 
 ## Peer Voting
 
-Peer voting opens when the global `hackathon.status` is set to `voting`. Only participants with a submitted project can vote, and they can only vote on eligible projects in the **same pathway** (`junior` or `senior`).
+Peer voting opens whenever the dev-portal `voting_enabled` toggle is on and the event is not `paused`. The event phase does not veto the toggle. Only participants with a submitted project can vote, and they can only vote on eligible projects in the **same pathway** (`junior` or `senior`).
 
 ### Eligibility Rules
 
@@ -32,6 +32,8 @@ scores.reduce((a, b) => a + b, 0) === 10;
 
 ::: warning If the total is not exactly 10, the server rejects the ballot with a validation error. :::
 
+If `max_votes_per_user` is greater than `0`, at most that many projects may receive a non-zero score; the default `0` means unlimited. The portal control therefore caps how widely a voter can spread their stars, not the ten-star total.
+
 ### Data Flow
 
 ```
@@ -44,7 +46,7 @@ scores.reduce((a, b) => a + b, 0) === 10;
 1. The frontend fetches the ballot from `GET /api/ballot`.
 2. The server returns eligible projects, any previously saved scores, and optional reasoning.
 3. The user adjusts scores with increment/decrement buttons.
-4. On submit, `POST /api/ballot` validates the request and upserts a row in `peer_voting_scores` via `server/utils/database/peer-voting.ts`.
+4. On submit, `POST /api/ballot` validates the request and upserts a row in `peer_voting_scores` via `server/utils/database/peer-voting.ts`. A participant may replace their ballot until voting closes; the page keeps the controls editable and labels the action **Update vote**.
 
 ### Ballot Response
 

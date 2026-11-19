@@ -9,8 +9,9 @@ import {
     peerVotingScores,
     oauth2Applications,
 } from "~~/server/database/schema";
+import type { DrizzleDatabase } from "~~/server/database";
 import { changedRows, firstRow, isUniqueViolation } from "./query";
-import { isInitialAdminEmail } from "~~/shared/permissions";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 
 export async function getUser(event: H3Event, userID: number): Promise<User | null> {
     const row = await firstRow(
@@ -236,31 +237,37 @@ export async function updateUserProfilePicture(event: H3Event, user: User) {
     }
 }
 
-export async function deleteUsers(event: H3Event, userIDs: number[]) {
+export async function deleteUsersInTransaction(
+    tx: Pick<DrizzleDatabase, "delete" | "select" | "update">,
+    userIDs: number[],
+) {
     if (userIDs.length === 0) return;
 
-    await event.context.drizzle.transaction(async (tx) => {
-        await tx.delete(teamScores).where(inArray(teamScores.judge_user_id, userIDs));
-        await tx
-            .delete(ballotScores)
-            .where(
-                inArray(
-                    ballotScores.ballot_id,
-                    tx
-                        .select({ id: ballots.id })
-                        .from(ballots)
-                        .where(inArray(ballots.user_id, userIDs)),
-                ),
-            );
-        await tx.delete(ballots).where(inArray(ballots.user_id, userIDs));
-        await tx.delete(peerVotingScores).where(inArray(peerVotingScores.user_id, userIDs));
-        await tx.delete(userPastTeams).where(inArray(userPastTeams.user_id, userIDs));
+    await tx.delete(teamScores).where(inArray(teamScores.judge_user_id, userIDs));
+    await tx
+        .delete(ballotScores)
+        .where(
+            inArray(
+                ballotScores.ballot_id,
+                tx
+                    .select({ id: ballots.id })
+                    .from(ballots)
+                    .where(inArray(ballots.user_id, userIDs)),
+            ),
+        );
+    await tx.delete(ballots).where(inArray(ballots.user_id, userIDs));
+    await tx.delete(peerVotingScores).where(inArray(peerVotingScores.user_id, userIDs));
+    await tx.delete(userPastTeams).where(inArray(userPastTeams.user_id, userIDs));
 
-        // Retain provider clients for audit, but detach deleted owners.
-        await tx
-            .update(oauth2Applications)
-            .set({ owner_id: null })
-            .where(inArray(oauth2Applications.owner_id, userIDs));
-        await tx.delete(users).where(inArray(users.id, userIDs));
-    });
+    // Retain provider clients for audit, but detach deleted owners.
+    await tx
+        .update(oauth2Applications)
+        .set({ owner_id: null })
+        .where(inArray(oauth2Applications.owner_id, userIDs));
+    await tx.delete(users).where(inArray(users.id, userIDs));
+}
+
+export async function deleteUsers(event: H3Event, userIDs: number[]) {
+    if (userIDs.length === 0) return;
+    await event.context.drizzle.transaction((tx) => deleteUsersInTransaction(tx, userIDs));
 }

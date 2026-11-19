@@ -380,7 +380,7 @@ describe("POST /api/ballot", () => {
         await expect(postBallotHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 
-    it("returns 403 when scores count does not match eligible projects", async () => {
+    it("returns 400 when scores count does not match eligible projects", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
         const season = seedSeason(ctx);
@@ -411,7 +411,7 @@ describe("POST /api/ballot", () => {
             reasoning: "Wrong count.",
         };
 
-        await expect(postBallotHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
+        await expect(postBallotHandler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
     });
 
     it("submits a peer vote", async () => {
@@ -456,6 +456,84 @@ describe("POST /api/ballot", () => {
             .get();
         expect(vote).toBeTruthy();
         expect(vote!.reasoning).toBe("Great project overall.");
+    });
+
+    it("enforces the portal's max votes per user cap", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1, max_votes_per_user: 2 });
+        const season = seedSeason(ctx);
+
+        const userTeam = seedTeam(ctx, {
+            name: "My Team",
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
+        seedUser(ctx, { email: "voter@basischina.com", team_id: userTeam.id });
+        for (const name of ["Other A", "Other B", "Other C"]) {
+            seedTeam(ctx, {
+                name,
+                project_submitted: 1,
+                pathway: "junior",
+                season_id: season.id,
+            });
+        }
+
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            team_id: userTeam.id,
+            role: "participant",
+        });
+
+        mockBody.value = {
+            scores: [5, 4, 1],
+            reasoning: "Too many projects received stars.",
+        };
+        await expect(postBallotHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "You can award stars to at most 2 projects",
+        });
+
+        mockBody.value = {
+            scores: [5, 5, 0],
+            reasoning: "Within the configured cap.",
+        };
+        await expect(postBallotHandler(createEvent())).resolves.toEqual({
+            message: "Successfully submitted vote!",
+        });
+    });
+
+    it("treats a zero max votes setting as unlimited", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1, max_votes_per_user: 0 });
+        const season = seedSeason(ctx);
+
+        const userTeam = seedTeam(ctx, {
+            name: "My Team",
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
+        seedUser(ctx, { email: "voter@basischina.com", team_id: userTeam.id });
+        for (const name of ["Other A", "Other B", "Other C"]) {
+            seedTeam(ctx, {
+                name,
+                project_submitted: 1,
+                pathway: "junior",
+                season_id: season.id,
+            });
+        }
+
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            team_id: userTeam.id,
+            role: "participant",
+        });
+        mockBody.value = { scores: [5, 4, 1], reasoning: "No cap configured." };
+
+        await expect(postBallotHandler(createEvent())).resolves.toEqual({
+            message: "Successfully submitted vote!",
+        });
     });
 
     it("upserts when user has already voted", async () => {

@@ -172,6 +172,25 @@ describe("POST /api/admin/seasons action edges", () => {
         expect(mocks.requireUser).toHaveBeenCalledWith(event, NethackPermissions.Seasons.activate);
     });
 
+    it("removes a newly created season when activation fails", async () => {
+        mockBody.value = { name: "Stray season", is_active: 1 };
+        mocks.setActiveSeason.mockRejectedValueOnce(new Error("not ready"));
+        const deleteWhere = vi.fn().mockResolvedValue(undefined);
+        event.context.drizzle.delete = vi.fn(() => ({ where: deleteWhere }));
+
+        await expect(postHandler(event)).rejects.toThrow("not ready");
+        expect(deleteWhere).toHaveBeenCalledOnce();
+    });
+
+    it("preserves the activation error when cleanup also fails", async () => {
+        mockBody.value = { name: "Stray season", is_active: 1 };
+        mocks.setActiveSeason.mockRejectedValueOnce(new Error("not ready"));
+        const deleteWhere = vi.fn().mockRejectedValue(new Error("cleanup failed"));
+        event.context.drizzle.delete = vi.fn(() => ({ where: deleteWhere }));
+
+        await expect(postHandler(event)).rejects.toThrow("not ready");
+    });
+
     it("does not create a blank season as active", async () => {
         mockBody.value = { name: "Blank season", copy_live_settings: false, is_active: 1 };
 

@@ -1,6 +1,6 @@
 import type { H3Event } from "h3";
 import { eq, asc, sql } from "drizzle-orm";
-import { hackathon, seasons } from "~~/server/database/schema";
+import { hackathon, rubricVersions, seasons } from "~~/server/database/schema";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { getHackathon, invalidateHackathonCache } from "./hackathon";
 import { firstRow, supportsRowLocks } from "./query";
@@ -66,6 +66,8 @@ export function isUnconfiguredSeason(season: Season): boolean {
 
 /** Return the missing season-owned details that must be present before activation. */
 export function getSeasonActivationBlockers(season: Season): string[] {
+    // Settings-copy seasons inherit the active season's rubric during
+    // activation, so only blank-start shells require configuration up front.
     if (season.is_blank_start !== 1) return [];
     const blockers: string[] = [];
     if (!season.theme_name?.trim()) blockers.push("theme");
@@ -274,6 +276,58 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
                 if (Object.keys(seed).length > 0) {
                     await tx.update(seasons).set(seed).where(eq(seasons.id, season.id));
                     Object.assign(season, seed);
+                }
+            }
+
+            // A settings-copy season does not inherit the active season's
+            // rubric pointer. Materialize an immutable copy so activation
+            // cannot produce a season whose submissions and judging fail for
+            // lack of a rubric.
+            if (season.is_blank_start !== 1 && !season.rubric_version_id) {
+                const [sourceSeason] = previousActive
+                    ? await tx
+                          .select({ rubric_version_id: seasons.rubric_version_id })
+                          .from(seasons)
+                          .where(eq(seasons.id, previousActive.id))
+                          .limit(1)
+                    : [];
+                const sourceId = sourceSeason?.rubric_version_id;
+                const sourceVersion = sourceId
+                    ? await firstRow(
+                          tx
+                              .select()
+                              .from(rubricVersions)
+                              .where(eq(rubricVersions.id, sourceId))
+                              .limit(1),
+                      )
+                    : undefined;
+                if (sourceVersion) {
+                    const existing = await firstRow(
+                        tx
+                            .select({ id: rubricVersions.id })
+                            .from(rubricVersions)
+                            .where(eq(rubricVersions.season_id, season.id))
+                            .limit(1),
+                    );
+                    const rubricId =
+                        existing?.id ??
+                        (
+                            await tx
+                                .insert(rubricVersions)
+                                .values({
+                                    season_id: season.id,
+                                    version: 1,
+                                    name: sourceVersion.name,
+                                    definition: sourceVersion.definition,
+                                    created_at: new Date(),
+                                })
+                                .returning({ id: rubricVersions.id })
+                        )[0]!.id;
+                    await tx
+                        .update(seasons)
+                        .set({ rubric_version_id: rubricId })
+                        .where(eq(seasons.id, season.id));
+                    season.rubric_version_id = rubricId;
                 }
             }
 

@@ -18,10 +18,16 @@ defineProps<{
 </script>
 
 <template>
-    <UPopover mode="hover" class="w-fit">
-        <UAvatarGroup :size="size" :max="max" :ui="ui">
-            <UserAvatar v-for="(user, index) in users" :key="index" :user="user" :size="size" />
-        </UAvatarGroup>
+    <UPopover mode="click" class="w-fit">
+        <button
+            type="button"
+            class="w-fit rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            aria-label="View team members"
+        >
+            <UAvatarGroup :size="size" :max="max" :ui="ui">
+                <UserAvatar v-for="(user, index) in users" :key="index" :user="user" :size="size" />
+            </UAvatarGroup>
+        </button>
 
         <template #content>
             <div class="max-h-48 overflow-y-auto p-2 space-y-1 min-w-[200px]">

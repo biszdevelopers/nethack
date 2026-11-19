@@ -296,7 +296,7 @@ test.describe.serial("scenario matrix — team and project situations", () => {
                         }),
                     },
                 );
-                expect(result.status).toBe(403);
+                expect(result.status).toBe(409);
             });
 
             await step("submitted team retains its AI-use disclosure", async () => {

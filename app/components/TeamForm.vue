@@ -108,14 +108,13 @@ async function onNameSubmit(event: FormSubmitEvent<UpdateTeamRequest>, close: ()
             emit("refresh");
             await refresh();
         });
+        close();
     } catch (e) {
         toast.add({
             color: "error",
             title: "Failed to rename team",
             description: getErrorMessage(e),
         });
-    } finally {
-        close();
     }
 }
 
@@ -137,14 +136,14 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
             });
             await refreshInvites();
         });
+        state.email = "";
+        close();
     } catch (e) {
         toast.add({
             color: "error",
             title: "Failed to send invitation",
             description: getErrorMessage(e),
         });
-    } finally {
-        close();
     }
 }
 </script>

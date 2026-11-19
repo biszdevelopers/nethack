@@ -81,10 +81,10 @@ A `logout_token` sets `users.tokens_valid_after` for its subject, which invalida
 
 List all users (mod portal).
 
-| Field        | Details                                     |
-| ------------ | ------------------------------------------- |
-| **Auth**     | `nethack.Users.list`                        |
-| **Response** | `data: (APIUser & { is_admin: boolean })[]` |
+| Field | Details |
+| --- | --- |
+| **Auth** | `nethack.Users.list` |
+| **Response** | `data: (APIUser & { is_admin: boolean; is_initial_admin: boolean })[]`; `is_initial_admin` marks immutable designated administrators without shipping their email addresses to the browser |
 
 ### DELETE `/api/users`
 
@@ -104,11 +104,11 @@ Get a single user's profile.
 | Field | Details |
 | --- | --- |
 | **Auth** | Anonymous for the public profile; a valid bearer token reveals the caller's own extended profile |
-| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. In the self response, current and past team scores require published results, at least three judge evaluations, and that season's `show_scores`; ranks require published results, at least three evaluations, and `show_ranking`. A self-request with `nethack.Judging.resultsRead` or `nethack.all` can see them without those public gates |
+| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. In the self response, current and past team scores require published results, at least three judge evaluations, and that season's `show_scores`; ranks require published results, at least three evaluations, and `show_ranking`; awards require that team's season to publish results. A self-request with `nethack.Judging.resultsRead` or `nethack.all` can see them without those public gates |
 
 ### PATCH `/api/users/:id`
 
-Update the user’s display name or profile theme image. Avatars synchronize from basis-auth on login.
+Update the user’s display name or profile theme image. Avatars synchronize from basis-auth on login. The avatar route serves a fresh local cache before contacting the provider and refreshes at most once per five minutes, so unauthenticated page traffic cannot amplify identity-provider requests.
 
 | Field | Details |
 | --- | --- |
@@ -148,8 +148,8 @@ List submitted teams for the active season, or filter by season.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Public for the normal listing; `judging=1` requires `nethack.Judging.assignmentsRead` |
-| **Query** | `judging` (if `1`, returns submitted teams for the current judge, excluding the judge's own team); `season_id` (optional season filter) |
+| **Auth** | Public for the normal listing; `judging=true` requires `nethack.Judging.assignmentsRead` |
+| **Query** | `judging` (if `true`, returns submitted teams for the current judge, excluding the judge's own team); `season_id` (optional season filter; when omitted, only the active season is listed) |
 | **Response** | `APITeam[]`; only teams with `project_submitted = 1` are public, ordered by team ID. In the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled |
 
 ### POST `/api/teams`
@@ -181,8 +181,9 @@ Update team details (save draft).
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `UpdateTeamRequest` — `{ name?, pathway?, project: { name?, description?, demo_url?, repo_url?, sourcing? } }` |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the team must belong to the active season; project must not already be submitted (`409`); a rename must not duplicate another team's name in the season (`409`) |
 | **Response** | `{ message: string }` |
+| **Side effects** | Writes only the supplied columns, preserving a teammate's concurrent edit of a different field |
 
 ### POST `/api/teams/:id/submit`
 
@@ -192,7 +193,7 @@ Final project submission (irreversible).
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `SubmitTeamRequest` — `{ pathway, project: { name, description, demo_url, repo_url, sourcing? } }` |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted (`409`) |
 | **Response** | `{ message: string }` |
 | **Side effects** | Sets `project_submitted = 1` on the team |
 
@@ -315,12 +316,12 @@ Remove a member from a team.
 
 Get the current user's ballot for peer voting.
 
-| Field            | Details                                                                      |
-| ---------------- | ---------------------------------------------------------------------------- |
-| **Auth**         | Current/past team member or all-permissions grant                            |
-| **Constraint**   | Hackathon status must be `voting` and `voting_enabled` must be `1`           |
-| **Response**     | `GetBallotResponse` — `{ submitted, projects, scores, reasoning }`           |
-| **Eligibility**  | Projects are filtered to the same pathway and exclude the voter's own team   |
+| Field | Details |
+| --- | --- |
+| **Auth** | Current/past team member or all-permissions grant |
+| **Constraint** | `voting_enabled` must be `1` and the event must not be `paused` |
+| **Response** | `GetBallotResponse` — `{ submitted, projects, scores, reasoning, max_votes_per_user }` |
+| **Eligibility** | Projects are filtered to the same pathway and exclude the voter's own team |
 | **Season scope** | Ballots are stored per season; a previous season's ballot never appears here |
 
 ### POST `/api/ballot`
@@ -330,10 +331,10 @@ Submit peer voting ballot.
 | Field | Details |
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
-| **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }` |
-| **Constraint** | Hackathon status must be `voting` and `voting_enabled` must be `1`; number of scores must match eligible projects |
+| **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }`; the number of scores must match eligible projects, and at most `max_votes_per_user` projects may receive a non-zero score (`0` means unlimited) |
+| **Constraint** | `voting_enabled` must be `1` and the event must not be `paused` |
 | **Response** | `{ message: string }` |
-| **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores` |
+| **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores`; a participant may update their ballot until voting closes |
 
 ### GET `/api/ballot/summary`
 
@@ -364,7 +365,7 @@ Get the currently active season (public).
 | Field | Details |
 | --- | --- |
 | **Auth** | None |
-| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); `is_judging_open` and `is_voting_open` are the server-computed gates the judging and ballot APIs enforce (judging requires `voting` status and the `judging_open` toggle; voting requires `voting` status and voting enabled). The `judging_open` toggle is authoritative and is not vetoed by published results, so the dev-portal switch dictates judging state; theme is hidden when hackathon status is `not_started` or `paused` |
+| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); `is_judging_open` and `is_voting_open` are the server-computed gates the judging and ballot APIs enforce (judging requires the `judging_open` toggle; voting requires `voting_enabled`; both are off while the event is `paused`). The toggles are authoritative and are not vetoed by the event phase or published results, so the dev-portal switches dictate state; theme is hidden when hackathon status is `not_started` or `paused` |
 
 ### PATCH `/api/seasons/active`
 
@@ -414,7 +415,7 @@ List all teams across all seasons (mod portal).
 
 | Field | Details |
 | --- | --- |
-| **Auth** | User with `dev_teams` permission or admin |
+| **Auth** | Administrator (`nethack.all`) |
 | **Response** | Array of team objects with `season_name` and `members` (array of `{ id, name, email, profile_picture }`) |
 
 ### DELETE `/api/admin/teams`
@@ -483,7 +484,7 @@ Update settings for a live or stored season. For live settings, the operational 
 
 ### POST `/api/admin/seasons`
 
-Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty unless one is copied in the rubric editor. Creating an already-active season additionally requires the season-activate permission.
+Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty; activating a settings-copy season with no rubric materializes an immutable copy of the active season's rubric first. Creating an already-active season additionally requires the season-activate permission; if activation fails, the newly inserted season is removed.
 
 | Field        | Details                                                            |
 | ------------ | ------------------------------------------------------------------ |

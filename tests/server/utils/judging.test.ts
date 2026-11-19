@@ -13,8 +13,13 @@ describe("isJudgingOpen", () => {
         expect(isJudgingOpen(state())).toBe(true);
     });
 
-    it("closes when the season is not voting", () => {
-        expect(isJudgingOpen(state({ status: "finished" }))).toBe(false);
+    it("stays open outside the voting phase so the toggle dictates state", () => {
+        expect(isJudgingOpen(state({ status: "finished" }))).toBe(true);
+        expect(isJudgingOpen(state({ status: "not_started" }))).toBe(true);
+    });
+
+    it("closes while the event is paused", () => {
+        expect(isJudgingOpen(state({ status: "paused" }))).toBe(false);
     });
 
     it("closes when judging is disabled", () => {

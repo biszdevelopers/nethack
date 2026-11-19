@@ -1,8 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
 
 function matchesClientState(candidate: unknown, expected: string): boolean {
-    if (typeof candidate !== "string" || candidate.length !== expected.length) return false;
-    return timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
+    if (typeof candidate !== "string") return false;
+    const candidateBytes = Buffer.from(candidate);
+    const expectedBytes = Buffer.from(expected);
+    // Compare bytes, not UTF-16 code units: a multibyte candidate can have
+    // the same `.length` but a different byte length, which makes
+    // timingSafeEqual throw and turns a public webhook into a 500.
+    if (candidateBytes.length !== expectedBytes.length) return false;
+    return timingSafeEqual(candidateBytes, expectedBytes);
 }
 
 /** Graph may batch notifications; every item must carry the configured secret. */

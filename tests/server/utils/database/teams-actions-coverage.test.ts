@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { deleteTeams, getTeamById } from "~~/server/utils/database/teams";
+import { assertSeasonStillActive, deleteTeams, getTeamById } from "~~/server/utils/database/teams";
 import { createMockEvent } from "./helpers";
 
 describe("team deletion boundaries", () => {
@@ -20,9 +20,31 @@ describe("team deletion boundaries", () => {
         await expect(getTeamById(event, 1)).resolves.toMatchObject({ id: 1, name: "Keep" });
     });
 
+    it("treats an empty transactional deletion as a no-op", async () => {
+        const { deleteTeamsInTransaction } = await import("~~/server/utils/database/teams");
+
+        await expect(
+            deleteTeamsInTransaction(event.context.drizzle as any, []),
+        ).resolves.toBeUndefined();
+    });
+
     it("returns null for an all-season lookup when the team does not exist", async () => {
         const { getTeam } = await import("~~/server/utils/database/teams");
 
         await expect(getTeam(event, 404, true)).resolves.toBeNull();
+    });
+
+    it("rejects a missing or inactive locked season", () => {
+        expect(() => assertSeasonStillActive(undefined)).toThrow("No active season");
+        expect(() => assertSeasonStillActive({ is_active: 0 })).toThrow("No active season");
+        expect(() => assertSeasonStillActive({ is_active: 1 })).not.toThrow();
+    });
+
+    it("rejects a partial update for a team that no longer exists", async () => {
+        const { updateTeamPartial } = await import("~~/server/utils/database/teams");
+
+        await expect(
+            updateTeamPartial(event, 999, 1, { name: "Missing Team" }),
+        ).rejects.toMatchObject({ statusCode: 404 });
     });
 });

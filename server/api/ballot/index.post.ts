@@ -38,8 +38,21 @@ export default defineEventHandler(
 
         if (payload.scores.length !== eligibleProjects.length) {
             throw createError({
-                statusCode: 403,
+                statusCode: 400,
                 message: `Incorrect number of scores submitted. Expected ${eligibleProjects.length}, got ${payload.scores.length}`,
+            });
+        }
+
+        // The portal's Max Votes Per User setting caps how many projects may
+        // receive stars. Zero means no cap.
+        const maxScoredProjects = Math.max(0, Number(hackathon!.max_votes_per_user));
+        if (
+            maxScoredProjects > 0 &&
+            payload.scores.filter((score) => score > 0).length > maxScoredProjects
+        ) {
+            throw createError({
+                statusCode: 400,
+                message: `You can award stars to at most ${maxScoredProjects} projects`,
             });
         }
 

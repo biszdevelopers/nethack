@@ -62,12 +62,17 @@ export default defineEventHandler(
             };
         };
 
+        // Awards reveal winners, so participants see them only after that
+        // team's season publishes results; privileged users always see them.
+        const awardsFor = (t: Team) =>
+            privileged || resolveVisibility(t.season_id).resultsPublished
+                ? (awardsByTeam[t.id] ?? [])
+                : [];
+
         return {
             ...convertUserToPublic(user),
-            team: team && convertTeamToPublic(team, optionsFor(team), awardsByTeam[team.id] ?? []),
-            past_teams: pastTeams.map((t) =>
-                convertTeamToPublic(t, optionsFor(t), awardsByTeam[t.id] ?? []),
-            ),
+            team: team && convertTeamToPublic(team, optionsFor(team), awardsFor(team)),
+            past_teams: pastTeams.map((t) => convertTeamToPublic(t, optionsFor(t), awardsFor(t))),
         } satisfies GetUserResponse;
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

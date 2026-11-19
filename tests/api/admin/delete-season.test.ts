@@ -154,6 +154,22 @@ describe("DELETE /api/admin/seasons/[id]", () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         seedSeason(ctx, { name: "Current season", is_active: 1 });
         const target = seedSeason(ctx, { name: "Voted season", is_active: 0 });
+        const version = ctx.drizzle
+            .insert(rubricVersions)
+            .values({
+                season_id: target.id,
+                version: 2,
+                name: "Voted season rubric",
+                definition: { tracks: {} } as any,
+                created_at: new Date(),
+            })
+            .returning({ id: rubricVersions.id })
+            .get();
+        ctx.drizzle
+            .update(seasons)
+            .set({ rubric_version_id: version.id })
+            .where(eq(seasons.id, target.id))
+            .run();
         const voter = seedUser(ctx, { email: "voter@example.test" });
         ctx.drizzle
             .insert(peerVotingScores)
@@ -167,6 +183,13 @@ describe("DELETE /api/admin/seasons/[id]", () => {
         });
         expect(
             ctx.drizzle.select().from(seasons).where(eq(seasons.id, target.id)).get(),
+        ).toBeDefined();
+        expect(
+            ctx.drizzle
+                .select()
+                .from(rubricVersions)
+                .where(eq(rubricVersions.id, version.id))
+                .get(),
         ).toBeDefined();
     });
 

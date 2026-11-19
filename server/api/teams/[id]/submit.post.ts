@@ -36,7 +36,7 @@ export default defineEventHandler(
 
         if (team.project_submitted) {
             throw createError({
-                status: 403,
+                statusCode: 409,
                 message: "Project is already submitted",
             });
         }

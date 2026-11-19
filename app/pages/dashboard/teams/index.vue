@@ -29,6 +29,9 @@ if (error.value) {
 }
 
 const isDirty = ref(false);
+const canCreateTeam = computed(
+    () => hackathon.value?.status === "not_started" || hackathon.value?.status === "in_progress",
+);
 
 async function refreshData() {
     await withLoadingIndicator(async () => {
@@ -67,9 +70,21 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
     <div v-if="data?.team == null">
         <h1 class="text-4xl bold glow mb-4">Create a team</h1>
 
-        <p class="mb-4">Please fill out this super long form to create a team!</p>
+        <UAlert
+            v-if="!canCreateTeam"
+            color="neutral"
+            variant="subtle"
+            title="Team creation is closed"
+            description="Teams can only be created before or during the event."
+            class="mb-4"
+        />
+
+        <p v-if="canCreateTeam" class="mb-4">
+            Please fill out this super long form to create a team!
+        </p>
 
         <UForm
+            v-if="canCreateTeam"
             :state="state"
             :schema="CreateTeamRequest"
             class="space-y-2 w-full"

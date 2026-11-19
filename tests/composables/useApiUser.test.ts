@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from "vue";
+import { computed, nextTick, ref, watch, type Ref } from "vue";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { normalizeApiUserResponse } from "~~/app/composables/useApiUser";
 import { readFileSync } from "node:fs";
@@ -94,6 +94,40 @@ describe("useApiUser composable", () => {
 
         expect(refresh).toHaveBeenCalledOnce();
         expect(result.user.value).toEqual({ id: 9, team: { id: 4 } });
+    });
+
+    it("skips the initial request when there is no session id", async () => {
+        const refresh = vi.fn(async () => undefined);
+        const composable = await loadComposableWithMocks({
+            sessionUser: ref(null),
+            data: ref<TestApiUser>(null),
+            status: ref<FetchStatus>("success"),
+            error: ref(null),
+            refresh,
+        });
+
+        const result = await composable.useApiUser();
+
+        expect(result.user.value).toBeNull();
+        expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it("does not refresh when the session id disappears during logout", async () => {
+        const sessionUser = ref<{ id: number } | null>({ id: 9 });
+        const refresh = vi.fn(async () => undefined);
+        const composable = await loadComposableWithMocks({
+            sessionUser,
+            data: ref<TestApiUser>(null),
+            status: ref<FetchStatus>("success"),
+            error: ref(null),
+            refresh,
+        });
+
+        await composable.useApiUser({ lazy: true });
+        sessionUser.value = null;
+        await nextTick();
+
+        expect(refresh).not.toHaveBeenCalled();
     });
 
     it("does not refresh lazy user data or retry a settled API error", async () => {

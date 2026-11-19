@@ -177,6 +177,8 @@ interface GetBallotResponse {
     projects: APITeam[];
     scores: number[];
     reasoning: string | null;
+    /** Maximum projects that may receive stars; zero means no cap. */
+    max_votes_per_user: number;
 }
 
 interface BallotSummaryItem {

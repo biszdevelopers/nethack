@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { afterEach, expect, it, vi } from "vitest";
 
 const states = new Map<string, ReturnType<typeof ref>>();
@@ -60,6 +60,7 @@ it("uses the request-scoped fetch for the authenticated user request during SSR"
 
     vi.stubGlobal("useBasisAuthSession", () => ({ user: sessionUser, clear: vi.fn() }));
     vi.stubGlobal("computed", computed);
+    vi.stubGlobal("watch", watch);
     vi.stubGlobal("useRequestFetch", () => requestFetch);
     vi.stubGlobal("$fetch", browserFetch);
     vi.stubGlobal("useFetch", useFetch);

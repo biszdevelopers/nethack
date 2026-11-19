@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import jdenticon from "jdenticon";
 import fetch from "node-fetch";
@@ -20,11 +20,20 @@ function cachePath(cacheKey: string, extension: string) {
     return resolve(root, `${cacheKey}.${extension}`);
 }
 
-async function readCachedPicture(cacheKey: string) {
+const DEFAULT_PICTURE_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
+async function readCachedPicture(cacheKey: string, maxAgeMs = Infinity) {
+    const now = Date.now();
     for (const [contentType, extension] of Object.entries(extensionByType)) {
         try {
-            const bytes = await readFile(cachePath(cacheKey, extension));
-            if (bytes.length > 0) return { bytes, contentType };
+            const path = cachePath(cacheKey, extension);
+            const bytes = await readFile(path);
+            if (bytes.length === 0) continue;
+            if (maxAgeMs !== Infinity) {
+                const { mtimeMs } = await stat(path);
+                if (now - mtimeMs > maxAgeMs) continue;
+            }
+            return { bytes, contentType };
         } catch {
             // Try the next cached extension.
         }
@@ -73,8 +82,21 @@ export function getBasisAuthPictureUrl(
     return picture.href;
 }
 
-export async function fetchBasisAuthPicture(url: string, cacheKey?: string) {
+export async function fetchBasisAuthPicture(
+    url: string,
+    cacheKey?: string,
+    options: { maxAgeMs?: number; forceRefresh?: boolean } = {},
+) {
     const safeCacheKey = cacheKey && /^\d+$/.test(cacheKey) ? cacheKey : undefined;
+    // Serve a recently cached avatar without contacting the identity provider.
+    // This keeps an unauthenticated avatar route from amplifying IdP traffic.
+    if (safeCacheKey && !options.forceRefresh) {
+        const cached = await readCachedPicture(
+            safeCacheKey,
+            options.maxAgeMs ?? DEFAULT_PICTURE_CACHE_MAX_AGE_MS,
+        );
+        if (cached) return cached;
+    }
     try {
         const response = await fetch(url, {
             redirect: "error",

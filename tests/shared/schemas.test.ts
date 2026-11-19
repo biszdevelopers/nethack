@@ -13,6 +13,7 @@ import {
     OAuth2TokenRequest,
     OAuth2SessionActionRequest,
     SetActiveSeasonRequest,
+    CreateSeasonRequest,
     UpdateSeasonTweaksRequest,
     ElectionVoteRequest,
     ApplicationIdParams,
@@ -2133,5 +2134,32 @@ describe("CreateTeamScoresRequest - additional", () => {
                 scores: { ...validScores, originality: 2.5 },
             }),
         ).toThrow();
+    });
+});
+
+describe("whitespace-only names", () => {
+    it("rejects blank team, project, and season names", () => {
+        expect(() => CreateTeamRequest.parse({ name: "  " })).toThrow();
+        expect(() =>
+            SubmitTeamRequest.parse({
+                pathway: "junior",
+                project: {
+                    name: " ",
+                    description: "x".repeat(30),
+                    demo_url: "https://example.test/demo",
+                    repo_url: "https://example.test/repo",
+                },
+            }),
+        ).toThrow();
+        expect(() => CreateSeasonRequest.parse({ name: "  " })).toThrow();
+    });
+});
+
+describe("PostgreSQL integer bounds", () => {
+    it("accepts the maximum int32 ID and rejects larger values", () => {
+        expect(PositiveIntParam.parse("2147483647")).toBe(2_147_483_647);
+        expect(() => PositiveIntParam.parse("2147483648")).toThrow();
+        expect(() => GetTeamsQuery.parse({ season_id: 2_147_483_648 })).toThrow();
+        expect(() => SetActiveSeasonRequest.parse({ season_id: 2_147_483_648 })).toThrow();
     });
 });

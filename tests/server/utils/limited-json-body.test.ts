@@ -50,4 +50,28 @@ describe("readLimitedJsonBody", () => {
             statusCode: 400,
         });
     });
+
+    it("reuses a body buffered by the request-limit middleware", async () => {
+        const event = eventFor("ignored");
+        event._requestBody = Buffer.from('{"value":2}');
+
+        await expect(readLimitedJsonBody(event, 32)).resolves.toEqual({ value: 2 });
+    });
+
+    it("reuses a cached Uint8Array or string body", async () => {
+        const bytesEvent = eventFor("ignored");
+        bytesEvent._requestBody = new Uint8Array(Buffer.from('{"value":3}'));
+        await expect(readLimitedJsonBody(bytesEvent, 32)).resolves.toEqual({ value: 3 });
+
+        const stringEvent = eventFor("ignored");
+        stringEvent._requestBody = '{"value":4}';
+        await expect(readLimitedJsonBody(stringEvent, 32)).resolves.toEqual({ value: 4 });
+    });
+
+    it("rejects an oversized cached body", async () => {
+        const event = eventFor("ignored");
+        event._requestBody = Buffer.from('{"value":"' + "x".repeat(40) + '"}');
+
+        await expect(readLimitedJsonBody(event, 32)).rejects.toMatchObject({ statusCode: 413 });
+    });
 });

@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { inArray } from "drizzle-orm";
-import { isInitialAdminEmail, NethackPermissions } from "~~/shared/permissions";
+import { NethackPermissions } from "~~/shared/permissions";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 import { MAX_BULK_DELETE_IDS } from "~~/shared/schemas";
 import { teamScores } from "~~/server/database/schema";
-import { calculateSeasonScores } from "~~/server/utils/scoring";
+import { calculateSeasonScoresWithDatabase } from "~~/server/utils/scoring";
+import { deleteUsersInTransaction } from "~~/server/utils/database/users";
 
 const DeleteUsersRequest = z.object({
     ids: z.array(z.number().int().positive()).max(MAX_BULK_DELETE_IDS),
@@ -27,17 +29,23 @@ export default defineEventHandler(
             });
         }
 
-        const affectedSeasons = await event.context.drizzle
-            .selectDistinct({ season_id: teamScores.season_id })
-            .from(teamScores)
-            .where(inArray(teamScores.judge_user_id, body.ids));
+        // Delete and recompute in one transaction: a recompute failure must
+        // not report an error after the destructive change already committed.
+        await event.context.drizzle.transaction(async (tx) => {
+            const affectedSeasons = await tx
+                .selectDistinct({ season_id: teamScores.season_id })
+                .from(teamScores)
+                .where(inArray(teamScores.judge_user_id, body.ids));
 
-        await deleteUsers(event, body.ids);
+            await deleteUsersInTransaction(tx, body.ids);
 
-        // Removed evaluations must not keep contributing to published scores/ranks.
-        for (const { season_id } of affectedSeasons) {
-            if (season_id !== null) await calculateSeasonScores(event, season_id, true);
-        }
+            // Removed evaluations must not keep contributing to published scores/ranks.
+            for (const { season_id } of affectedSeasons) {
+                if (season_id !== null) {
+                    await calculateSeasonScoresWithDatabase(tx, season_id, true);
+                }
+            }
+        });
 
         return { message: `Deleted ${body.ids.length} user(s)` };
     }),

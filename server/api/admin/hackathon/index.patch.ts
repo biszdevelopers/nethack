@@ -74,16 +74,18 @@ export default defineEventHandler(
             }
 
             const overrides = { ...(await getLiveOverrides(event)), ...operational };
-            await event.context.drizzle
-                .update(hackathon)
-                .set({ ...statics, ...operational, live_overrides: overrides })
-                .where(eq(hackathon.id, 1));
+            // Keep the same lock order as season activation: seasons first,
+            // then hackathon. The reverse order can deadlock concurrent writes.
             if (activeSeason) {
                 await event.context.drizzle
                     .update(seasons)
                     .set({ ...statics, ...operational })
                     .where(eq(seasons.id, activeSeason.id));
             }
+            await event.context.drizzle
+                .update(hackathon)
+                .set({ ...statics, ...operational, live_overrides: overrides })
+                .where(eq(hackathon.id, 1));
         } else if (hackathonUsesYaml()) {
             // Historical and future seasons keep editable stored settings, but
             // editing them is a season-level change, not a live-event change.
@@ -120,17 +122,17 @@ export default defineEventHandler(
         } else {
             // No season — write the global row and mirror it onto the active
             // season so public visibility resolvers see the same settings.
-            await event.context.drizzle
-                .update(hackathon)
-                .set(configFields)
-                .where(eq(hackathon.id, 1));
-
+            // Seasons first, then hackathon, matching activation's lock order.
             if (activeSeason) {
                 await event.context.drizzle
                     .update(seasons)
                     .set(configFields)
                     .where(eq(seasons.id, activeSeason.id));
             }
+            await event.context.drizzle
+                .update(hackathon)
+                .set(configFields)
+                .where(eq(hackathon.id, 1));
         }
 
         invalidateHackathonCache(event);

@@ -78,18 +78,20 @@ The app grants access through fine-grained permissions from basis-auth. The labe
 
 The platform uses fine-grained basis-auth JWT permissions defined by `NethackPermissions` in `shared/permissions.ts`.
 
-| Permission             | Description                            |
-| ---------------------- | -------------------------------------- |
-| `dev_users`            | Access to user management utilities.   |
-| `dev_teams`            | Access to team management utilities.   |
-| `dev_debug`            | Access to debug endpoints.             |
-| `dev_deepseek`         | Access to DeepSeek AI features.        |
-| `portal.users.view`    | View users in the mod portal.          |
-| `portal.debug.view`    | View debug tools in the mod portal.    |
-| `portal.teams.view`    | View teams in the mod portal.          |
-| `portal.deepseek.view` | View DeepSeek tools in the mod portal. |
-| `portal.seasons.view`  | View season management.                |
-| `portal.seasons.edit`  | Edit seasons.                          |
+| Permission | Description |
+| --- | --- |
+| `nethack.Profile.updateSelf` | Update the signed-in user's display name and profile theme. |
+| `nethack.Teams.create` / `membersAddOwn` / `membersRemoveOwn` / `list` / `delete` | Team lifecycle, invitations, listing, and administrative deletion. |
+| `nethack.Projects.updateOwn` / `submitOwn` | Edit a draft project and submit it once. |
+| `nethack.Voting.readOwn` / `submitOwn` | Read and submit the participant's peer ballot. |
+| `nethack.Judging.assignmentsRead` / `scoresWriteAssigned` / `resultsRead` / `resultsCompute` | Judge queue and drafts, final scoring, results visibility, and recomputation. |
+| `nethack.Seasons.create` / `update` / `delete` / `activate` | Season administration and switching. |
+| `nethack.Hackathon.read` / `update` | Read or edit live event configuration. |
+| `nethack.Users.list` / `delete` | Mod-portal user listing and deletion. |
+| `nethack.Debug.filesRead` / `filesWrite` / `deepseekRead` / `deepseekWrite` | Development-only debug tools. |
+| `nethack.Chatbot.use` | Organizer assistant access. |
+| `nethack.Database.export` | Download the database snapshot. |
+| `nethack.all` | Administrative wildcard grant. |
 
 `nethack.all` is an explicit administrative JWT permission that satisfies nethack permission requirements.
 
@@ -221,13 +223,13 @@ nethack/
 
 The configured `HACKATHON.yml` controls the global event state. The status field determines what actions are available:
 
-| Status        | Description                                           |
-| ------------- | ----------------------------------------------------- |
+| Status | Description |
+| --- | --- |
 | `not_started` | Before the event: teams can form and submit projects. |
-| `in_progress` | During the event: project submissions are accepted.   |
-| `voting`      | After the event: peer voting is open.                 |
-| `finished`    | Event completed: results are published.               |
-| `paused`      | Event paused for maintenance.                         |
+| `in_progress` | During the event: project submissions are accepted. |
+| `voting` | After the event: the voting phase; peer voting and judging follow their portal toggles. |
+| `finished` | Event completed: the finishing phase; results visibility follows its portal toggles. |
+| `paused` | Event paused for maintenance. |
 
 ### Pathways
 

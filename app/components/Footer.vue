@@ -239,7 +239,7 @@
                 icon="i-simple-icons-github"
                 color="neutral"
                 variant="ghost"
-                to="https://github.com/basishacks/basishacks-r2"
+                to="https://github.com/biszdevelopers/nethack"
                 target="_blank"
                 class="min-h-11 min-w-11"
                 aria-label="GitHub"

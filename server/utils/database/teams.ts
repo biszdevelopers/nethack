@@ -9,6 +9,7 @@ import {
     users,
     seasons,
 } from "~~/server/database/schema";
+import type { DrizzleDatabase } from "~~/server/database";
 import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
 
 // --- Active season filtered (default behavior) ---
@@ -131,19 +132,28 @@ export async function getTeamsBySeason(event: H3Event, seasonId: number): Promis
 
 /** Public listing: only submitted projects, in a stable order. */
 export async function getPublicTeams(event: H3Event, seasonId?: number): Promise<Team[]> {
-    const where =
-        seasonId === undefined
-            ? eq(teams.project_submitted, 1)
-            : and(eq(teams.season_id, seasonId), eq(teams.project_submitted, 1));
+    // Default to the active season; an unfiltered listing must never mix
+    // projects from historical seasons.
+    const targetSeasonId = seasonId ?? (await getActiveSeason(event))?.id ?? -1;
     return event.context.drizzle
         .select()
         .from(teams)
-        .where(where)
+        .where(and(eq(teams.season_id, targetSeasonId), eq(teams.project_submitted, 1)))
         .orderBy(asc(teams.id))
         .then((rows) => rows as Team[]);
 }
 
 // --- Mutations ---
+
+/** Reject a season that a concurrent switch deactivated while the lock waited. */
+export function assertSeasonStillActive(season: { is_active: number } | undefined): void {
+    if (!season || season.is_active !== 1) {
+        throw createError({
+            statusCode: 409,
+            message: "No active season",
+        });
+    }
+}
 
 export async function createTeam(event: H3Event, teamName: string): Promise<Team> {
     const activeSeason = await getActiveSeason(event);
@@ -157,10 +167,12 @@ export async function createTeam(event: H3Event, teamName: string): Promise<Team
 
     return event.context.drizzle.transaction(async (tx) => {
         // Serialize creations for the season so the name check and the insert
-        // cannot both pass for two concurrent requests.
-        await lockForUpdateIfSupported(
+        // cannot both pass for two concurrent requests. Re-read the locked row:
+        // a concurrent season switch may have deactivated it while we waited.
+        const [lockedSeason] = await lockForUpdateIfSupported(
             tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
         );
+        assertSeasonStillActive(lockedSeason);
 
         const duplicate = await firstRow(
             tx
@@ -223,15 +235,71 @@ export async function updateTeam(
     }
 }
 
-export async function deleteTeams(event: H3Event, teamIDs: number[]) {
+/**
+ * Update only the supplied columns so two members editing different fields do
+ * not clobber each other. Renames still enforce the per-season name rule.
+ */
+export async function updateTeamPartial(
+    event: H3Event,
+    teamID: number,
+    seasonID: number,
+    updates: Partial<typeof teams.$inferInsert>,
+    options: { requireUnsubmitted?: boolean } = {},
+) {
+    if (Object.keys(updates).length === 0) return;
+
+    if (updates.name !== undefined) {
+        const duplicate = await firstRow(
+            event.context.drizzle
+                .select({ id: teams.id })
+                .from(teams)
+                .where(
+                    and(
+                        eq(teams.season_id, seasonID),
+                        ne(teams.id, teamID),
+                        eq(sql`lower(${teams.name})`, updates.name.trim().toLowerCase()),
+                    ),
+                )
+                .limit(1),
+        );
+        if (duplicate) {
+            throw createError({
+                statusCode: 409,
+                message: "A team with that name already exists in this season",
+            });
+        }
+    }
+
+    const where = options.requireUnsubmitted
+        ? and(eq(teams.id, teamID), eq(teams.project_submitted, 0))
+        : eq(teams.id, teamID);
+    const changed = await changedRows(
+        event.context.drizzle.update(teams).set(updates).where(where).returning({ id: teams.id }),
+    );
+
+    if (changed === 0) {
+        throw createError({
+            statusCode: 404,
+            message: "Team not found",
+        });
+    }
+}
+
+export async function deleteTeamsInTransaction(
+    tx: Pick<DrizzleDatabase, "delete" | "update">,
+    teamIDs: number[],
+) {
     if (teamIDs.length === 0) return;
 
-    await event.context.drizzle.transaction(async (tx) => {
-        await tx.delete(ballotScores).where(inArray(ballotScores.project_id, teamIDs));
-        await tx.delete(teamScores).where(inArray(teamScores.team_id, teamIDs));
-        await tx.delete(teamAwards).where(inArray(teamAwards.team_id, teamIDs));
-        await tx.delete(userPastTeams).where(inArray(userPastTeams.team_id, teamIDs));
-        await tx.update(users).set({ team_id: null }).where(inArray(users.team_id, teamIDs));
-        await tx.delete(teams).where(inArray(teams.id, teamIDs));
-    });
+    await tx.delete(ballotScores).where(inArray(ballotScores.project_id, teamIDs));
+    await tx.delete(teamScores).where(inArray(teamScores.team_id, teamIDs));
+    await tx.delete(teamAwards).where(inArray(teamAwards.team_id, teamIDs));
+    await tx.delete(userPastTeams).where(inArray(userPastTeams.team_id, teamIDs));
+    await tx.update(users).set({ team_id: null }).where(inArray(users.team_id, teamIDs));
+    await tx.delete(teams).where(inArray(teams.id, teamIDs));
+}
+
+export async function deleteTeams(event: H3Event, teamIDs: number[]) {
+    if (teamIDs.length === 0) return;
+    await event.context.drizzle.transaction((tx) => deleteTeamsInTransaction(tx, teamIDs));
 }

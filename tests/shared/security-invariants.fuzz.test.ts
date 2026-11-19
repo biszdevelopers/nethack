@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { isSafeUrl, safeUrl } from "~~/app/utils/url-validation";
 import { sanitizePostLoginRedirect } from "~~/server/utils/basis-auth";
+import { hasNethackPermission, NethackPermissions } from "~~/shared/permissions";
 import {
     effectiveNethackPermissions,
     hasEffectiveNethackPermission,
-    hasNethackPermission,
-    NethackPermissions,
-} from "~~/shared/permissions";
+} from "~~/server/utils/effective-permissions";
 import { applyScoreCurve, isScoreCurvePreset, SCORE_CURVE_PRESETS } from "~~/shared/score-curve";
 import { DEFAULT_RUBRIC_DEFINITION, getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 

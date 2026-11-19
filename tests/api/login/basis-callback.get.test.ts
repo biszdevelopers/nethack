@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     linkUser: vi.fn(),
     getUser: vi.fn(),
     establishSession: vi.fn(),
+    clearSession: vi.fn(),
 }));
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -22,6 +23,7 @@ vi.mock("~~/server/utils/database/users", () => ({
     getUser: mocks.getUser,
 }));
 vi.mock("~~/server/utils/basis-auth-session", () => ({
+    clearBasisAuthUserSession: mocks.clearSession,
     consumeBasisAuthFlowTransaction: mocks.consumeFlow,
     establishBasisAuthUserSession: mocks.establishSession,
 }));
@@ -122,6 +124,23 @@ describe("GET /api/auth/basis/callback", () => {
         });
 
         await handler({ context: {} });
+        expect(mocks.establishSession).toHaveBeenCalled();
+    });
+
+    it("clears a stale cookie and proceeds when the prior local account no longer exists", async () => {
+        mocks.consumeFlow.mockReturnValue({
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: 123,
+            preLoginUserId: 404,
+        });
+        mocks.getUser.mockResolvedValue(undefined);
+
+        await handler({ context: {} });
+
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(mocks.linkUser).toHaveBeenCalled();
         expect(mocks.establishSession).toHaveBeenCalled();
     });
 

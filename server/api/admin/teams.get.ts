@@ -5,7 +5,10 @@ import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateL
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
-        await requireUser(event, NethackPermissions.Teams.list);
+        // This administration view includes every member email across all
+        // seasons; it must require the explicit administrative grant, not the
+        // participant-facing team-list permission.
+        await requireUser(event, NethackPermissions.all);
 
         const results = await event.context.drizzle
             .select({

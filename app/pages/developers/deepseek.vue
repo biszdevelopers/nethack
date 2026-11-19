@@ -22,16 +22,19 @@ const sessions = ref<
     }>
 >([]);
 const sessionMessages = ref<Record<number, string>>({});
-const toolCallId = ref<string>("");
 const sendingSessionId = ref<number | null>(null);
 const deletingSessionId = ref<number | null>(null);
 
-const roleValue = ref("user");
+const sessionRoles = ref<Record<number, string>>({});
+const sessionToolCallIds = ref<Record<number, string>>({});
 const roleValues = ref(["user", "tool_result"]);
 
 onMounted(async () => {
     try {
         sessions.value = await apiFetch("/api/debug/deepseek/sessions");
+        for (const session of sessions.value) {
+            sessionRoles.value[session.id] ??= "user";
+        }
     } catch {
         // Debug routes may be disabled in this environment.
     }
@@ -56,6 +59,7 @@ const createSession = async () => {
 
         sessions.value.push(session);
         sessionMessages.value[session.id] = "";
+        sessionRoles.value[session.id] = "user";
         newSessionName.value = "";
 
         toast.add({
@@ -89,8 +93,8 @@ const sendMessage = async (sessionId: number) => {
             method: "POST",
             body: {
                 message,
-                role: roleValue.value,
-                toolCallId: toolCallId.value,
+                role: sessionRoles.value[sessionId] ?? "user",
+                toolCallId: sessionToolCallIds.value[sessionId] ?? "",
             },
         });
 
@@ -220,7 +224,13 @@ const deleteSession = async (sessionId: number) => {
                             class="flex-1"
                             @keyup.enter="sendMessage(session.id)"
                         />
-                        <USelectMenu v-model="roleValue" :items="roleValues" />
+                        <USelectMenu v-model="sessionRoles[session.id]" :items="roleValues" />
+                        <UInput
+                            v-if="sessionRoles[session.id] === 'tool_result'"
+                            v-model="sessionToolCallIds[session.id]"
+                            placeholder="Tool call ID"
+                            class="w-40"
+                        />
                         <UButton
                             label="Send"
                             :loading="sendingSessionId === session.id"

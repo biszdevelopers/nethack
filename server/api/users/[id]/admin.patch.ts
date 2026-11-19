@@ -4,7 +4,8 @@ import { users } from "~~/server/database/schema";
 import { requireUser } from "~~/server/utils/auth";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { UserIdParams } from "~~/shared/schemas";
-import { isInitialAdminEmail, NethackPermissions } from "~~/shared/permissions";
+import { NethackPermissions } from "~~/shared/permissions";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 
 const SetAdminRequest = z.object({
     is_admin: z.boolean(),

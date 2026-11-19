@@ -63,7 +63,7 @@ describe("GET /api/auth/session", () => {
         expect(JSON.stringify(result)).not.toContain("refresh-token");
     });
 
-    it("grants the participant bundle when the local user row is missing", async () => {
+    it("clears and rejects a session whose local user row was removed", async () => {
         mocks.getFreshSession.mockResolvedValue({
             userId: 7,
             tokens: {
@@ -75,10 +75,8 @@ describe("GET /api/auth/session", () => {
         mocks.verifyAccessToken.mockResolvedValue({ permissions: undefined });
         mocks.getUser.mockResolvedValue(undefined);
 
-        await expect(handler({ context: {} })).resolves.toMatchObject({
-            user: { id: 7 },
-            permissions: expect.arrayContaining(["nethack.Profile.updateSelf"]),
-        });
+        await expect(handler({ context: {} })).rejects.toMatchObject({ status: 401 });
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
     });
 
     it("expands legacy grants for display-only client gating", async () => {

@@ -250,6 +250,12 @@ export async function completeBasisAuthFlow(
     if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
     }
+    // Email links local history and initial-admin elevation, so reject an
+    // explicitly unverified address. Providers that omit the claim are trusted
+    // as before.
+    if ((userInfo as { email_verified?: unknown }).email_verified === false) {
+        throw new Error("basis-auth did not verify the email address");
+    }
 
     return {
         identity: {

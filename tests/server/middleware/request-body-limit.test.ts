@@ -66,4 +66,20 @@ describe("API request body limit middleware", () => {
             expect(event.node.req.readableEnded).toBe(false);
         },
     );
+
+    it.each(["/api/_webhooks/update?x=1", "/api/_webhooks/lifecycle?x=1", "/api/users/123?x=1"])(
+        "ignores query strings when applying body exemptions for %s",
+        async (path) => {
+            const body = Buffer.alloc(1024 * 1024 + 1);
+            const event = {
+                ...eventFor(path, body),
+                method: path.startsWith("/api/users/") ? "PATCH" : "POST",
+            };
+
+            await middleware(event);
+
+            expect(event._requestBody).toBeUndefined();
+            expect(event.node.req.readableEnded).toBe(false);
+        },
+    );
 });

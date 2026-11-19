@@ -119,6 +119,10 @@ function formatTimestamp(ts: unknown): string {
                             </UBadge>
                         </li>
                     </ul>
+                    <p class="text-xs text-ui-text-muted">
+                        Voting and judging are off while the event is paused. Scores and rankings
+                        also require published results and at least three judge evaluations.
+                    </p>
                     <dl class="grid gap-1 text-sm sm:grid-cols-3">
                         <div>
                             <dt class="text-ui-text-muted">Event</dt>

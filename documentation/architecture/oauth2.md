@@ -61,7 +61,7 @@ In production, `CURRENT_URL_ORIGIN` must be a public HTTPS origin without a path
 
 After signature validation, `server/utils/basis-auth-state.ts` rejects deny-listed `jti` values, tokens older than the local logout barrier, and disabled basis-auth users. The user-state lookup goes to `GET /internal/users/:subject` on the private listener, is cached for one minute per subject, and fails closed with a 15-second backoff while the listener is unreachable. A loopback `CURRENT_URL_ORIGIN` is treated as a development instance even under `NODE_ENV=production`, so it keeps working without a route to a remote private listener; the denylist and logout barrier always apply.
 
-Every rejected token produces the same public response: HTTP `401`, `WWW-Authenticate: Bearer error="invalid_token"`, and the `Invalid access token` description. Missing scopes and permissions remain `403`.
+Every rejected token produces the same public response: HTTP `401`, `WWW-Authenticate: Bearer error="invalid_token"`, and the `Invalid access token` description. Missing scopes and permissions remain `403`. Optional-authentication reads treat a stale session cookie as anonymous and clear it, while an explicit invalid bearer token still returns `401`.
 
 ## Legacy data
 

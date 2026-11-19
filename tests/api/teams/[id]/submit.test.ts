@@ -40,6 +40,7 @@ beforeAll(async () => {
     const teamsDb = await import("~~/server/utils/database/teams");
     vi.stubGlobal("getTeam", teamsDb.getTeam);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
 
     const hackathonDb = await import("~~/server/utils/database/hackathon");
     vi.stubGlobal("getHackathon", hackathonDb.getHackathon);
@@ -214,7 +215,7 @@ describe("POST /api/teams/:id/submit", () => {
         vi.stubGlobal("getUser", originalGetUser);
     });
 
-    it("returns 403 when project is already submitted", async () => {
+    it("returns 409 when project is already submitted", async () => {
         const team = seedTeam(ctx, {
             name: "Submitted Team",
             project_submitted: 1,
@@ -227,7 +228,7 @@ describe("POST /api/teams/:id/submit", () => {
         mockBody.value = validPayload();
 
         await expect(handler(createEvent())).rejects.toMatchObject({
-            statusCode: 403,
+            statusCode: 409,
             message: "Project is already submitted",
         });
     });

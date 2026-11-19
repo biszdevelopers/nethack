@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-    effectiveNethackPermissions,
     expandLegacyNethackPermissions,
-    hasEffectiveNethackPermission,
     hasNethackPermission,
-    isInitialAdminEmail,
     NethackPermissions,
     satisfiesNethackRequirement,
 } from "~~/shared/permissions";
+import {
+    effectiveNethackPermissions,
+    hasEffectiveNethackPermission,
+} from "~~/server/utils/effective-permissions";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 
 describe("nethack permission helpers", () => {
     it("grants participant capabilities when the token has no granular nethack grant", () => {

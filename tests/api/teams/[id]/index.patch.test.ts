@@ -40,6 +40,10 @@ beforeAll(async () => {
     const teamsDb = await import("~~/server/utils/database/teams");
     vi.stubGlobal("getTeam", teamsDb.getTeam);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
+
+    const seasonsDb = await import("~~/server/utils/database/seasons");
+    vi.stubGlobal("getActiveSeason", seasonsDb.getActiveSeason);
 
     const hackathonDb = await import("~~/server/utils/database/hackathon");
     vi.stubGlobal("getHackathon", hackathonDb.getHackathon);
@@ -118,5 +122,77 @@ describe("PATCH /api/teams/:id", () => {
 
         const updated = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
         expect(updated!.sourcing).toBe("Used open-source assets from example.com");
+    });
+
+    it("accepts an empty patch without touching the team", async () => {
+        const team = seedTeam(ctx, {
+            name: "Untouched Team",
+            project_description: "Do not change this",
+        });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = {};
+
+        await expect(handler(createEvent())).resolves.toEqual({
+            message: "Updated your team & project",
+        });
+        const updated = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+        expect(updated!.name).toBe("Untouched Team");
+        expect(updated!.project_description).toBe("Do not change this");
+    });
+
+    it("preserves fields that were not supplied by the editor", async () => {
+        const team = seedTeam(ctx, {
+            name: "Partial Team",
+            project_description: "A description saved by a teammate",
+            project_name: "Kept project",
+        });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { name: "Renamed Partial Team" };
+
+        await handler(createEvent());
+
+        const updated = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+        expect(updated!.name).toBe("Renamed Partial Team");
+        expect(updated!.project_description).toBe("A description saved by a teammate");
+        expect(updated!.project_name).toBe("Kept project");
+    });
+
+    it("rejects a rename that duplicates another team in the season", async () => {
+        const team = seedTeam(ctx, { name: "Original Name" });
+        seedTeam(ctx, { name: "Taken Name" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { name: "Taken Name" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "A team with that name already exists in this season",
+        });
+    });
+
+    it("rejects editing a team that belongs to a previous season", async () => {
+        const past = seedSeason(ctx, { name: "Past Patch Season", is_active: 0 });
+        const team = seedTeam(ctx, {
+            name: "Archived Team",
+            season_id: past.id,
+        });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { name: "Attempted Rename" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 404,
+            message: "Team not found",
+        });
     });
 });

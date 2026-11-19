@@ -6,12 +6,15 @@ const BODY_METHODS = new Set(["DELETE", "PATCH", "POST", "PUT"]);
 
 /** Bound API request buffering before route handlers and schema validation run. */
 export default defineEventHandler(async (event) => {
-    if (!event.path.startsWith("/api/")) return;
+    // `event.path` includes the query string, but route matching does not.
+    // Match on the pathname so a query string cannot bypass these exemptions.
+    const pathname = event.path.split("?")[0]!;
+    if (!pathname.startsWith("/api/")) return;
     const method = event.method.toUpperCase();
     if (!BODY_METHODS.has(method)) return;
-    if (STREAMED_BODY_PATHS.has(event.path)) return;
+    if (STREAMED_BODY_PATHS.has(pathname)) return;
     // Large profile images are bounded after the route authenticates the caller.
-    if (method === "PATCH" && /^\/api\/users\/[^/]+$/.test(event.path)) return;
+    if (method === "PATCH" && /^\/api\/users\/[^/]+$/.test(pathname)) return;
 
     event._requestBody = (await readLimitedRequestBody(
         event,

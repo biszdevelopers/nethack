@@ -54,8 +54,12 @@ let pendingSubmitEvent: FormSubmitEvent<UpdateTeamRequest | SubmitTeamRequest> |
 const autosaveStatus = ref("");
 
 async function triggerAutosave() {
-    if (!dirty.value || !defaultTeam) {
-        // autosaveStatus.value = 'Synced with origin';
+    if (disabled || !dirty.value || !defaultTeam) return;
+
+    const payload = autosavePayload();
+    if (Object.keys(payload).length === 0) {
+        dirty.value = false;
+        autosaveStatus.value = "Synced with origin";
         return;
     }
 
@@ -63,19 +67,9 @@ async function triggerAutosave() {
     try {
         await apiFetch(`/api/teams/${defaultTeam.id}`, {
             method: "PATCH",
-            body: {
-                name: formState.name,
-                // The schema rejects an empty pathway; omit it until a track is chosen.
-                ...(formState.pathway ? { pathway: formState.pathway } : {}),
-                project: {
-                    name: formState.project.name,
-                    description: formState.project.description,
-                    demo_url: formState.project.demo_url || null,
-                    repo_url: formState.project.repo_url || null,
-                    sourcing: formState.project.sourcing,
-                },
-            },
+            body: payload,
         });
+        lastSaved = snapshotForm();
         dirty.value = false;
         autosaveStatus.value = `Auto-saved at ${new Date().toLocaleTimeString()}`;
     } catch {
@@ -107,6 +101,48 @@ const formState = reactive({
     },
 });
 
+type ProjectFormSnapshot = {
+    name: string;
+    pathway: TeamPathway | "";
+    project: {
+        name: string;
+        description: string;
+        repo_url: string;
+        demo_url: string;
+        sourcing: string;
+    };
+};
+
+function snapshotForm(): ProjectFormSnapshot {
+    return JSON.parse(JSON.stringify(formState)) as ProjectFormSnapshot;
+}
+
+let lastSaved = snapshotForm();
+
+/**
+ * Send only fields this editor changed. A teammate's concurrent save of a
+ * different field must not be reverted by this form's stale snapshot.
+ */
+function autosavePayload(): Record<string, unknown> {
+    const current = snapshotForm();
+    const payload: Record<string, unknown> = {};
+    if (current.name !== lastSaved.name) payload.name = current.name;
+    if (current.pathway && current.pathway !== lastSaved.pathway) {
+        payload.pathway = current.pathway;
+    }
+
+    const project: Record<string, unknown> = {};
+    for (const key of ["name", "description", "sourcing", "demo_url", "repo_url"] as const) {
+        if (current.project[key] === lastSaved.project[key]) continue;
+        project[key] =
+            key === "demo_url" || key === "repo_url"
+                ? current.project[key] || null
+                : current.project[key];
+    }
+    if (Object.keys(project).length > 0) payload.project = project;
+    return payload;
+}
+
 const pathway = computed<TeamPathway>({
     get: () => formState.pathway,
     set: (value) => {
@@ -128,6 +164,7 @@ watch(
         formState.project.repo_url = value.project.repo_url || "";
         formState.project.demo_url = value.project.demo_url || "";
         formState.project.sourcing = value.project.sourcing || "";
+        lastSaved = snapshotForm();
         dirty.value = false;
     },
     { deep: true, immediate: true },
@@ -203,6 +240,7 @@ async function performSubmit(event: FormSubmitEvent<UpdateTeamRequest | SubmitTe
             });
 
             autosaveStatus.value = `Saved at ${new Date().toLocaleTimeString()}`;
+            lastSaved = snapshotForm();
             dirty.value = false;
         });
         emit("refresh");
@@ -221,6 +259,15 @@ async function confirmSubmit() {
     if (event) {
         showConfirmModal.value = false;
         await performSubmit(event);
+    }
+}
+
+function onConfirmOpenChange(open: boolean) {
+    // Cancelling the modal must restore normal save behavior for the next
+    // Enter/submit, instead of re-opening the irreversible submission prompt.
+    if (!open && pendingSubmitEvent) {
+        pendingSubmitEvent = null;
+        intent.value = "save";
     }
 }
 
@@ -363,6 +410,7 @@ async function submitProject() {
                 title="Confirm submission"
                 color="error"
                 :click="confirmSubmit"
+                @update:open="onConfirmOpenChange"
             >
                 <template #content>
                     <p>

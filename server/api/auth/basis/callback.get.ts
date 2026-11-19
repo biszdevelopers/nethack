@@ -2,6 +2,7 @@ import { setResponseHeader } from "h3";
 import { applyRateLimit, AUTH_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { completeBasisAuthFlow, sanitizePostLoginRedirect } from "~~/server/utils/basis-auth";
 import {
+    clearBasisAuthUserSession,
     consumeBasisAuthFlowTransaction,
     establishBasisAuthUserSession,
 } from "~~/server/utils/basis-auth-session";
@@ -21,8 +22,12 @@ export default defineEventHandler(
             // a local user row for the other identity.
             if (transaction.preLoginUserId !== undefined) {
                 const preLoginUser = await getUser(event, transaction.preLoginUserId);
-                if (
-                    !preLoginUser ||
+                if (!preLoginUser) {
+                    // The local account was removed while its token cookie was
+                    // still present. Treat this as a fresh login instead of
+                    // trapping the browser in a permanent session-mismatch loop.
+                    clearBasisAuthUserSession(event);
+                } else if (
                     preLoginUser.auth_issuer !== result.identity.issuer ||
                     preLoginUser.auth_subject !== result.identity.subject
                 ) {

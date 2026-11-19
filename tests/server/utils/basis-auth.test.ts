@@ -350,6 +350,28 @@ describe("basis-auth authorization-code flow", () => {
         );
     });
 
+    it("rejects an explicitly unverified email address", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValueOnce({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            expires_in: 300,
+            claims: () => ({ sub: "subject-1" }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({
+            email: "user@example.com",
+            email_verified: false,
+        });
+
+        await expect(
+            completeBasisAuthFlow(new URL("https://hacks.example.test/api/auth/basis/callback"), {
+                state: "state",
+                nonce: "nonce",
+                codeVerifier: "verifier",
+                startedAt: Date.now(),
+            }),
+        ).rejects.toThrow("did not verify the email address");
+    });
+
     it("rejects expired transactions and unsafe post-login redirects", async () => {
         await expect(
             completeBasisAuthFlow(new URL("https://hacks.example.test"), {}),

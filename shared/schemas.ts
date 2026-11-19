@@ -33,16 +33,19 @@ export const BasisEmail = z
 
 export const TeamName = z
     .string()
+    .trim()
     .min(2, "Team name must be at least 2 characters")
     .max(30, "Team name cannot be longer than 30 characters");
 
 export const ProjectName = z
     .string()
+    .trim()
     .min(1, "Project name is required")
     .max(MAX_PROJECT_NAME_LENGTH, "Project name cannot be longer than 100 characters");
 
 export const ProjectDescription = z
     .string()
+    .trim()
     .min(30, "Please provide more details in the description")
     .max(MAX_PROJECT_DESCRIPTION_LENGTH, "Project description is too long");
 
@@ -212,7 +215,9 @@ export const CreateRubricTemplateRequest = z.object({
     definition: RubricDefinitionSchema,
 });
 
-export const PositiveIntParam = z.coerce.number().int().positive().finite();
+/** PostgreSQL `integer` upper bound; larger IDs would otherwise reach the driver and 500. */
+export const POSTGRES_INT_MAX = 2_147_483_647;
+export const PositiveIntParam = z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX);
 export const TeamIdParams = z.object({ id: PositiveIntParam });
 export const TeamUserParams = z.object({ id: PositiveIntParam, user: PositiveIntParam });
 export const UserIdParams = z.object({ id: PositiveIntParam });
@@ -224,7 +229,7 @@ export const ApplicationIdParams = z.object({
 
 export const GetTeamsQuery = z.object({
     judging: BooleanString.optional(),
-    season_id: z.coerce.number().int().positive().finite().optional(),
+    season_id: z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX).optional(),
     page: z.coerce.number().int().min(1).max(100_000).finite().optional(),
     page_size: z.coerce.number().int().min(1).max(50).finite().optional(),
 });
@@ -298,7 +303,7 @@ export const formatBytes = (bytes: number, decimals = 2) => {
 };
 
 export const UpdateUserRequest = z.object({
-    name: z.optional(z.string().max(MAX_USER_NAME_LENGTH, "Name is too long")),
+    name: z.optional(z.string().trim().max(MAX_USER_NAME_LENGTH, "Name is too long")),
     profile_theme_image: z
         .union([
             z
@@ -400,7 +405,7 @@ export const OAuth2SessionActionRequest = z.object({
 export type OAuth2SessionActionRequest = z.infer<typeof OAuth2SessionActionRequest>;
 
 export const SetActiveSeasonRequest = z.object({
-    season_id: z.number().int().positive().nullable(),
+    season_id: z.number().int().positive().max(POSTGRES_INT_MAX).nullable(),
 });
 export type SetActiveSeasonRequest = z.infer<typeof SetActiveSeasonRequest>;
 
@@ -449,7 +454,7 @@ export const HackathonStatusEnum = z.enum([
 ]);
 
 export const AdminUpdateHackathonRequest = z.object({
-    season_id: z.number().int().positive().optional(),
+    season_id: z.number().int().positive().max(POSTGRES_INT_MAX).optional(),
     status: HackathonStatusEnum.optional(),
     voting_enabled: z.union([z.literal(0), z.literal(1)]).optional(),
     results_published: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -534,7 +539,7 @@ export type LiveOverrides = z.infer<typeof LiveOverrides>;
 // ---------------------------------------------------------------------------
 
 export const CreateSeasonRequest = z.object({
-    name: z.string().min(1).max(200),
+    name: z.string().trim().min(1).max(200),
     is_active: z
         .union([z.literal(0), z.literal(1)])
         .optional()
@@ -545,7 +550,7 @@ export type CreateSeasonRequest = z.infer<typeof CreateSeasonRequest>;
 
 export const UpdateSeasonRequest = z.object({
     id: z.number().int().positive(),
-    name: z.string().min(1).max(200).optional(),
+    name: z.string().trim().min(1).max(200).optional(),
     is_active: z.union([z.literal(0), z.literal(1)]).optional(),
 });
 export type UpdateSeasonRequest = z.infer<typeof UpdateSeasonRequest>;

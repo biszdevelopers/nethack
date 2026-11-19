@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { findOrLinkBasisAuthUser, getUserByBasisAuthSubject } from "~~/server/utils/database/users";
+import {
+    deleteUsersInTransaction,
+    findOrLinkBasisAuthUser,
+    getUserByBasisAuthSubject,
+} from "~~/server/utils/database/users";
 import { createMockEvent } from "./helpers";
 
 describe("existing basis-auth link update actions", () => {
@@ -188,5 +192,15 @@ describe("concurrent basis-auth first logins", () => {
                 picture: null,
             }),
         ).rejects.toThrow("duplicate key");
+    });
+});
+
+describe("bulk user deletion boundaries", () => {
+    it("treats an empty selection as a no-op", async () => {
+        const event = await createMockEvent();
+
+        await expect(
+            deleteUsersInTransaction(event.context.drizzle as any, []),
+        ).resolves.toBeUndefined();
     });
 });

@@ -104,6 +104,20 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 expect(result.status).toBe(400);
             });
 
+            await step("the organizer's max votes cap is enforced", async () => {
+                await setSwitch(admin, "max_votes_per_user", 1);
+                const capped = await api(participant, "/api/ballot", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        scores: [5, 5],
+                        reasoning: "Two projects exceed the configured cap.",
+                    }),
+                });
+                expect(capped.status).toBe(400);
+                await setSwitch(admin, "max_votes_per_user", 0);
+            });
+
             await step("a valid ballot is accepted", async () => {
                 const result = await api(participant, "/api/ballot", {
                     method: "POST",
@@ -116,19 +130,19 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 expect(result.status).toBe(200);
             });
 
-            await step("a second ballot overwrites the first", async () => {
+            await step("a submitted ballot can be updated before voting closes", async () => {
                 const result = await api(participant, "/api/ballot", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        scores: [4, 6],
-                        reasoning: "A replacement ballot with an invalid score.",
+                        scores: [5, 5],
+                        reasoning: "Updated reasoning for the same distribution.",
                     }),
                 });
-                // Re-voting is an upsert; an out-of-range score is still rejected.
-                expect(result.status).toBe(400);
+                expect(result.status).toBe(200);
                 const ballot = await api(participant, "/api/ballot");
                 expect(ballot.body.submitted).toBe(true);
+                expect(ballot.body.reasoning).toBe("Updated reasoning for the same distribution.");
             });
 
             await step("admin opens judging", async () => {

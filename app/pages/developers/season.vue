@@ -27,7 +27,11 @@ if (status.value !== "pending" && status.value !== "idle") {
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
-const { data: adminData, refresh: refreshAdmin } = await useApiFetch("/api/admin/hackathon", {
+const {
+    data: adminData,
+    error: adminError,
+    refresh: refreshAdmin,
+} = await useApiFetch("/api/admin/hackathon", {
     lazy: true,
     server: false,
     $fetch: globalThis.$fetch,
@@ -66,16 +70,30 @@ function formatFormTimestamp(value: unknown): string {
     return formatTimestamp(datetimeToTs(String(value ?? "")));
 }
 
+const databaseExporting = ref(false);
+
 async function downloadDatabase(format: "json" | "csv") {
-    const blob = await apiFetch<Blob>(`/api/admin/database/export?format=${format}`, {
-        responseType: "blob",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `nethack-export.${format}`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    if (databaseExporting.value) return;
+    databaseExporting.value = true;
+    try {
+        const blob = await apiFetch<Blob>(`/api/admin/database/export?format=${format}`, {
+            responseType: "blob",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `nethack-export.${format}`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+        toast.add({
+            title: "Could not export the database",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        databaseExporting.value = false;
+    }
 }
 
 // All config fields — every field is per-season (saved with season_id)
@@ -233,14 +251,24 @@ async function writeField(key: string) {
     saving.value = true;
     try {
         await apiFetch("/api/admin/hackathon", { method: "PATCH", body });
-        await refreshAdmin();
+        try {
+            await refreshAdmin();
+        } catch {
+            // The field is already saved; a later refresh will resync the view.
+        }
     } catch (error) {
         toast.add({
             title: "Could not save season settings",
             description: getErrorMessage(error),
             color: "error",
         });
-        applyConfig(selectedSeasonId.value);
+        // Revert only the failed field so other pending edits are not wiped.
+        const source = (selectedSeason.value ?? hackathon.value) as Record<string, unknown> | null;
+        const value = source?.[key];
+        if (tsKeys.includes(key)) hackathonForm[key] = tsToDatetime(value);
+        else if (boolKeys.has(key) || key === "max_votes_per_user") {
+            hackathonForm[key] = Number(value ?? 0);
+        } else hackathonForm[key] = value ?? "";
     } finally {
         saving.value = false;
     }
@@ -500,6 +528,20 @@ async function deleteSeason() {
                 </div>
 
                 <UAlert
+                    v-if="adminError"
+                    color="error"
+                    variant="subtle"
+                    title="Season settings could not be loaded"
+                    :description="getErrorMessage(adminError)"
+                >
+                    <template #actions>
+                        <UButton variant="outline" class="min-h-11" @click="() => refreshAdmin()">
+                            Try again
+                        </UButton>
+                    </template>
+                </UAlert>
+
+                <UAlert
                     v-if="selectedSeason && !selectedSeasonIsActive"
                     color="warning"
                     variant="subtle"
@@ -543,7 +585,7 @@ async function deleteSeason() {
                 />
 
                 <!-- Overview -->
-                <section v-if="activeTab === 'overview'" class="space-y-4">
+                <section v-show="activeTab === 'overview'" class="space-y-4">
                     <div class="grid gap-4 md:grid-cols-2">
                         <UCard>
                             <template #header>
@@ -626,7 +668,7 @@ async function deleteSeason() {
                 </section>
 
                 <!-- Seasons -->
-                <section v-else-if="activeTab === 'seasons'" class="space-y-4">
+                <section v-show="activeTab === 'seasons'" class="space-y-4">
                     <UCard>
                         <template #header>
                             <h2 class="font-semibold">Selected season</h2>
@@ -746,7 +788,7 @@ async function deleteSeason() {
                 </section>
 
                 <!-- Event settings -->
-                <section v-else-if="activeTab === 'event'" class="space-y-4">
+                <section v-show="activeTab === 'event'" class="space-y-4">
                     <section v-if="hackathon && formInitialized" class="bg-ui-bg p-6 space-y-4">
                         <h2 class="text-xl font-semibold">
                             Hackathon Configuration
@@ -821,6 +863,12 @@ async function deleteSeason() {
                                 />
                             </div>
 
+                            <p class="text-xs text-ui-text-muted md:col-span-2">
+                                Voting and judging are off while the event is paused. Scores and
+                                rankings also require Results Published and at least three judge
+                                evaluations.
+                            </p>
+
                             <UFormField label="Theme Name" name="theme_name" class="w-full">
                                 <UInput
                                     v-model="hackathonForm.theme_name"
@@ -868,7 +916,7 @@ async function deleteSeason() {
 
                         <h3 class="text-lg font-semibold pt-2">Schedule</h3>
                         <p class="text-sm text-ui-text-muted">
-                            Times are shown in this browser's local time zone.
+                            Times are shown in Asia/Shanghai (UTC+8).
                         </p>
                         <p v-if="configReadOnly" class="text-sm text-ui-text-muted">
                             Schedule is read-only from the remote manifest.
@@ -948,7 +996,7 @@ async function deleteSeason() {
                 </section>
 
                 <!-- Scoring -->
-                <section v-else-if="activeTab === 'scoring'" class="space-y-4">
+                <section v-show="activeTab === 'scoring'" class="space-y-4">
                     <section v-if="selectedSeasonId !== null" class="bg-ui-bg p-6 space-y-3">
                         <h2 class="text-xl font-semibold">Score display curve</h2>
                         <p class="max-w-3xl text-sm text-ui-text-muted">
@@ -984,7 +1032,7 @@ async function deleteSeason() {
                 </section>
 
                 <!-- Data -->
-                <section v-else class="bg-ui-bg p-6 space-y-3">
+                <section v-show="activeTab === 'data'" class="bg-ui-bg p-6 space-y-3">
                     <h2 class="text-xl font-semibold">Database Export</h2>
                     <p class="text-sm text-ui-text-muted">
                         Download a full snapshot of the database.
@@ -994,6 +1042,8 @@ async function deleteSeason() {
                             class="min-h-11"
                             color="primary"
                             variant="solid"
+                            :loading="databaseExporting"
+                            :disabled="databaseExporting"
                             @click="downloadDatabase('json')"
                         >
                             Download JSON
@@ -1002,6 +1052,8 @@ async function deleteSeason() {
                             class="min-h-11"
                             color="neutral"
                             variant="outline"
+                            :loading="databaseExporting"
+                            :disabled="databaseExporting"
                             @click="downloadDatabase('csv')"
                         >
                             Download CSV

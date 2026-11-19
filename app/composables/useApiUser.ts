@@ -34,9 +34,14 @@ export async function useApiUser(options?: { lazy?: boolean }): Promise<UseApiUs
         $fetch: import.meta.server ? useRequestFetch() : globalThis.$fetch,
         lazy: options?.lazy ?? false,
         immediate: !!userID.value,
-        watch: [userID],
         default: () => null,
         transform: normalizeApiUserResponse,
+    });
+
+    // Refresh only when a session id exists. Letting useFetch watch the id
+    // directly issues requests for `/api/users/undefined` during logout.
+    watch(userID, (id) => {
+        if (id) void fetchResult.refresh();
     });
 
     if (!options?.lazy && userID.value && !fetchResult.data.value) {

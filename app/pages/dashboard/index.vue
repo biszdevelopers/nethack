@@ -20,9 +20,15 @@ if (error.value) {
     throw error.value;
 }
 
-const { data: inviteData, refresh: refreshInvites } =
-    await useApiFetch<GetUserInvitesResponse>("/api/team-invites");
+const {
+    data: inviteData,
+    error: inviteError,
+    refresh: refreshInvites,
+} = await useApiFetch<GetUserInvitesResponse>("/api/team-invites");
 const toast = useToast();
+const canJoinTeam = computed(
+    () => hackathon.value?.status === "not_started" || hackathon.value?.status === "in_progress",
+);
 
 async function respondToInvite(inviteID: number, accept: boolean) {
     try {
@@ -78,8 +84,26 @@ const actions = ref([
                 or accept an invitation from another team!
             </p>
 
+            <UAlert
+                v-if="inviteError"
+                color="error"
+                variant="subtle"
+                class="mb-4"
+                title="Pending invitations could not be loaded"
+                :description="getErrorMessage(inviteError)"
+            >
+                <template #actions>
+                    <UButton variant="outline" class="min-h-11" @click="() => refreshInvites()">
+                        Try again
+                    </UButton>
+                </template>
+            </UAlert>
+
             <UCard v-if="inviteData?.invites.length" variant="subtle" class="mb-4">
                 <h2 class="text-2xl bold mb-2">Pending invitations</h2>
+                <p v-if="!canJoinTeam" class="mb-2 text-sm text-muted">
+                    Team changes are closed because the event is no longer accepting them.
+                </p>
                 <ul class="space-y-2">
                     <li
                         v-for="invite in inviteData.invites"
@@ -91,7 +115,11 @@ const actions = ref([
                             <span class="bold">{{ invite.team_name }}</span>
                         </span>
                         <div class="flex-1" />
-                        <UButton class="min-h-11" @click="respondToInvite(invite.id, true)">
+                        <UButton
+                            class="min-h-11"
+                            :disabled="!canJoinTeam"
+                            @click="respondToInvite(invite.id, true)"
+                        >
                             Accept
                         </UButton>
                         <UButton

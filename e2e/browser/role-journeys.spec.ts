@@ -682,7 +682,9 @@ test("participant and admin complete mobile journeys while judging and review st
         await voteSubmit.click();
         expect((await voteSubmission).ok()).toBeTruthy();
         await expect(
-            participant.page.getByText("You have voted already. Thank you!"),
+            participant.page.getByText(
+                "You have voted. You can update your ballot until voting closes.",
+            ),
         ).toBeVisible();
 
         await loginAs(judge.page, "judge@e2e.basishacks.invalid", "/judging");

@@ -1,6 +1,7 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { CreateSeasonRequest } from "~~/shared/schemas";
 import { seasons } from "~~/server/database/schema";
+import { eq } from "drizzle-orm";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import {
     getActiveSeason,
@@ -69,7 +70,17 @@ export default defineEventHandler(
         }
 
         if (isActive === 1 && created) {
-            await setActiveSeason(event, created.id);
+            try {
+                await setActiveSeason(event, created.id);
+            } catch (error) {
+                // Do not leave a stray season behind when activation fails.
+                try {
+                    await event.context.drizzle.delete(seasons).where(eq(seasons.id, created.id));
+                } catch {
+                    // Preserve the original activation failure.
+                }
+                throw error;
+            }
         }
 
         const allSeasons = await getSeasons(event);
