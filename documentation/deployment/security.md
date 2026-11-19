@@ -28,7 +28,7 @@ Every `/api` response also sets `Cache-Control: private, no-store`, including re
 
 ## HTML Error Diagnostics
 
-The global Nitro error handler negotiates its response using the request's `Accept` header. Clients accepting `text/html` receive the shared Barry error page showing only the canonical error code in parentheses; error names, descriptions, and stack traces are omitted. Other clients receive the canonical JSON error envelope. HTML error responses set `Cache-Control: no-store` and `Vary: Accept`.
+The global Nitro error handler negotiates its response using the request's `Accept` header. Clients accepting `text/html` receive the shared Barry error page showing only the canonical error code in parentheses; error names, descriptions, and stack traces are omitted. The output of basis-schema's `renderErrorPage` must be served as-is: application HTML wrappers, injected CSS, and markup rewrites (including image changes) are prohibited. Presentation changes belong in basis-schema. Other clients receive the canonical JSON error envelope. HTML error responses set `Cache-Control: no-store` and `Vary: Accept`.
 
 ## Security-Critical Environment Variables
 

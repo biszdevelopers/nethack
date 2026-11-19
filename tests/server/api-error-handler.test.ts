@@ -1,4 +1,5 @@
 import { APIError } from "@basis/schema/api";
+import { renderErrorPage } from "@basis/schema/error-page";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 const h3 = vi.hoisted(() => ({
@@ -69,12 +70,11 @@ describe("canonical API error handler", () => {
         expect(body).not.toContain("database");
         expect(body).not.toContain("server_error");
         expect(body).toContain('src="data:image/png;base64,');
-        expect(body).toContain('style="max-width:100%;height:auto"');
-        expect(body).toContain('alt="Sad mascot"');
-        expect(body).toContain('<html lang="en">');
-        expect(body).toContain('name="viewport"');
-        expect(body).toContain("prefers-color-scheme:dark");
-        expect(body).toContain("color-scheme:light dark");
+        expect(body).toBe(
+            renderErrorPage(
+                new APIError("server_error", "The request could not be completed", 500).toJSON(),
+            ),
+        );
         expect(h3.setResponseStatus).toHaveBeenCalledWith(event, 500);
         expect(h3.setResponseHeader).toHaveBeenCalledWith(
             event,
