@@ -1,4 +1,4 @@
-import { computed, ref, type Ref, watch as vueWatch } from "vue";
+import { computed, nextTick, ref, type Ref, watch as vueWatch } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RubricTemplateSummary } from "~~/app/components/admin/rubric-types";
 
@@ -278,6 +278,10 @@ describe("session, permission, and API user composables", () => {
         await expect(session.refresh()).resolves.toBe(true);
         expect(session.user.value).toEqual({ id: 8 });
 
+        $fetch.mockResolvedValueOnce(null);
+        await expect(session.refresh()).resolves.toBe(true);
+        expect(session.session.value).toBeNull();
+
         session.reset();
         expect(session.session.value).toBeNull();
         expect(session.ready.value).toBe(true);
@@ -341,7 +345,6 @@ describe("session, permission, and API user composables", () => {
         const options = useFetch.mock.calls[0]?.[1];
         expect(options.lazy).toBe(false);
         expect(options.immediate).toBe(true);
-        expect(options.watch?.[0]?.value).toBe(42);
         expect(options.default()).toBeNull();
         expect(options.transform({ status: 200, code: "ok", data: { id: 42 } })).toEqual({
             id: 42,
@@ -387,9 +390,10 @@ describe("session, permission, and API user composables", () => {
 
         sessionUser.value = { id: 23 };
         await useApiUser({ lazy: true });
+        await nextTick();
         expect(useFetch.mock.calls[1]?.[1].lazy).toBe(true);
         expect(useFetch.mock.calls[1]?.[1].immediate).toBe(true);
-        expect(fetchResult.refresh).not.toHaveBeenCalled();
+        expect(fetchResult.refresh).toHaveBeenCalledOnce();
     });
 
     it("waits for a pending API-user request to settle", async () => {
@@ -397,11 +401,15 @@ describe("session, permission, and API user composables", () => {
         vi.stubGlobal("useBasisAuthSession", () => ({ user: sessionUser, clear: vi.fn() }));
         const status = ref("pending");
         const stop = vi.fn();
+        let watchCalls = 0;
         const watch = vi.fn((_source: unknown, callback: (value: string) => void) => {
-            queueMicrotask(() => {
-                callback("pending");
-                callback("success");
-            });
+            watchCalls += 1;
+            if (watchCalls === 2) {
+                queueMicrotask(() => {
+                    callback("pending");
+                    callback("success");
+                });
+            }
             return stop;
         });
         vi.stubGlobal("watch", watch);
@@ -410,7 +418,7 @@ describe("session, permission, and API user composables", () => {
         const { useApiUser } = await import("~~/app/composables/useApiUser");
 
         await expect(useApiUser()).resolves.toMatchObject({ user: fetchResult.data });
-        expect(watch).toHaveBeenCalledOnce();
+        expect(watch).toHaveBeenCalledTimes(2);
         expect(stop).toHaveBeenCalledOnce();
     });
 });

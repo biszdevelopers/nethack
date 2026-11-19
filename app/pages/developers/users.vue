@@ -3,7 +3,6 @@ import { apiFetch } from "~~/app/composables/useApiFetch";
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
-import { isInitialAdminEmail } from "~~/shared/permissions";
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
@@ -16,6 +15,9 @@ const UserPopover = resolveComponent("UserPopover");
 const UButton = resolveComponent("UButton");
 const UBadge = resolveComponent("UBadge");
 const UCheckbox = resolveComponent("UCheckbox");
+
+const { user: sessionUser } = useBasisAuthSession();
+const currentUserId = computed(() => sessionUser.value?.id);
 
 const toast = useToast();
 const table = useTemplateRef<any>("table");
@@ -33,6 +35,7 @@ const rowSelection = ref<Record<string, boolean>>({});
 type AdminUser = Omit<User, "is_admin"> & {
     past_team_ids: string | null;
     is_admin: boolean;
+    is_initial_admin: boolean;
 };
 
 const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
@@ -46,20 +49,25 @@ const selectedRows = computed<any[]>(() => {
     return table.value.tableApi.getFilteredSelectedRowModel().rows;
 });
 
-const selectedIds = computed(() => selectedRows.value.map((row: any) => row.original.id as number));
+const deletableIds = computed(() =>
+    selectedRows.value
+        .map((row: any) => row.original as AdminUser)
+        .filter((user) => !user.is_initial_admin && user.id !== currentUserId.value)
+        .map((user) => user.id),
+);
 
 async function onDelete() {
-    if (selectedIds.value.length === 0) return;
+    if (deletableIds.value.length === 0) return;
 
     try {
         await apiFetch("/api/users", {
             method: "DELETE",
-            body: { ids: selectedIds.value },
+            body: { ids: deletableIds.value },
         });
 
         toast.add({
             title: "Users deleted",
-            description: `Successfully deleted ${selectedIds.value.length} user(s).`,
+            description: `Successfully deleted ${deletableIds.value.length} user(s).`,
             color: "success",
         });
 
@@ -77,7 +85,7 @@ async function onDelete() {
 }
 
 async function toggleAdmin(user: AdminUser) {
-    if (isInitialAdminEmail(user.email)) return;
+    if (user.is_initial_admin || user.id === currentUserId.value) return;
     try {
         await apiFetch(`/api/users/${user.id}/admin`, {
             method: "PATCH",
@@ -113,6 +121,7 @@ const columns: TableColumn<AdminUser>[] = [
         cell: ({ row }) =>
             h(UCheckbox, {
                 modelValue: row.getIsSelected(),
+                disabled: row.original.is_initial_admin || row.original.id === currentUserId.value,
                 "onUpdate:modelValue": (value: boolean | "indeterminate") =>
                     row.toggleSelected(!!value),
                 "aria-label": `Select ${row.original.name ?? row.original.email}`,
@@ -130,7 +139,7 @@ const columns: TableColumn<AdminUser>[] = [
             return h("div", { class: "flex items-center gap-3" }, [
                 h(
                     UserPopover,
-                    { user: row.original.id },
+                    { user: row.original },
                     {
                         default: () =>
                             h(UserAvatar, {
@@ -169,17 +178,17 @@ const columns: TableColumn<AdminUser>[] = [
             h(UButton, {
                 size: "xs",
                 variant: "soft",
-                color: isInitialAdminEmail(row.original.email)
+                color: row.original.is_initial_admin
                     ? "neutral"
                     : row.original.is_admin
                       ? "error"
                       : "primary",
-                label: isInitialAdminEmail(row.original.email)
+                label: row.original.is_initial_admin
                     ? "Initial admin"
                     : row.original.is_admin
                       ? "Demote"
                       : "Promote",
-                disabled: isInitialAdminEmail(row.original.email),
+                disabled: row.original.is_initial_admin || row.original.id === currentUserId.value,
                 onClick: () => toggleAdmin(row.original),
             }),
     },
@@ -286,7 +295,7 @@ const paginationOptions = {
 
                 <div class="flex flex-wrap items-center gap-1.5">
                     <UButton
-                        v-if="selectedRows.length"
+                        v-if="deletableIds.length"
                         label="Delete selected"
                         color="error"
                         variant="subtle"
@@ -353,7 +362,7 @@ const paginationOptions = {
         </template>
     </UDashboardPanel>
 
-    <UModal v-model:open="modalOpen">
+    <UModal v-model:open="modalOpen" title="Delete users">
         <template #content>
             <UCard>
                 <template #header>
@@ -365,7 +374,7 @@ const paginationOptions = {
 
                 <p class="text-default">
                     Are you sure you want to delete
-                    <strong>{{ selectedRows.length }}</strong>
+                    <strong>{{ deletableIds.length }}</strong>
                     selected user(s)? This action cannot be undone.
                 </p>
 

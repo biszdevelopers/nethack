@@ -24,13 +24,19 @@ export default defineEventHandler(
             `attachment; filename="nethack-export.${query.format}"`,
         );
 
-        const stream = Readable.from(
-            snapshotDatabaseExport(
-                event.context.drizzle,
-                query.format,
-                await getLiveOverrides(event),
-            ),
+        const overrides = await getLiveOverrides(event);
+        // Export one consistent snapshot: a page-by-page read without a
+        // transaction can omit or duplicate rows while the database changes.
+        const chunks: string[] = [];
+        await event.context.drizzle.transaction(
+            async (tx) => {
+                for await (const chunk of snapshotDatabaseExport(tx, query.format, overrides)) {
+                    chunks.push(chunk);
+                }
+            },
+            { isolationLevel: "repeatable read", accessMode: "read only" },
         );
-        return sendStream(event, stream);
+
+        return sendStream(event, Readable.from(chunks));
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

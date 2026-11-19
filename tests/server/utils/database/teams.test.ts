@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
+import { userPastTeams, users } from "~~/server/database/schema";
 import { createMockEvent } from "./helpers";
 import {
     createTeam,
@@ -42,18 +44,69 @@ describe("teams database helpers", () => {
     });
 
     describe("createTeam", () => {
-        it("creates a team successfully when there is an active season", async () => {
+        it("creates a team and assigns its owner atomically", async () => {
             seedSeason(event, "Season 1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO users(email) VALUES('owner@example.test')")
+                .run();
 
-            const team = await createTeam(event, "My Team");
+            const team = await createTeam(event, "My Team", 1);
             expect(team).not.toBeNull();
             expect(team.name).toBe("My Team");
             expect(team.id).toBe(1);
             expect(team.season_id).toBe(1);
+            const owner = event.context.drizzle
+                .select({ team_id: users.team_id })
+                .from(users)
+                .where(eq(users.id, 1))
+                .get() as { team_id: number };
+            expect(owner.team_id).toBe(1);
+        });
+
+        it("rejects an owner who already belongs to the active season", async () => {
+            seedSeason(event, "Season 1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO teams(id, name, season_id) VALUES(1, 'Existing', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, team_id) VALUES('owner@example.test', 1)")
+                .run();
+
+            await expect(createTeam(event, "Second Team", 1)).rejects.toThrow(
+                "Cannot create a team while in a team",
+            );
+        });
+
+        it("records a previous-season team as history", async () => {
+            seedSeason(event, "Season 1", 1);
+            seedSeason(event, "Season 2", 0);
+            event.context.drizzle
+                .prepare("INSERT INTO teams(id, name, season_id) VALUES(2, 'Old Team', 2)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, team_id) VALUES('owner@example.test', 2)")
+                .run();
+
+            await createTeam(event, "New Team", 1);
+
+            const history = event.context.drizzle
+                .select({ team_id: userPastTeams.team_id })
+                .from(userPastTeams)
+                .where(eq(userPastTeams.user_id, 1))
+                .all();
+            expect(history.map(({ team_id }) => team_id)).toEqual([2]);
+        });
+
+        it("rejects a missing owner", async () => {
+            seedSeason(event, "Season 1", 1);
+
+            await expect(createTeam(event, "Ownerless Team", 404)).rejects.toThrow(
+                "Logged in user not found",
+            );
         });
 
         it("throws an error when there is no active season", async () => {
-            await expect(createTeam(event, "Lonely Team")).rejects.toThrow("No active season");
+            await expect(createTeam(event, "Lonely Team", 1)).rejects.toThrow("No active season");
         });
     });
 

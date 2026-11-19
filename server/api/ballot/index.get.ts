@@ -57,6 +57,7 @@ export default defineEventHandler(
             ),
             scores,
             reasoning,
+            max_votes_per_user: Math.max(0, Number(hackathon!.max_votes_per_user)),
         } satisfies GetBallotResponse;
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

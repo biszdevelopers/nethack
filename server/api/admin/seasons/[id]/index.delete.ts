@@ -4,6 +4,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam } from "~~/shared/schemas";
 import {
     judgingDrafts,
+    peerVotingScores,
     rubricVersions,
     seasons,
     teamScores,
@@ -11,6 +12,7 @@ import {
 } from "~~/server/database/schema";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { firstRow } from "~~/server/utils/database/query";
+import { acquireActivationLock } from "~~/server/utils/database/seasons";
 
 const SeasonIdParams = z.object({ id: PositiveIntParam });
 
@@ -21,6 +23,10 @@ export default defineEventHandler(
         const { id } = await getValidatedRouterParams(event, SeasonIdParams.parse);
 
         const outcome = await event.context.drizzle.transaction(async (tx) => {
+            // Serialize against activation so a season cannot become active
+            // between the guard below and the delete statement.
+            await acquireActivationLock(tx);
+
             const existing = await firstRow(
                 tx.select().from(seasons).where(eq(seasons.id, id)).limit(1),
             );
@@ -32,6 +38,9 @@ export default defineEventHandler(
             );
             if (existingTeam) return "hasTeams" as const;
 
+            // Every guard runs before the first destructive statement. A
+            // returned outcome commits the transaction, so checking after a
+            // delete would permanently remove history while reporting 409.
             const versions = await tx
                 .select({ id: rubricVersions.id })
                 .from(rubricVersions)
@@ -53,7 +62,20 @@ export default defineEventHandler(
                         .limit(1),
                 );
                 if (scoreReference || draftReference) return "hasHistory" as const;
+            }
 
+            // Peer votes cascade on season_id, so deleting the season would
+            // silently erase ballot history that no other guard protects.
+            const voteReference = await firstRow(
+                tx
+                    .select({ user_id: peerVotingScores.user_id })
+                    .from(peerVotingScores)
+                    .where(eq(peerVotingScores.season_id, id))
+                    .limit(1),
+            );
+            if (voteReference) return "hasHistory" as const;
+
+            if (versionIds.length > 0) {
                 // Break the season-to-current-rubric pointer before removing
                 // its immutable versions; published scores and drafts were
                 // checked above and remain protected by restrictive FKs.

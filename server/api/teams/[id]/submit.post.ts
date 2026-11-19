@@ -36,7 +36,7 @@ export default defineEventHandler(
 
         if (team.project_submitted) {
             throw createError({
-                status: 403,
+                statusCode: 409,
                 message: "Project is already submitted",
             });
         }
@@ -57,7 +57,7 @@ export default defineEventHandler(
         team.sourcing = payload.project.sourcing ?? "";
         team.project_submitted = 1;
 
-        await updateTeam(event, team);
+        await updateTeam(event, team, { requireUnsubmitted: true });
 
         return { message: "Successfully submitted project" };
     }, DEFAULT_RATE_LIMIT_CONFIG),

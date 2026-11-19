@@ -48,6 +48,17 @@ export async function revokeAccessToken(
     input: { jti: string; validAfter: number; expiresAt: number | null },
 ): Promise<void> {
     const db = event.context.drizzle;
+    // Insert first, then narrow with guarded updates. Every statement is
+    // atomic, so concurrent deliveries always converge on the earliest
+    // `valid_after` and a known expiry.
+    await db
+        .insert(revokedAccessTokens)
+        .values({
+            jti: input.jti,
+            valid_after: input.validAfter,
+            expires_at: input.expiresAt,
+        })
+        .onConflictDoNothing({ target: revokedAccessTokens.jti });
     await db
         .update(revokedAccessTokens)
         .set({ valid_after: input.validAfter })
@@ -66,14 +77,6 @@ export async function revokeAccessToken(
             );
     }
     await db
-        .insert(revokedAccessTokens)
-        .values({
-            jti: input.jti,
-            valid_after: input.validAfter,
-            expires_at: input.expiresAt,
-        })
-        .onConflictDoNothing({ target: revokedAccessTokens.jti });
-    await db
         .delete(revokedAccessTokens)
         .where(
             or(
@@ -81,9 +84,12 @@ export async function revokeAccessToken(
                     isNotNull(revokedAccessTokens.expires_at),
                     lt(revokedAccessTokens.expires_at, unixSeconds() - EXPIRY_RETENTION_SECONDS),
                 ),
-                lt(
-                    revokedAccessTokens.valid_after,
-                    unixSeconds() - UNKNOWN_EXPIRY_RETENTION_SECONDS,
+                and(
+                    isNull(revokedAccessTokens.expires_at),
+                    lt(
+                        revokedAccessTokens.valid_after,
+                        unixSeconds() - UNKNOWN_EXPIRY_RETENTION_SECONDS,
+                    ),
                 ),
             ),
         );
@@ -104,7 +110,7 @@ interface SubjectState {
 }
 
 const subjectCache = new Map<string, { state: SubjectState; expiresAt: number }>();
-let subjectFailureUntil = 0;
+const subjectFailureUntil = new Map<string, number>();
 
 /** Read the live user state from the basis-auth internal listener. */
 async function loadBasisAuthSubjectState(subject: string): Promise<SubjectState | undefined> {
@@ -113,7 +119,7 @@ async function loadBasisAuthSubjectState(subject: string): Promise<SubjectState 
 
     const cached = subjectCache.get(subject);
     if (cached && cached.expiresAt > Date.now()) return cached.state;
-    if (Date.now() < subjectFailureUntil) {
+    if (Date.now() < (subjectFailureUntil.get(subject) ?? 0)) {
         throw new Error("basis-auth user state is unavailable");
     }
 
@@ -130,16 +136,18 @@ async function loadBasisAuthSubjectState(subject: string): Promise<SubjectState 
             },
         );
     } catch (error) {
-        subjectFailureUntil = Date.now() + SUBJECT_FAILURE_BACKOFF_MS;
+        subjectFailureUntil.set(subject, Date.now() + SUBJECT_FAILURE_BACKOFF_MS);
         throw error;
     }
 
     if (!response.ok) {
         await response.body?.cancel();
         // Only a definitive "no such user" answer is safe to stop retrying.
-        subjectFailureUntil = response.status === 404 ? 0 : Date.now() + SUBJECT_FAILURE_BACKOFF_MS;
+        if (response.status === 404) subjectFailureUntil.delete(subject);
+        else subjectFailureUntil.set(subject, Date.now() + SUBJECT_FAILURE_BACKOFF_MS);
         throw new Error(`basis-auth user state returned ${response.status}`);
     }
+    subjectFailureUntil.delete(subject);
 
     const body = (await response.json()) as {
         user?: { disabled?: unknown; tokensValidAfter?: unknown };
@@ -172,7 +180,7 @@ export async function assertAccessTokenActive(
 
     const local = await firstRow(
         event.context.drizzle
-            .select({ tokens_valid_after: users.tokens_valid_after })
+            .select()
             .from(users)
             .where(
                 and(
@@ -185,6 +193,10 @@ export async function assertAccessTokenActive(
     if (local?.tokens_valid_after != null && claims.iat <= local.tokens_valid_after) {
         invalidAccessToken();
     }
+    // Reuse this row for the user lookup later in the same request instead of
+    // issuing an identical indexed SELECT. The subject is stored with it so a
+    // different token on the same event can never reuse the wrong row.
+    if (local) event.context.basisAuthValidatedUser = { subject: claims.sub, user: local };
 
     let state: SubjectState | undefined;
     try {

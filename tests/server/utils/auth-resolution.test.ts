@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     verify: vi.fn(),
     resolve: vi.fn(),
     readSession: vi.fn(),
+    clearSession: vi.fn(),
 }));
 
 vi.mock("~~/server/utils/oauth2-jwt", () => ({
@@ -13,6 +14,7 @@ vi.mock("~~/server/utils/oauth2-jwt", () => ({
 }));
 
 vi.mock("~~/server/utils/basis-auth-session", () => ({
+    clearBasisAuthUserSession: mocks.clearSession,
     readBasisAuthUserSession: mocks.readSession,
 }));
 
@@ -121,5 +123,27 @@ describe("optional user resolution", () => {
 
         await expect(optionalUser(event())).resolves.toBe(user);
         expect(mocks.verify).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to anonymous and clears a stale session cookie", async () => {
+        mocks.readSession.mockReturnValue({
+            userId: user.id,
+            tokens: { accessToken: "expired-token" },
+        });
+        mocks.verify.mockRejectedValueOnce(
+            Object.assign(new Error("invalid token"), { statusCode: 401 }),
+        );
+
+        await expect(optionalUser(event())).resolves.toBeUndefined();
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+    });
+
+    it("still propagates an invalid explicit bearer token", async () => {
+        vi.mocked(getHeader).mockReturnValue("Bearer invalid-token");
+        const failure = Object.assign(new Error("invalid token"), { statusCode: 401 });
+        mocks.verify.mockRejectedValueOnce(failure);
+
+        await expect(optionalUser(event())).rejects.toBe(failure);
+        expect(mocks.clearSession).not.toHaveBeenCalled();
     });
 });

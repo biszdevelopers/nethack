@@ -66,7 +66,7 @@ function selectRelative(offset: number) {
 </script>
 
 <template>
-    <main class="mx-auto w-full max-w-6xl px-4 pb-10 pt-4 sm:px-6">
+    <div class="mx-auto w-full max-w-6xl px-4 pb-10 pt-4 sm:px-6">
         <NuxtLink
             to="/judging"
             class="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-primary"
@@ -368,5 +368,5 @@ function selectRelative(offset: number) {
                 </p>
             </article>
         </div>
-    </main>
+    </div>
 </template>

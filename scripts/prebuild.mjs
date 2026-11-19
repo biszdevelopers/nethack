@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,18 +20,18 @@ export function shouldRunPrebuild(argvEntry, moduleUrl) {
     return typeof argvEntry === "string" && resolve(argvEntry) === fileURLToPath(moduleUrl);
 }
 
-export function runPrebuildSteps({
-    platform = process.platform,
-    root = projectRoot,
-    spawn = spawnSync,
-} = {}) {
-    runStep(
-        spawn,
-        "npm",
-        ["run", "build", "--prefix", "documentation"],
-        "VitePress documentation build",
-        { cwd: root, shell: platform === "win32" },
-    );
+export function runPrebuildSteps({ root = projectRoot, spawn = spawnSync, skipDocs = false } = {}) {
+    if (!skipDocs) {
+        // Invoke VitePress through node directly. Calling npm via a Windows
+        // shell with an args array triggers DEP0190; node needs no shell.
+        runStep(
+            spawn,
+            process.execPath,
+            [resolve(root, "documentation/node_modules/vitepress/bin/vitepress.js"), "build"],
+            "VitePress documentation build",
+            { cwd: resolve(root, "documentation"), shell: false },
+        );
+    }
     runStep(
         spawn,
         process.execPath,
@@ -40,4 +41,10 @@ export function runPrebuildSteps({
     );
 }
 
-if (shouldRunPrebuild(process.argv[1], import.meta.url)) runPrebuildSteps();
+if (shouldRunPrebuild(process.argv[1], import.meta.url)) {
+    // Dev starts reuse an existing docs build; production always rebuilds.
+    const skipDocs =
+        process.argv.includes("--dev") &&
+        existsSync(resolve(projectRoot, "documentation/.vitepress/dist/index.html"));
+    runPrebuildSteps({ skipDocs });
+}

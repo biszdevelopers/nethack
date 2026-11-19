@@ -50,7 +50,8 @@ const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0
             {{ announcement }}
         </p>
         <ULink href="/dashboard">
-            <UAlert v-if="status !== 'not_started'" variant="soft" class="mb-4">
+            <span v-if="status === 'not_started'" class="sr-only">Go to your dashboard</span>
+            <UAlert v-else variant="soft" class="mb-4">
                 <template #title>
                     <span class="bold">
                         The hackathon has

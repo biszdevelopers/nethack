@@ -3,6 +3,8 @@ import { createMockEvent } from "./helpers";
 import {
     getHackathon,
     getLiveOverrides,
+    invalidateHackathonCache,
+    mergeLiveOverrides,
     updateHackathon,
 } from "~~/server/utils/database/hackathon";
 
@@ -11,6 +13,28 @@ describe("hackathon database helpers", () => {
 
     beforeEach(async () => {
         event = await createMockEvent();
+    });
+
+    describe("mergeLiveOverrides", () => {
+        it("merges an object and replaces a missing or malformed value", () => {
+            expect(mergeLiveOverrides({ show_scores: 1 }, { voting_enabled: 0 })).toEqual({
+                show_scores: 1,
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides(null, { voting_enabled: 0 })).toEqual({
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides([1, 2], { voting_enabled: 0 })).toEqual({
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides('{"show_scores":1}', { voting_enabled: 0 })).toEqual({
+                show_scores: 1,
+                voting_enabled: 0,
+            });
+            expect(mergeLiveOverrides("{", { voting_enabled: 0 })).toEqual({
+                voting_enabled: 0,
+            });
+        });
     });
 
     describe("getLiveOverrides", () => {
@@ -62,6 +86,23 @@ describe("hackathon database helpers", () => {
         it("returns null when no hackathon row exists", async () => {
             const hackathon = await getHackathon(event);
             expect(hackathon).toBeNull();
+        });
+
+        it("reuses the merged state within a request and refreshes after invalidation", async () => {
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp) VALUES(1, 'in_progress', 0, 0, 0, 0, 0)",
+                )
+                .run();
+
+            const first = await getHackathon(event);
+            event.context.drizzle
+                .prepare("UPDATE hackathon SET status = 'finished' WHERE id = 1")
+                .run();
+
+            expect(await getHackathon(event)).toBe(first);
+            invalidateHackathonCache(event);
+            expect((await getHackathon(event))!.status).toBe("finished");
         });
 
         it("returns the correct status when set to not_started", async () => {

@@ -1,8 +1,8 @@
 import type { H3Event } from "h3";
-import { eq, and, asc, isNull } from "drizzle-orm";
+import { eq, and, or, asc, isNull, count, sql } from "drizzle-orm";
 import { users, teams, userPastTeams, teamInvites, seasons } from "~~/server/database/schema";
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
-import { changedRows, firstRow } from "./query";
+import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
 
 export async function getTeamMembers(event: H3Event, teamID: number): Promise<User[]> {
     return event.context.drizzle.select().from(users).where(eq(users.team_id, teamID));
@@ -55,6 +55,15 @@ export async function addUserPastTeam(event: H3Event, userID: number, teamID: nu
 
 export async function removeTeamMember(event: H3Event, teamID: number, userID: number) {
     await event.context.drizzle.transaction(async (tx) => {
+        // Serialize removals per team so two concurrent removals cannot both
+        // observe the same count and leave the team with no members.
+        await lockForUpdateIfSupported(
+            tx.select().from(teams).where(eq(teams.id, teamID)).limit(1),
+        );
+        const [memberCount] = await tx
+            .select({ value: count() })
+            .from(users)
+            .where(eq(users.team_id, teamID));
         const changed = await changedRows(
             tx
                 .update(users)
@@ -69,6 +78,12 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
                 message: "User not found or not in team",
             });
         }
+        if (memberCount!.value <= 1) {
+            throw createError({
+                statusCode: 409,
+                message: "Every team must keep at least one member",
+            });
+        }
 
         await tx
             .insert(userPastTeams)
@@ -78,11 +93,38 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
 }
 
 export async function addTeamMember(event: H3Event, teamID: number, userID: number) {
+    const target = await firstRow(
+        event.context.drizzle
+            .select({ season_id: teams.season_id })
+            .from(teams)
+            .where(eq(teams.id, teamID))
+            .limit(1),
+    );
+    if (!target) {
+        throw createError({ statusCode: 404, message: "User not found or already in a team" });
+    }
+    const previous = await firstRow(
+        event.context.drizzle
+            .select({ team_id: users.team_id })
+            .from(users)
+            .where(eq(users.id, userID))
+            .limit(1),
+    );
+    // A team_id left over from an earlier season must not block joining the
+    // active season's team, but a current-season membership still must.
     const changed = await changedRows(
         event.context.drizzle
             .update(users)
             .set({ team_id: teamID })
-            .where(and(eq(users.id, userID), isNull(users.team_id)))
+            .where(
+                and(
+                    eq(users.id, userID),
+                    or(
+                        isNull(users.team_id),
+                        sql`${users.team_id} IN (SELECT id FROM teams WHERE season_id <> ${target.season_id})`,
+                    ),
+                ),
+            )
             .returning({ id: users.id }),
     );
 
@@ -91,6 +133,9 @@ export async function addTeamMember(event: H3Event, teamID: number, userID: numb
             status: 404,
             message: "User not found or already in a team",
         });
+    }
+    if (previous?.team_id && previous.team_id !== teamID) {
+        await addUserPastTeam(event, userID, previous.team_id);
     }
 }
 
@@ -171,6 +216,16 @@ export async function acceptTeamInvite(
             throw createError({ statusCode: 404, message: "Invitation not found" });
         }
 
+        // Lock the invited team (so concurrent accepts cannot bypass the member
+        // cap) and the accepting user (so two invites cannot be accepted at
+        // once). Locks are always taken in this order to avoid deadlocks.
+        await lockForUpdateIfSupported(
+            tx.select().from(teams).where(eq(teams.id, invite.team_id)).limit(1),
+        );
+        const lockedUser = await firstRow(
+            lockForUpdateIfSupported(tx.select().from(users).where(eq(users.id, user.id)).limit(1)),
+        );
+
         const team = await firstRow(
             tx.select().from(teams).where(eq(teams.id, invite.team_id)).limit(1),
         );
@@ -194,12 +249,14 @@ export async function acceptTeamInvite(
             });
         }
 
-        if (user.team_id) {
+        if (lockedUser?.team_id) {
             const currentTeam = await firstRow(
                 tx
                     .select()
                     .from(teams)
-                    .where(and(eq(teams.id, user.team_id), eq(teams.season_id, activeSeason.id)))
+                    .where(
+                        and(eq(teams.id, lockedUser.team_id), eq(teams.season_id, activeSeason.id)),
+                    )
                     .limit(1),
             );
             if (currentTeam) {
@@ -215,6 +272,12 @@ export async function acceptTeamInvite(
             throw createError({ statusCode: 409, message: "This team is full" });
         }
 
+        if (lockedUser?.team_id) {
+            await tx
+                .insert(userPastTeams)
+                .values({ user_id: user.id, team_id: lockedUser.team_id })
+                .onConflictDoNothing();
+        }
         await tx.update(users).set({ team_id: team.id }).where(eq(users.id, user.id));
         await tx.delete(teamInvites).where(eq(teamInvites.email, invite.email));
 

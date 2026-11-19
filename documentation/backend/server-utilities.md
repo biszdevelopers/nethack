@@ -272,7 +272,7 @@ Combines `extractBearerToken` and `verifyAccessToken` into a single call.
 export async function resolveOAuth2User(event: H3Event, payload: OAuth2JWTPayload): Promise<User>;
 ```
 
-Resolves a user from the JWT payload's `user_id` or `sub` field. Throws 401 if the payload has no valid user ID, or 404 if the user is not found.
+Resolves a user from the JWT payload's `user_id` or `sub` field. Throws 401 (`invalid_token`) if the payload has no valid user ID or if no local user is linked to the basis-auth subject. On the standard authenticated request path it reuses the full user row already fetched and verified by `assertAccessTokenActive`, avoiding a second identical lookup; the reuse is guarded by the token subject so a different token on the same event can never inherit another user's row.
 
 **Context attached to `event.context.oauth2`:**
 
@@ -344,6 +344,7 @@ In-memory store for DeepSeek AI chat sessions.
 interface ChatSession {
     id: number;
     sessionName: string;
+    owner_user_id: number;
     createdAt: number;
     messages: ChatCompletionMessage[];
 }
@@ -352,6 +353,7 @@ interface ChatSession {
 ### Limits
 
 - `MAX_SESSIONS` = 100
+- `MAX_SESSIONS_PER_OWNER` = 20
 - `MAX_MESSAGES_PER_SESSION` = 200
 - `SESSION_TTL_MS` = 24 hours
 
@@ -359,12 +361,14 @@ interface ChatSession {
 
 | Function | Description |
 | --- | --- |
-| `createSession(sessionName)` | Creates a new session with auto-incrementing ID; evicts expired/oldest sessions when at capacity |
-| `getDeepSeekSession(sessionId)` | Returns a session by ID |
-| `getAllSessions()` | Returns all sessions |
+| `createSession(sessionName, ownerUserId)` | Creates a new session with auto-incrementing ID; sweeps expired sessions and evicts the owner's oldest before the global oldest |
+| `getDeepSeekSession(sessionId)` | Returns a live session by ID after sweeping expired entries |
+| `getAllSessions(ownerUserId?)` | Returns live sessions, optionally for one owner |
 | `deleteSession(sessionId)` | Deletes a session; returns whether a session was removed |
-| `addMessage(sessionId, message)` | Appends a message to a session; trims history to the most recent 200 |
-| `getMessages(sessionId)` | Returns a shallow copy of all messages for a session |
+| `addMessage(sessionId, message)` | Appends a message to a live session; trims history to the most recent 200 |
+| `getMessages(sessionId)` | Returns a shallow copy of all messages for a live session |
+
+Every access sweeps sessions older than the 24-hour TTL, so an expired session is never returned even when the store is below capacity.
 
 **Note:** All data is in-memory and lost on server restart.
 
@@ -479,21 +483,22 @@ Per-table database helper modules in `server/utils/database/`.
 
 ### members.ts
 
-| Function                                  | Description                               |
-| ----------------------------------------- | ----------------------------------------- |
-| `getTeamMembers(event, teamID)`           | Get current team members                  |
-| `getAllTeamMembers(event, teamID)`        | Get current and past team members         |
-| `getUserPastTeams(event, userID)`         | Get teams a user was previously in        |
-| `addUserPastTeam(event, userID, teamID)`  | Record a past team membership             |
-| `removeTeamMember(event, teamID, userID)` | Remove a member (records past team first) |
-| `addTeamMember(event, teamID, userID)`    | Add a member to a team                    |
+| Function | Description |
+| --- | --- |
+| `getTeamMembers(event, teamID)` | Get current team members |
+| `getAllTeamMembers(event, teamID)` | Get current and past team members |
+| `getUserPastTeams(event, userID)` | Get teams a user was previously in |
+| `addUserPastTeam(event, userID, teamID)` | Record a past team membership |
+| `removeTeamMember(event, teamID, userID)` | Remove a member (records past team first); rejects removing the last member with 409 so the team cannot be orphaned |
+| `addTeamMember(event, teamID, userID)` | Add a member to a team |
 
 ### hackathon.ts
 
-| Function                       | Description                                                    |
-| ------------------------------ | -------------------------------------------------------------- |
-| `getHackathon(event)`          | Read live settings from YAML or the PostgreSQL rollback source |
-| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode               |
+| Function | Description |
+| --- | --- |
+| `getHackathon(event)` | Read live settings from YAML or the PostgreSQL rollback source; merged once per request and reused by repeated read helpers |
+| `invalidateHackathonCache(event)` | Drop the per-request cached state after a route mutates hackathon or season settings |
+| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode |
 
 ### ballots.ts
 

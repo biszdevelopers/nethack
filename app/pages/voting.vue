@@ -11,7 +11,12 @@ definePageMeta({
 const toast = useToast();
 useHead({ title: `Peer voting | ${WEBSITE_NAME}` });
 
-const { data, error, refresh } = await useApiFetch<GetBallotResponse>("/api/ballot", {
+const {
+    data,
+    error,
+    pending: loading,
+    refresh,
+} = await useApiFetch<GetBallotResponse>("/api/ballot", {
     server: false,
 });
 
@@ -20,6 +25,7 @@ const fetchError = computed(() => (error.value ? getErrorMessage(error.value) : 
 const projects = computed(() => data.value?.projects ?? []);
 const submitted = computed(() => data.value?.submitted ?? false);
 const submitting = ref(false);
+const maxScoredProjects = computed(() => data.value?.max_votes_per_user ?? 0);
 
 const state = reactive<SubmitVoteRequest>({
     scores: [],
@@ -27,6 +33,16 @@ const state = reactive<SubmitVoteRequest>({
 });
 
 const totalStars = computed(() => state.scores.reduce((a, b) => a + b, 0));
+const scoredProjectCount = computed(() => state.scores.filter((score) => score > 0).length);
+const atScoredProjectLimit = computed(
+    () => maxScoredProjects.value > 0 && scoredProjectCount.value >= maxScoredProjects.value,
+);
+const overScoredProjectLimit = computed(
+    () => maxScoredProjects.value > 0 && scoredProjectCount.value > maxScoredProjects.value,
+);
+const capBlocksFullBallot = computed(
+    () => maxScoredProjects.value > 0 && maxScoredProjects.value * 5 < 10,
+);
 
 watch(
     data,
@@ -48,10 +64,10 @@ function increment(index: number) {
 
 async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
     if (submitting.value) return;
-    if (
-        !confirm("Are you sure you want to submit the vote? You cannot edit them after submission.")
-    )
-        return;
+    const prompt = submitted.value
+        ? "Replace your previous ballot with these scores?"
+        : "Submit this ballot? You can update it until voting closes.";
+    if (!confirm(prompt)) return;
 
     submitting.value = true;
     try {
@@ -99,6 +115,14 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
             </template>
         </UAlert>
 
+        <div
+            v-else-if="loading"
+            class="rounded-xl border border-default p-4 text-sm text-muted"
+            aria-live="polite"
+        >
+            Loading your ballot…
+        </div>
+
         <template v-else>
             <p>Look through all the projects below.</p>
 
@@ -118,9 +142,11 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                         :team="team"
                         :score="state.scores[index] ?? 0"
                         :can-increment="
-                            !submitted && (state.scores[index] ?? 0) < 5 && totalStars < 10
+                            (state.scores[index] ?? 0) < 5 &&
+                            totalStars < 10 &&
+                            ((state.scores[index] ?? 0) > 0 || !atScoredProjectLimit)
                         "
-                        :can-decrement="!submitted && (state.scores[index] ?? 0) > 0"
+                        :can-decrement="(state.scores[index] ?? 0) > 0"
                         @increment="increment(index)"
                         @decrement="decrement(index)"
                     />
@@ -149,7 +175,9 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                 @submit="onSubmit"
             >
                 <UCard variant="subtle">
-                    <p v-if="submitted" class="mb-4 bold">You have voted already. Thank you!</p>
+                    <p v-if="submitted" class="mb-4 bold">
+                        You have voted. You can update your ballot until voting closes.
+                    </p>
 
                     <p class="flex items-center gap-2 mb-4">
                         Total stars:
@@ -160,6 +188,29 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                         />
                         {{ totalStars }} / 10
                     </p>
+
+                    <p v-if="maxScoredProjects > 0" class="mb-4 text-sm text-muted">
+                        You can award stars to at most {{ maxScoredProjects }} projects ({{
+                            scoredProjectCount
+                        }}
+                        so far).
+                    </p>
+                    <UAlert
+                        v-if="capBlocksFullBallot"
+                        color="error"
+                        variant="subtle"
+                        class="mb-4"
+                        title="Voting cannot be completed"
+                        description="The organizer's vote cap is too low for a ballot to reach 10 stars."
+                    />
+                    <UAlert
+                        v-if="overScoredProjectLimit"
+                        color="warning"
+                        variant="subtle"
+                        class="mb-4"
+                        title="Too many projects have stars"
+                        description="Remove stars from the extra projects before submitting."
+                    />
 
                     <div class="mb-4">
                         <p class="text-sm text-muted mb-2">Your distribution:</p>
@@ -184,18 +235,23 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                             placeholder="Please explain your reasoning, making sure to include details about every project!"
                             class="w-full"
                             :rows="5"
-                            :disabled="submitted"
                             :maxlength="MAX_REASONING_LENGTH"
                         />
                     </UFormField>
 
-                    <UFormField v-if="!submitted">
+                    <UFormField>
                         <UButton
-                            :disabled="totalStars !== 10 || projects.length === 0 || submitting"
+                            :disabled="
+                                totalStars !== 10 ||
+                                projects.length === 0 ||
+                                submitting ||
+                                capBlocksFullBallot ||
+                                overScoredProjectLimit
+                            "
                             class="min-h-11"
                             type="submit"
                         >
-                            Submit
+                            {{ submitted ? "Update vote" : "Submit" }}
                         </UButton>
                     </UFormField>
                 </UCard>

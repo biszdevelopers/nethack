@@ -87,7 +87,7 @@ Edit and submit project details with auto-save functionality. Used on the dashbo
 | `dirty`   | `boolean` | Emitted when form dirty state changes     |
 | `refresh` | —         | Emitted after a successful save or submit |
 
-**Auto-save:** Runs every **10 seconds** via `setInterval`. Only saves when the form is dirty and a team exists. Sends a `PATCH` request to `/api/teams/{id}`.
+**Auto-save:** Runs every **10 seconds** via `setInterval`. Only saves when the form is dirty, a team exists, and the form is not disabled. It sends a `PATCH` to `/api/teams/{id}` containing only the fields this editor changed since the last successful save, so a teammate's concurrent edit of a different field is preserved.
 
 **Form fields:**
 
@@ -99,7 +99,7 @@ Edit and submit project details with auto-save functionality. Used on the dashbo
 
 **Validation:** Uses `UpdateTeamRequest` for saves and `SubmitTeamRequest` for submissions (both from `~~/shared/schemas`).
 
-**Submit flow:** Clicking "Submit" sets the intent to `submit` and shows a `ModalConfirm` dialog warning that changes cannot be made after submission.
+**Submit flow:** Clicking "Submit" sets the intent to `submit` and shows a `ModalConfirm` dialog warning that changes cannot be made after submission. Cancelling the dialog restores normal save behavior, so a later Enter press does not silently reopen the irreversible submission prompt.
 
 ```vue
 <ProjectForm :team="team" :disabled="isSubmitted" @dirty="onDirty" @refresh="refreshData" />
@@ -545,7 +545,7 @@ safeUrl(null); // → undefined
 
 **File:** `app/components/ModalConfirm.vue`
 
-Reusable confirmation modal wrapping `UModal`.
+Reusable confirmation modal wrapping `UModal`. The Confirm button is disabled and shows a loading state while an async `click` callback runs, so a double-click cannot trigger the action twice; the modal closes only after the callback resolves.
 
 **Props:**
 

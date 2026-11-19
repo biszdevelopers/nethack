@@ -19,6 +19,20 @@ import { getBasisAuthPictureUrl } from "~~/server/utils/profile";
 
 export const BASIS_AUTH_CALLBACK_PATH = "/api/auth/basis/callback";
 const FLOW_MAX_AGE_SECONDS = 10 * 60;
+const OIDC_TIMEOUT_MS = 8000;
+
+/** Bound every openid-client network call; the library has no default deadline. */
+function withOidcDeadline<T>(work: Promise<T>, label: string): Promise<T> {
+    let rejectDeadline!: (error: Error) => void;
+    const deadline = new Promise<never>((_, reject) => {
+        rejectDeadline = reject;
+    });
+    const timer = setTimeout(
+        () => rejectDeadline(new Error(`basis-auth ${label} timed out after ${OIDC_TIMEOUT_MS}ms`)),
+        OIDC_TIMEOUT_MS,
+    );
+    return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
 export const BASIS_AUTH_REQUESTED_SCOPES = [
     "openid",
     "profile",
@@ -125,9 +139,10 @@ export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
     if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//"))
         return undefined;
     const parsed = new URL(value, "https://nethack.invalid");
-    return parsed.origin === "https://nethack.invalid"
-        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-        : undefined;
+    if (parsed.origin !== "https://nethack.invalid") return undefined;
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    // URL normalization can turn "/..//evil.com" into a protocol-relative URL.
+    return path.startsWith("//") ? undefined : path;
 }
 
 const discoveredConfigurations = new Map<string, Promise<oidc.Configuration>>();
@@ -136,8 +151,8 @@ export function getBasisAuthOidcConfiguration(config = getBasisAuthConfig()) {
     const cacheKey = `${config.issuer}\0${config.clientId}\0${config.clientSecret}`;
     let discovered = discoveredConfigurations.get(cacheKey);
     if (!discovered) {
-        discovered = oidc
-            .discovery(
+        discovered = withOidcDeadline(
+            oidc.discovery(
                 new URL(config.issuer),
                 config.clientId,
                 {
@@ -148,18 +163,19 @@ export function getBasisAuthOidcConfiguration(config = getBasisAuthConfig()) {
                 config.issuer.startsWith("http://")
                     ? { execute: [oidc.allowInsecureRequests] }
                     : undefined,
-            )
-            .catch((error) => {
-                // A temporary discovery outage must not poison this process forever.
-                discoveredConfigurations.delete(cacheKey);
-                throw error;
-            });
+            ),
+            "discovery",
+        ).catch((error) => {
+            // A temporary discovery outage must not poison this process forever.
+            discoveredConfigurations.delete(cacheKey);
+            throw error;
+        });
         discoveredConfigurations.set(cacheKey, discovered);
     }
     return discovered;
 }
 
-export async function beginBasisAuthFlow(postLoginRedirect?: string) {
+export async function beginBasisAuthFlow(postLoginRedirect?: string, preLoginUserId?: number) {
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
     const state = oidc.randomState();
@@ -186,6 +202,7 @@ export async function beginBasisAuthFlow(postLoginRedirect?: string) {
             codeVerifier,
             startedAt: Date.now(),
             postLoginRedirect,
+            preLoginUserId,
         },
     };
 }
@@ -213,19 +230,31 @@ export async function completeBasisAuthFlow(
         callbackUrl.pathname + callbackUrl.search,
         getPublicOrigin(),
     );
-    const tokens = await oidc.authorizationCodeGrant(oidcConfiguration, canonicalCallbackUrl, {
-        pkceCodeVerifier: transaction.codeVerifier,
-        expectedState: transaction.state,
-        expectedNonce: transaction.nonce,
-    });
+    const tokens = await withOidcDeadline(
+        oidc.authorizationCodeGrant(oidcConfiguration, canonicalCallbackUrl, {
+            pkceCodeVerifier: transaction.codeVerifier,
+            expectedState: transaction.state,
+            expectedNonce: transaction.nonce,
+        }),
+        "token exchange",
+    );
     const claims = tokens.claims();
     if (!claims?.sub || !tokens.access_token || !tokens.refresh_token) {
         throw new Error("basis-auth did not return a complete token set");
     }
 
-    const userInfo = await oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub);
+    const userInfo = await withOidcDeadline(
+        oidc.fetchUserInfo(oidcConfiguration, tokens.access_token, claims.sub),
+        "UserInfo",
+    );
     if (typeof userInfo.email !== "string" || !userInfo.email.trim()) {
         throw new Error("basis-auth did not return an email address");
+    }
+    // Email links local history and initial-admin elevation, so reject an
+    // explicitly unverified address. Providers that omit the claim are trusted
+    // as before.
+    if ((userInfo as { email_verified?: unknown }).email_verified === false) {
+        throw new Error("basis-auth did not verify the email address");
     }
 
     return {
@@ -260,12 +289,33 @@ function normalizeTokenSet(tokens: {
 export async function refreshBasisAuthTokens(refreshToken: string) {
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
-    return normalizeTokenSet(await oidc.refreshTokenGrant(oidcConfiguration, refreshToken));
+    return normalizeTokenSet(
+        await withOidcDeadline(
+            oidc.refreshTokenGrant(oidcConfiguration, refreshToken),
+            "token refresh",
+        ),
+    );
 }
 
 // Refresh a minute early so a retry or clock skew cannot strand the session.
 const REFRESH_BUFFER_MS = 60_000;
 const refreshes = new Map<string, Promise<StoredBasisAuthTokens>>();
+// Short-lived coordination state for cross-request refresh races. Remembering a
+// completed rotation stops a second tab holding the old token from clearing the
+// valid cookie; remembering logout stops an in-flight refresh from restoring a
+// session after the user signed out.
+const TOKEN_EVENT_TTL_MS = 60_000;
+const rotatedTokens = new Map<string, { tokens: StoredBasisAuthTokens; at: number }>();
+const loggedOutTokens = new Map<string, number>();
+
+function pruneTokenEvents(now: number): void {
+    for (const [token, value] of rotatedTokens) {
+        if (now - value.at > TOKEN_EVENT_TTL_MS) rotatedTokens.delete(token);
+    }
+    for (const [token, at] of loggedOutTokens) {
+        if (now - at > TOKEN_EVENT_TTL_MS) loggedOutTokens.delete(token);
+    }
+}
 
 /** Read the encrypted token cookie and rotate it when its access token is near expiry. */
 export async function getFreshBasisAuthUserSession(
@@ -275,32 +325,59 @@ export async function getFreshBasisAuthUserSession(
     if (!session) return undefined;
     if (session.tokens.accessTokenExpiresAt > Date.now() + REFRESH_BUFFER_MS) return session;
 
-    let pending = refreshes.get(session.tokens.refreshToken);
+    const refreshToken = session.tokens.refreshToken;
+    pruneTokenEvents(Date.now());
+    // A logout that landed after this request started must win: never re-seal a
+    // session for a token that has already been revoked.
+    if (loggedOutTokens.has(refreshToken)) {
+        clearBasisAuthUserSession(event);
+        return undefined;
+    }
+
+    let pending = refreshes.get(refreshToken);
     if (!pending) {
-        pending = refreshBasisAuthTokens(session.tokens.refreshToken)
+        pending = refreshBasisAuthTokens(refreshToken)
             .then((tokens) => ({
                 accessToken: tokens.accessToken,
                 accessTokenExpiresAt: tokens.expiresAt,
                 refreshToken: tokens.refreshToken,
             }))
-            .finally(() => refreshes.delete(session.tokens.refreshToken));
-        refreshes.set(session.tokens.refreshToken, pending);
+            .finally(() => refreshes.delete(refreshToken));
+        refreshes.set(refreshToken, pending);
     }
 
     try {
         const tokens = await pending;
+        if (loggedOutTokens.has(refreshToken)) {
+            clearBasisAuthUserSession(event);
+            return undefined;
+        }
+        rotatedTokens.set(refreshToken, { tokens, at: Date.now() });
         establishBasisAuthUserSession(event, session.userId, tokens);
         return { userId: session.userId, tokens };
     } catch {
+        // Another request may already have rotated this exact refresh token.
+        // Reuse its result instead of clobbering the newer valid cookie.
+        const rotated = rotatedTokens.get(refreshToken);
+        if (rotated && !loggedOutTokens.has(refreshToken)) {
+            establishBasisAuthUserSession(event, session.userId, rotated.tokens);
+            return { userId: session.userId, tokens: rotated.tokens };
+        }
         clearBasisAuthUserSession(event);
         return undefined;
     }
 }
 
 export async function revokeBasisAuthToken(refreshToken: string) {
+    // Record the intent before the network call so an in-flight refresh cannot
+    // re-seal the cookie after logout's deletion response reaches the browser.
+    loggedOutTokens.set(refreshToken, Date.now());
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
-    await oidc.tokenRevocation(oidcConfiguration, refreshToken, {
-        token_type_hint: "refresh_token",
-    });
+    await withOidcDeadline(
+        oidc.tokenRevocation(oidcConfiguration, refreshToken, {
+            token_type_hint: "refresh_token",
+        }),
+        "token revocation",
+    );
 }

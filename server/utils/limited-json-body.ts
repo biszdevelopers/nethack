@@ -13,6 +13,25 @@ function stopOversizedRequest(event: H3Event): void {
 
 /** Read a request body without letting an untrusted stream grow in memory. */
 export async function readLimitedRequestBody(event: H3Event, maxBytes: number): Promise<Buffer> {
+    // The global body-limit middleware may already have buffered this request.
+    // Re-attaching stream listeners after `end` hangs forever, so reuse the
+    // buffer whenever it is available.
+    const cached = (event as H3Event & { _requestBody?: unknown })._requestBody;
+    const cachedBuffer = Buffer.isBuffer(cached)
+        ? cached
+        : cached instanceof Uint8Array
+          ? Buffer.from(cached)
+          : typeof cached === "string"
+            ? Buffer.from(cached, "utf8")
+            : undefined;
+    if (cachedBuffer) {
+        if (cachedBuffer.byteLength > maxBytes) {
+            stopOversizedRequest(event);
+            throw createError({ statusCode: 413, statusMessage: "Payload Too Large" });
+        }
+        return cachedBuffer;
+    }
+
     const request = event.node.req;
     if (request.headers["content-encoding"] && request.headers["content-encoding"] !== "identity") {
         stopOversizedRequest(event);

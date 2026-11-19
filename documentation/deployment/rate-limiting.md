@@ -83,7 +83,7 @@ export default applyRateLimit(
 );
 ```
 
-If `config` is omitted, the default configuration (120 req/min) is used.
+If `config` is omitted, the default configuration (1200 req/min) is used.
 
 ## Client Identification
 

@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockEvent } from "./helpers";
-import { getActiveSeason, setActiveSeason } from "~~/server/utils/database/seasons";
+import {
+    acquireActivationLock,
+    getActiveSeason,
+    setActiveSeason,
+} from "~~/server/utils/database/seasons";
 
 const manifest = `# organizer note stays put
 id: 1
@@ -25,6 +29,24 @@ results_open_timestamp: 0
 theme_name: Live theme
 theme_description: Live description
 `;
+
+describe("acquireActivationLock", () => {
+    it("issues the advisory lock only when row locks are supported", async () => {
+        const execute = vi.fn(async () => undefined);
+        await acquireActivationLock({
+            select: () => ({ from: () => ({ limit: () => ({ for: () => undefined }) }) }),
+            execute,
+        });
+        expect(execute).toHaveBeenCalledOnce();
+
+        execute.mockClear();
+        await acquireActivationLock({
+            select: () => ({ from: () => ({ limit: () => ({}) }) }),
+            execute,
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+});
 
 describe("setActiveSeason with a local manifest", () => {
     let event: Awaited<ReturnType<typeof createMockEvent>>;
@@ -85,6 +107,24 @@ describe("setActiveSeason with a local manifest", () => {
                 .prepare("SELECT status, theme_name FROM hackathon WHERE id = 1")
                 .first(),
         ).toEqual({ status: "finished", theme_name: "Archived theme" });
+    });
+
+    it("carries the activated season's announcement into the live overrides", async () => {
+        insertSeason("name, is_active, status", "'Current', 1, 'voting'");
+        insertSeason(
+            "name, is_active, status, announcement",
+            "'Next', 0, 'voting', 'Season two is live'",
+        );
+
+        await setActiveSeason(event, 2);
+
+        const live = event.context.drizzle
+            .prepare("SELECT announcement, live_overrides FROM hackathon WHERE id = 1")
+            .first() as { announcement: string; live_overrides: string };
+        expect(live.announcement).toBe("Season two is live");
+        expect(JSON.parse(live.live_overrides)).toMatchObject({
+            announcement: "Season two is live",
+        });
     });
 
     it("seeds an unconfigured season from live settings before writing", async () => {

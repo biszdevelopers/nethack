@@ -15,7 +15,7 @@ useHead({
 </script>
 
 <template>
-    <main class="showcase-index bg-default text-default">
+    <div class="showcase-index bg-default text-default">
         <section class="featured-showcase relative isolate min-h-[82vh] overflow-hidden">
             <div class="featured-grid absolute inset-0" aria-hidden="true" />
             <div class="featured-glow absolute inset-0" aria-hidden="true" />
@@ -107,7 +107,7 @@ useHead({
         </section>
 
         <ShowcaseSeasonArchive />
-    </main>
+    </div>
 </template>
 
 <style scoped>

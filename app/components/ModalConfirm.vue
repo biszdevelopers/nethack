@@ -8,11 +8,10 @@
         <template #footer="{ close }">
             <UButton
                 :color="color"
+                :loading="busy"
+                :disabled="busy"
                 class="min-h-12"
-                @click="
-                    click();
-                    close();
-                "
+                @click="confirm(close)"
             >
                 Confirm
             </UButton>
@@ -28,11 +27,11 @@ const isOpen = defineModel<boolean>("open", { default: false });
 
 type ButtonColor = "primary" | "secondary" | "success" | "info" | "warning" | "error" | "neutral";
 
-withDefaults(
+const props = withDefaults(
     defineProps<{
         color?: ButtonColor;
         colorSecond?: ButtonColor;
-        click?: () => void;
+        click?: () => void | Promise<void>;
     }>(),
     {
         color: "primary",
@@ -41,5 +40,16 @@ withDefaults(
     },
 );
 
-//console.log(props.click)
+const busy = ref(false);
+
+async function confirm(close: () => void) {
+    if (busy.value) return;
+    busy.value = true;
+    try {
+        await props.click();
+        close();
+    } finally {
+        busy.value = false;
+    }
+}
 </script>

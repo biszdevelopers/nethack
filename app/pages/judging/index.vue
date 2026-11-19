@@ -29,9 +29,7 @@ const {
 });
 
 const currentSummary = computed(() => summary.value?.current ?? null);
-const judgingOpen = computed(
-    () => hackathon.value?.status === "voting" && Boolean(hackathon.value.judging_open),
-);
+const judgingOpen = computed(() => Boolean(hackathon.value?.is_judging_open));
 const canScore = computed(() => can(NethackPermissions.Judging.scoresWriteAssigned));
 const summaryLoading = computed(
     () => summaryStatus.value === "idle" || summaryStatus.value === "pending",
@@ -51,7 +49,7 @@ async function openQueue() {
 </script>
 
 <template>
-    <main class="mx-auto mt-4 w-full max-w-4xl pb-8">
+    <div class="mx-auto mt-4 w-full max-w-4xl pb-8">
         <header class="mb-6">
             <h1 class="mt-2 text-4xl font-bold text-primary glow">Judging</h1>
             <p class="mt-3 max-w-prose text-muted">
@@ -179,5 +177,5 @@ async function openQueue() {
                 Your completed evaluations from previous seasons will appear here.
             </p>
         </section>
-    </main>
+    </div>
 </template>

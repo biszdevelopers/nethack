@@ -23,7 +23,7 @@ useHead({
             <p>
                 All contributions arrive through pull requests to the
                 <ULink
-                    to="https://www.github.com/basishacks/basishacks-r2"
+                    to="https://github.com/biszdevelopers/nethack"
                     target="_blank"
                     class="text-primary underline"
                 >

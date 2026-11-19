@@ -48,7 +48,7 @@ Validates the stored transaction and provider response, exchanges the code using
 | **Auth** | None |
 | **Query** | OIDC callback parameters (`code`, `state`, or provider error) |
 | **Response** | 302 to the stored safe redirect or `/dashboard` |
-| **Errors** | 401 for missing/expired transaction, state/nonce/PKCE failure, token/UserInfo failure, or identity conflict |
+| **Errors** | 401 for missing/expired transaction, state/nonce/PKCE failure, token/UserInfo failure, identity conflict, or a resolved account that differs from the one signed in when the flow began |
 
 ### GET `/api/auth/session`
 
@@ -81,10 +81,10 @@ A `logout_token` sets `users.tokens_valid_after` for its subject, which invalida
 
 List all users (mod portal).
 
-| Field        | Details                                     |
-| ------------ | ------------------------------------------- |
-| **Auth**     | `nethack.Users.list`                        |
-| **Response** | `data: (APIUser & { is_admin: boolean })[]` |
+| Field | Details |
+| --- | --- |
+| **Auth** | `nethack.Users.list` |
+| **Response** | `data: (APIUser & { is_admin: boolean; is_initial_admin: boolean })[]`; `is_initial_admin` marks immutable designated administrators without shipping their email addresses to the browser |
 
 ### DELETE `/api/users`
 
@@ -93,7 +93,7 @@ Delete users by ID.
 | Field | Details |
 | --- | --- |
 | **Auth** | `nethack.Users.delete` |
-| **Body** | `{ ids: number[] }` |
+| **Body** | `{ ids: number[] }` (at most `MAX_BULK_DELETE_IDS` = 100) |
 | **Response** | `{ message: string }` |
 | **Side effects** | Removes related team_scores, ballot_scores, ballots, peer_voting_scores, user_past_teams, and OAuth2 applications owned by the users |
 
@@ -104,11 +104,11 @@ Get a single user's profile.
 | Field | Details |
 | --- | --- |
 | **Auth** | Anonymous for the public profile; a valid bearer token reveals the caller's own extended profile |
-| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. In the self response, current and past team scores require published results, at least three judge evaluations, and that season's `show_scores`; ranks require published results, at least three evaluations, and `show_ranking`. A self-request with `nethack.Judging.resultsRead` or `nethack.all` can see them without those public gates |
+| **Response** | Self: `GetUserResponse` — own email and full profile with team and past teams; Others: `APIUser` — public profile without email, team ID, or team history. In the self response, current and past team scores require published results, at least three judge evaluations, and that season's `show_scores`; ranks require published results, at least three evaluations, and `show_ranking`; awards require that team's season to publish results. A self-request with `nethack.Judging.resultsRead` or `nethack.all` can see them without those public gates |
 
 ### PATCH `/api/users/:id`
 
-Update the user’s display name or profile theme image. Avatars synchronize from basis-auth on login.
+Update the user’s display name or profile theme image. Avatars synchronize from basis-auth on login. The avatar route serves a fresh local cache before contacting the provider and refreshes at most once per five minutes, so unauthenticated page traffic cannot amplify identity-provider requests.
 
 | Field | Details |
 | --- | --- |
@@ -148,8 +148,8 @@ List submitted teams for the active season, or filter by season.
 
 | Field | Details |
 | --- | --- |
-| **Auth** | Public for the normal listing; `judging=1` requires `nethack.Judging.assignmentsRead` |
-| **Query** | `judging` (if `1`, returns submitted teams for the current judge, excluding the judge's own team); `season_id` (optional season filter) |
+| **Auth** | Public for the normal listing; `judging=true` requires `nethack.Judging.assignmentsRead` |
+| **Query** | `judging` (if `true`, returns submitted teams for the current judge, excluding the judge's own team); `season_id` (optional season filter; when omitted, only the active season is listed) |
 | **Response** | `APITeam[]`; only teams with `project_submitted = 1` are public, ordered by team ID. In the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled |
 
 ### POST `/api/teams`
@@ -160,7 +160,7 @@ Create a new team.
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
 | **Validation** | `CreateTeamRequest` — `{ name: string }` |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the creator is always added to the new team; team names are unique per season (case-insensitive, `409` on conflict) |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the creator is assigned inside the same transaction, so a team never exists without a member; a creator already in an active-season team gets `403`; team names are unique per season (case-insensitive, `409` on conflict) |
 | **Response** | `APITeam` |
 
 ### GET `/api/teams/:id`
@@ -181,8 +181,9 @@ Update team details (save draft).
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `UpdateTeamRequest` — `{ name?, pathway?, project: { name?, description?, demo_url?, repo_url?, sourcing? } }` |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; the team must belong to the active season; project must not already be submitted (`409`); a rename must not duplicate another team's name in the season (`409`) |
 | **Response** | `{ message: string }` |
+| **Side effects** | Writes only the supplied columns, preserving a teammate's concurrent edit of a different field |
 
 ### POST `/api/teams/:id/submit`
 
@@ -192,7 +193,7 @@ Final project submission (irreversible).
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `SubmitTeamRequest` — `{ pathway, project: { name, description, demo_url, repo_url, sourcing? } }` |
-| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted |
+| **Constraint** | Hackathon status must be `not_started` or `in_progress`; project must not already be submitted (`409`) |
 | **Response** | `{ message: string }` |
 | **Side effects** | Sets `project_submitted = 1` on the team |
 
@@ -232,11 +233,11 @@ Read the team's full judge feedback with the all-permissions grant. This admin v
 
 ### GET `/api/teams/:id/users`
 
-List current and past members of a team. The complete roster, including email addresses, is available only to a current or past team member or an administrator with the all-permissions grant.
+List current and past members of a team. The complete roster, including email addresses, is available only to the team's current members or an administrator with the all-permissions grant; a former member no longer receives the roster.
 
 | Field        | Details                                                     |
 | ------------ | ----------------------------------------------------------- |
-| **Auth**     | Current/past team member or all-permissions grant           |
+| **Auth**     | Current team member or all-permissions grant                |
 | **Response** | `GetTeamMembersResponse` — `{ id, email, name, team_id }[]` |
 
 ### POST `/api/teams/:id/users`
@@ -315,12 +316,12 @@ Remove a member from a team.
 
 Get the current user's ballot for peer voting.
 
-| Field            | Details                                                                      |
-| ---------------- | ---------------------------------------------------------------------------- |
-| **Auth**         | Current/past team member or all-permissions grant                            |
-| **Constraint**   | Hackathon status must be `voting` and `voting_enabled` must be `1`           |
-| **Response**     | `GetBallotResponse` — `{ submitted, projects, scores, reasoning }`           |
-| **Eligibility**  | Projects are filtered to the same pathway and exclude the voter's own team   |
+| Field | Details |
+| --- | --- |
+| **Auth** | Current/past team member or all-permissions grant |
+| **Constraint** | `voting_enabled` must be `1` and the event must not be `paused` |
+| **Response** | `GetBallotResponse` — `{ submitted, projects, scores, reasoning, max_votes_per_user }` |
+| **Eligibility** | Projects are filtered to the same pathway and exclude the voter's own team |
 | **Season scope** | Ballots are stored per season; a previous season's ballot never appears here |
 
 ### POST `/api/ballot`
@@ -330,10 +331,10 @@ Submit peer voting ballot.
 | Field | Details |
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
-| **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }` |
-| **Constraint** | Hackathon status must be `voting` and `voting_enabled` must be `1`; number of scores must match eligible projects |
+| **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }`; the number of scores must match eligible projects, and at most `max_votes_per_user` projects may receive a non-zero score (`0` means unlimited) |
+| **Constraint** | `voting_enabled` must be `1` and the event must not be `paused` |
 | **Response** | `{ message: string }` |
-| **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores` |
+| **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores`; a participant may update their ballot until voting closes |
 
 ### GET `/api/ballot/summary`
 
@@ -364,7 +365,7 @@ Get the currently active season (public).
 | Field | Details |
 | --- | --- |
 | **Auth** | None |
-| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); theme is hidden when hackathon status is `not_started` or `paused` |
+| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles and `announcement`); `is_judging_open` and `is_voting_open` are the server-computed gates the judging and ballot APIs enforce (judging requires the `judging_open` toggle; voting requires `voting_enabled`; both are off while the event is `paused`). The toggles are authoritative and are not vetoed by the event phase or published results, so the dev-portal switches dictate state; theme is hidden when hackathon status is `not_started` or `paused` |
 
 ### PATCH `/api/seasons/active`
 
@@ -414,7 +415,7 @@ List all teams across all seasons (mod portal).
 
 | Field | Details |
 | --- | --- |
-| **Auth** | User with `dev_teams` permission or admin |
+| **Auth** | Administrator (`nethack.all`) |
 | **Response** | Array of team objects with `season_name` and `members` (array of `{ id, name, email, profile_picture }`) |
 
 ### DELETE `/api/admin/teams`
@@ -424,7 +425,7 @@ Delete teams by ID.
 | Field | Details |
 | --- | --- |
 | **Auth** | Admin |
-| **Body** | `{ ids: number[] }` |
+| **Body** | `{ ids: number[] }` (at most `MAX_BULK_DELETE_IDS` = 100) |
 | **Response** | `{ message: string }` |
 | **Side effects** | Removes ballot_scores, team_scores, team_awards, user_past_teams, and unassigns users |
 
@@ -473,7 +474,7 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
+Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Nullable text fields (`announcement`, `theme_name`, `theme_description`, `schedule_start`, `schedule_end`) accept an explicit `null` to clear them. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -483,7 +484,7 @@ Update settings for a live or stored season. For live settings, the operational 
 
 ### POST `/api/admin/seasons`
 
-Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty unless one is copied in the rubric editor. Creating an already-active season additionally requires the season-activate permission.
+Create a new season. The season starts as a copy of the live event settings (status, theme, schedule, toggles, vote cap) plus the active season's score display curve, so switching to it cannot blank the event. Its rubric starts empty; activating a settings-copy season with no rubric materializes an immutable copy of the active season's rubric first. Creating an already-active season additionally requires the season-activate permission; if activation fails, the newly inserted season is removed.
 
 | Field        | Details                                                            |
 | ------------ | ------------------------------------------------------------------ |
@@ -530,7 +531,7 @@ Download an anonymized JSON snapshot or CSV export of the database.
 | --- | --- |
 | **Auth** | Admin |
 | **Query** | `format` — `json` (default) or `csv` |
-| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded, and formula-like CSV values are neutralized |
+| **Response** | JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded, and formula-like CSV values are neutralized. The export is generated inside one read-only `REPEATABLE READ` transaction, so paginated tables form a consistent snapshot instead of repeating or omitting rows under concurrent writes |
 
 ---
 

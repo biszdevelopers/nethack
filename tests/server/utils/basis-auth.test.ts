@@ -350,6 +350,28 @@ describe("basis-auth authorization-code flow", () => {
         );
     });
 
+    it("rejects an explicitly unverified email address", async () => {
+        oidc.authorizationCodeGrant.mockResolvedValueOnce({
+            access_token: "access-token",
+            refresh_token: "refresh-token",
+            expires_in: 300,
+            claims: () => ({ sub: "subject-1" }),
+        });
+        oidc.fetchUserInfo.mockResolvedValue({
+            email: "user@example.com",
+            email_verified: false,
+        });
+
+        await expect(
+            completeBasisAuthFlow(new URL("https://hacks.example.test/api/auth/basis/callback"), {
+                state: "state",
+                nonce: "nonce",
+                codeVerifier: "verifier",
+                startedAt: Date.now(),
+            }),
+        ).rejects.toThrow("did not verify the email address");
+    });
+
     it("rejects expired transactions and unsafe post-login redirects", async () => {
         await expect(
             completeBasisAuthFlow(new URL("https://hacks.example.test"), {}),
@@ -379,12 +401,17 @@ describe("basis-auth authorization-code flow", () => {
         ).resolves.toMatchObject({ identity: { picture } });
     });
 
-    it.each([undefined, "", "dashboard", "//evil.example", "/\\evil.example/path"])(
-        "rejects unsafe post-login redirect %s",
-        (redirect) => {
-            expect(sanitizePostLoginRedirect(redirect)).toBeUndefined();
-        },
-    );
+    it.each([
+        undefined,
+        "",
+        "dashboard",
+        "//evil.example",
+        "/\\evil.example/path",
+        "/..//evil.example",
+        "/%2e%2e//evil.example",
+    ])("rejects unsafe post-login redirect %s", (redirect) => {
+        expect(sanitizePostLoginRedirect(redirect)).toBeUndefined();
+    });
 
     it("keeps a same-origin redirect path, query, and fragment", () => {
         expect(sanitizePostLoginRedirect("/dashboard?tab=team#members")).toBe(
@@ -568,18 +595,34 @@ describe("basis-auth authorization-code flow", () => {
     });
 
     it("revokes refresh tokens with the correct token type hint", async () => {
-        await revokeBasisAuthToken("refresh-token");
+        await revokeBasisAuthToken("revocation-hint-refresh-token");
 
-        expect(oidc.tokenRevocation).toHaveBeenCalledWith("configuration", "refresh-token", {
-            token_type_hint: "refresh_token",
-        });
+        expect(oidc.tokenRevocation).toHaveBeenCalledWith(
+            "configuration",
+            "revocation-hint-refresh-token",
+            {
+                token_type_hint: "refresh_token",
+            },
+        );
     });
 
     it("propagates token revocation errors", async () => {
         const failure = new Error("revocation failed");
         oidc.tokenRevocation.mockRejectedValueOnce(failure);
 
-        await expect(revokeBasisAuthToken("refresh-token")).rejects.toBe(failure);
+        await expect(revokeBasisAuthToken("revocation-error-refresh-token")).rejects.toBe(failure);
+    });
+
+    it("bounds a hanging revocation call with a deadline", async () => {
+        vi.useFakeTimers();
+        oidc.tokenRevocation.mockReturnValueOnce(new Promise(() => undefined));
+
+        const pending = revokeBasisAuthToken("deadline-refresh-token");
+        const assertion = expect(pending).rejects.toThrow(
+            "basis-auth token revocation timed out after 8000ms",
+        );
+        await vi.advanceTimersByTimeAsync(8000);
+        await assertion;
     });
 });
 
@@ -665,6 +708,125 @@ describe("basis-auth session refresh", () => {
             { userId: 17, tokens: { accessToken: "new-access-token" } },
             { userId: 18, tokens: { accessToken: "new-access-token" } },
         ]);
+    });
+
+    it("rejects a session whose refresh token was already logged out", async () => {
+        oidc.tokenRevocation.mockResolvedValueOnce(undefined);
+        await revokeBasisAuthToken("early-logout-refresh-token");
+
+        const current = event();
+        establishBasisAuthUserSession(current, 17, {
+            accessToken: "expired-access-token",
+            accessTokenExpiresAt: Date.now(),
+            refreshToken: "early-logout-refresh-token",
+        });
+
+        await expect(getFreshBasisAuthUserSession(current)).resolves.toBeUndefined();
+        expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(false);
+        expect(oidc.refreshTokenGrant).not.toHaveBeenCalled();
+    });
+
+    it("prunes expired rotation and logout tracking entries", async () => {
+        vi.useFakeTimers();
+        try {
+            // Populate both tracking maps with fresh entries.
+            const rotating = event();
+            establishBasisAuthUserSession(rotating, 17, {
+                accessToken: "expired-access-token",
+                accessTokenExpiresAt: Date.now() - 1,
+                refreshToken: "prune-rotation-token",
+            });
+            oidc.refreshTokenGrant.mockResolvedValueOnce({
+                access_token: "rotated-access-token",
+                refresh_token: "rotated-refresh-token",
+                expires_in: 300,
+            });
+            await getFreshBasisAuthUserSession(rotating);
+            oidc.tokenRevocation.mockResolvedValueOnce(undefined);
+            await revokeBasisAuthToken("prune-logout-token");
+
+            // Age the entries past the TTL, then trigger a prune on the next call.
+            await vi.advanceTimersByTimeAsync(61_000);
+            const current = event();
+            establishBasisAuthUserSession(current, 17, {
+                accessToken: "expired-access-token",
+                accessTokenExpiresAt: Date.now() - 1,
+                refreshToken: "prune-trigger-token",
+            });
+            oidc.refreshTokenGrant.mockResolvedValueOnce({
+                access_token: "trigger-access-token",
+                refresh_token: "trigger-refresh-token",
+                expires_in: 300,
+            });
+
+            await expect(getFreshBasisAuthUserSession(current)).resolves.toMatchObject({
+                tokens: { accessToken: "trigger-access-token" },
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("does not restore a session if logout lands during an in-flight refresh", async () => {
+        const current = event();
+        establishBasisAuthUserSession(current, 17, {
+            accessToken: "expiring-access-token",
+            accessTokenExpiresAt: Date.now(),
+            refreshToken: "logout-race-refresh-token",
+        });
+        let resolveRefresh!: (value: unknown) => void;
+        oidc.refreshTokenGrant.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolveRefresh = resolve;
+                }),
+        );
+
+        const pending = getFreshBasisAuthUserSession(current);
+        await vi.waitFor(() => expect(oidc.refreshTokenGrant).toHaveBeenCalledTimes(1));
+        // Logout revokes R0 while the refresh is still in flight.
+        oidc.tokenRevocation.mockResolvedValueOnce(undefined);
+        await revokeBasisAuthToken("logout-race-refresh-token");
+        resolveRefresh({
+            access_token: "should-not-be-sealed",
+            refresh_token: "should-not-be-sealed-refresh",
+            expires_in: 300,
+        });
+
+        await expect(pending).resolves.toBeUndefined();
+        expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(false);
+    });
+
+    it("reuses a completed rotation when a stale-tab refresh fails", async () => {
+        // Tab A rotates R0 -> R1 successfully.
+        const tabA = event();
+        establishBasisAuthUserSession(tabA, 17, {
+            accessToken: "expired-access-token",
+            accessTokenExpiresAt: Date.now(),
+            refreshToken: "cross-tab-refresh-token",
+        });
+        oidc.refreshTokenGrant.mockResolvedValueOnce({
+            access_token: "rotated-access-token",
+            refresh_token: "cross-tab-rotated-token",
+            expires_in: 300,
+        });
+        await expect(getFreshBasisAuthUserSession(tabA)).resolves.toMatchObject({
+            tokens: { accessToken: "rotated-access-token" },
+        });
+
+        // Tab B still holds R0; its refresh fails (rotation reuse rejected).
+        const tabB = event();
+        establishBasisAuthUserSession(tabB, 17, {
+            accessToken: "expired-access-token",
+            accessTokenExpiresAt: Date.now(),
+            refreshToken: "cross-tab-refresh-token",
+        });
+        oidc.refreshTokenGrant.mockRejectedValueOnce(new Error("refresh token already used"));
+
+        await expect(getFreshBasisAuthUserSession(tabB)).resolves.toMatchObject({
+            tokens: { accessToken: "rotated-access-token" },
+        });
+        expect(cookiesFor(tabB).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(true);
     });
 
     it("clears an expired session when refresh fails and permits a later retry", async () => {

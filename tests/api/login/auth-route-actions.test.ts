@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
         value?.startsWith("/") && !value.startsWith("//") ? value : undefined,
     ),
     writeTransaction: vi.fn(),
+    readSession: vi.fn(),
     consumeTransaction: vi.fn(),
     linkUser: vi.fn(),
+    getUser: vi.fn(),
     establishSession: vi.fn(),
 }));
 
@@ -24,11 +26,13 @@ vi.mock("~~/server/utils/basis-auth", () => ({
 }));
 vi.mock("~~/server/utils/basis-auth-session", () => ({
     writeBasisAuthFlowTransaction: mocks.writeTransaction,
+    readBasisAuthUserSession: mocks.readSession,
     consumeBasisAuthFlowTransaction: mocks.consumeTransaction,
     establishBasisAuthUserSession: mocks.establishSession,
 }));
 vi.mock("~~/server/utils/database/users", () => ({
     findOrLinkBasisAuthUser: mocks.linkUser,
+    getUser: mocks.getUser,
 }));
 
 let loginHandler: (event: any) => Promise<unknown>;
@@ -125,7 +129,7 @@ describe("authentication route action patterns", () => {
 
         expect(event.node.res.setHeader).toHaveBeenCalledWith("cache-control", "no-store");
         expect(mocks.sanitizeRedirect).toHaveBeenCalledWith("/dashboard");
-        expect(mocks.beginFlow).toHaveBeenCalledWith("/dashboard");
+        expect(mocks.beginFlow).toHaveBeenCalledWith("/dashboard", undefined);
         expect(mocks.writeTransaction).toHaveBeenCalledWith(event, {
             state: "opaque-state",
             nonce: "opaque-nonce",

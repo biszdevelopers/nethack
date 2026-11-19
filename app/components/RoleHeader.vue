@@ -100,7 +100,7 @@ const navItems = computed<NavigationMenuItem[]>(() => {
             icon: "i-lucide-spotlight",
         },
     ];
-    if (hackathon.value?.status === "voting" && !can(NethackPermissions.Judging.assignmentsRead)) {
+    if (hackathon.value?.is_voting_open && !can(NethackPermissions.Judging.assignmentsRead)) {
         links.push({
             label: "Voting",
             to: "/voting",

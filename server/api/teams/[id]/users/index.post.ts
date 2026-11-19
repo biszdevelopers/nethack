@@ -1,4 +1,5 @@
-import { NethackPermissions, isInitialAdminEmail } from "~~/shared/permissions";
+import { NethackPermissions } from "~~/shared/permissions";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 import { AddTeamMemberRequest, MAX_TEAM_MEMBERS, TeamIdParams } from "~~/shared/schemas";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 

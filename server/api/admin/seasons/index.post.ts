@@ -1,12 +1,14 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { CreateSeasonRequest } from "~~/shared/schemas";
 import { seasons } from "~~/server/database/schema";
+import { eq } from "drizzle-orm";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import {
     getActiveSeason,
     pickSeasonConfig,
     setActiveSeason,
 } from "~~/server/utils/database/seasons";
+import { isUniqueViolation } from "~~/server/utils/database/query";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -58,8 +60,7 @@ export default defineEventHandler(
                 .values({ ...seed, ...seasonInput } as typeof seasons.$inferInsert)
                 .returning({ id: seasons.id });
         } catch (error) {
-            const code = (error as { code?: string }).code;
-            if (code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE") {
+            if (isUniqueViolation(error)) {
                 throw createError({
                     statusCode: 409,
                     message: "A season with that name already exists",
@@ -69,7 +70,17 @@ export default defineEventHandler(
         }
 
         if (isActive === 1 && created) {
-            await setActiveSeason(event, created.id);
+            try {
+                await setActiveSeason(event, created.id);
+            } catch (error) {
+                // Do not leave a stray season behind when activation fails.
+                try {
+                    await event.context.drizzle.delete(seasons).where(eq(seasons.id, created.id));
+                } catch {
+                    // Preserve the original activation failure.
+                }
+                throw error;
+            }
         }
 
         const allSeasons = await getSeasons(event);

@@ -524,4 +524,39 @@ describe("DELETE /api/users", () => {
         const remaining = ctx.drizzle.select().from(users).all();
         expect(remaining).toHaveLength(0);
     });
+
+    it("rolls back the batch when a team would lose its last member", async () => {
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
+        const team = seedTeam(ctx, { name: "Solo Team" });
+        const alice = seedUser(ctx, {
+            email: "alice@basischina.com",
+            team_id: team.id,
+        });
+        const bob = seedUser(ctx, { email: "bob@basischina.com" });
+
+        mockBody.value = { ids: [alice.id, bob.id] };
+
+        await expect(deleteHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: expect.stringContaining("Solo Team"),
+        });
+        expect(ctx.drizzle.select().from(users).all()).toHaveLength(2);
+    });
+
+    it("deletes a member while another member remains on the team", async () => {
+        vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
+        const team = seedTeam(ctx, { name: "Shared Team" });
+        const alice = seedUser(ctx, {
+            email: "alice@basischina.com",
+            team_id: team.id,
+        });
+        seedUser(ctx, { email: "bob@basischina.com", team_id: team.id });
+
+        mockBody.value = { ids: [alice.id] };
+
+        await expect(deleteHandler(createEvent())).resolves.toEqual({
+            message: "Deleted 1 user(s)",
+        });
+        expect(ctx.drizzle.select().from(users).all()).toHaveLength(1);
+    });
 });

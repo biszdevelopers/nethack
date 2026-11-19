@@ -244,6 +244,16 @@ describe("members database helpers", () => {
             );
         });
 
+        it("keeps the last member so the team is not orphaned", async () => {
+            await removeTeamMember(event, 1, 1);
+
+            await expect(removeTeamMember(event, 1, 2)).rejects.toMatchObject({
+                statusCode: 409,
+                message: "Every team must keep at least one member",
+            });
+            expect(await getTeamMembers(event, 1)).toHaveLength(1);
+        });
+
         it("does not record a past team entry on failure", async () => {
             await expect(removeTeamMember(event, 1, 3)).rejects.toThrow();
 
@@ -259,6 +269,12 @@ describe("members database helpers", () => {
             const members = await getTeamMembers(event, 1);
             expect(members).toHaveLength(3);
             expect(members.map((m) => m.name)).toContain("Carol");
+        });
+
+        it("throws a 404 error when the target team does not exist", async () => {
+            await expect(addTeamMember(event, 999, 3)).rejects.toThrow(
+                "User not found or already in a team",
+            );
         });
 
         it("throws a 404 error when the user is already in a team", async () => {
@@ -280,6 +296,23 @@ describe("members database helpers", () => {
                 .prepare("SELECT team_id FROM users WHERE id = 3")
                 .first() as { team_id: number | null };
             expect(user!.team_id).toBe(1);
+        });
+
+        it("allows a stale past-season team and records it as past membership", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('S2', 0)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Team C', 2)")
+                .run();
+
+            await addTeamMember(event, 3, 1);
+
+            const user = event.context.drizzle
+                .prepare("SELECT team_id FROM users WHERE id = 1")
+                .first() as { team_id: number };
+            expect(user!.team_id).toBe(3);
+            expect((await getUserPastTeams(event, 1)).map((team) => team.id)).toContain(1);
         });
 
         it("throws when adding a user who is in a different team", async () => {

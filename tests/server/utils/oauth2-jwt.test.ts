@@ -154,6 +154,20 @@ describe("basis-auth access tokens", () => {
         );
     });
 
+    it("reuses the local user already resolved while validating the token", async () => {
+        const user = { id: 42 };
+        const cachedEvent = () =>
+            ({
+                context: { basisAuthValidatedUser: { subject: "user-1", user } },
+            }) as any;
+
+        await expect(resolveOAuth2User(cachedEvent(), { sub: "user-1" })).resolves.toBe(user);
+        expect(getUserBySubjectMock).not.toHaveBeenCalled();
+
+        await resolveOAuth2User(cachedEvent(), { sub: "other-subject" });
+        expect(getUserBySubjectMock).toHaveBeenCalledTimes(1);
+    });
+
     it("rejects a token without a subject before looking up a local user", async () => {
         await expect(resolveOAuth2User(event(), {})).rejects.toMatchObject({
             statusCode: 401,
@@ -162,11 +176,11 @@ describe("basis-auth access tokens", () => {
         expect(getUserBySubjectMock).not.toHaveBeenCalled();
     });
 
-    it("returns not found when the basis-auth identity has no local user", async () => {
+    it("rejects an access token whose basis-auth identity has no local user", async () => {
         getUserBySubjectMock.mockResolvedValue(undefined);
         await expect(resolveOAuth2User(event(), { sub: "missing-user" })).rejects.toMatchObject({
-            statusCode: 404,
-            message: "User not found",
+            statusCode: 401,
+            statusMessage: "invalid_token",
         });
     });
 });

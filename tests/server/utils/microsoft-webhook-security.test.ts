@@ -24,4 +24,18 @@ describe("Microsoft Graph webhook state validation", () => {
         ).toBe(true);
         expect(hasValidMicrosoftWebhookState([], "secret")).toBe(false);
     });
+
+    it("rejects a non-string client state when a secret is configured", () => {
+        expect(hasValidMicrosoftWebhookState([{ clientState: 42 }], "secret")).toBe(false);
+        expect(hasValidMicrosoftWebhookState([{ clientState: null }], "secret")).toBe(false);
+    });
+
+    it("rejects a multibyte client state without throwing", () => {
+        const expected = "a".repeat(32);
+        const candidate = "α".repeat(16) + "a".repeat(16);
+        expect(() =>
+            hasValidMicrosoftWebhookState([{ clientState: candidate }], expected),
+        ).not.toThrow();
+        expect(hasValidMicrosoftWebhookState([{ clientState: candidate }], expected)).toBe(false);
+    });
 });

@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createMockEvent } from "./helpers";
+import { lockForUpdateIfSupported, supportsRowLocks } from "~~/server/utils/database/query";
 import {
     createTeamScores,
     getTeamScoresByTeamID,
@@ -452,6 +453,23 @@ describe("scores database helpers", () => {
         it("returns an empty array for a non-existent season id", async () => {
             const scores = await getTeamScoresBySeasonId(event, 999);
             expect(scores).toHaveLength(0);
+        });
+    });
+
+    describe("lockForUpdateIfSupported", () => {
+        it("adds FOR UPDATE on PostgreSQL-style queries and no-ops on SQLite", () => {
+            const locked = { for: vi.fn().mockReturnValue("locked") };
+            expect(lockForUpdateIfSupported(locked as any)).toBe("locked");
+            expect(locked.for).toHaveBeenCalledWith("update");
+
+            const plain = {};
+            expect(lockForUpdateIfSupported(plain)).toBe(plain);
+        });
+
+        it("detects row-lock support from the query builder", () => {
+            expect(supportsRowLocks({ for: () => undefined })).toBe(true);
+            expect(supportsRowLocks({})).toBe(false);
+            expect(supportsRowLocks(undefined)).toBe(false);
         });
     });
 });

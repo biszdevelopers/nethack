@@ -58,7 +58,7 @@ const removeMemberMessage = (user: Pick<User, "id" | "name" | "email">) => {
         user.id === currentUser.value?.id ? "leave" : `remove ${user.name || user.email} from`
     } your team?${
         users.value?.length === 1
-            ? " This is the last member of your team, so you won't be able to recover it."
+            ? " Every team must keep at least one member, so the last member cannot be removed."
             : ""
     }`;
 };
@@ -104,17 +104,17 @@ async function onNameSubmit(event: FormSubmitEvent<UpdateTeamRequest>, close: ()
                 color: "success",
                 title: message,
             });
+            if (event.data.name) nameState.name = event.data.name;
             emit("refresh");
             await refresh();
         });
+        close();
     } catch (e) {
         toast.add({
             color: "error",
             title: "Failed to rename team",
             description: getErrorMessage(e),
         });
-    } finally {
-        close();
     }
 }
 
@@ -136,14 +136,14 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
             });
             await refreshInvites();
         });
+        state.email = "";
+        close();
     } catch (e) {
         toast.add({
             color: "error",
             title: "Failed to send invitation",
             description: getErrorMessage(e),
         });
-    } finally {
-        close();
     }
 }
 </script>
@@ -227,7 +227,7 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>, close: () 
                             "
                         >
                             <UButton
-                                :disabled="disabled"
+                                :disabled="disabled || users.length === 1"
                                 icon="i-material-symbols-delete"
                                 color="warning"
                                 variant="soft"

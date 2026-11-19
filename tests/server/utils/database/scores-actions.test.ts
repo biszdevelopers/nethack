@@ -67,14 +67,27 @@ describe("score submission action boundaries", () => {
         expectNoSavedScore();
     });
 
-    it("rejects published results even when the season remains marked active", async () => {
+    it("accepts a score with published results, leaving the judging_open toggle authoritative", async () => {
+        raw.prepare("UPDATE hackathon SET results_published = 1 WHERE id = 1").run();
         raw.prepare("UPDATE seasons SET results_published = 1 WHERE id = 42").run();
+
+        await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
+    });
+
+    it("still rejects a score when the season is not active", async () => {
+        raw.prepare("UPDATE seasons SET is_active = 0 WHERE id = 42").run();
 
         await expect(submit()).rejects.toMatchObject({
             statusCode: 409,
             statusMessage: "Judging is not open for this season.",
         });
         expectNoSavedScore();
+    });
+
+    it("falls back to the season flag when no live hackathon row exists", async () => {
+        raw.prepare("DELETE FROM hackathon WHERE id = 1").run();
+
+        await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
     });
 
     it("reads published results from the authoritative manifest when YAML is live", async () => {
@@ -249,7 +262,6 @@ describe("score submission action boundaries", () => {
     it("requests a row lock on the judging-season read when the driver supports it", async () => {
         const database = event.context.drizzle;
         const originalSelect = database.select.bind(database);
-        let interceptFirstSelect = true;
         let requestedLock: "update" | undefined;
 
         const exposeRowLock = (query: any): any =>
@@ -268,12 +280,7 @@ describe("score submission action boundaries", () => {
                 },
             });
 
-        database.select = (...args: unknown[]) => {
-            const query = originalSelect(...args);
-            if (!interceptFirstSelect) return query;
-            interceptFirstSelect = false;
-            return exposeRowLock(query);
-        };
+        database.select = (...args: unknown[]) => exposeRowLock(originalSelect(...args));
 
         const saved = await submit();
 

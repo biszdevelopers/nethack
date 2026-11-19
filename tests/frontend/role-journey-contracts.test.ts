@@ -13,6 +13,19 @@ const between = (source: string, start: string, end: string) => {
     return source.slice(startIndex, endIndex);
 };
 
+describe("public action paths", () => {
+    const home = readSource("pages", "index.vue");
+
+    it("gives the dashboard link an accessible name even before the event starts", () => {
+        // The visible UAlert only renders after the event starts; a visually
+        // hidden span names the link in the not_started state. Using a static
+        // aria-label instead would clash with the alert's visible text and
+        // trip axe's label-content-name-mismatch rule.
+        expect(home).toContain('<ULink href="/dashboard">');
+        expect(home).toContain('<span v-if="status === \'not_started\'" class="sr-only">');
+    });
+});
+
 describe("participant action paths", () => {
     const voting = readSource("pages", "voting.vue");
     const votingCard = readSource("components", "VotingProjectCard.vue");
@@ -49,14 +62,14 @@ describe("participant action paths", () => {
         expect(voting).toContain(
             "const totalStars = computed(() => state.scores.reduce((a, b) => a + b, 0))",
         );
-        expect(voting).toContain("(state.scores[index] ?? 0) < 5 && totalStars < 10");
-        expect(voting).toContain("(state.scores[index] ?? 0) > 0");
+        expect(voting).toContain("(state.scores[index] ?? 0) < 5 &&");
+        expect(voting).toContain("(state.scores[index] ?? 0) > 0 || !atScoredProjectLimit");
         expect(voting).toContain("state.scores = [...ballot.scores]");
         expect(voting).toContain("Math.min(5, (state.scores[index] ?? 0) + 1)");
-        expect(voting).toContain(
-            ':disabled="totalStars !== 10 || projects.length === 0 || submitting"',
-        );
-        expect(voting).toContain(':disabled="submitted"');
+        expect(voting).toContain("totalStars !== 10 ||");
+        expect(voting).toContain("capBlocksFullBallot");
+        expect(voting).toContain("You can update your ballot until voting closes.");
+        expect(voting).not.toContain(':disabled="submitted"');
     });
 
     it("keeps vote cancellation local and refreshes the saved ballot after success", () => {
@@ -68,18 +81,21 @@ describe("participant action paths", () => {
         expect(submit).toContain("getErrorMessage(e)");
     });
 
-    it("autosaves project edits only when the form is dirty and preserves blank URLs as null", () => {
+    it("autosaves only locally changed fields and preserves blank URLs as null", () => {
         const autosave = between(
             projectForm,
             "async function triggerAutosave",
             "let autosaveInterval",
         );
-        expect(autosave).toContain("if (!dirty.value || !defaultTeam)");
+        expect(autosave).toContain("if (disabled || !dirty.value || !defaultTeam)");
+        expect(autosave).toContain("const payload = autosavePayload()");
         expect(autosave).toContain('method: "PATCH"');
-        expect(autosave).toContain("demo_url: formState.project.demo_url || null");
-        expect(autosave).toContain("repo_url: formState.project.repo_url || null");
-        expect(autosave).toContain("sourcing: formState.project.sourcing");
+        expect(autosave).toContain("body: payload");
+        expect(autosave).toContain("lastSaved = snapshotForm()");
         expect(autosave).toContain('autosaveStatus.value = "Auto-save failed"');
+
+        expect(projectForm).toContain("current.project[key] === lastSaved.project[key]");
+        expect(projectForm).toContain('key === "demo_url" || key === "repo_url"');
     });
 
     it("requires a confirmation step before final submission and clears the pending form event", () => {
@@ -92,9 +108,11 @@ describe("participant action paths", () => {
         expect(onSubmit).toContain('if (intent.value === "submit")');
         expect(onSubmit).toContain("pendingSubmitEvent = event");
         expect(onSubmit).toContain("showConfirmModal.value = true");
-        expect(confirmSubmit).toContain("if (pendingSubmitEvent)");
-        expect(confirmSubmit).toContain("await performSubmit(pendingSubmitEvent)");
+        expect(confirmSubmit).toContain("const event = pendingSubmitEvent");
         expect(confirmSubmit).toContain("pendingSubmitEvent = null");
+        expect(confirmSubmit).toContain("if (event)");
+        expect(confirmSubmit).toContain("await performSubmit(event)");
+        expect(confirmSubmit).toContain("await nextTick()");
     });
 
     it("uses separate save and submit endpoints, reports failures, and refreshes after a save", () => {

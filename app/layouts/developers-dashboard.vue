@@ -2,15 +2,13 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { NethackPermissions } from "~~/shared/permissions";
 
-const { user, status } = await useApiUser({ lazy: true });
+const { user } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
 
 const isAdmin = computed(() => can(NethackPermissions.all));
 
-if (status.value !== "idle" && status.value !== "pending") {
-    if (!isAdmin.value) {
-        throw createError({ statusCode: 403, statusMessage: "Access Denied" });
-    }
+if (!isAdmin.value) {
+    throw createError({ statusCode: 403, statusMessage: "Access Denied" });
 }
 
 const sidebarGroups = computed<Array<{ id: string; label: string; items: NavigationMenuItem[] }>>(

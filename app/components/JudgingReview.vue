@@ -20,7 +20,9 @@ const emit = defineEmits<{
 }>();
 
 const reviewHeading = useTemplateRef<HTMLSpanElement>("reviewHeading");
-const scorePreview = computed(() => calculateWeightedRubricScore(props.track, props.scores));
+const scorePreview = computed(
+    () => Math.round(calculateWeightedRubricScore(props.track, props.scores) * 100) / 100,
+);
 
 function focusReviewHeading(event: Event) {
     event.preventDefault();

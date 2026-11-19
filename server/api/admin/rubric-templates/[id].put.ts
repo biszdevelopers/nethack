@@ -3,6 +3,7 @@ import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
 import { CreateRubricTemplateRequest, PositiveIntParam } from "~~/shared/schemas";
 import { updateRubricTemplate } from "~~/server/utils/database/rubrics";
+import { isUniqueViolation } from "~~/server/utils/database/query";
 
 const ParamsSchema = z.object({ id: PositiveIntParam });
 
@@ -18,7 +19,7 @@ export default defineEventHandler(
                 throw createError({ statusCode: 404, message: "Rubric template not found" });
             return { template };
         } catch (error) {
-            if ((error as { code?: string }).code === "23505") {
+            if (isUniqueViolation(error)) {
                 throw createError({
                     statusCode: 409,
                     message: "A rubric template already uses that name.",

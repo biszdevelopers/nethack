@@ -26,6 +26,21 @@ bun run build
 bun run test:e2e
 ```
 
+### Scenario Matrix
+
+In addition to the journey specs, `e2e/browser/scenario-*.spec.ts` provides five ordered scenario suites that exercise the application across every role. Each suite is a sequence of named `test.step` groups, and together they cover roughly 190 distinct situations (public/guest access, authentication and roles, administrator configuration, team and project lifecycle, and voting/judging/results). The shared browser helpers live in `e2e/browser/scenario-helpers.ts`.
+
+Because the synthetic OIDC provider issues a fresh issuer per run, each suite expects a clean `basishacks_e2e` database. Run them one at a time, recreating the database between suites:
+
+```bash
+# For each of scenario-matrix, scenario-public, scenario-admin,
+# scenario-teams, scenario-judging:
+#   1. drop and recreate basishacks_e2e
+#   2. bunx playwright test e2e/browser/<suite>.spec.ts
+```
+
+The groups are ordered so later steps build on earlier state (for example, a team is created before a project is submitted, and scores are entered before results are published). Each suite restores the active season at the end so it does not pollute a shared harness.
+
 The browser harness reads only `BASISHACKS_E2E_DATABASE_URL`, never `DATABASE_URL`, so browser journeys cannot accidentally mutate the application database. The board demo uses that same isolated database and the synthetic OIDC provider:
 
 ```bash

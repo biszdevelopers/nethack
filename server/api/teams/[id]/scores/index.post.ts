@@ -5,7 +5,7 @@ import { getTeam } from "~~/server/utils/database/teams";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { rubricVersions } from "~~/server/database/schema";
 import { and, eq } from "drizzle-orm";
-import { firstRow } from "~~/server/utils/database/query";
+import { databaseErrorCodes, firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { isJudgingOpen } from "~~/server/utils/judging";
 import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
@@ -72,7 +72,10 @@ export default defineEventHandler(
                 .limit(1),
         );
         if (!version) {
-            throw createError({ status: 409, message: "The active season has no judging rubric." });
+            throw createError({
+                statusCode: 409,
+                message: "The submitted rubric version does not belong to the active season.",
+            });
         }
         const track = getRubricTrack(version.definition, team.pathway);
         if (!track) {
@@ -94,8 +97,15 @@ export default defineEventHandler(
                 rubric_version_id: payload.rubric_version_id,
             });
         } catch (error) {
-            const code = (error as { code?: string }).code;
-            if (code !== "23505" && code !== "SQLITE_CONSTRAINT_PRIMARYKEY" && code !== "1555") {
+            const codes = databaseErrorCodes(error);
+            if (
+                !codes.some(
+                    (code) =>
+                        code === "23505" ||
+                        code === "SQLITE_CONSTRAINT_PRIMARYKEY" ||
+                        code === "1555",
+                )
+            ) {
                 throw error;
             }
             throw createError({

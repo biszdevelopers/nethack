@@ -70,6 +70,7 @@ beforeAll(async () => {
     vi.stubGlobal("getTeam", teamsDb.getTeam);
     vi.stubGlobal("getTeamById", teamsDb.getTeamById);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
     vi.stubGlobal("deleteTeams", teamsDb.deleteTeams);
 
     const membersDb = await import("~~/server/utils/database/members");

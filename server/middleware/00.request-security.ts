@@ -1,7 +1,12 @@
 import { enforceSameOriginCookieRequest } from "~~/server/utils/request-security";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const SERVER_TO_SERVER_POST_PATHS = new Set(["/api/_webhooks/update", "/api/_webhooks/lifecycle"]);
+const SERVER_TO_SERVER_POST_PATHS = new Set([
+    "/api/_webhooks/update",
+    "/api/_webhooks/lifecycle",
+    // basis-auth sends signed backchannel notifications without browser headers.
+    "/api/auth/basis/backchannel",
+]);
 
 /** Protect every cookie-authenticated mutation from cross-site request forgery. */
 export default defineEventHandler((event) => {

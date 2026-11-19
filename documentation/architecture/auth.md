@@ -23,7 +23,7 @@ The callback is derived rather than configured independently:
 ${CURRENT_URL_ORIGIN}/api/auth/basis/callback
 ```
 
-The PKCE verifier, state, nonce, start time, and optional safe relative redirect are kept for at most ten minutes in a dedicated encrypted, HTTP-only, SameSite=Lax transaction cookie. The callback consumes that transaction before exchanging the single-use code, validates the ID token, loads UserInfo, and links the local user.
+The PKCE verifier, state, nonce, start time, optional safe relative redirect, and the local user ID that was signed in when the flow began are kept for at most ten minutes in a dedicated encrypted, HTTP-only, SameSite=Lax transaction cookie. The callback consumes that transaction before exchanging the single-use code, validates the ID token, loads UserInfo, and links the local user. If the flow began while signed in, the callback rejects a login that resolves to a different local user, so a forced re-login cannot silently swap the victim's session for another account.
 
 The callback seals the access and refresh tokens with AES-256-GCM and writes them to the `basis-auth-tokens` cookie. The cookie is HTTP-only, SameSite=Lax, secure for public HTTPS origins (relaxed for loopback HTTP local production), and limited to 3,800 characters after compression. Its plaintext is never exposed to browser JavaScript. A separate short-lived `basis-auth-flow` cookie stores the PKCE transaction and is deleted when the callback consumes it.
 
@@ -39,7 +39,7 @@ The `users` table contains nullable `auth_issuer` and `auth_subject` columns wit
 2. On the first basis-auth login only, the email returned by the configured basis-auth UserInfo endpoint may link to an existing unlinked local user using normalized lowercase comparison. If there is no match, the callback creates a local user. Initial administrator emails are recognized case-insensitively.
 3. Linking preserves the local integer user ID and all records that reference it.
 4. A returning user can update their local email from UserInfo when the address is available. The callback rejects email collisions and attempts to link a second identity to an already linked account.
-5. The callback requires an email from subject-validated UserInfo. Account linking depends on the configured basis-auth provider controlling which address it returns for each subject.
+5. The callback requires an email from subject-validated UserInfo and rejects an explicitly unverified address (`email_verified: false`). Account linking depends on the configured basis-auth provider controlling which address it returns for each subject. If the local account referenced by an existing flow has been deleted, the stale token cookie is cleared and the callback proceeds as a fresh login instead of trapping the browser in a mismatch loop. `GET /api/auth/session` likewise clears and rejects a token whose local user row no longer exists, instead of reporting a logged-in user that every protected route would reject.
 
 The callback stores the basis-auth picture URL from the validated ID token or subject-validated UserInfo. The avatar endpoint loads it from the configured issuer and falls back to an identicon if the provider image is unavailable. Existing local avatars remain usable until a login supplies a provider URL.
 
@@ -61,6 +61,8 @@ Protected APIs trust basis-auth access tokens only. Validation requires the basi
 For accounts carrying the former `participant`, `judge`, or `admin` permission, nethack expands that legacy value into the corresponding granular permission bundle before server checks and frontend display gating. This compatibility bridge does not discard granular permissions already present in the token.
 
 The browser never receives the access or refresh token. Protected browser requests rely on the encrypted HTTP-only cookie; explicit bearer clients can still call the same APIs. The frontend unwraps `APIResponse.data`, converts failed envelopes with `APIError.from`, and redirects to `/api/login` once on a 401 without looping through auth endpoints. Token rotation and refresh happen server-side.
+
+Backchannel revocations are recorded with an insert-first, guarded-update sequence. Each statement is atomic, so concurrent retries carrying different `valid_after` values always converge on the earliest one, and a known expiry is never replaced by null.
 
 ## Retired provider surface
 

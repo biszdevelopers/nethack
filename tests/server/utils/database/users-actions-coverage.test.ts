@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { findOrLinkBasisAuthUser, getUserByBasisAuthSubject } from "~~/server/utils/database/users";
+import {
+    deleteUsersInTransaction,
+    findOrLinkBasisAuthUser,
+    getUserByBasisAuthSubject,
+} from "~~/server/utils/database/users";
 import { createMockEvent } from "./helpers";
 
 describe("existing basis-auth link update actions", () => {
@@ -188,5 +192,37 @@ describe("concurrent basis-auth first logins", () => {
                 picture: null,
             }),
         ).rejects.toThrow("duplicate key");
+    });
+});
+
+describe("bulk user deletion boundaries", () => {
+    it("treats an empty selection as a no-op", async () => {
+        const event = await createMockEvent();
+
+        await expect(
+            deleteUsersInTransaction(event.context.drizzle as any, []),
+        ).resolves.toBeUndefined();
+    });
+
+    it("reports the team id when the team row is already gone", async () => {
+        let selectCount = 0;
+        const transaction = {
+            select: () => ({
+                from: () => ({
+                    where: () => {
+                        selectCount += 1;
+                        if (selectCount === 1) return Promise.resolve([{ team_id: 5 }]);
+                        return { limit: async () => [] };
+                    },
+                }),
+            }),
+            delete: () => ({ where: async () => [] }),
+            update: () => ({ set: () => ({ where: async () => [] }) }),
+        };
+
+        await expect(deleteUsersInTransaction(transaction as any, [1])).rejects.toMatchObject({
+            statusCode: 409,
+            message: expect.stringContaining('team "5"'),
+        });
     });
 });

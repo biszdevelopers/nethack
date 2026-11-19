@@ -74,7 +74,7 @@ Pages can set `hideFooter: true` in their page metadata. The judging workspace u
 
 **File:** `app/layouts/fullwidth-nostick.vue`
 
-Same as `fullwidth` but with a **non-sticky** header (`class="relative"` on `RoleHeader`). The header scrolls with the page content instead of remaining fixed at the top.
+Same as `fullwidth` but with a **non-sticky** header (`class="relative"` on `RoleHeader`). The header scrolls with the page content instead of remaining fixed at the top. Like the other public layouts, it includes a keyboard-visible skip link to the main landmark.
 
 **Structure:**
 

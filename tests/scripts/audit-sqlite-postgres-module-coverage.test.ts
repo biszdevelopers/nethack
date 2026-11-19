@@ -101,6 +101,7 @@ interface ModuleOptions {
     getTargetColumns?: (tableName: string) => Promise<Map<string, Row>>;
     mkdir?: ReturnType<typeof vi.fn>;
     open?: ReturnType<typeof vi.fn>;
+    unlink?: ReturnType<typeof vi.fn>;
     argv1?: string;
     argv?: string[];
     env?: Record<string, string>;
@@ -129,7 +130,9 @@ async function loadAuditModule(options: ModuleOptions = {}) {
             close: vi.fn(async () => undefined),
         }));
 
-    vi.doMock("node:fs/promises", () => ({ mkdir, open }));
+    const rename = vi.fn(async () => undefined);
+    const unlink = options.unlink ?? vi.fn(async () => undefined);
+    vi.doMock("node:fs/promises", () => ({ mkdir, open, rename, unlink }));
     vi.doMock("postgres", () => ({ default: postgresClient }));
     vi.doMock(importModulePath, () => ({
         getTargetColumns: (_sql: unknown, tableName: string) => getTargetColumns(tableName),
@@ -158,6 +161,8 @@ async function loadAuditModule(options: ModuleOptions = {}) {
         sourceInfo,
         mkdir,
         open,
+        rename,
+        unlink,
         getTargetColumns,
     };
 }
@@ -790,6 +795,44 @@ describe("audit CLI", () => {
         );
     });
 
+    it("refuses an audit report path outside the workspace", async () => {
+        const fixture = minimalFixture(
+            createSqlDouble({ targetPrimaryKeys: { teams: ["id"] }, rows: { teams: [{ id: 1 }] } }),
+        );
+        const { module, open } = await loadAuditModule({
+            ...fixture,
+            availableTables: new Set(["teams"]),
+            env: { SQLITE_IMPORT_PATH: "cli.sqlite", DATABASE_URL: "postgres://user@host/db" },
+        });
+
+        await expect(
+            module.main(["--output", "../../outside.json"], {
+                SQLITE_IMPORT_PATH: "cli.sqlite",
+                DATABASE_URL: "postgres://user@host/db",
+            }),
+        ).rejects.toThrow("The audit report path must remain inside the project workspace.");
+        expect(open).not.toHaveBeenCalled();
+    });
+
+    it("refuses to overwrite an existing audit report", async () => {
+        const fixture = minimalFixture(
+            createSqlDouble({ targetPrimaryKeys: { teams: ["id"] }, rows: { teams: [{ id: 1 }] } }),
+        );
+        const { module, open } = await loadAuditModule({
+            ...fixture,
+            availableTables: new Set(["teams"]),
+            env: { SQLITE_IMPORT_PATH: "cli.sqlite", DATABASE_URL: "postgres://user@host/db" },
+        });
+
+        await expect(
+            module.main(["--output", "package.json"], {
+                SQLITE_IMPORT_PATH: "cli.sqlite",
+                DATABASE_URL: "postgres://user@host/db",
+            }),
+        ).rejects.toThrow(/Refusing to overwrite/);
+        expect(open).not.toHaveBeenCalled();
+    });
+
     it("writes a summary report to the requested path", async () => {
         const fixture = minimalFixture(
             createSqlDouble({ targetPrimaryKeys: { teams: ["id"] }, rows: { teams: [{ id: 1 }] } }),
@@ -806,9 +849,9 @@ describe("audit CLI", () => {
             DATABASE_URL: "postgres://user@host/db",
         });
 
-        const outputPath = expect.stringMatching(/reports[\\/]audit\.json$/);
+        const partialPath = expect.stringMatching(/reports[\\/]audit\.json\.\d+\.partial$/);
         expect(mkdir).toHaveBeenCalledWith(expect.stringMatching(/reports$/), { recursive: true });
-        expect(open).toHaveBeenCalledWith(outputPath, "w", 0o600);
+        expect(open).toHaveBeenCalledWith(partialPath, "wx", 0o600);
 
         const file = open.mock.results[0]!.value;
         expect(file).toEqual(expect.any(Promise));
@@ -850,7 +893,7 @@ describe("audit CLI", () => {
         sql.begin.mockImplementation(async () => undefined);
         const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
         const fixture = minimalFixture(sql);
-        const { module, mkdir, open } = await loadAuditModule({
+        const { module, mkdir, open, rename } = await loadAuditModule({
             ...fixture,
             availableTables: new Set(["teams"]),
         });
@@ -861,7 +904,9 @@ describe("audit CLI", () => {
         expect(mkdir).toHaveBeenCalledWith(projectRoot, {
             recursive: true,
         });
-        const outputPath = open.mock.calls[0]![0] as string;
+        const partialPath = open.mock.calls[0]![0] as string;
+        expect(partialPath.endsWith(`.partial`)).toBe(true);
+        const outputPath = rename.mock.calls[0]![1] as string;
         expect(outputPath.endsWith(".tmp-sqlite-postgres-audit.json")).toBe(true);
 
         const summary = JSON.parse(info.mock.calls[0]![0] as string);
@@ -882,11 +927,15 @@ describe("audit CLI", () => {
         });
         const close = vi.fn(async () => undefined);
         const open = vi.fn(async () => ({ writeFile, close }));
+        const unlink = vi.fn(async () => {
+            throw new Error("cleanup failed");
+        });
         const fixture = minimalFixture(createSqlDouble({ targetPrimaryKeys: { teams: ["id"] } }));
         const { module } = await loadAuditModule({
             ...fixture,
             availableTables: new Set(["teams"]),
             open,
+            unlink,
         });
 
         await expect(
@@ -897,6 +946,7 @@ describe("audit CLI", () => {
         ).rejects.toThrow("disk full");
 
         expect(close).toHaveBeenCalledOnce();
+        expect(unlink).toHaveBeenCalledWith(expect.stringMatching(/report\.json\.\d+\.partial$/));
     });
 });
 

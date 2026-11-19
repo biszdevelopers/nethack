@@ -1,5 +1,10 @@
 export function toPublicSeason(season: Season): PublicSeason {
-    const themeIsPublished = season.status !== "not_started" && season.status !== "paused";
+    // Allowlist the published phases: an unexpected legacy status must not
+    // reveal a theme that the organizer never published.
+    const themeIsPublished =
+        season.status === "in_progress" ||
+        season.status === "voting" ||
+        season.status === "finished";
 
     return {
         id: season.id,

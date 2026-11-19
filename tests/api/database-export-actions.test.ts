@@ -59,7 +59,23 @@ describe("database export route", () => {
         ["csv", "text/csv; charset=utf-8", "nethack-export.csv"],
     ])("streams a %s export with no-store headers", async (format, contentType, filename) => {
         mocks.query = { format };
-        const event = { context: { drizzle: { database: true } } };
+        const event = {
+            context: {
+                drizzle: {
+                    database: true,
+                    transaction: async (
+                        callback: (tx: unknown) => Promise<unknown>,
+                        options: unknown,
+                    ) => {
+                        expect(options).toEqual({
+                            isolationLevel: "repeatable read",
+                            accessMode: "read only",
+                        });
+                        return callback(event.context.drizzle);
+                    },
+                },
+            },
+        };
 
         const stream = await exportDatabase(event);
 
@@ -82,7 +98,14 @@ describe("database export route", () => {
     });
 
     it("uses JSON by default and rejects unsupported formats before exporting", async () => {
-        const event = { context: { drizzle: {} } };
+        const event = {
+            context: {
+                drizzle: {
+                    transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+                        callback(event.context.drizzle),
+                },
+            },
+        };
 
         await exportDatabase(event);
         expect(mocks.snapshotDatabaseExport).toHaveBeenCalledWith(

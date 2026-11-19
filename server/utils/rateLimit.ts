@@ -60,8 +60,11 @@ export const UPLOAD_RATE_LIMIT_CONFIG: RateLimitConfig = {
 // Map to store request history: key -> array of timestamps
 const requestHistory = new Map<string, number[]>();
 
-// Cap the Map size to prevent unbounded memory growth
+// Cap the Map size to prevent unbounded memory growth. When the cap is hit,
+// expired keys are swept and the least-recently-used keys are dropped, so a
+// flood of one-off identifiers cannot reset an active client's bucket.
 const MAX_TRACKED_KEYS = 10000;
+const EVICT_DOWN_TO_KEYS = 9000;
 
 // Interval-based cleanup (runs every 5 minutes)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
@@ -85,6 +88,26 @@ function cleanupStaleEntries(now: number, windowMs: number) {
         } else {
             requestHistory.set(key, recentTimes);
         }
+    }
+}
+
+/** Drop expired keys, then evict the least-recently-active keys down to the watermark. */
+function enforceCapacity(now: number, windowMs: number) {
+    const active: Array<{ key: string; lastSeen: number }> = [];
+    for (const [key, times] of requestHistory.entries()) {
+        const recent = times.filter((timestamp) => now - timestamp < windowMs);
+        if (recent.length === 0) {
+            requestHistory.delete(key);
+            continue;
+        }
+        requestHistory.set(key, recent);
+        active.push({ key, lastSeen: recent[recent.length - 1]! });
+    }
+
+    if (active.length <= MAX_TRACKED_KEYS) return;
+    active.sort((left, right) => left.lastSeen - right.lastSeen);
+    for (let index = 0; active.length - index > EVICT_DOWN_TO_KEYS; index += 1) {
+        requestHistory.delete(active[index]!.key);
     }
 }
 
@@ -190,10 +213,8 @@ export function applyRateLimit(
         history.push(now);
         requestHistory.set(identifier, history);
 
-        // Enforce Map size cap by evicting the oldest entry
         if (requestHistory.size > MAX_TRACKED_KEYS) {
-            const firstKey = requestHistory.keys().next().value!;
-            requestHistory.delete(firstKey);
+            enforceCapacity(now, finalConfig.windowMs);
         }
 
         return await handler(event);

@@ -2,6 +2,7 @@ import type { H3Event } from "h3";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
     users,
+    teams,
     teamScores,
     ballots,
     ballotScores,
@@ -9,8 +10,9 @@ import {
     peerVotingScores,
     oauth2Applications,
 } from "~~/server/database/schema";
-import { changedRows, firstRow } from "./query";
-import { isInitialAdminEmail } from "~~/shared/permissions";
+import type { DrizzleDatabase } from "~~/server/database";
+import { changedRows, firstRow, isUniqueViolation } from "./query";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 
 export async function getUser(event: H3Event, userID: number): Promise<User | null> {
     const row = await firstRow(
@@ -142,8 +144,7 @@ export async function findOrLinkBasisAuthUser(
     } catch (error) {
         // Two simultaneous first logins can race the unique identity/email
         // indexes. The loser re-reads the winner's committed row.
-        const code = (error as { code?: string }).code;
-        if (code === "23505" || code === "SQLITE_CONSTRAINT_UNIQUE") {
+        if (isUniqueViolation(error)) {
             const existing = await firstRow(
                 event.context.drizzle
                     .select()
@@ -237,31 +238,66 @@ export async function updateUserProfilePicture(event: H3Event, user: User) {
     }
 }
 
-export async function deleteUsers(event: H3Event, userIDs: number[]) {
+export async function deleteUsersInTransaction(
+    tx: Pick<DrizzleDatabase, "delete" | "select" | "update">,
+    userIDs: number[],
+) {
     if (userIDs.length === 0) return;
 
-    await event.context.drizzle.transaction(async (tx) => {
-        await tx.delete(teamScores).where(inArray(teamScores.judge_user_id, userIDs));
-        await tx
-            .delete(ballotScores)
-            .where(
-                inArray(
-                    ballotScores.ballot_id,
-                    tx
-                        .select({ id: ballots.id })
-                        .from(ballots)
-                        .where(inArray(ballots.user_id, userIDs)),
-                ),
-            );
-        await tx.delete(ballots).where(inArray(ballots.user_id, userIDs));
-        await tx.delete(peerVotingScores).where(inArray(peerVotingScores.user_id, userIDs));
-        await tx.delete(userPastTeams).where(inArray(userPastTeams.user_id, userIDs));
+    const memberships = await tx
+        .select({ team_id: users.team_id })
+        .from(users)
+        .where(inArray(users.id, userIDs));
+    const affectedTeamIds = [
+        ...new Set(
+            memberships
+                .map(({ team_id }) => team_id)
+                .filter((teamId): teamId is number => teamId !== null),
+        ),
+    ];
 
-        // Retain provider clients for audit, but detach deleted owners.
-        await tx
-            .update(oauth2Applications)
-            .set({ owner_id: null })
-            .where(inArray(oauth2Applications.owner_id, userIDs));
-        await tx.delete(users).where(inArray(users.id, userIDs));
-    });
+    await tx.delete(teamScores).where(inArray(teamScores.judge_user_id, userIDs));
+    await tx
+        .delete(ballotScores)
+        .where(
+            inArray(
+                ballotScores.ballot_id,
+                tx
+                    .select({ id: ballots.id })
+                    .from(ballots)
+                    .where(inArray(ballots.user_id, userIDs)),
+            ),
+        );
+    await tx.delete(ballots).where(inArray(ballots.user_id, userIDs));
+    await tx.delete(peerVotingScores).where(inArray(peerVotingScores.user_id, userIDs));
+    await tx.delete(userPastTeams).where(inArray(userPastTeams.user_id, userIDs));
+
+    // Retain provider clients for audit, but detach deleted owners.
+    await tx
+        .update(oauth2Applications)
+        .set({ owner_id: null })
+        .where(inArray(oauth2Applications.owner_id, userIDs));
+    await tx.delete(users).where(inArray(users.id, userIDs));
+
+    // A team with no members can neither manage its project nor invite a
+    // replacement. Roll back the whole delete and let the administrator make
+    // the destructive team deletion explicit.
+    for (const teamId of affectedTeamIds) {
+        const remaining = await firstRow(
+            tx.select({ id: users.id }).from(users).where(eq(users.team_id, teamId)).limit(1),
+        );
+        if (remaining) continue;
+        const team = await firstRow(
+            tx.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1),
+        );
+        throw createError({
+            statusCode: 409,
+            message: `Deleting these users would leave team "${team?.name ?? teamId}" without members. Delete the team first.`,
+        });
+    }
+}
+
+export async function deleteUsers(event: H3Event, userIDs: number[]) {
+    if (userIDs.length === 0) return;
+    await event.context.drizzle.transaction((tx) => deleteUsersInTransaction(tx, userIDs));
 }

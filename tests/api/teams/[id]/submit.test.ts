@@ -40,6 +40,7 @@ beforeAll(async () => {
     const teamsDb = await import("~~/server/utils/database/teams");
     vi.stubGlobal("getTeam", teamsDb.getTeam);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
 
     const hackathonDb = await import("~~/server/utils/database/hackathon");
     vi.stubGlobal("getHackathon", hackathonDb.getHackathon);
@@ -214,7 +215,7 @@ describe("POST /api/teams/:id/submit", () => {
         vi.stubGlobal("getUser", originalGetUser);
     });
 
-    it("returns 403 when project is already submitted", async () => {
+    it("returns 409 when project is already submitted", async () => {
         const team = seedTeam(ctx, {
             name: "Submitted Team",
             project_submitted: 1,
@@ -227,9 +228,35 @@ describe("POST /api/teams/:id/submit", () => {
         mockBody.value = validPayload();
 
         await expect(handler(createEvent())).rejects.toMatchObject({
-            statusCode: 403,
+            statusCode: 409,
             message: "Project is already submitted",
         });
+    });
+
+    it("does not overwrite a project submitted between the guard and the write", async () => {
+        const team = seedTeam(ctx, { name: "Race Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+        ctx.drizzle
+            .update(teams)
+            .set({ project_submitted: 1, project_name: "Locked" })
+            .where(eq(teams.id, team.id))
+            .run();
+
+        const getTeamSpy = vi
+            .spyOn(globalThis as any, "getTeam")
+            .mockResolvedValue({ ...team, project_submitted: 0 });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        try {
+            await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+            const after = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+            expect(after!.project_name).toBe("Locked");
+        } finally {
+            getTeamSpy.mockRestore();
+        }
     });
 
     it("validates request body through SubmitTeamRequest schema", async () => {

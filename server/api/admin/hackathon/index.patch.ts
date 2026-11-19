@@ -2,7 +2,8 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { AdminUpdateHackathonRequest, LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
-import { getLiveOverrides } from "~~/server/utils/database/hackathon";
+import { invalidateHackathonCache, mergeLiveOverrides } from "~~/server/utils/database/hackathon";
+import { firstRow, lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import { getSeasons } from "~~/server/utils/database/seasons";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import {
@@ -27,10 +28,11 @@ export default defineEventHandler(
         // Extract season_id — it's a routing hint, not a config field
         const { season_id, ...rawConfig } = body as Record<string, any>;
 
-        // Strip null/undefined — they'd violate NOT NULL constraints
+        // Keep explicit nulls: the schema and DB both allow clearing these
+        // text fields. Only undefined means "not provided".
         const configFields: Record<string, any> = {};
         for (const [key, value] of Object.entries(rawConfig)) {
-            if (value !== null && value !== undefined) configFields[key] = value;
+            if (value !== undefined) configFields[key] = value;
         }
 
         if (Object.keys(configFields).length === 0) {
@@ -72,17 +74,32 @@ export default defineEventHandler(
                 await writeHackathonConfig(statics);
             }
 
-            const overrides = { ...(await getLiveOverrides(event)), ...operational };
-            await event.context.drizzle
-                .update(hackathon)
-                .set({ ...statics, ...operational, live_overrides: overrides })
-                .where(eq(hackathon.id, 1));
-            if (activeSeason) {
-                await event.context.drizzle
-                    .update(seasons)
-                    .set({ ...statics, ...operational })
-                    .where(eq(seasons.id, activeSeason.id));
-            }
+            // Merge the stored overrides under a row lock so two administrators
+            // saving different switches cannot silently drop each other's.
+            // Keep the same lock order as season activation: seasons first,
+            // then hackathon. The reverse order can deadlock concurrent writes.
+            await event.context.drizzle.transaction(async (tx) => {
+                if (activeSeason) {
+                    await tx
+                        .update(seasons)
+                        .set({ ...statics, ...operational })
+                        .where(eq(seasons.id, activeSeason.id));
+                }
+                const locked = await firstRow(
+                    lockForUpdateIfSupported(
+                        tx
+                            .select({ live_overrides: hackathon.live_overrides })
+                            .from(hackathon)
+                            .where(eq(hackathon.id, 1))
+                            .limit(1),
+                    ),
+                );
+                const overrides = mergeLiveOverrides(locked?.live_overrides, operational);
+                await tx
+                    .update(hackathon)
+                    .set({ ...statics, ...operational, live_overrides: overrides })
+                    .where(eq(hackathon.id, 1));
+            });
         } else if (hackathonUsesYaml()) {
             // Historical and future seasons keep editable stored settings, but
             // editing them is a season-level change, not a live-event change.
@@ -119,19 +136,20 @@ export default defineEventHandler(
         } else {
             // No season — write the global row and mirror it onto the active
             // season so public visibility resolvers see the same settings.
-            await event.context.drizzle
-                .update(hackathon)
-                .set(configFields)
-                .where(eq(hackathon.id, 1));
-
+            // Seasons first, then hackathon, matching activation's lock order.
             if (activeSeason) {
                 await event.context.drizzle
                     .update(seasons)
                     .set(configFields)
                     .where(eq(seasons.id, activeSeason.id));
             }
+            await event.context.drizzle
+                .update(hackathon)
+                .set(configFields)
+                .where(eq(hackathon.id, 1));
         }
 
+        invalidateHackathonCache(event);
         const updated = await getHackathon(event);
         const allSeasons = await getSeasons(event);
         return { hackathon: updated, seasons: allSeasons };

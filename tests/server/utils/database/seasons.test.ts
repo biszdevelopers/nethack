@@ -223,6 +223,70 @@ describe("seasons database helpers", () => {
             expect(oldSeason!.is_active).toBe(0);
         });
 
+        it("copies the active season's rubric into a settings-copy season", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Old', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('New', 0)")
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO rubric_versions(season_id, version, name, definition, created_at) VALUES(1, 1, 'Inherited', '{\"tracks\":{}}', CURRENT_TIMESTAMP)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare("UPDATE seasons SET rubric_version_id = 1 WHERE id = 1")
+                .run();
+
+            await setActiveSeason(event, 2);
+
+            const target = await getSeasonById(event, 2);
+            expect(target!.rubric_version_id).not.toBeNull();
+            const copied = event.context.drizzle
+                .getRawDb()
+                .prepare("SELECT season_id, name, definition FROM rubric_versions WHERE id = ?")
+                .get(target!.rubric_version_id) as {
+                season_id: number;
+                name: string;
+                definition: string;
+            };
+            expect(copied.season_id).toBe(2);
+            expect(copied.name).toBe("Inherited");
+            expect(JSON.parse(copied.definition)).toEqual({ tracks: {} });
+        });
+
+        it("reuses an existing rubric row when the season pointer is null", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Old', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('New', 0)")
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO rubric_versions(season_id, version, name, definition, created_at) VALUES(1, 1, 'Source', '{\"tracks\":{}}', CURRENT_TIMESTAMP)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO rubric_versions(season_id, version, name, definition, created_at) VALUES(2, 1, 'Existing', '{\"tracks\":{}}', CURRENT_TIMESTAMP)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare("UPDATE seasons SET rubric_version_id = 1 WHERE id = 1")
+                .run();
+
+            await setActiveSeason(event, 2);
+
+            const target = await getSeasonById(event, 2);
+            const reused = event.context.drizzle
+                .getRawDb()
+                .prepare("SELECT name FROM rubric_versions WHERE id = ?")
+                .get(target!.rubric_version_id) as { name: string };
+            expect(reused.name).toBe("Existing");
+        });
+
         it("mirrors every activated season setting onto the live singleton", async () => {
             event.context.drizzle
                 .prepare(

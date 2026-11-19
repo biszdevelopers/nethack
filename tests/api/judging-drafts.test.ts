@@ -14,7 +14,7 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "./helpers";
-import { judgingDrafts, teamScores, users } from "~~/server/database/schema";
+import { hackathon, judgingDrafts, teamScores, users } from "~~/server/database/schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import { clearRateLimitHistory, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -534,5 +534,24 @@ describe("judging draft rubric recovery", () => {
         ).toMatchObject({ judge_user_id: otherJudgeId });
 
         await expect(deleteDraftHandler(createEvent())).resolves.toEqual({ deleted: true });
+    });
+
+    it("lets the judging toggle dictate draft deletion even with results published", async () => {
+        ctx.drizzle
+            .update(hackathon)
+            .set({ results_published: 1, judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+
+        await expect(deleteDraftHandler(createEvent())).resolves.toEqual({ deleted: true });
+    });
+
+    it("refuses to delete a draft when the judging toggle is off", async () => {
+        ctx.drizzle.update(hackathon).set({ judging_open: 0 }).where(eq(hackathon.id, 1)).run();
+
+        await expect(deleteDraftHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "Judging is not open",
+        });
     });
 });

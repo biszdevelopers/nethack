@@ -48,6 +48,7 @@ beforeAll(async () => {
     vi.stubGlobal("getSubmittedUnjudgedTeams", teamsDb.getSubmittedUnjudgedTeams);
     vi.stubGlobal("getTeamsBySeason", teamsDb.getTeamsBySeason);
     vi.stubGlobal("updateTeam", teamsDb.updateTeam);
+    vi.stubGlobal("updateTeamPartial", teamsDb.updateTeamPartial);
 
     const hackathonDb = await import("~~/server/utils/database/hackathon");
     vi.stubGlobal("getHackathon", hackathonDb.getHackathon);
@@ -356,8 +357,8 @@ describe("PATCH /api/admin/hackathon action edges", () => {
         expect(saved).toMatchObject({ ...timestamps, start_timestamp: 0, end_timestamp: 0 });
     });
 
-    it("rejects a season routing hint with no updateable configuration", async () => {
+    it("applies an explicit null clear together with a season routing hint", async () => {
         mockBody.value = { season_id: 1, schedule_start: null };
-        await expect(updateHackathon(event())).rejects.toMatchObject({ statusCode: 400 });
+        await expect(updateHackathon(event())).resolves.toBeDefined();
     });
 });

@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
     clearBasisAuthUserSession: vi.fn(),
     setResponseHeader: vi.fn(),
     deleteTeams: vi.fn(),
+    deleteTeamsInTransaction: vi.fn(),
+    calculateSeasonScores: vi.fn(),
+    calculateSeasonScoresWithDatabase: vi.fn(),
     getActiveSeason: vi.fn(),
     getSeasonById: vi.fn(),
     computeScores: vi.fn(),
@@ -37,14 +40,18 @@ vi.mock("~~/server/utils/rateLimit", () => ({
     AUTH_RATE_LIMIT_CONFIG: {},
     DEFAULT_RATE_LIMIT_CONFIG: {},
 }));
-vi.mock("~~/server/utils/database/teams", () => ({ deleteTeams: mocks.deleteTeams }));
+vi.mock("~~/server/utils/database/teams", () => ({
+    deleteTeams: mocks.deleteTeams,
+    deleteTeamsInTransaction: mocks.deleteTeamsInTransaction,
+}));
 vi.mock("~~/server/utils/database/seasons", () => ({
     getActiveSeason: mocks.getActiveSeason,
     getSeasonById: mocks.getSeasonById,
 }));
 vi.mock("~~/server/utils/scoring", () => ({
     computeScores: mocks.computeScores,
-    calculateSeasonScores: vi.fn(),
+    calculateSeasonScores: mocks.calculateSeasonScores,
+    calculateSeasonScoresWithDatabase: mocks.calculateSeasonScoresWithDatabase,
 }));
 vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
 vi.mock("~~/server/utils/database/rubrics", () => ({
@@ -63,6 +70,9 @@ const event = {
             selectDistinct: vi.fn(() => ({
                 from: () => ({ where: async () => [] }),
             })),
+            transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+                callback(event.context.drizzle),
+            ),
         },
     },
 };
@@ -164,26 +174,33 @@ describe("logout route actions", () => {
 describe("admin team deletion actions", () => {
     it("authorizes the deletion and reports the number of removed teams", async () => {
         mockBody.value = { ids: [3, 8] };
-        mocks.deleteTeams.mockResolvedValue(undefined);
+        mocks.deleteTeamsInTransaction.mockResolvedValue(undefined);
 
         await expect(deleteTeams(event)).resolves.toEqual({ message: "Deleted 2 team(s)" });
         expect(globalThis.requireUser).toHaveBeenCalledWith(event, NethackPermissions.Teams.delete);
-        expect(mocks.deleteTeams).toHaveBeenCalledWith(event, [3, 8]);
+        expect(mocks.deleteTeamsInTransaction).toHaveBeenCalledWith(event.context.drizzle, [3, 8]);
     });
 
     it("recomputes every affected season after deleting teams", async () => {
         mockBody.value = { ids: [3] };
-        mocks.deleteTeams.mockResolvedValue(undefined);
+        mocks.deleteTeamsInTransaction.mockResolvedValue(undefined);
         (event.context.drizzle as any).selectDistinct = vi.fn(() => ({
             from: () => ({ where: async () => [{ season_id: 5 }, { season_id: 6 }] }),
         }));
-        const scoring = await import("~~/server/utils/scoring");
 
         await deleteTeams(event);
 
-        expect(scoring.calculateSeasonScores).toHaveBeenCalledTimes(2);
-        expect(scoring.calculateSeasonScores).toHaveBeenCalledWith(event, 5, true);
-        expect(scoring.calculateSeasonScores).toHaveBeenCalledWith(event, 6, true);
+        expect(mocks.calculateSeasonScoresWithDatabase).toHaveBeenCalledTimes(2);
+        expect(mocks.calculateSeasonScoresWithDatabase).toHaveBeenCalledWith(
+            event.context.drizzle,
+            5,
+            true,
+        );
+        expect(mocks.calculateSeasonScoresWithDatabase).toHaveBeenCalledWith(
+            event.context.drizzle,
+            6,
+            true,
+        );
     });
 
     it.each([undefined, { ids: [0] }, { ids: [1.5] }, { ids: "2" }])(
@@ -202,13 +219,13 @@ describe("admin team deletion actions", () => {
         mockBody.value = { ids: [3] };
 
         await expect(deleteTeams(event)).rejects.toMatchObject({ statusCode: 403 });
-        expect(mocks.deleteTeams).not.toHaveBeenCalled();
+        expect(mocks.deleteTeamsInTransaction).not.toHaveBeenCalled();
     });
 
     it("propagates database deletion failures", async () => {
         const failure = new Error("database unavailable");
         mockBody.value = { ids: [3] };
-        mocks.deleteTeams.mockRejectedValue(failure);
+        mocks.deleteTeamsInTransaction.mockRejectedValue(failure);
 
         await expect(deleteTeams(event)).rejects.toBe(failure);
     });

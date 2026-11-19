@@ -6,7 +6,8 @@
             <div class="w-full flex flex-col gap-2">
                 <p class="text-muted text-xs inline-flex items-baseline gap-1">
                     <UIcon name="i-lucide-copyright" />
-                    {{ new Date().getFullYear() }} BISZ Developers' Club, BINJ Hack Club
+                    <ClientOnly>{{ new Date().getFullYear() }}</ClientOnly>
+                    BISZ Developers' Club, BINJ Hack Club
                 </p>
                 <ULink class="text-xs inline-flex items-center" to="/contributing" target="_blank">
                     Contribute to nethack
@@ -238,7 +239,7 @@
                 icon="i-simple-icons-github"
                 color="neutral"
                 variant="ghost"
-                to="https://github.com/basishacks/basishacks-r2"
+                to="https://github.com/biszdevelopers/nethack"
                 target="_blank"
                 class="min-h-11 min-w-11"
                 aria-label="GitHub"

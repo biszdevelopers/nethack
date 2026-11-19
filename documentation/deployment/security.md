@@ -237,7 +237,7 @@ Token verification uses `jose.jwtVerify()` and a remotely refreshed basis-auth J
 
 ## Backchannel Logout
 
-basis-auth requires a verified backchannel logout URL for the resource before authorization-code sign-in works. `POST /api/auth/basis/backchannel` answers the webhook challenge, applies `logout_token` events, and denylists revoked access-token `jti` values. The receiver authenticates to the private listener with `BASIS_AUTH_RESOURCE_SECRET` and signs `HMAC-SHA256(challenge)`; it never trusts unsigned form fields. See [basis-auth Integration](/architecture/oauth2#backchannel-logout-and-revocation).
+basis-auth requires a verified backchannel logout URL for the resource before authorization-code sign-in works. `POST /api/auth/basis/backchannel` answers the webhook challenge, applies `logout_token` events, and denylists revoked access-token `jti` values. The receiver authenticates to the private listener with `BASIS_AUTH_RESOURCE_SECRET` and signs `HMAC-SHA256(challenge)`; it never trusts unsigned form fields. It is exempt from the browser-origin CSRF check because basis-auth posts it server-to-server without browser headers; the signed proof is its authentication. See [basis-auth Integration](/architecture/oauth2#backchannel-logout-and-revocation).
 
 ## PKCE Support
 

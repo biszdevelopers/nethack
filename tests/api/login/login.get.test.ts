@@ -1,12 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockQueryState, resetMockState, setupNitroGlobals } from "../helpers";
 
-const { beginFlowMock, sanitizeMock, writeFlowMock } = vi.hoisted(() => ({
+const { beginFlowMock, sanitizeMock, writeFlowMock, readSessionMock } = vi.hoisted(() => ({
     beginFlowMock: vi.fn(),
     sanitizeMock: vi.fn((value?: string) =>
         value?.startsWith("/") && !value.startsWith("//") ? value : undefined,
     ),
     writeFlowMock: vi.fn(),
+    readSessionMock: vi.fn(),
 }));
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -20,6 +21,7 @@ vi.mock("~~/server/utils/basis-auth", () => ({
 }));
 vi.mock("~~/server/utils/basis-auth-session", () => ({
     writeBasisAuthFlowTransaction: writeFlowMock,
+    readBasisAuthUserSession: readSessionMock,
 }));
 
 let handler: any;
@@ -51,7 +53,7 @@ describe("GET /api/login", () => {
         await handler({ context: {} });
 
         expect(sanitizeMock).toHaveBeenCalledWith("/dashboard");
-        expect(beginFlowMock).toHaveBeenCalledWith("/dashboard");
+        expect(beginFlowMock).toHaveBeenCalledWith("/dashboard", undefined);
         expect(writeFlowMock).toHaveBeenCalledWith(expect.anything(), {
             state: "state",
             nonce: "nonce",
@@ -70,7 +72,15 @@ describe("GET /api/login", () => {
         async (redirect) => {
             mockQueryState.value = { redirect };
             await handler({ context: {} });
-            expect(beginFlowMock).toHaveBeenCalledWith(undefined);
+            expect(beginFlowMock).toHaveBeenCalledWith(undefined, undefined);
         },
     );
+
+    it("binds the flow to the account that is already signed in", async () => {
+        readSessionMock.mockReturnValueOnce({ userId: 9 });
+
+        await handler({ context: {} });
+
+        expect(beginFlowMock).toHaveBeenCalledWith(undefined, 9);
+    });
 });

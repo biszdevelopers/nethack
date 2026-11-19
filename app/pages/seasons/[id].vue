@@ -35,7 +35,7 @@ const seasonLabel = season.status.replaceAll("_", " ");
 </script>
 
 <template>
-    <main class="mx-auto mt-4 w-full max-w-4xl pb-8">
+    <div class="mx-auto mt-4 w-full max-w-4xl pb-8">
         <UButton to="/" variant="ghost" class="mb-5 min-h-11" leading-icon="i-lucide-arrow-left">
             Back to overview
         </UButton>
@@ -106,5 +106,5 @@ const seasonLabel = season.status.replaceAll("_", " ");
                 </li>
             </ul>
         </nav>
-    </main>
+    </div>
 </template>

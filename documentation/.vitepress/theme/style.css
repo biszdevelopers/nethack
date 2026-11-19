@@ -5,7 +5,7 @@
 
 @font-face {
     font-family: "Monaspace Neon";
-    src: url("/docs/fonts/Monaspace-Neon.woff2") format("woff2");
+    src: url("./Monaspace-Neon.woff2") format("woff2");
     font-weight: 100 900;
     font-style: normal;
     font-display: swap;

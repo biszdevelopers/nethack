@@ -8,6 +8,17 @@ if (hackathonError.value) {
     throw hackathonError.value;
 }
 
+const statusLabels: Record<string, string> = {
+    not_started: "upcoming",
+    in_progress: "ongoing",
+    voting: "voting",
+    finished: "completed",
+    paused: "paused",
+};
+const statusLabel = computed(
+    () => statusLabels[hackathon.value?.status ?? "not_started"] ?? "upcoming",
+);
+
 const items = ref<NavigationMenuItem[][]>([
     [
         {
@@ -75,13 +86,9 @@ const items = ref<NavigationMenuItem[][]>([
             <aside class="hidden lg:block lg:w-64 shrink-0">
                 <UCard>
                     <template #header>
-                        <span
-                            v-if="hackathon?.status == 'in_progress'"
-                            class="uppercase text-sm font-bold text-muted"
-                        >
-                            ongoing
+                        <span class="uppercase text-sm font-bold text-muted">
+                            {{ statusLabel }}
                         </span>
-                        <span v-else class="uppercase text-sm font-bold text-muted">completed</span>
                         <h3 class="text-2xl bold glow">
                             {{ hackathon?.theme_name || "Hackathon" }}
                         </h3>

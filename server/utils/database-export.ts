@@ -1,6 +1,6 @@
 import * as schema from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
-import { asc } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import type { LiveOverrides } from "~~/shared/schemas";
 import { hackathonUsesYaml, readHackathonConfig } from "./hackathon-config";
@@ -65,8 +65,18 @@ function anonymizeExportRow(name: string, row: Record<string, unknown>) {
 
 /** Stable page order: every exported table is ordered by its primary key. */
 function exportOrder(table: unknown) {
-    const { primaryKeys } = getTableConfig(table as never);
-    return primaryKeys.flatMap((key) => key.columns.map((column) => asc(column)));
+    const config = getTableConfig(table as never);
+    // Drizzle's `primaryKeys` only contains table-level composite keys;
+    // column-level `.primaryKey()` declarations live on the column itself.
+    const composite = config.primaryKeys.flatMap((key) => key.columns.map((column) => asc(column)));
+    if (composite.length > 0) return composite;
+    const columnPrimary = config.columns
+        .filter((column) => (column as { primary?: boolean }).primary)
+        .map((column) => asc(column));
+    if (columnPrimary.length > 0) return columnPrimary;
+    // `peer_voting_scores` has only a unique index, so fall back to PostgreSQL's
+    // physical row identifier to keep LIMIT/OFFSET pages from repeating rows.
+    return [sql`ctid`];
 }
 
 /** Stream an admin database export without exposing judge links or OAuth client secrets. */

@@ -80,13 +80,12 @@ export async function verifyOAuth2JWT(event: H3Event): Promise<OAuth2JWTPayload>
 export async function resolveOAuth2User(event: H3Event, payload: Pick<OAuth2JWTPayload, "sub">) {
     if (!payload.sub) invalidAccessToken();
 
-    const user = await getUserByBasisAuthSubject(event, getBasisAuthConfig().issuer, payload.sub);
-    if (!user) {
-        throw createError({
-            statusCode: 404,
-            message: "User not found",
-        });
-    }
+    const validated = event.context.basisAuthValidatedUser;
+    const user =
+        validated?.subject === payload.sub
+            ? validated.user
+            : await getUserByBasisAuthSubject(event, getBasisAuthConfig().issuer, payload.sub);
+    if (!user) invalidAccessToken();
 
     return user;
 }

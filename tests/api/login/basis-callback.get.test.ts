@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
     complete: vi.fn(),
     consumeFlow: vi.fn(),
     linkUser: vi.fn(),
+    getUser: vi.fn(),
     establishSession: vi.fn(),
+    clearSession: vi.fn(),
 }));
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -18,8 +20,10 @@ vi.mock("~~/server/utils/basis-auth", () => ({
 }));
 vi.mock("~~/server/utils/database/users", () => ({
     findOrLinkBasisAuthUser: mocks.linkUser,
+    getUser: mocks.getUser,
 }));
 vi.mock("~~/server/utils/basis-auth-session", () => ({
+    clearBasisAuthUserSession: mocks.clearSession,
     consumeBasisAuthFlowTransaction: mocks.consumeFlow,
     establishBasisAuthUserSession: mocks.establishSession,
 }));
@@ -61,6 +65,11 @@ beforeEach(() => {
         },
     });
     mocks.linkUser.mockResolvedValue({ id: 17 });
+    mocks.getUser.mockResolvedValue({
+        id: 17,
+        auth_issuer: "https://auth.example.test",
+        auth_subject: "subject-1",
+    });
 });
 
 describe("GET /api/auth/basis/callback", () => {
@@ -81,6 +90,58 @@ describe("GET /api/auth/basis/callback", () => {
             refreshToken: "refresh-token",
         });
         expect(sendRedirectMock).toHaveBeenCalledWith(expect.anything(), "/teams", 302);
+    });
+
+    it("refuses a different identity before linking or mutating any user row", async () => {
+        mocks.consumeFlow.mockReturnValue({
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: 123,
+            preLoginUserId: 9,
+        });
+        mocks.getUser.mockResolvedValue({
+            id: 9,
+            auth_issuer: "https://auth.example.test",
+            auth_subject: "another-subject",
+        });
+
+        await expect(handler({ context: {} })).rejects.toMatchObject({
+            statusCode: 409,
+            statusMessage: "login_session_mismatch",
+        });
+        expect(mocks.linkUser).not.toHaveBeenCalled();
+        expect(mocks.establishSession).not.toHaveBeenCalled();
+    });
+
+    it("allows a flow that returns the account that was signed in when it started", async () => {
+        mocks.consumeFlow.mockReturnValue({
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: 123,
+            preLoginUserId: 17,
+        });
+
+        await handler({ context: {} });
+        expect(mocks.establishSession).toHaveBeenCalled();
+    });
+
+    it("clears a stale cookie and proceeds when the prior local account no longer exists", async () => {
+        mocks.consumeFlow.mockReturnValue({
+            state: "state",
+            nonce: "nonce",
+            codeVerifier: "verifier",
+            startedAt: 123,
+            preLoginUserId: 404,
+        });
+        mocks.getUser.mockResolvedValue(undefined);
+
+        await handler({ context: {} });
+
+        expect(mocks.clearSession).toHaveBeenCalledOnce();
+        expect(mocks.linkUser).toHaveBeenCalled();
+        expect(mocks.establishSession).toHaveBeenCalled();
     });
 
     it("fails closed without creating a session when state, nonce, or PKCE validation fails", async () => {

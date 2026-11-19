@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,8 +50,39 @@ describe("basis-auth profile pictures", () => {
 
         fetch.mockRejectedValueOnce(new Error("provider offline"));
         await expect(
+            fetchBasisAuthPicture("https://auth.example.test/api/picture/1", "1", {
+                forceRefresh: true,
+            }),
+        ).resolves.toEqual({ bytes, contentType: "image/png" });
+    });
+
+    it("serves a fresh cached avatar without contacting the provider", async () => {
+        const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+        fetch.mockResolvedValueOnce(
+            new Response(bytes, { headers: { "content-type": "image/png" } }),
+        );
+        await fetchBasisAuthPicture("https://auth.example.test/api/picture/1", "1");
+        fetch.mockClear();
+
+        await expect(
             fetchBasisAuthPicture("https://auth.example.test/api/picture/1", "1"),
         ).resolves.toEqual({ bytes, contentType: "image/png" });
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("refreshes a stale cached avatar and falls back to it when the provider is offline", async () => {
+        const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+        await mkdir(cacheDir, { recursive: true });
+        const path = join(cacheDir, "77.png");
+        await writeFile(path, bytes);
+        const old = new Date(Date.now() - 60_000);
+        await utimes(path, old, old);
+        fetch.mockRejectedValueOnce(new Error("provider offline"));
+
+        await expect(
+            fetchBasisAuthPicture("https://auth.example.test/a.png", "77", { maxAgeMs: 1_000 }),
+        ).resolves.toEqual({ bytes, contentType: "image/png" });
+        expect(fetch).toHaveBeenCalledOnce();
     });
 
     it("ignores non-image responses and unsafe cache keys", async () => {
@@ -76,11 +107,15 @@ describe("basis-auth profile pictures", () => {
         fetch.mockResolvedValueOnce(
             new Response(jpeg, { headers: { "content-type": "image/jpeg" } }),
         );
-        await fetchBasisAuthPicture("https://auth.example.test/a.png", "9");
+        await fetchBasisAuthPicture("https://auth.example.test/a.png", "9", {
+            forceRefresh: true,
+        });
 
         fetch.mockRejectedValueOnce(new Error("provider offline"));
         await expect(
-            fetchBasisAuthPicture("https://auth.example.test/a.png", "9"),
+            fetchBasisAuthPicture("https://auth.example.test/a.png", "9", {
+                forceRefresh: true,
+            }),
         ).resolves.toEqual({ bytes: jpeg, contentType: "image/jpeg" });
     });
 

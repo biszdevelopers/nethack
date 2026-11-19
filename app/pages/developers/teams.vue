@@ -343,7 +343,7 @@ const paginationOptions = {
         </template>
     </UDashboardPanel>
 
-    <UModal v-model:open="modalOpen">
+    <UModal v-model:open="modalOpen" title="Delete teams">
         <template #content>
             <UCard>
                 <template #header>

@@ -12,7 +12,8 @@ import {
     seedTeam,
     type TestContext,
 } from "../../helpers";
-import { teamAwards, userPastTeams, awards } from "~~/server/database/schema";
+import { eq } from "drizzle-orm";
+import { hackathon, seasons, teamAwards, userPastTeams, awards } from "~~/server/database/schema";
 
 let ctx: TestContext;
 let handler: any;
@@ -170,6 +171,12 @@ describe("GET /api/users/:id", () => {
             .insert(teamAwards)
             .values({ team_id: team.id, award: "best_overall", meta: "{}" })
             .run();
+        ctx.drizzle
+            .update(hackathon)
+            .set({ results_published: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+        ctx.drizzle.update(seasons).set({ results_published: 1 }).where(eq(seasons.id, 1)).run();
 
         mockParams.values["id"] = String(alice.id);
         mockSession.value = { user: { id: alice.id } };
@@ -179,5 +186,35 @@ describe("GET /api/users/:id", () => {
         expect(result.team).toMatchObject({ name: "Awarded Team" });
         expect(result.team.awards).toHaveLength(1);
         expect(result.team.awards[0]).toMatchObject({ namespace: "best_overall" });
+    });
+
+    it("withholds awards from self teams before results are published", async () => {
+        const team = seedTeam(ctx, { name: "Early Awarded Team" });
+        const alice = seedUser(ctx, {
+            email: "alice@basischina.com",
+            name: "Alice",
+            team_id: team.id,
+        });
+        ctx.drizzle
+            .insert(awards)
+            .values({
+                namespace: "best_early",
+                name: "Best Early",
+                description: "Hidden until publication.",
+                icon: "i-lucide-trophy",
+                color: "gold",
+            })
+            .run();
+        ctx.drizzle
+            .insert(teamAwards)
+            .values({ team_id: team.id, award: "best_early", meta: "{}" })
+            .run();
+
+        mockParams.values["id"] = String(alice.id);
+        mockSession.value = { user: { id: alice.id } };
+
+        const result = await handler(createEvent());
+
+        expect(result.team.awards).toEqual([]);
     });
 });

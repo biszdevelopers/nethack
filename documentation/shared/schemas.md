@@ -36,7 +36,7 @@ All configurable length limits are defined as exported constants at the top of `
 | `MAX_ELECTION_CANDIDATES` | 50 | `ElectionVoteRequest.positions[].candidates` array length |
 | `MAX_ELECTION_TITLE_LENGTH` | 128 | `ElectionVoteRequest.positions[].title` |
 | `MAX_ELECTION_CANDIDATE_ID_LENGTH` | 64 | `ElectionVoteRequest.positions[].candidates[].id` |
-| `MAX_APPLICATION_IDS_DELETE` | 100 | `DeleteApplicationsRequest.ids` array length |
+| `MAX_BULK_DELETE_IDS` | 100 | `DeleteApplicationsRequest.ids`, `DeleteTeamsRequest.ids`, and `DeleteUsersRequest.ids` array lengths |
 
 ## Reusable Primitives
 
@@ -299,9 +299,9 @@ These exported schemas remain for rollback and source compatibility. The native 
 
 | Field | Type | Constraints |
 | --- | --- | --- |
-| `uri` | `string` | Required. Must start with `https://` or match `http://localhost(/:\|$)` pattern |
+| `uri` | `string` | Required. Parsed with `URL`: HTTPS with no credentials, or HTTP on `localhost`, `127.0.0.1`, or `[::1]` with no credentials |
 
-The refinement uses a custom function: `(u) => u.startsWith("https://") || /^http:\/\/localhost(\/|:|$)/.test(u)`. This allows any `https://` URL or `http://localhost` with any port or path.
+The refinement parses the URL and checks `protocol`, `hostname`, `username`, and `password`. Raw-string checks are not used, so userinfo such as `http://localhost:3000@evil.com` is rejected.
 
 ---
 

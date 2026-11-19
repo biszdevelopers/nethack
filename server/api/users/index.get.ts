@@ -1,5 +1,6 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { isInitialAdminEmail, NethackPermissions } from "~~/shared/permissions";
+import { NethackPermissions } from "~~/shared/permissions";
+import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
 import { userPastTeams, users } from "~~/server/database/schema";
 
 export default defineEventHandler(
@@ -32,6 +33,7 @@ export default defineEventHandler(
         return results.map((user) => ({
             ...convertUserToPublic(user as User),
             is_admin: Boolean(user.is_admin || isInitialAdminEmail(user.email)),
+            is_initial_admin: isInitialAdminEmail(user.email),
             past_team_ids: pastTeamIdsByUser.get(user.id)?.join(",") ?? null,
         }));
     }, DEFAULT_RATE_LIMIT_CONFIG),

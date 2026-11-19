@@ -153,16 +153,16 @@ Historical project archive for an inactive season that has started. The page loa
 
 **File:** `app/pages/voting.vue`
 
-Peer voting page. Protected by `auth` middleware. Only accessible during the `voting` hackathon status.
+Peer voting page. Protected by `auth` middleware. Available whenever the `voting_enabled` portal toggle is on and the event is not paused; the event phase does not veto the toggle.
 
 **Flow:**
 
 1. Fetches ballot data from `/api/ballot`. When voting is closed, the server's `403` is shown as a closed notice with retry and home actions; the voting form is not rendered.
 2. Displays eligible `VotingProjectCard` components in a grid
-3. User distributes **10 stars** among eligible projects (0–5 per project)
+3. User distributes **10 stars** among eligible projects (0–5 per project), optionally capped to a maximum number of scored projects by `max_votes_per_user`
 4. Increment/decrement buttons with validation (total must equal 10)
 5. Reasoning textarea
-6. Submit with browser `confirm()` dialog
+6. Submit with browser `confirm()` dialog; a submitted ballot remains editable until voting closes
 
 **Validation:** Uses `SubmitVoteRequest` schema. Posts to `/api/ballot`.
 
@@ -192,7 +192,7 @@ Judge landing page. Protected by `auth` middleware and the judge assignment perm
 **Content:**
 
 - **Current evaluations** — shows judge-specific progress for submitted projects in the active season, with an accessible progress bar
-- **Continue judging** — opens the active queue when the event is in `voting` status with `judging_open` enabled
+- **Continue judging** — opens the active queue when the server-reported `is_judging_open` flag is true (the `judging_open` portal toggle is on and the event is not paused)
 - **Review your evaluations** — links to the active season's history when judging is closed
 - **Past evaluations** — shows the judge's completed progress for prior seasons; each card links to that season's read-only history
 
@@ -221,7 +221,7 @@ The API always returns a row for every finalized evaluation, including legacy ro
 
 **File:** `app/pages/judging/continue.vue`
 
-Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the event is in `voting` status and `judging_open` is enabled. Draft saves and final score submissions enforce the same gate on the server.
+Active judging interface. Protected by `auth` middleware. Accessible only by judges or admins while the server-reported `is_judging_open` flag is true (the `judging_open` portal toggle is on and the event is not paused). The toggle is authoritative and is not vetoed by the event phase or published results. The page consumes that flag from `GET /api/seasons/active` rather than recomputing the gate, so it cannot disagree with the queue, draft, and submission endpoints that enforce the same check.
 
 **Flow:**
 
@@ -317,7 +317,7 @@ Placeholder page for the presentation event. States that top 10 teams will be in
 
 **File:** `app/pages/developers/index.vue`
 
-Mod portal landing page. Summarizes the live event — active season, status, theme, schedule, and the visitor-facing toggles — and links to each management area. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
+Mod portal landing page. Summarizes the live event — active season, status, theme, schedule, and the visitor-facing toggles — and links to each management area. The badges show effective visibility: voting and judging are off while the event is paused, and scores and rankings are shown as visible only when results are published and the matching switch is on. Wrapped in `UDashboardPanel` with `UDashboardNavbar` and `UDashboardSidebarCollapse` so mobile users can open the sidebar navigation.
 
 **Layout:** `developers-dashboard`
 
@@ -370,7 +370,7 @@ Permission-gated, read-only listings of existing files and active permalink refe
 Hackathon Administration page (admin-only, hard 403 for non-admins). The page is split into tabs so no single scroll holds every control. It opens on the active season and warns when a stored (non-live) season is selected, so settings never appear to apply while silently targeting an archived season.
 
 - **Overview** — theme, schedule, and the current visitor-facing toggles for the selected season, with shortcuts to the editing tabs. The schedule uses the same stored values as the editable fields.
-- **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id`. A new season starts as a copy of the live settings so switching cannot blank the event. A banner shows whether the selected season is live or stored, with a one-click activation action.
+- **Seasons** — pick the season to manage, rename it, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id` (seasons holding team, judging, or peer-voting history are rejected so archived results are never silently erased). A new season starts as a copy of the live settings so switching cannot blank the event. A banner shows whether the selected season is live or stored, with a one-click activation action.
 - **Event settings** — status, vote cap, voting/judging/results toggles, theme, visitor announcement, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. Status, voting, judging, results, show-score/show-ranking, and the announcement are PostgreSQL overrides, so they can be switched even when the manifest is remote. Each field is compared with the selected season's own value, not another season's. Schedule and theme write to a local `HACKATHON.yml` (comments preserved); a remote manifest keeps those fields read-only and explains where to edit them. Other seasons keep their own editable stored settings.
 - **Scoring** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version; the history shows which version is active. Organizers can copy a prior season, load its rubric to customize, and apply or copy reusable named templates. A track used by a submitted project must be reassigned before removal.
 - **Data** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted, and the exported live settings include portal overrides.

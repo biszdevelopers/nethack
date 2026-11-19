@@ -27,6 +27,8 @@ export interface BasisAuthFlowTransaction {
     codeVerifier: string;
     startedAt: number;
     postLoginRedirect?: string;
+    /** Local user signed in when the flow began; the callback must not change it. */
+    preLoginUserId?: number;
 }
 
 function cookieSecret(): string {

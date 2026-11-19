@@ -5,7 +5,7 @@ import type { Sql } from "postgres";
 import { getPostgresClient, type DrizzleDatabase } from "./index";
 import { hackathon, rubricTemplates, rubricVersions, seasons, users } from "./schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "../../shared/rubric";
-import { INITIAL_ADMIN_EMAILS } from "../../shared/permissions";
+import { INITIAL_ADMIN_EMAILS } from "../utils/initial-admins";
 
 const MIGRATIONS_FOLDER = resolve(process.cwd(), "drizzle/postgres");
 const MIGRATION_LOCK_ID = BigInt("75110114284009");

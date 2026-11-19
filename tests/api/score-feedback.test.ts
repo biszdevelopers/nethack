@@ -408,6 +408,42 @@ describe("anonymous score feedback calculation", () => {
         ).resolves.toMatchObject({ unavailable_evaluations: 1, feedback: [] });
     });
 
+    it("counts reviewers, not readable scores, for the public anonymity threshold", async () => {
+        const { team } = await seedPublishedEvaluation();
+        const [existing] = await ctx.drizzle
+            .select()
+            .from(teamScores)
+            .where(eq(teamScores.team_id, team.id))
+            .all();
+        const extraJudges = [0, 1].map((index) =>
+            seedUser(ctx, { email: `extra-judge-${index}@example.test`, role: "judge" }),
+        );
+        for (const judge of extraJudges) {
+            ctx.drizzle
+                .insert(teamScores)
+                .values({
+                    team_id: team.id,
+                    judge_user_id: judge.id,
+                    season_id: existing!.season_id,
+                    rubric_version_id: existing!.rubric_version_id,
+                    scores: existing!.scores,
+                    reasoning: "Another review",
+                })
+                .run();
+        }
+        ctx.drizzle
+            .update(teamScores)
+            .set({ scores: "{" })
+            .where(eq(teamScores.judge_user_id, extraJudges[1]!.id))
+            .run();
+
+        const result = await getTeamScoreFeedback(createEvent() as any, team as any, {
+            publicView: true,
+        });
+        expect(result.unavailable_evaluations).toBe(1);
+        expect(result.feedback_withheld_for_anonymity).toBe(false);
+    });
+
     it("skips saved comments that do not match their historical rubric", async () => {
         const { team } = await seedPublishedEvaluation();
         ctx.drizzle

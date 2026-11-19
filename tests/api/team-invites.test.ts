@@ -12,8 +12,8 @@ import {
     seedTeam,
     type TestContext,
 } from "./helpers";
-import { eq } from "drizzle-orm";
-import { teamInvites, teams, users } from "~~/server/database/schema";
+import { and, eq } from "drizzle-orm";
+import { teamInvites, teams, userPastTeams, users } from "~~/server/database/schema";
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -246,6 +246,15 @@ describe("POST /api/team-invites/:id/accept", () => {
         });
         const updated = ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get();
         expect(updated!.team_id).toBe(team.id);
+        expect(
+            ctx.drizzle
+                .select()
+                .from(userPastTeams)
+                .where(
+                    and(eq(userPastTeams.user_id, user.id), eq(userPastTeams.team_id, pastTeam.id)),
+                )
+                .all(),
+        ).toHaveLength(1);
     });
 
     it("returns 404 when the invited team no longer exists", async () => {
