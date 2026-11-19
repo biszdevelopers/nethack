@@ -16,6 +16,15 @@ export async function migrateDatabase(
     migrationsFolder: string = MIGRATIONS_FOLDER,
     client: Sql = getPostgresClient(),
 ): Promise<void> {
+    // The generated migrations create unqualified table names, so a database
+    // restored or provisioned without the default schema fails on its first
+    // CREATE TABLE. Commit the bootstrap in its own locked transaction before
+    // Drizzle opens migration sessions on other pooled connections.
+    await client.begin(async (connection) => {
+        await connection`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`;
+        await connection`CREATE SCHEMA IF NOT EXISTS public`;
+    });
+
     // Keep the advisory lock on a pinned connection while Drizzle applies its
     // transactional migrations through the bounded pool. The pool must have at
     // least two connections for the lock and migration sessions.

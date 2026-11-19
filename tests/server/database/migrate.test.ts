@@ -21,7 +21,9 @@ function createDatabase(events: string[] = []) {
     const calls: SqlCall[] = [];
     const connection = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
         calls.push({ strings, values });
-        events.push("lock");
+        const query = strings.join("?");
+        if (query.includes("pg_advisory_xact_lock")) events.push("lock");
+        else if (query.includes("CREATE SCHEMA")) events.push("schema");
         return [];
     });
     const begin = vi.fn(async (callback: (sql: typeof connection) => Promise<unknown>) =>
@@ -49,11 +51,13 @@ describe("PostgreSQL migrations", () => {
 
         await migrateDatabase(database, migrationsFolder, client);
 
-        expect(begin).toHaveBeenCalledTimes(1);
-        expect(connection).toHaveBeenCalledTimes(1);
+        expect(begin).toHaveBeenCalledTimes(2);
+        expect(connection).toHaveBeenCalledTimes(3);
         expect(calls[0]?.strings.join("?")).toContain("pg_advisory_xact_lock(?)");
         expect(calls[0]?.values).toEqual([BigInt("75110114284009")]);
-        expect(events).toEqual(["lock", "migrate"]);
+        expect(calls[1]?.strings.join("?")).toContain("CREATE SCHEMA IF NOT EXISTS public");
+        expect(calls[2]?.strings.join("?")).toContain("pg_advisory_xact_lock(?)");
+        expect(events).toEqual(["lock", "schema", "lock", "migrate"]);
         expect(mocks.migrate).toHaveBeenCalledWith(database, { migrationsFolder });
     });
 
@@ -77,8 +81,10 @@ describe("PostgreSQL migrations", () => {
 
     it("runs migrations, event seeding, and default season seeding before startup", async () => {
         const events: string[] = [];
-        const connection = vi.fn(async () => {
-            events.push("advisory-lock");
+        const connection = vi.fn(async (strings: TemplateStringsArray) => {
+            const query = strings.join("?");
+            if (query.includes("pg_advisory_xact_lock")) events.push("advisory-lock");
+            else if (query.includes("CREATE SCHEMA")) events.push("create-public-schema");
         });
         const client = {
             begin: vi.fn(async (callback: (sql: typeof connection) => Promise<unknown>) => {
@@ -143,6 +149,9 @@ describe("PostgreSQL migrations", () => {
         await createAndMigrateDatabase(database);
 
         expect(events).toEqual([
+            "begin-migration-transaction",
+            "advisory-lock",
+            "create-public-schema",
             "begin-migration-transaction",
             "advisory-lock",
             "migrations",

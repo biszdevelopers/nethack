@@ -413,7 +413,7 @@ Drizzle Kit generates PostgreSQL migration files from `server/database/schema.ts
 bun run db:generate
 ```
 
-Apply pending migrations explicitly during release workflows with `bun run db:migrate`. Nitro also applies them at startup before it serves requests. `server/database/migrate.ts` takes a PostgreSQL advisory lock while applying migrations, so concurrent starts do not race the migration ledger. Keep schema changes and generated migration SQL in the same change.
+Apply pending migrations explicitly during release workflows with `bun run db:migrate`. Nitro also applies them at startup before it serves requests. `server/database/migrate.ts` ensures the default `public` schema exists in a committed bootstrap transaction, then takes a PostgreSQL advisory lock while applying migrations, so concurrent starts do not race the migration ledger. The bootstrap means a database provisioned or restored without `public` still initializes; generated migrations use unqualified table names and would otherwise fail on their first `CREATE TABLE`. Keep schema changes and generated migration SQL in the same change.
 
 ## SQLite import
 

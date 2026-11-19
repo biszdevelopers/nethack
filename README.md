@@ -119,7 +119,7 @@ For an existing deployment, run `bun run db:export-hackathon -- /path/to/HACKATH
 
 ## Database Setup
 
-The PostgreSQL database auto-migrates on server startup. The init plugin `server/plugins/init-database.ts` creates the bounded `postgres` connection pool and applies Drizzle migrations under a PostgreSQL advisory lock before the server accepts requests. It then seeds the default event, first season, next-season shell, and rubric; generated season IDs use the PostgreSQL serial sequence, and `seasons.rubric_version_id` is protected by a foreign key. Configure a valid `DATABASE_URL` in every environment. The default pool maximum is 10 connections; `DATABASE_POOL_MAX` accepts validated values from 2 to 64.
+The PostgreSQL database auto-migrates on server startup. The init plugin `server/plugins/init-database.ts` creates the bounded `postgres` connection pool, ensures the default `public` schema exists, and applies Drizzle migrations under a PostgreSQL advisory lock before the server accepts requests. It then seeds the default event, first season, next-season shell, and rubric; generated season IDs use the PostgreSQL serial sequence, and `seasons.rubric_version_id` is protected by a foreign key. Configure a valid `DATABASE_URL` in every environment. The default pool maximum is 10 connections; `DATABASE_POOL_MAX` accepts validated values from 2 to 64.
 
 Before manually reconciling a populated PostgreSQL database, create a verified custom-format snapshot with `bun run db:backup -- --output .tmp-postgres-before-change.dump`. The command reads `DATABASE_URL` from `.env`, verifies the file with `pg_restore --list`, refuses to overwrite an existing backup, and keeps the snapshot inside the gitignored workspace.
 

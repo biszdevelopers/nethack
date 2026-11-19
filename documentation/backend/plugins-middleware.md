@@ -21,7 +21,7 @@ At startup the plugin calls `createDrizzleDatabase()` from `server/database/inde
 
 1. Validates `DATABASE_URL` and `DATABASE_POOL_MAX`.
 2. Creates the bounded `postgres` connection pool and Drizzle instance.
-3. Runs PostgreSQL migrations under an advisory lock and seeds the `hackathon` singleton row if it is missing.
+3. Ensures the default `public` schema exists, runs PostgreSQL migrations under an advisory lock, and seeds the `hackathon` singleton row if it is missing.
 
 #### Request Hook
 

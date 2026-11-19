@@ -57,7 +57,7 @@ Plugins run at server startup and set up the runtime environment. They are loade
 **Purpose**: Initializes and migrates the database before serving requests, then closes the pool during shutdown.
 
 1. Calls `createDrizzleDatabase()` to create the bounded PostgreSQL connection pool
-2. Applies pending PostgreSQL migrations while holding an advisory lock
+2. Ensures the default `public` schema exists, then applies pending PostgreSQL migrations while holding an advisory lock
 3. Seeds the initial hackathon, season, and default rubric records when they are missing
 4. Closes the pool through Nitro's `close` hook
 
