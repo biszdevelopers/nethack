@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Existing API fixtures exercise the retained PostgreSQL configuration mode.
-process.env.YAML_SOURCE_HACKATHON = "database";
 
 // Graph env vars used by server/plugins/microsoft.ts. These are read at module load time, so they
 // must be set before any test imports those modules. The values mirror the
@@ -265,7 +264,6 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE hackathon ADD COLUMN judging_open INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE hackathon ADD COLUMN schedule_start TEXT;
     ALTER TABLE hackathon ADD COLUMN schedule_end TEXT;
-    ALTER TABLE hackathon ADD COLUMN live_overrides TEXT NOT NULL DEFAULT '{}';
 
   `);
 

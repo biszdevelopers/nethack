@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import {
     createTeamScores,
@@ -88,18 +88,6 @@ describe("score submission action boundaries", () => {
         raw.prepare("DELETE FROM hackathon WHERE id = 1").run();
 
         await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
-    });
-
-    it("reads published results from the authoritative manifest when YAML is live", async () => {
-        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
-        try {
-            await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
-            expect(raw.prepare("SELECT count(*) AS count FROM team_scores").get()).toEqual({
-                count: 1,
-            });
-        } finally {
-            vi.unstubAllEnvs();
-        }
     });
 
     it.each([

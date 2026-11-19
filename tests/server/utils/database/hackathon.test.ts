@@ -1,10 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { createMockEvent } from "./helpers";
 import {
     getHackathon,
-    getLiveOverrides,
     invalidateHackathonCache,
-    mergeLiveOverrides,
     updateHackathon,
 } from "~~/server/utils/database/hackathon";
 
@@ -13,58 +11,6 @@ describe("hackathon database helpers", () => {
 
     beforeEach(async () => {
         event = await createMockEvent();
-    });
-
-    describe("mergeLiveOverrides", () => {
-        it("merges an object and replaces a missing or malformed value", () => {
-            expect(mergeLiveOverrides({ show_scores: 1 }, { voting_enabled: 0 })).toEqual({
-                show_scores: 1,
-                voting_enabled: 0,
-            });
-            expect(mergeLiveOverrides(null, { voting_enabled: 0 })).toEqual({
-                voting_enabled: 0,
-            });
-            expect(mergeLiveOverrides([1, 2], { voting_enabled: 0 })).toEqual({
-                voting_enabled: 0,
-            });
-            expect(mergeLiveOverrides('{"show_scores":1}', { voting_enabled: 0 })).toEqual({
-                show_scores: 1,
-                voting_enabled: 0,
-            });
-            expect(mergeLiveOverrides("{", { voting_enabled: 0 })).toEqual({
-                voting_enabled: 0,
-            });
-        });
-    });
-
-    describe("getLiveOverrides", () => {
-        it("returns validated portal switches and ignores invalid payloads", async () => {
-            await expect(getLiveOverrides(event)).resolves.toEqual({});
-
-            event.context.drizzle
-                .prepare(
-                    'INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp, live_overrides) VALUES(1, \'voting\', 0, 0, 0, 0, 0, \'{"status":"finished","voting_enabled":0,"show_scores":1}\')',
-                )
-                .run();
-
-            await expect(getLiveOverrides(event)).resolves.toEqual({
-                status: "finished",
-                voting_enabled: 0,
-                show_scores: 1,
-            });
-
-            event.context.drizzle
-                .prepare(
-                    'UPDATE hackathon SET live_overrides = \'{"status":"bogus","voting_enabled":9}\' WHERE id = 1',
-                )
-                .run();
-            await expect(getLiveOverrides(event)).resolves.toEqual({});
-
-            event.context.drizzle
-                .prepare("UPDATE hackathon SET live_overrides = '\"not-an-object\"' WHERE id = 1")
-                .run();
-            await expect(getLiveOverrides(event)).resolves.toEqual({});
-        });
     });
 
     describe("getHackathon", () => {
@@ -306,24 +252,6 @@ describe("hackathon database helpers", () => {
         it("returns null when no hackathon row exists", async () => {
             const updated = await updateHackathon(event, { show_scores: 1 });
             expect(updated).toBeNull();
-        });
-
-        it("refuses to write live settings while the manifest is authoritative", async () => {
-            vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
-            try {
-                seedRow();
-
-                await expect(updateHackathon(event, { show_scores: 1 })).rejects.toMatchObject({
-                    statusCode: 409,
-                });
-                expect(
-                    event.context.drizzle
-                        .prepare("SELECT show_scores FROM hackathon WHERE id = 1")
-                        .first(),
-                ).toEqual({ show_scores: 0 });
-            } finally {
-                vi.unstubAllEnvs();
-            }
         });
     });
 });

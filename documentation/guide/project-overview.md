@@ -14,7 +14,7 @@ The platform manages the entire hackathon lifecycle:
 | Feature | Description |
 | --- | --- |
 | **Hackathon Management & Scheduling** | Control event state (`not_started`, `in_progress`, `voting`, `finished`, `paused`), schedule start and end times, and manage the event timeline. |
-| **Editable Announcements** | The home-page message is an admin-editable season field stored in PostgreSQL, so organizers can publish preparation news without editing code or a remote manifest. Empty announcements are hidden. |
+| **Editable Announcements** | The home-page message is an admin-editable season field stored in PostgreSQL, so organizers can publish preparation news through the admin portal. Empty announcements are hidden. |
 | **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. Invited users accept from their dashboard before they join. |
 | **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, and sourcing information. Submissions are accepted only during `not_started` or `in_progress` states. |
 | **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. |
@@ -101,11 +101,11 @@ The platform supports multiple hackathon seasons stored in the `seasons` table. 
 
 - **Name**: the display name of the season.
 - **Active status**: only one season can be active at a time (partial unique index on `is_active`).
-- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The active season uses settings from `HACKATHON.yml` plus PostgreSQL live overrides (including the announcement).
+- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The active season uses settings stored in PostgreSQL, including the announcement.
 
 Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed.
 
-Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings are edited in the configured YAML manifest; a local manifest is written in place by the portal, while a remote manifest stays read-only. The administration page also updates stored settings for other seasons, and new seasons start as a copy of the live event.
+Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings and judging rubrics are edited through the admin portal and stored only in PostgreSQL. The administration page also updates stored settings for other seasons, and new seasons start as a copy of the live event.
 
 ## Directory Structure
 
@@ -221,7 +221,7 @@ nethack/
 
 ### Single-Row Hackathon State
 
-The configured `HACKATHON.yml` controls the global event state. The status field determines what actions are available:
+The PostgreSQL live settings control the global event state. The status field determines what actions are available:
 
 | Status | Description |
 | --- | --- |

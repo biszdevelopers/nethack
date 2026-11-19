@@ -496,9 +496,9 @@ Per-table database helper modules in `server/utils/database/`.
 
 | Function | Description |
 | --- | --- |
-| `getHackathon(event)` | Read live settings from YAML or the PostgreSQL rollback source; merged once per request and reused by repeated read helpers |
+| `getHackathon(event)` | Read live settings from PostgreSQL; cached once per request and reused by repeated read helpers |
 | `invalidateHackathonCache(event)` | Drop the per-request cached state after a route mutates hackathon or season settings |
-| `updateHackathon(event, data)` | Update live settings in PostgreSQL rollback mode |
+| `updateHackathon(event, data)` | Update live settings in PostgreSQL |
 
 ### ballots.ts
 
@@ -519,9 +519,9 @@ Per-table database helper modules in `server/utils/database/`.
 | `getSeasons(event)` | List all seasons ordered by ID |
 | `getSeasonById(event, seasonId)` | Get a season by ID |
 | `getActiveSeason(event)` | Get the currently active season |
-| `setActiveSeason(event, seasonId)` | Set or clear the active season and snapshot the outgoing live YAML settings |
-| `updateSeasonTweaks(event, seasonId, data)` | Update a season's stored settings. Live edits are rejected in YAML mode. |
-| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { showScores, showRanking }` resolver that reads each season's own toggles, using live YAML for the active season. Unknown seasons keep results private in YAML mode. Used by the teams and users endpoints to bind score/rank visibility to each team's own season |
+| `setActiveSeason(event, seasonId)` | Set or clear the active season; apply its stored settings transactionally |
+| `updateSeasonTweaks(event, seasonId, data)` | Update a season's stored settings and synchronize the live row for the active season. |
+| `getScoreRankVisibilityResolver(event)` | Returns a `(seasonId) => { resultsPublished, showScores, showRanking }` resolver using each season's PostgreSQL settings, with the live singleton as fallback for unknown or unspecified IDs. Used by teams and users endpoints to bind visibility to the team's own season |
 
 `SEASON_TWEAK_FIELDS` lists the tweakable columns shared by the `seasons` and `hackathon` tables.
 

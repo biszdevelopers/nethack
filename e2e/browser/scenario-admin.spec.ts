@@ -303,7 +303,7 @@ test.describe.serial("scenario matrix — administrator situations", () => {
                 await expect(admin.getByRole("heading").first()).toBeVisible();
             });
 
-            await step("manifest source can be read", async () => {
+            await step("hackathon settings can be read", async () => {
                 const result = await api(admin, "/api/admin/hackathon");
                 expect(result.status).toBe(200);
             });

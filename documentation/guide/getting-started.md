@@ -90,7 +90,7 @@ This applies the pending PostgreSQL migrations. Migrations also run automaticall
 
 ### Load live hackathon configuration
 
-The app reads `HACKATHON.yml` from the checkout by default. Set `YAML_SOURCE_HACKATHON` to an assets server origin or manifest URL to load a remote file. The seeded PostgreSQL singleton is retained for compatibility and rollback.
+PostgreSQL stores all event settings and judging rubrics. Manage the active season, schedule, theme, operational switches, and rubric versions through the admin portal.
 
 ### Apply Migrations
 

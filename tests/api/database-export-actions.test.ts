@@ -24,7 +24,6 @@ let exportDatabase: (event: unknown) => Promise<unknown>;
 
 beforeAll(async () => {
     setupNitroGlobals();
-    vi.stubGlobal("getLiveOverrides", async () => ({}));
     vi.stubGlobal(
         "getValidatedQuery",
         async (_event: unknown, parse: (value: unknown) => unknown) => parse(mocks.query),
@@ -83,11 +82,7 @@ describe("database export route", () => {
             event,
             NethackPermissions.Database.export,
         );
-        expect(mocks.snapshotDatabaseExport).toHaveBeenCalledWith(
-            event.context.drizzle,
-            format,
-            {},
-        );
+        expect(mocks.snapshotDatabaseExport).toHaveBeenCalledWith(event.context.drizzle, format);
         expect(mocks.sendStream).toHaveBeenCalledWith(event, expect.any(Object));
         expect(stream).toBe(mocks.sendStream.mock.results[0]?.value);
         expect(mocks.headers).toEqual([
@@ -108,11 +103,7 @@ describe("database export route", () => {
         };
 
         await exportDatabase(event);
-        expect(mocks.snapshotDatabaseExport).toHaveBeenCalledWith(
-            event.context.drizzle,
-            "json",
-            {},
-        );
+        expect(mocks.snapshotDatabaseExport).toHaveBeenCalledWith(event.context.drizzle, "json");
 
         mocks.query = { format: "xml" };
         await expect(exportDatabase(event)).rejects.toMatchObject({ name: "ZodError" });

@@ -29,7 +29,6 @@ interface RubricVersionSummary {
 }
 
 interface RubricResponse {
-    yamlManaged?: boolean;
     active: RubricVersionSummary | null;
     versions: RubricVersionSummary[];
     templates: RubricTemplateSummary[];
@@ -56,7 +55,6 @@ const deletingTemplateId = ref<number | null>(null);
 const loadError = ref("");
 
 const activeVersion = computed(() => rubricData.value?.active ?? null);
-const yamlManaged = computed(() => rubricData.value?.yamlManaged === true);
 const commentGuidance = computed<JudgeCommentGuidance>({
     get: () => definition.value.commentGuidance ?? DEFAULT_RUBRIC_DEFINITION.commentGuidance!,
     set: (value) => {
@@ -192,7 +190,6 @@ async function refreshRubric(keepEditor = false) {
 }
 
 async function saveVersion() {
-    if (yamlManaged.value) return;
     if (!canSave.value || !versionName.value.trim()) {
         if (!versionName.value.trim()) {
             toast.add({ title: "Enter a name for this rubric version.", color: "warning" });
@@ -271,7 +268,6 @@ async function createVersion(
     source: { sourceTemplateId: number } | { copyFromSeasonId: number },
     name: string,
 ) {
-    if (yamlManaged.value) return;
     savingVersion.value = true;
     try {
         await api(`/api/admin/seasons/${props.seasonId}/rubric`, {
@@ -420,9 +416,6 @@ async function removeTemplate(template: RubricTemplateSummary) {
                 description="Create one below before judges begin scoring projects."
             />
 
-            <p v-if="yamlManaged" class="text-sm text-muted">
-                Edit the rubric section of HACKATHON.yml to publish a new live rubric.
-            </p>
             <div
                 class="grid gap-4 rounded-xl border border-ui-border bg-ui-bg-elevated/40 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.8fr)] lg:items-end"
             >
@@ -441,7 +434,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
                         color="primary"
                         class="min-h-11 justify-center"
                         :loading="savingVersion"
-                        :disabled="yamlManaged || !canSave || !versionName.trim()"
+                        :disabled="!canSave || !versionName.trim()"
                         @click="saveVersion"
                     >
                         Save new version
@@ -508,7 +501,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
                         icon="i-lucide-copy"
                         variant="outline"
                         class="min-h-11 justify-center"
-                        :disabled="yamlManaged || loading || savingVersion || copySeasonId === null"
+                        :disabled="loading || savingVersion || copySeasonId === null"
                         @click="copyFromSeason(false)"
                     >
                         Copy as version
@@ -610,9 +603,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
             <RubricTemplateLibrary
                 :templates="templates"
                 :selected-template-id="selectedTemplateId"
-                :disabled="
-                    yamlManaged || savingTemplate || savingVersion || deletingTemplateId !== null
-                "
+                :disabled="savingTemplate || savingVersion || deletingTemplateId !== null"
                 @apply="applyTemplate"
                 @select="createFromTemplate"
                 @remove="removeTemplate"

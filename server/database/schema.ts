@@ -19,7 +19,7 @@ import type { RubricDefinition } from "../../shared/rubric";
 import type { ScoreCurvePreset } from "../../shared/score-curve";
 
 // ---------------------------------------------------------------------------
-// Legacy live configuration retained for export, SQLite import, and rollback.
+// Live event settings synchronized with the active season.
 // ---------------------------------------------------------------------------
 export const hackathon = pgTable(
     "hackathon",
@@ -42,15 +42,8 @@ export const hackathon = pgTable(
         results_open_timestamp: bigint("results_open_timestamp", { mode: "number" }).notNull(),
         theme_name: text("theme_name"),
         theme_description: text("theme_description"),
-        // Editable visitor-facing copy shown above the schedule. Stored in
-        // PostgreSQL even when the rest of the live settings come from YAML.
+        // Editable visitor-facing copy shown above the schedule.
         announcement: text("announcement"),
-        // Operational settings changed through the portal are stored here so
-        // they keep applying even when HACKATHON.yml is remote and read-only.
-        live_overrides: jsonb("live_overrides")
-            .$type<Record<string, unknown>>()
-            .notNull()
-            .default({}),
     },
     (table) => [
         check("hackathon_id_check", sql`${table.id} = 1`),

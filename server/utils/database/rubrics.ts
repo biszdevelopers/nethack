@@ -1,70 +1,14 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { H3Event } from "h3";
-import { isDeepStrictEqual } from "node:util";
 import { withDefaultRubricCommentGuidance, type RubricDefinition } from "~~/shared/rubric";
 import { rubricTemplates, rubricVersions, seasons, teams } from "~~/server/database/schema";
 import { firstRow } from "./query";
-import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type RubricSeason = Pick<Season, "id" | "is_active" | "rubric_version_id">;
 
-/** Materialize the manifest as an immutable version before returning its database ID. */
-export async function resolveLiveRubricVersionId(event: H3Event, season: RubricSeason) {
-    if (!hackathonUsesYaml() || season.is_active !== 1) return season.rubric_version_id;
-    const { rubric } = await readHackathonConfig();
-    if (!rubric) return season.rubric_version_id;
-
-    const { name, ...rawDefinition } = rubric;
-    const definition = withDefaultRubricCommentGuidance(rawDefinition);
-    const matches = (version: typeof rubricVersions.$inferSelect | undefined) =>
-        version?.season_id === season.id &&
-        version.name === name &&
-        isDeepStrictEqual(withDefaultRubricCommentGuidance(version.definition), definition);
-    const db = event.context.drizzle;
-    const current = await firstRow(
-        db
-            .select()
-            .from(rubricVersions)
-            .where(eq(rubricVersions.id, season.rubric_version_id ?? -1))
-            .limit(1),
-    );
-    if (matches(current)) return current!.id;
-
-    return db.transaction(async (tx) => {
-        const [locked] = await tx
-            .select()
-            .from(seasons)
-            .where(eq(seasons.id, season.id))
-            .for("update");
-        if (!locked || locked.is_active !== 1) return locked?.rubric_version_id ?? null;
-        const versions = await tx
-            .select()
-            .from(rubricVersions)
-            .where(eq(rubricVersions.season_id, season.id))
-            .orderBy(desc(rubricVersions.version));
-        const existing = versions.find(matches);
-        if (existing && existing.id === locked.rubric_version_id) return existing.id;
-
-        await validateSubmittedTracks(tx, season.id, definition);
-        const [version] = existing
-            ? [existing]
-            : await tx
-                  .insert(rubricVersions)
-                  .values({
-                      season_id: season.id,
-                      version: (versions[0]?.version ?? 0) + 1,
-                      name,
-                      definition,
-                  })
-                  .returning();
-        if (!version)
-            throw createError({ statusCode: 500, message: "Failed to save YAML rubric version" });
-        await tx
-            .update(seasons)
-            .set({ rubric_version_id: version.id })
-            .where(eq(seasons.id, season.id));
-        return version.id;
-    });
+/** Resolve the season's immutable PostgreSQL rubric version. */
+export async function resolveLiveRubricVersionId(_event: H3Event, season: RubricSeason) {
+    return season.rubric_version_id;
 }
 
 type RubricQuery = Pick<H3Event["context"]["drizzle"], "selectDistinct">;
@@ -124,7 +68,6 @@ export async function createRubricVersion(
     seasonId: number,
     input: CreateRubricVersionInput,
 ) {
-    const yamlRubric = hackathonUsesYaml() && (await readHackathonConfig()).rubric;
     return event.context.drizzle.transaction(async (tx) => {
         const seasonQuery = tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
         const season = await firstRow(
@@ -134,13 +77,6 @@ export async function createRubricVersion(
         );
 
         if (!season) return null;
-        if (yamlRubric && (season as { is_active?: number }).is_active === 1) {
-            throw createError({
-                statusCode: 409,
-                message: "Edit the rubric section of HACKATHON.yml to change the active rubric.",
-            });
-        }
-
         let definition = input.definition;
         let sourceTemplateId: number | null = input.sourceTemplateId ?? null;
         if (input.copyFromSeasonId !== undefined) {

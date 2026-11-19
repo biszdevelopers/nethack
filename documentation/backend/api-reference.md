@@ -369,7 +369,7 @@ Get the currently active season (public).
 
 ### PATCH `/api/seasons/active`
 
-Set the active season. The activated season's operational switches (status, voting, judging, results, visibility) are stored in PostgreSQL and apply immediately, even with a remote manifest. With a local manifest, its schedule and theme are also written into `HACKATHON.yml`; if that write fails, the previous active season is restored and the request fails. With a remote manifest, schedule and theme stay under the remote file.
+Set the active season. The selected season's full settings, including schedule and theme, are applied to the PostgreSQL live settings in the same transaction. A failed activation rolls back all changes.
 
 | Field          | Details                                                    |
 | -------------- | ---------------------------------------------------------- |
@@ -396,7 +396,7 @@ Update the tweakable settings of a single season. Accepts a partial body with an
 
 The `id` path value must be a positive safe integer. Missing, malformed, zero, negative, or unsafe values return `400`; a well-formed ID with no matching season returns `404`.
 
-The active season uses YAML settings and this endpoint returns 409 for live edits in YAML mode.
+Active-season edits synchronize the live PostgreSQL settings; inactive seasons retain their own settings.
 
 | Field          | Details                                             |
 | -------------- | --------------------------------------------------- |
@@ -453,7 +453,7 @@ Recompute and persist judge averages and ranks for a season. Pass `?season_id={i
 
 Season update permission is required for these endpoints. Rubric definitions support named tracks, integer score ranges, and criteria weights totaling 100 per track.
 
-When `HACKATHON.yml` defines the live rubric, the admin response includes `yamlManaged: true` and the version-creation endpoint returns 409 for the active season. Edit the manifest to activate a different rubric.
+Rubrics are managed entirely in PostgreSQL. The admin response returns the active version, version history, and reusable templates. Creating a version updates the season's active rubric pointer while saved evaluations retain their original version.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -474,7 +474,7 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Nullable text fields (`announcement`, `theme_name`, `theme_description`, `schedule_start`, `schedule_end`) accept an explicit `null` to clear them. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
+Update settings for a live or stored season in PostgreSQL. Active-season changes synchronize the live settings in the same transaction; historical and future seasons keep independent values and additionally require the season-update permission. Nullable text fields (`announcement`, `theme_name`, `theme_description`, `schedule_start`, `schedule_end`) accept explicit `null` to clear them.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |

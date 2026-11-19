@@ -2,7 +2,6 @@
 import { apiFetch } from "~~/app/composables/useApiFetch";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
-import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { formatDateTime, fromDateTimeLocalString, toDateTimeLocalString } from "~/utils/datetime";
 import AdminRubricManager from "~/components/admin/RubricManager.vue";
 definePageMeta({
@@ -38,16 +37,6 @@ const {
 });
 const hackathon = computed(() => adminData.value?.hackathon ?? null);
 const seasons = computed(() => adminData.value?.seasons ?? []);
-
-/**
- * A remote manifest cannot be written from the portal, so its live settings
- * stay read-only. Other seasons keep editable stored settings.
- */
-const configReadOnly = computed(
-    () =>
-        adminData.value?.configSource === "remote" &&
-        (selectedSeasonId.value === null || selectedSeasonIsActive.value),
-);
 
 // ---------------------------------------------------------------------------
 // Helpers: ms epoch <-> datetime-local
@@ -236,9 +225,6 @@ async function selectSeason(id: number | null) {
 }
 
 async function writeField(key: string) {
-    if (configReadOnly.value && !(LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
-        return;
-    }
     const raw = hackathonForm[key];
     if (raw === undefined || raw === null) return;
     const value = normalize(key, raw);
@@ -547,11 +533,7 @@ async function deleteSeason() {
                     variant="subtle"
                     icon="i-lucide-triangle-alert"
                     title="You are editing a stored season, not the live event"
-                    :description="
-                        adminData?.configSource === 'remote'
-                            ? `Changes here save to ${selectedSeason.name}. Activating it applies its status and visibility switches immediately; schedule and theme stay under the remote manifest.`
-                            : `Changes here save to ${selectedSeason.name} and do not affect the public site until you make it the active season.`
-                    "
+                    :description="`Changes here save to ${selectedSeason.name} and do not affect the public site until you make it the active season.`"
                 >
                     <template #actions>
                         <UButton class="min-h-11" :loading="activating" @click="setActiveSeason">
@@ -566,11 +548,7 @@ async function deleteSeason() {
                     variant="subtle"
                     icon="i-lucide-radio"
                     title="These settings control the live site"
-                    :description="
-                        adminData?.configSource === 'remote'
-                            ? `Status, voting, judging, and visibility switches for ${selectedSeason.name} save to PostgreSQL and apply immediately. Schedule and theme come from the remote manifest.`
-                            : `Status, voting, judging, visibility switches, and the schedule below apply immediately to ${selectedSeason.name}.`
-                    "
+                    :description="`Status, voting, judging, visibility switches, and the schedule below apply immediately to ${selectedSeason.name}.`"
                 />
 
                 <UTabs
@@ -797,17 +775,8 @@ async function deleteSeason() {
                             </span>
                         </h2>
                         <p class="text-sm text-ui-text-muted">
-                            <template
-                                v-if="
-                                    selectedSeasonIsActive && adminData?.configSource === 'remote'
-                                "
-                            >
-                                Status and visibility changes save to PostgreSQL and apply
-                                immediately. Schedule and theme come from the remote HACKATHON.yml.
-                            </template>
-                            <template v-else-if="selectedSeasonIsActive">
-                                Status and visibility save to PostgreSQL; schedule and theme write
-                                to HACKATHON.yml and the selected season.
+                            <template v-if="selectedSeasonIsActive">
+                                Changes save to PostgreSQL and apply immediately to the live event.
                             </template>
                             <template v-else>
                                 Changes save to the selected season as you go.
@@ -873,7 +842,6 @@ async function deleteSeason() {
                                 <UInput
                                     v-model="hackathonForm.theme_name"
                                     name="theme_name"
-                                    :disabled="configReadOnly"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @change="saveField('theme_name')"
@@ -889,7 +857,6 @@ async function deleteSeason() {
                                     v-model="hackathonForm.theme_description"
                                     name="theme_description"
                                     :rows="2"
-                                    :disabled="configReadOnly"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
                                     @change="saveField('theme_description')"
@@ -900,7 +867,7 @@ async function deleteSeason() {
                                 label="Visitor announcement"
                                 name="announcement"
                                 class="w-full md:col-span-2"
-                                help="Shown above the schedule on the home page. Leave empty to hide it. This saves to PostgreSQL and works with a remote HACKATHON.yml."
+                                help="Shown above the schedule on the home page. Leave empty to hide it. "
                             >
                                 <UTextarea
                                     v-model="hackathonForm.announcement"
@@ -918,13 +885,7 @@ async function deleteSeason() {
                         <p class="text-sm text-ui-text-muted">
                             Times are shown in Asia/Shanghai (UTC+8).
                         </p>
-                        <p v-if="configReadOnly" class="text-sm text-ui-text-muted">
-                            Schedule is read-only from the remote manifest.
-                        </p>
-                        <fieldset
-                            :disabled="configReadOnly"
-                            class="grid grid-cols-1 md:grid-cols-2 gap-4"
-                        >
+                        <fieldset class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <UFormField label="Start" name="start_timestamp" class="w-full">
                                 <UInput
                                     v-model="hackathonForm.start_timestamp"

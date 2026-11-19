@@ -26,7 +26,7 @@ type HackathonStatus =
     | "paused"; // event paused for maintenance, etc.
 ```
 
-The live YAML manifest uses the same fields as the legacy `hackathon` singleton. Its `status` field controls the global event state.
+The PostgreSQL `hackathon` singleton stores live event settings. Its `status` field controls the global event state.
 
 ### `TeamPathway`
 

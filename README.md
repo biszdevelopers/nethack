@@ -68,8 +68,6 @@ The canonical list of variables lives in `.env.example`. The table below summari
 | `BASIS_AUTH_INTERNAL_URL` | Required | basis-auth private listener origin used for webhook verification and user-state checks (default listener `http://127.0.0.1:3001`) |
 | `DATABASE_URL` | Required | PostgreSQL connection URL used in development, CI, and production |
 | `DATABASE_POOL_MAX` | Optional | Connection pool maximum (default `10`, accepted range `2`–`64`) |
-| `YAML_SOURCE_HACKATHON` | Optional | `local` or blank reads `HACKATHON.yml`. An assets origin or full asset URL selects a remote manifest. A local manifest is editable from the mod portal; a remote manifest is read-only. |
-| `HACKATHON_CONFIG_PATH` | Optional | Local manifest the portal reads and, in `local` mode, rewrites (default `HACKATHON.yml`) |
 | `DATABASE_METRICS` | Optional | Set to `1` to log bounded PostgreSQL query and pool-acquisition timing summaries once per minute |
 | `MICROSOFT_TENANT_ID` | Optional | Tenant used only by Graph features |
 | `MICROSOFT_CLIENT_ID` | Optional | Application ID used only by Graph features |
@@ -109,13 +107,9 @@ The former nethack OAuth provider and application-management UI/API have been re
 
 ## Live hackathon configuration
 
-The live event's status, voting, judging, results, score/rank visibility switches, and visitor announcement are stored in PostgreSQL as portal overrides on top of the manifest, so organizers can change them without rewriting `HACKATHON.yml` — including when the manifest is hosted remotely. The event schedule, theme, and `rubric` definition still come from `HACKATHON.yml`. Set `YAML_SOURCE_HACKATHON=local` in `.env` for development. On the VPS, set it to the assets server origin or the full HTTPS URL of the published manifest. PostgreSQL still stores the active season selection, historical seasons, and competition data. A successfully fetched remote manifest is backed up to `assets/hackathon-config.yml`; if the assets server is unavailable, the app serves that backup, then the bundled `HACKATHON.yml`, so the assets server is not a hard dependency.
+PostgreSQL is the only source for event settings and judging rubrics. Configure status, voting, judging, results, score/rank visibility, vote limits, visitor announcements, theme, and schedule in the admin portal. Changes to the active season apply immediately; inactive seasons retain their own settings until activation. Rubric edits create immutable PostgreSQL versions so saved drafts and evaluations retain their original definitions.
 
-The administration page opens on the active season and labels every other choice as stored rather than live, so changing status, voting, judging, the announcement, or the schedule applies to the public event immediately. Status, voting, judging, results, score/rank visibility, and the announcement are PostgreSQL overrides and can be switched without rewriting the manifest, including when it is hosted remotely. Schedule, theme, and the rubric remain manifest-owned. Switching seasons applies the activated season's operational switches from PostgreSQL and, with a local manifest, writes its schedule and theme; a failed local write restores the previous season.
-
-Startup creates an inactive `Next season` shell with event switches off and no copied theme, schedule, or rubric. The SQLite importer also recognizes targets that still contain the legacy `R1 2026–2027` shell as the same pristine seed state. The portal supports both settings-copy seasons and blank seasons. A blank season cannot be activated until its theme, event and voting dates, and season rubric are configured. Organizers must also obtain board approval before activation.
-
-For an existing deployment, run `bun run db:export-hackathon -- /path/to/HACKATHON.yml` once to export the legacy PostgreSQL row. The command requires `DATABASE_URL` and creates a new file. Use the repository's [configuration and cutover instructions](documentation/deployment/postgresql-migration.md#move-the-live-hackathon-configuration-to-yaml) to deploy it.
+On upgrade, startup migrations preserve operational settings already stored in PostgreSQL and remove the obsolete overlay column. Existing PostgreSQL timestamps, themes, and rubric versions remain authoritative. No configuration file or remote assets URL is read for event settings or rubrics.
 
 ## Database Setup
 

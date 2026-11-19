@@ -134,15 +134,11 @@ describe("VPS release package builder", () => {
         state.optionalDirectoriesExist = false;
         await run();
 
-        expect(state.cp).toHaveBeenCalledTimes(9);
+        expect(state.cp).toHaveBeenCalledTimes(8);
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "documentation/.vitepress/dist"),
             resolve(projectRoot, "release-package/docs"),
             { recursive: true },
-        );
-        expect(state.cp).toHaveBeenCalledWith(
-            resolve(projectRoot, "HACKATHON.yml"),
-            resolve(projectRoot, "release-package/HACKATHON.yml"),
         );
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "scripts/start.sh"),

@@ -5,7 +5,7 @@ description: Database-driven hackathon seasons, per-season configuration, and sc
 
 # Seasons
 
-Hackathon season records are stored in PostgreSQL. The active season's effective live settings come from `HACKATHON.yml`. Each season carries its own copy of every hackathon configuration field, so organizers can preview and tune a future season without touching the live event. Teams are linked to a season via the `season_id` foreign key.
+Hackathon season records are stored in PostgreSQL. The active season's effective live settings come from PostgreSQL. Each season carries its own copy of every hackathon configuration field, so organizers can preview and tune a future season without touching the live event. Teams are linked to a season via the `season_id` foreign key.
 
 ## Season Storage
 
@@ -31,20 +31,20 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `theme_name` / `theme_description` | text | Season theme |
 | `announcement` | text | Admin-editable home-page announcement for the season |
 
-The live state comes from the selected YAML manifest. A local manifest is editable from the admin page, which writes the change back into the file (comments and the rubric block are preserved); a remote manifest is read-only. Other seasons always keep their own editable stored settings. The announcement is a PostgreSQL live override, so it stays editable even when the manifest is remote. The legacy singleton remains available for PostgreSQL rollback mode.
+All live state, announcements, and rubrics come from PostgreSQL. Admin edits update the active season and live singleton transactionally; inactive seasons retain independently editable settings.
 
 Creating a season copies the live event settings and the active season's score display curve, and activating a season that was never configured seeds it from the live settings first, so switching seasons cannot blank the theme, schedule, or status. Activating a settings-copy season with no rubric materializes an immutable copy of the active season's rubric version before the switch, so submissions and judging are not left without a rubric.
 
 ## Tweakable Settings
 
-`SEASON_TWEAK_FIELDS` in `server/utils/database/seasons.ts` defines the fields that sync in rollback mode between a season and the live `hackathon` row: `status`, `show_scores`, `show_ranking`.
+`SEASON_TWEAK_FIELDS` in `server/utils/database/seasons.ts` defines the fields that synchronize between the active season and the live `hackathon` row: `status`, `show_scores`, `show_ranking`.
 
-- `updateSeasonTweaks` updates stored settings and rejects active-season edits in YAML mode.
-- `setActiveSeason` snapshots the outgoing season's live YAML settings before changing the active season.
+- `updateSeasonTweaks` updates stored settings and synchronizes the live singleton for the active season.
+- `setActiveSeason` applies the selected season's complete stored settings in the same PostgreSQL transaction as activation.
 
 ## Score / Rank Visibility
 
-`getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ resultsPublished, showScores, showRanking }`. The active season uses live YAML settings and other seasons use their stored settings. Unknown seasons keep results private in YAML mode.
+`getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ resultsPublished, showScores, showRanking }`. Each season uses its stored PostgreSQL settings. Unknown or unspecified season IDs fall back to the live singleton settings.
 
 The dev-portal toggles are authoritative: `isJudgingOpen` and `isVotingOpen` depend only on their respective switch, and the explicit `paused` maintenance state is the sole override. The event phase does not silently veto a toggle, and publishing results does not close judging. Because judging can remain open after publication by explicit choice, a new evaluation can change the persisted public score and rank; turn `judging_open` off when the ranking must freeze. Judge comments are available to current and past team members only after `results_published` is enabled and at least three judges have submitted evaluations for that team. Until then, the endpoint withholds all comments and individual score details to reduce the chance of identifying a judge. Public feedback returns only comment text and randomizes evaluation order; it omits judge identities and rubric or track metadata. Administrators with the all-permissions grant can inspect full evaluations, including judge names and account IDs, before or after publication. Participants see the overall score only when results are published, at least three evaluations exist, and `show_scores` is enabled; rank requires published results, at least three evaluations, and `show_ranking`.
 
@@ -104,7 +104,7 @@ At least one field is required. Boolean values are stored as `0`/`1`.
 | `getSeasonActivationBlockers(season)` | Return missing theme, event dates, voting dates, and rubric requirements |
 | `pickSeasonConfig(source)` | Select live event settings copied when an administrator creates a settings-copy season |
 | `isUnconfiguredSeason(season)` | Detect a season that was never configured |
-| `updateSeasonTweaks(event, seasonId, data)` | Update stored tweaks. Live edits are rejected in YAML mode. |
+| `updateSeasonTweaks(event, seasonId, data)` | Update stored tweaks and synchronize the live settings for the active season. |
 | `getScoreRankVisibilityResolver(event)` | Build a season-ID-to-visibility resolver with a global fallback |
 
 ## Usage in the UI

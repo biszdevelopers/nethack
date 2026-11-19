@@ -39,19 +39,11 @@ bun run db:backup -- --output .tmp-postgres-before-change.dump
 
 The backup command reads credentials from `DATABASE_URL` in `.env`, refuses to overwrite an existing file, and only writes inside the workspace. Snapshot files matching `.tmp-postgres-*.dump` are ignored by git.
 
-## Move the live hackathon configuration to YAML
+## Live settings and rubrics
 
-Export the old PostgreSQL singleton using the deployment's `DATABASE_URL`:
+PostgreSQL is the only data source for event settings and judging rubrics. Edit the active season in the admin portal to update live status, voting/judging/results switches, visibility, vote limits, announcement, theme, and schedule. Inactive seasons remain independently editable; activating one applies its stored settings in the same PostgreSQL transaction. The rubric editor creates immutable versions in PostgreSQL.
 
-```bash
-bun run db:export-hackathon -- /path/to/export/HACKATHON.yml
-```
-
-The command validates the configuration and creates a new file. It also exports the active season's rubric, when present, as `rubric`. For development, put the file at the checkout root and set `YAML_SOURCE_HACKATHON=local` in `.env`. An empty value also selects the local file. For production, publish the exported file to the assets server and set `YAML_SOURCE_HACKATHON` in the service environment to either its HTTPS origin or the full HTTPS asset URL. An origin loads `/HACKATHON.yml`. Assets configuration is checked at most once every five minutes per process. A running server retains the last valid remote configuration if a refresh fails. Each successful fetch is backed up to `assets/hackathon-config.yml`; on a cold start, that backup is used first, then the bundled `HACKATHON.yml`, so a temporary assets-server outage does not block startup.
-
-After switching, edit the manifest to change live schedule, theme, or rubric settings. Status, voting, judging, results, and score/rank visibility are PostgreSQL overrides set through the portal and do not require a manifest rewrite, including when the manifest is remote. The active season ID and historical seasons stay in PostgreSQL. The portal snapshots the outgoing season's live settings when you activate another season. With a local manifest it also writes the activated season's schedule and theme into `HACKATHON.yml`; a failed write restores the previous active season. With a remote manifest, activation applies the operational switches and leaves schedule and theme under the remote file. Schedule this switch while event participation is paused. Keep any unreleased theme text out of a publicly readable manifest until it is ready to be disclosed.
-
-The PostgreSQL singleton remains available for rollback with `YAML_SOURCE_HACKATHON=database` and for SQLite imports. If migrating from SQLite first, run the import before exporting the live configuration.
+Startup migrations preserve previously saved PostgreSQL operational values in the regular settings columns before removing the obsolete overlay column. Existing timestamps, themes, and rubric versions remain in PostgreSQL. File-based configuration, remote configuration URLs, and configuration export commands are no longer supported. Review the stored season settings in the portal after upgrading.
 
 ## One-time SQLite import
 

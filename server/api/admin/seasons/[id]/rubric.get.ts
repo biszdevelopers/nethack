@@ -5,7 +5,6 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam } from "~~/shared/schemas";
 import { rubricVersions, seasons } from "~~/server/database/schema";
 import { listRubricTemplates, resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
-import { hackathonUsesYaml, readHackathonConfig } from "~~/server/utils/hackathon-config";
 import { firstRow } from "~~/server/utils/database/query";
 
 const ParamsSchema = z.object({ id: PositiveIntParam });
@@ -20,10 +19,6 @@ export default defineEventHandler(
         if (!season) throw createError({ statusCode: 404, message: "Season not found" });
 
         const versionId = await resolveLiveRubricVersionId(event, season);
-        const yamlManaged =
-            season.is_active === 1 &&
-            hackathonUsesYaml() &&
-            Boolean((await readHackathonConfig()).rubric);
         const [versions, templates] = await Promise.all([
             event.context.drizzle
                 .select()
@@ -33,6 +28,6 @@ export default defineEventHandler(
             listRubricTemplates(event),
         ]);
         const active = versions.find((version) => version.id === versionId) ?? null;
-        return { active, versions, templates, ...(yamlManaged ? { yamlManaged } : {}) };
+        return { active, versions, templates };
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

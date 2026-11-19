@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { getTableName } from "drizzle-orm";
 import type * as schema from "~~/server/database/schema";
-import type { LiveOverrides } from "~~/shared/schemas";
 import { snapshotDatabaseExport } from "~~/server/utils/database-export";
 
 const leakedJudgeId = "judge-id-must-not-appear";
@@ -82,10 +81,10 @@ function mockDatabase() {
     return { db, queriedTables, orderByCalls };
 }
 
-async function collectExport(format: "json" | "csv", liveOverrides: LiveOverrides = {}) {
+async function collectExport(format: "json" | "csv") {
     const { db, queriedTables, orderByCalls } = mockDatabase();
     const chunks: string[] = [];
-    for await (const chunk of snapshotDatabaseExport(db as never, format, liveOverrides)) {
+    for await (const chunk of snapshotDatabaseExport(db as never, format)) {
         chunks.push(chunk);
     }
     return { output: chunks.join(""), queriedTables, orderByCalls };
@@ -130,42 +129,5 @@ describe("admin database export judge privacy", () => {
 
         expect(output).toContain("\"'\n=HYPERLINK(");
         expect(output).toContain("'\tplain text");
-    });
-
-    it("exports the live manifest instead of stale hackathon rows in YAML mode", async () => {
-        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
-        try {
-            const { output, queriedTables } = await collectExport("json");
-            const parsed = JSON.parse(output) as {
-                tables: Record<string, Record<string, unknown>[]>;
-            };
-
-            expect(parsed.tables.hackathon[0]).toMatchObject({ id: 1, status: "voting" });
-            expect(queriedTables).not.toContain("hackathon");
-        } finally {
-            vi.unstubAllEnvs();
-        }
-    });
-
-    it("applies portal overrides to the exported live configuration", async () => {
-        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
-        try {
-            const { output, queriedTables } = await collectExport("json", {
-                status: "finished",
-                judging_open: 0,
-            });
-            const parsed = JSON.parse(output) as {
-                tables: Record<string, Record<string, unknown>[]>;
-            };
-
-            expect(parsed.tables.hackathon[0]).toMatchObject({
-                id: 1,
-                status: "finished",
-                judging_open: 0,
-            });
-            expect(queriedTables).not.toContain("hackathon");
-        } finally {
-            vi.unstubAllEnvs();
-        }
     });
 });

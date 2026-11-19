@@ -510,30 +510,6 @@ export const AdminUpdateHackathonRequest = z.object({
 });
 export type AdminUpdateHackathonRequest = z.infer<typeof AdminUpdateHackathonRequest>;
 
-/** Live event switches the portal keeps in PostgreSQL on top of HACKATHON.yml. */
-export const LIVE_OVERRIDE_KEYS = [
-    "status",
-    "voting_enabled",
-    "results_published",
-    "judging_open",
-    "show_scores",
-    "show_ranking",
-    "max_votes_per_user",
-    "announcement",
-] as const;
-
-export const LiveOverrides = AdminUpdateHackathonRequest.pick({
-    status: true,
-    voting_enabled: true,
-    results_published: true,
-    judging_open: true,
-    show_scores: true,
-    show_ranking: true,
-    max_votes_per_user: true,
-    announcement: true,
-});
-export type LiveOverrides = z.infer<typeof LiveOverrides>;
-
 // ---------------------------------------------------------------------------
 // Admin – season management
 // ---------------------------------------------------------------------------

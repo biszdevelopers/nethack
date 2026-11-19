@@ -24,13 +24,12 @@ export default defineEventHandler(
             `attachment; filename="nethack-export.${query.format}"`,
         );
 
-        const overrides = await getLiveOverrides(event);
         // Export one consistent snapshot: a page-by-page read without a
         // transaction can omit or duplicate rows while the database changes.
         const chunks: string[] = [];
         await event.context.drizzle.transaction(
             async (tx) => {
-                for await (const chunk of snapshotDatabaseExport(tx, query.format, overrides)) {
+                for await (const chunk of snapshotDatabaseExport(tx, query.format)) {
                     chunks.push(chunk);
                 }
             },

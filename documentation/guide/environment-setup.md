@@ -73,7 +73,7 @@ Keep the overrides and `bun.lock` in sync when upgrading dependencies. :::
 
 ## Database Initialization
 
-Local development, CI, and production use PostgreSQL. Set `DATABASE_URL` to a reachable PostgreSQL instance before starting Nuxt. The Nitro startup plugin creates a bounded pool, applies migrations under a PostgreSQL advisory lock, and seeds the default hackathon row. Set `YAML_SOURCE_HACKATHON=local` for the checkout's `HACKATHON.yml`, or set an assets server origin or full manifest URL. See [live configuration cutover](/deployment/postgresql-migration#move-the-live-hackathon-configuration-to-yaml).
+Local development, CI, and production use PostgreSQL. Set `DATABASE_URL` to a reachable PostgreSQL instance before starting Nuxt. The Nitro startup plugin creates a bounded pool, applies migrations under a PostgreSQL advisory lock, and seeds the default hackathon row. Event settings and rubrics are stored only in PostgreSQL and edited through the admin portal.
 
 ### Applying Migrations
 
@@ -142,13 +142,10 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 | --- | --- | --- |
 | `CURRENT_URL_ORIGIN` | Required public origin used for canonical page URLs, the basis-auth callback, and same-origin request checks. Loopback HTTP origins are accepted only while bound to loopback. | Set it in `.env`; the example uses a local origin |
 
-#### Live manifest and local caches
+#### Local caches
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. A local manifest is writable from the mod portal; a remote manifest is read-only. | `local` |
-| `HACKATHON_CONFIG_PATH` | Local manifest the portal reads and, in `local` mode, rewrites | `HACKATHON.yml` |
-| `HACKATHON_CACHE_PATH` | File that stores the last successfully fetched remote manifest, used when the assets server is unavailable at startup | `assets/hackathon-config.yml` |
 | `BASIS_AUTH_PICTURE_CACHE_DIR` | Directory that stores basis-auth avatar bytes so profile pictures survive a provider outage | `assets/basis-auth-pictures` |
 
 #### Integrations & Server
@@ -211,14 +208,6 @@ BASIS_AUTH_RESOURCE=devconnect://nethack.bisz.dev
 BASIS_AUTH_RESOURCE_SECRET=your_basis_auth_resource_secret
 BASIS_AUTH_INTERNAL_URL=http://127.0.0.1:3001
 
-# OPTIONAL - Live event configuration source: local | manifest URL | database
-YAML_SOURCE_HACKATHON=local
-
-# OPTIONAL - Local manifest the mod portal reads and rewrites
-# HACKATHON_CONFIG_PATH=HACKATHON.yml
-
-# OPTIONAL - Remote manifest backup and basis-auth avatar cache locations
-# HACKATHON_CACHE_PATH=assets/hackathon-config.yml
 # BASIS_AUTH_PICTURE_CACHE_DIR=assets/basis-auth-pictures
 
 # OPTIONAL - Microsoft Entra ID tenant ID (directory ID)

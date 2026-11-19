@@ -17,7 +17,7 @@ The importer copies `project_description` when the source schema has that column
 
 ### `hackathon` (singleton)
 
-The legacy singleton (`id = 1`) is retained for export, import compatibility, and rollback. The app reads live event settings from the selected `HACKATHON.yml` by default.
+The singleton (`id = 1`) stores live event settings in PostgreSQL. Admin edits synchronize it with the active season; season activation applies the selected season's stored settings transactionally. Rubrics use immutable PostgreSQL versions.
 
 | Column | Type | Description |
 | --- | --- | --- |
@@ -40,9 +40,8 @@ The legacy singleton (`id = 1`) is retained for export, import compatibility, an
 | `theme_name` | `TEXT` | Hackathon theme name |
 | `theme_description` | `TEXT` | Hackathon theme description |
 | `announcement` | `TEXT` | Admin-editable home-page announcement |
-| `live_overrides` | `JSONB` | Portal-managed operational switches that override `HACKATHON.yml` |
 
-Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`, and `announcement` are stored in `live_overrides` and applied on top of the manifest. The announcement also has a dedicated column so it can be read without parsing the JSON. Schedule, theme, and the rubric remain manifest-owned, so the operational switches and announcement keep working with a remote, read-only manifest.
+All event settings are edited through the admin portal and stored in regular PostgreSQL columns. Event settings and rubrics never load from local files or remote assets URLs.
 
 Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 
@@ -153,11 +152,11 @@ Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted a
 | `is_active` | `INTEGER NOT NULL DEFAULT 0` | Only one season can be active (CHECK 0 or 1) |
 | `announcement` | `TEXT` | Editable home-page announcement |
 
-Each season stores a snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. Activating a season also carries that season's announcement into the live overrides, so a message saved for an upcoming season appears on the public home page as soon as it goes live. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+Each season stores its event settings in PostgreSQL, mirroring the live `hackathon` columns by name. Admin edits synchronize the active season and live row transactionally. Activation applies the target season's complete stored settings. The nullable `rubric_version_id` points to an immutable PostgreSQL rubric version and is set after that version exists.
 
 The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 
-When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from the team's **own** season (via `getScoreRankVisibilityResolver` in `server/utils/database/seasons.ts`), using live YAML for the active season. Unknown seasons keep scores and ranks private in YAML mode. This keeps past-season results governed by their own season's settings rather than the live season's.
+When the API decides whether to expose a team's `score`/`rank`, it resolves the `show_scores`/`show_ranking` toggles from that team's own PostgreSQL season via `getScoreRankVisibilityResolver`. This keeps past-season results governed by their own settings.
 
 A partial unique index ensures at most one active season:
 

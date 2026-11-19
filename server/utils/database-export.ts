@@ -2,8 +2,6 @@ import * as schema from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
 import { asc, sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import type { LiveOverrides } from "~~/shared/schemas";
-import { hackathonUsesYaml, readHackathonConfig } from "./hackathon-config";
 
 const PAGE_SIZE = 250;
 
@@ -80,11 +78,7 @@ function exportOrder(table: unknown) {
 }
 
 /** Stream an admin database export without exposing judge links or OAuth client secrets. */
-export async function* snapshotDatabaseExport(
-    db: DrizzleDatabase,
-    format: "json" | "csv",
-    liveOverrides: LiveOverrides = {},
-) {
+export async function* snapshotDatabaseExport(db: DrizzleDatabase, format: "json" | "csv") {
     if (format === "json") {
         yield `{"exported_at":${JSON.stringify(new Date().toISOString())},"tables":{`;
     }
@@ -101,15 +95,12 @@ export async function* snapshotDatabaseExport(
         let firstRow = true;
         let headerWritten = false;
         while (true) {
-            const rawRows =
-                name === "hackathon" && hackathonUsesYaml()
-                    ? [{ ...(await readHackathonConfig()), ...liveOverrides }]
-                    : ((await db
-                          .select()
-                          .from(table as any)
-                          .orderBy(...exportOrder(table))
-                          .limit(PAGE_SIZE)
-                          .offset(offset)) as Record<string, unknown>[]);
+            const rawRows = (await db
+                .select()
+                .from(table as any)
+                .orderBy(...exportOrder(table))
+                .limit(PAGE_SIZE)
+                .offset(offset)) as Record<string, unknown>[];
             if (rawRows.length === 0) break;
 
             const rows = rawRows.map((row) => anonymizeExportRow(name, row));

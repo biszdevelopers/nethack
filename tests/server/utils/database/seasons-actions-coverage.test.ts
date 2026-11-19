@@ -1,7 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
     getScoreRankVisibilityResolver,
     getSeasonActivationBlockers,
@@ -252,98 +249,5 @@ describe("season visibility and action boundaries", () => {
         expect(isUnconfiguredSeason({ ...season, theme_name: "Theme" } as Season)).toBe(false);
         expect(isUnconfiguredSeason({ ...season, start_timestamp: 1 } as Season)).toBe(false);
         expect(isUnconfiguredSeason({ ...season, status: "voting" } as Season)).toBe(false);
-    });
-});
-
-describe("live YAML season switching", () => {
-    let event: Awaited<ReturnType<typeof createMockEvent>>;
-    let manifestDirectory: string;
-
-    beforeEach(async () => {
-        manifestDirectory = mkdtempSync(join(tmpdir(), "basishacks-switching-"));
-        writeFileSync(
-            join(manifestDirectory, "HACKATHON.yml"),
-            `id: 1
-status: voting
-voting_enabled: 1
-results_published: 0
-show_scores: 0
-show_ranking: 0
-submitted_count: 0
-max_votes_per_user: 1
-judging_open: 1
-schedule_start: null
-schedule_end: null
-start_timestamp: 0
-end_timestamp: 0
-voting_start_timestamp: 0
-voting_end_timestamp: 0
-results_open_timestamp: 0
-theme_name: Live theme
-theme_description: Live description
-`,
-        );
-        vi.stubEnv("YAML_SOURCE_HACKATHON", "local");
-        vi.stubEnv("HACKATHON_CONFIG_PATH", join(manifestDirectory, "HACKATHON.yml"));
-        event = await createMockEvent();
-        event.context.drizzle
-            .prepare(
-                "INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp) VALUES(1, 'not_started', 0, 0, 0, 0, 0)",
-            )
-            .run();
-    });
-
-    afterEach(() => {
-        vi.unstubAllEnvs();
-        rmSync(manifestDirectory, { recursive: true, force: true });
-    });
-
-    it("refuses to change live settings on the active season", async () => {
-        event.context.drizzle
-            .prepare(
-                "INSERT INTO seasons(id, name, is_active, status) VALUES(1, 'Live', 1, 'voting')",
-            )
-            .run();
-
-        await expect(updateSeasonTweaks(event, 1, { show_scores: 0 })).rejects.toMatchObject({
-            statusCode: 409,
-        });
-    });
-
-    it("snapshots the outgoing live manifest into its active season when switching", async () => {
-        event.context.drizzle
-            .prepare(
-                "INSERT INTO seasons(id, name, is_active, status, show_scores) VALUES(1, 'Outgoing', 1, 'not_started', 0), (2, 'Incoming', 0, 'finished', 1)",
-            )
-            .run();
-
-        await setActiveSeason(event, 2);
-
-        expect(
-            event.context.drizzle
-                .prepare("SELECT status, is_active FROM seasons WHERE id = 1")
-                .first(),
-        ).toEqual({ status: "voting", is_active: 0 });
-        expect(
-            event.context.drizzle
-                .prepare("SELECT status, is_active FROM seasons WHERE id = 2")
-                .first(),
-        ).toEqual({ status: "finished", is_active: 1 });
-    });
-
-    it("does not re-snapshot a season that is already the live one", async () => {
-        event.context.drizzle
-            .prepare(
-                "INSERT INTO seasons(id, name, is_active, status) VALUES(1, 'Current', 1, 'not_started')",
-            )
-            .run();
-
-        await setActiveSeason(event, 1);
-
-        expect(
-            event.context.drizzle
-                .prepare("SELECT status, is_active FROM seasons WHERE id = 1")
-                .first(),
-        ).toEqual({ status: "not_started", is_active: 1 });
     });
 });
