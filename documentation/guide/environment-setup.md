@@ -126,16 +126,6 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 ### Optional Variables
 
-#### Microsoft Entra ID
-
-| Variable | Description | Default |
-| --- | --- | --- |
-| `MICROSOFT_TENANT_ID` | Microsoft Entra ID tenant used by optional Graph features. | — |
-| `MICROSOFT_CLIENT_ID` | Microsoft Entra ID client used by optional Graph features. | — |
-| `MICROSOFT_CLIENT_SECRET` | Microsoft Entra ID client secret for Graph features. | — |
-| `MICROSOFT_WEBHOOK_STATE` | Persistent Graph webhook validation secret (minimum 32 bytes). | — |
-| `MICROSOFT_WEBHOOK_ID` | Existing Graph subscription ID; set it after the first subscription is created. | — |
-
 #### Public origin
 
 | Variable | Description | Default |
@@ -146,7 +136,7 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. A local manifest is writable from the mod portal; a remote manifest is read-only. | `local` |
+| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. The manifest seeds and is compared against live settings, but every editable event field is stored in PostgreSQL and can be changed from the portal regardless of manifest location. | `local` |
 | `HACKATHON_CONFIG_PATH` | Local manifest the portal reads and, in `local` mode, rewrites | `HACKATHON.yml` |
 | `HACKATHON_CACHE_PATH` | File that stores the last successfully fetched remote manifest, used when the assets server is unavailable at startup | `assets/hackathon-config.yml` |
 | `BASIS_AUTH_PICTURE_CACHE_DIR` | Directory that stores basis-auth avatar bytes so profile pictures survive a provider outage | `assets/basis-auth-pictures` |
@@ -160,9 +150,30 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 | `HOST` | Server host override | `0.0.0.0` |
 | `DATABASE_POOL_MAX` | Maximum PostgreSQL connections; integer from 2 through 64 | `10` |
 | `DATABASE_METRICS` | Set to `1` to emit bounded PostgreSQL query-runtime and pool-acquisition wait summaries every minute | unset |
+| `DATABASE_SLOW_QUERY_MS` | Log queries slower than this when `DATABASE_METRICS=1`; no SQL text is logged | `250` |
 | `SQLITE_IMPORT_PATH` | Source SQLite backup path for the one-time migration command only | unset |
-| `MICROSOFT_DUMMY_USER_NAME` | ROPC test user email (rarely used, testing only) | — |
-| `MICROSOFT_DUMMY_USER_PASSWORD` | ROPC test user password (rarely used, testing only) | — |
+| `PROFILE_UPDATE_DEADLINE_MS` | Deadline for reading a profile-update body | `30000` |
+| `HEALTH_DETAILS` | Include uptime in `/api/health/live`; never includes database details | unset |
+
+#### Event operations
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `ENFORCE_DEADLINES` | Enforce submission and voting deadlines in addition to status switches | on |
+| `SUBMISSION_GRACE_MS` | Grace period after the submission deadline | `0` |
+| `JUDGING_AFTER_PUBLISH` | Keep judging open after results are published in a finished season | off |
+| `TEAM_INVITE_TTL_DAYS` | Team invitation lifetime in days (1–365) | `7` |
+| `NOTIFICATION_WEBHOOK_URL` | Optional HTTPS webhook that receives a copy of in-app notifications | unset |
+| `INITIAL_ADMIN_EMAILS` | Comma-separated bootstrap administrator allowlist; unset uses the built-in fallback | unset |
+| `REQUIRE_VERIFIED_EMAIL` | Reject a missing `email_verified` claim at login | off |
+
+#### Backups
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `BACKUP_DIR` | Directory for verified dumps and assets archives | `/srv/backups/basishacks` |
+| `BACKUP_RETENTION_DAYS` | Days to keep managed snapshots | `14` |
+| `BACKUP_RSYNC_TARGET` | Optional off-box rsync destination | unset |
 
 #### Rate Limiting
 
@@ -172,6 +183,8 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 | `RATE_LIMIT_AUTH_MAX` | Authentication endpoint rate limit, attempts per minute | `200` |
 | `RATE_LIMIT_VOTE_MAX` | Voting/scoring endpoint rate limit, submissions per minute | `300` |
 | `RATE_LIMIT_UPLOAD_MAX` | File upload endpoint rate limit, uploads per minute | `100` |
+| `RATE_LIMIT_REQUEST_GATE_MAX` | Pre-body per-IP request gate, requests per minute | `6000` |
+| `RATE_LIMIT_BACKCHANNEL_MAX` | basis-auth backchannel receiver limit, requests per minute | `600` |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window in milliseconds | `60000` |
 | `TRUSTED_PROXY_HOPS` | Exact number of trusted reverse proxies (0–10); forwarded addresses are used only when the chain contains enough valid IPs | `0` |
 
@@ -221,15 +234,6 @@ YAML_SOURCE_HACKATHON=local
 # HACKATHON_CACHE_PATH=assets/hackathon-config.yml
 # BASIS_AUTH_PICTURE_CACHE_DIR=assets/basis-auth-pictures
 
-# OPTIONAL - Microsoft Entra ID tenant ID (directory ID)
-MICROSOFT_TENANT_ID=your_microsoft_tenant_id_here
-
-# OPTIONAL - Microsoft Entra ID application (client) ID
-MICROSOFT_CLIENT_ID=your_microsoft_client_id_here
-
-# OPTIONAL - Microsoft Entra ID client secret for MS Graph API integration
-MICROSOFT_CLIENT_SECRET=your_microsoft_client_secret_here
-
 # REQUIRED in production - public HTTPS origin; loopback HTTP is allowed for local production
 # The callback is /api/auth/basis/callback
 CURRENT_URL_ORIGIN=http://localhost:3000
@@ -242,16 +246,13 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 # PORT=3000
 # HOST=0.0.0.0
 
-# OPTIONAL - ROPC test credentials (testing only)
-# MICROSOFT_DUMMY_USER_NAME=test_user@example.com
-# MICROSOFT_DUMMY_USER_PASSWORD=test_password
-
-
 # OPTIONAL - Rate limiting overrides (defaults shown)
 # RATE_LIMIT_GENERAL_MAX=1200
 # RATE_LIMIT_AUTH_MAX=200
 # RATE_LIMIT_VOTE_MAX=300
 # RATE_LIMIT_UPLOAD_MAX=100
+# RATE_LIMIT_REQUEST_GATE_MAX=6000
+# RATE_LIMIT_BACKCHANNEL_MAX=600
 # RATE_LIMIT_WINDOW_MS=60000
 
 
@@ -261,8 +262,25 @@ DEEPSEEK_API_KEY=your_deepseek_api_key_here
 # OPTIONAL - Disable debug routes outside production (they are disabled automatically in production)
 # DISABLE_DEBUG_ROUTES=true
 
-# OPTIONAL - Log bounded PostgreSQL query and pool wait timing summaries
+# OPTIONAL - PostgreSQL timing and slow-query logs
 # DATABASE_METRICS=1
+# DATABASE_SLOW_QUERY_MS=250
+
+# OPTIONAL - Event gates and participant flows
+# ENFORCE_DEADLINES=1
+# SUBMISSION_GRACE_MS=0
+# JUDGING_AFTER_PUBLISH=0
+# TEAM_INVITE_TTL_DAYS=7
+# NOTIFICATION_WEBHOOK_URL=https://example.com/hooks/hackathon
+# INITIAL_ADMIN_EMAILS=admin1@example.com,admin2@example.com
+# REQUIRE_VERIFIED_EMAIL=0
+# PROFILE_UPDATE_DEADLINE_MS=30000
+# HEALTH_DETAILS=0
+
+# OPTIONAL - Scheduled backups
+# BACKUP_DIR=/srv/backups/basishacks
+# BACKUP_RETENTION_DAYS=14
+# BACKUP_RSYNC_TARGET=user@offsite.example:/srv/backups/basishacks
 ```
 
 ## HTTPS Dev Server Setup
@@ -440,9 +458,9 @@ openssl rand -base64 32
 
 And update `BASIS_AUTH_COOKIE_SECRET` in your `.env` file.
 
-### Microsoft Graph API Unavailable
+### Startup exits immediately
 
-If the server logs `[MS Graph] MS Token Endpoint returned 401` or similar, the `MICROSOFT_CLIENT_SECRET` is either missing or invalid. Microsoft configuration affects Graph features only and does not control login.
+Production startup is fail-fast. Read the `[FATAL]` line in the service log: it names the missing or malformed variable. `CURRENT_URL_ORIGIN` must be a public HTTPS origin with no path (or a loopback HTTP origin while the server binds to loopback), and `TRUSTED_PROXY_HOPS` must be an integer from 0 to 10. `GET /api/health/ready` returns `503` when the database is unavailable, even though the process is still alive.
 
 ### basis-auth Configuration Missing
 

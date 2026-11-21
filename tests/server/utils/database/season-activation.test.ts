@@ -76,7 +76,7 @@ describe("setActiveSeason with a local manifest", () => {
         event.context.drizzle.prepare(`INSERT INTO seasons(${columns}) VALUES(${values})`).run();
     }
 
-    it("writes the activated season's stored settings into the manifest", async () => {
+    it("stores the activated season's settings in PostgreSQL without writing the manifest", async () => {
         insertSeason(
             "name, is_active, status, theme_name, theme_description, voting_enabled",
             "'Current', 1, 'voting', 'Live theme', 'Live description', 1",
@@ -88,12 +88,7 @@ describe("setActiveSeason with a local manifest", () => {
 
         await setActiveSeason(event, 2);
 
-        const written = readFileSync(manifestPath, "utf8");
-        expect(written).toContain("# organizer note stays put");
-        expect(written).toContain("status: finished");
-        expect(written).toContain("theme_name: Archived theme");
-        expect(written).toContain("voting_enabled: 0");
-
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
         const active = await getActiveSeason(event);
         expect(active).toMatchObject({
             id: 2,
@@ -127,19 +122,17 @@ describe("setActiveSeason with a local manifest", () => {
         });
     });
 
-    it("seeds an unconfigured season from live settings before writing", async () => {
+    it("seeds an unconfigured season from live settings before activation", async () => {
         insertSeason("name, is_active, status, theme_name", "'Current', 1, 'voting', 'Live theme'");
         insertSeason("name, is_active", "'Blank', 0");
 
         await setActiveSeason(event, 2);
 
-        const written = readFileSync(manifestPath, "utf8");
-        expect(written).toContain("theme_name: Live theme");
         const active = await getActiveSeason(event);
         expect(active).toMatchObject({ id: 2, is_active: 1, theme_name: "Live theme" });
     });
 
-    it("does not rewrite the manifest when the season is already active", async () => {
+    it("does not write the manifest when the season is already active", async () => {
         insertSeason("name, is_active, status", "'Current', 1, 'voting'");
 
         await setActiveSeason(event, 1);
@@ -147,43 +140,11 @@ describe("setActiveSeason with a local manifest", () => {
         expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
     });
 
-    it("restores the previous active season when the manifest write fails", async () => {
-        insertSeason("name, is_active, status, theme_name", "'Current', 1, 'voting', 'Live theme'");
-        insertSeason("name, is_active, start_timestamp", "'Broken', 0, -1");
-
-        await expect(setActiveSeason(event, 2)).rejects.toMatchObject({ statusCode: 409 });
-
-        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
-        const active = await getActiveSeason(event);
-        expect(active).toMatchObject({ id: 1, name: "Current" });
-        const restoredLive = event.context.drizzle
-            .prepare("SELECT status, theme_name, live_overrides FROM hackathon WHERE id = 1")
-            .first() as {
-            status: string;
-            theme_name: string;
-            live_overrides: string;
-        };
-        expect(restoredLive.status).toBe("voting");
-        expect(restoredLive.theme_name).toBe("Live theme");
-        expect(JSON.parse(restoredLive.live_overrides)).toEqual({});
-    });
-
-    it("leaves no active season when a failed activation had none", async () => {
-        insertSeason("name, is_active, start_timestamp", "'Broken', 0, -1");
+    it("leaves no active season when activation is rejected", async () => {
+        insertSeason("name, is_active, is_blank_start", "'Broken', 0, 1");
 
         await expect(setActiveSeason(event, 1)).rejects.toMatchObject({ statusCode: 409 });
 
         await expect(getActiveSeason(event)).resolves.toBeNull();
-    });
-
-    it("restores nothing when the live row does not exist", async () => {
-        event.context.drizzle.prepare("DELETE FROM hackathon WHERE id = 1").run();
-        insertSeason("name, is_active, start_timestamp", "'Broken', 0, -1");
-
-        await expect(setActiveSeason(event, 1)).rejects.toMatchObject({ statusCode: 409 });
-
-        expect(
-            event.context.drizzle.prepare("SELECT id FROM hackathon WHERE id = 1").first(),
-        ).toBeUndefined();
     });
 });

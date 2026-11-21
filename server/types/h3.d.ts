@@ -11,6 +11,10 @@ declare module "h3" {
         basisAuthValidatedUser?: { subject: string; user: User };
         /** Per-request merged hackathon state, reused by repeated read helpers. */
         cachedHackathon?: Hackathon | null;
+        /** Bounded request correlation id for logs and error responses. */
+        requestId?: string;
+        /** Verified local user id used for rate-limit identity, when available. */
+        authUserId?: number | null;
     }
 }
 

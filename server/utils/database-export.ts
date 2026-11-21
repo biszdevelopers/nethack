@@ -24,6 +24,12 @@ const exportTables = [
     ["user_past_teams", schema.userPastTeams],
     ["rubric_templates", schema.rubricTemplates],
     ["rubric_versions", schema.rubricVersions],
+    ["admin_audit_events", schema.adminAuditEvents],
+    ["notifications", schema.notifications],
+    ["judge_assignments", schema.judgeAssignments],
+    ["judge_recusals", schema.judgeRecusals],
+    ["judge_flags", schema.judgeFlags],
+    ["team_invites", schema.teamInvites],
     ["sc_votes", schema.scVotes],
     ["sqlite_legacy_data", schema.sqliteLegacyData],
 ] as const;
@@ -48,6 +54,27 @@ function anonymizeExportRow(name: string, row: Record<string, unknown>) {
         const anonymousScore = { ...row };
         delete anonymousScore.judge_user_id;
         return anonymousScore;
+    }
+
+    // Staff identity links are withheld from exports; the operational record
+    // (track assignment, recusal, flag, resolution) remains exportable.
+    if (name === "judge_assignments" || name === "judge_recusals") {
+        const anonymousRow = { ...row };
+        delete anonymousRow.judge_user_id;
+        return anonymousRow;
+    }
+
+    if (name === "judge_flags") {
+        const anonymousRow = { ...row };
+        delete anonymousRow.judge_user_id;
+        return anonymousRow;
+    }
+
+    // Invitation bearer secrets must never leave the database.
+    if (name === "team_invites") {
+        const safeInvite = { ...row };
+        delete safeInvite.token;
+        return safeInvite;
     }
 
     if (name === "sqlite_legacy_data") {

@@ -1,7 +1,12 @@
 <script setup lang="ts">
-useHead({
-    title: `Contributing | ${WEBSITE_NAME}`,
-});
+useHead(
+    pageSeo({
+        title: `Contributing | ${WEBSITE_NAME}`,
+        description:
+            "How to contribute to nethack, the open-source platform for the BIBS-C Network Hackathon.",
+        path: "/contributing",
+    }),
+);
 </script>
 
 <template>

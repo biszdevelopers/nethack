@@ -22,7 +22,9 @@ describe("nethack permission helpers", () => {
                 NethackPermissions.Voting.submitOwn,
             ]),
         );
-        expect(hasNethackPermission(undefined, NethackPermissions.Profile.updateSelf)).toBe(true);
+        // Identity-only requests are anonymous for permission checks; call
+        // sites must authenticate before asking for a grant.
+        expect(hasNethackPermission(undefined, NethackPermissions.Profile.updateSelf)).toBe(false);
         expect(hasNethackPermission([], NethackPermissions.Users.delete)).toBe(false);
     });
 

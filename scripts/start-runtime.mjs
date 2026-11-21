@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const MINIMUM_BUN_MAJOR = 1;
@@ -33,11 +33,29 @@ export function probeVersion(command) {
     return result.status === 0 ? result.stdout : undefined;
 }
 
+/** Run the launcher and forward termination signals so systemd stops cleanly. */
 export function spawnRuntime(command, args) {
-    return spawnSync(command, args, { stdio: "inherit" }).status ?? 1;
+    return new Promise((resolvePromise) => {
+        const child = spawn(command, args, { stdio: "inherit" });
+        const forward = (signal) => child.kill(signal);
+        process.once("SIGINT", forward);
+        process.once("SIGTERM", forward);
+        const cleanup = () => {
+            process.removeListener("SIGINT", forward);
+            process.removeListener("SIGTERM", forward);
+        };
+        child.once("error", () => {
+            cleanup();
+            resolvePromise(1);
+        });
+        child.once("exit", (code) => {
+            cleanup();
+            resolvePromise(code ?? 1);
+        });
+    });
 }
 
-export function runStartSelector(dependencies = {}) {
+export async function runStartSelector(dependencies = {}) {
     const readVersion = dependencies.readVersion ?? probeVersion;
     const run = dependencies.run ?? spawnRuntime;
 
@@ -50,13 +68,13 @@ export function runStartSelector(dependencies = {}) {
         return 127;
     }
 
-    return run(runtime, [LAUNCHER]);
+    return await run(runtime, [LAUNCHER]);
 }
 
-export function runIfDirect(moduleUrl, argvPath, dependencies = {}) {
+export async function runIfDirect(moduleUrl, argvPath, dependencies = {}) {
     if (!argvPath || moduleUrl !== pathToFileURL(argvPath).href) return null;
-    return runStartSelector(dependencies);
+    return await runStartSelector(dependencies);
 }
 
-const directExitCode = runIfDirect(import.meta.url, process.argv[1]);
+const directExitCode = await runIfDirect(import.meta.url, process.argv[1]);
 if (directExitCode !== null) process.exitCode = directExitCode;

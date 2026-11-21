@@ -2,13 +2,10 @@ import type { H3Event } from "h3";
 import { eq, asc, sql } from "drizzle-orm";
 import { hackathon, rubricVersions, seasons } from "~~/server/database/schema";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
-import { getHackathon, invalidateHackathonCache } from "./hackathon";
-import { firstRow, supportsRowLocks } from "./query";
-import {
-    getHackathonConfigSource,
-    hackathonUsesYaml,
-    writeHackathonConfig,
-} from "../hackathon-config";
+import { getHackathon, invalidateHackathonCache, pickDivergingLiveOverrides } from "./hackathon";
+import { firstRow, requestCache, supportsRowLocks } from "./query";
+import { writeAuditEvent } from "../audit";
+import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 /**
  * Per-season tweakable settings. In PostgreSQL rollback mode these fields
@@ -90,14 +87,16 @@ function pickTweaks(source: Record<string, unknown>): Record<string, unknown> {
     return tweaks;
 }
 
-export async function getSeasons(event: H3Event): Promise<Season[]> {
-    const rows = (await event.context.drizzle
-        .select()
-        .from(seasons)
-        .orderBy(asc(seasons.id))) as Season[];
-    const active = rows.findIndex((season) => season.is_active === 1);
-    if (active >= 0) rows[active] = await withLiveConfig(event, rows[active]!);
-    return rows;
+export function getSeasons(event: H3Event): Promise<Season[]> {
+    return requestCache(event, "seasons", async () => {
+        const rows = (await event.context.drizzle
+            .select()
+            .from(seasons)
+            .orderBy(asc(seasons.id))) as Season[];
+        const active = rows.findIndex((season) => season.is_active === 1);
+        if (active >= 0) rows[active] = await withLiveConfig(event, rows[active]!);
+        return rows;
+    });
 }
 
 async function withLiveConfig(event: H3Event, season: Season): Promise<Season> {
@@ -106,20 +105,24 @@ async function withLiveConfig(event: H3Event, season: Season): Promise<Season> {
     return { ...season, ...config, id: season.id };
 }
 
-export async function getSeasonById(event: H3Event, seasonId: number): Promise<Season | null> {
-    const row = await firstRow(
-        event.context.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
-    );
+export function getSeasonById(event: H3Event, seasonId: number): Promise<Season | null> {
+    return requestCache(event, `season:${seasonId}`, async () => {
+        const row = await firstRow(
+            event.context.drizzle.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+        );
 
-    return row ? withLiveConfig(event, row as Season) : null;
+        return row ? withLiveConfig(event, row as Season) : null;
+    });
 }
 
-export async function getActiveSeason(event: H3Event): Promise<Season | null> {
-    const row = await firstRow(
-        event.context.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1),
-    );
+export function getActiveSeason(event: H3Event): Promise<Season | null> {
+    return requestCache(event, "season:active", async () => {
+        const row = await firstRow(
+            event.context.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1),
+        );
 
-    return row ? withLiveConfig(event, row as Season) : null;
+        return row ? withLiveConfig(event, row as Season) : null;
+    });
 }
 
 export interface ScoreRankVisibility {
@@ -132,28 +135,30 @@ export interface ScoreRankVisibility {
  * Resolve score/rank visibility from live YAML for the active season and
  * from stored settings for past seasons. Keep unknown seasons private in YAML mode.
  */
-export async function getScoreRankVisibilityResolver(
+export function getScoreRankVisibilityResolver(
     event: H3Event,
 ): Promise<(seasonId: number | null | undefined) => ScoreRankVisibility> {
-    const allSeasons = await getSeasons(event);
-    const hackathonRow = hackathonUsesYaml() ? null : await getHackathon(event);
+    return requestCache(event, "score-rank-visibility", async () => {
+        const allSeasons = await getSeasons(event);
+        const hackathonRow = hackathonUsesYaml() ? null : await getHackathon(event);
 
-    const bySeason = new Map<number, ScoreRankVisibility>();
-    for (const season of allSeasons) {
-        bySeason.set(season.id, {
-            resultsPublished: !!season.results_published,
-            showScores: !!season.show_scores,
-            showRanking: !!season.show_ranking,
-        });
-    }
+        const bySeason = new Map<number, ScoreRankVisibility>();
+        for (const season of allSeasons) {
+            bySeason.set(season.id, {
+                resultsPublished: !!season.results_published,
+                showScores: !!season.show_scores,
+                showRanking: !!season.show_ranking,
+            });
+        }
 
-    const fallback: ScoreRankVisibility = {
-        resultsPublished: !!hackathonRow?.results_published,
-        showScores: !!hackathonRow?.show_scores,
-        showRanking: !!hackathonRow?.show_ranking,
-    };
+        const fallback: ScoreRankVisibility = {
+            resultsPublished: !!hackathonRow?.results_published,
+            showScores: !!hackathonRow?.show_scores,
+            showRanking: !!hackathonRow?.show_ranking,
+        };
 
-    return (seasonId) => (seasonId != null ? bySeason.get(seasonId) : undefined) ?? fallback;
+        return (seasonId) => (seasonId != null ? bySeason.get(seasonId) : undefined) ?? fallback;
+    });
 }
 
 /**
@@ -233,10 +238,17 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
     // transaction. Rollback snapshots are taken inside it, after the advisory
     // lock, so a concurrent activation on another instance cannot be undone.
     const currentLive = await getHackathon(event);
-    const liveConfig = hackathonUsesYaml() ? currentLive : null;
+    let manifestSettings: Record<string, unknown> | null = null;
+    if (hackathonUsesYaml()) {
+        try {
+            const { rubric, ...settings } = await readHackathonConfig();
+            manifestSettings = settings as Record<string, unknown>;
+        } catch {
+            manifestSettings = null;
+        }
+    }
     let previousActive: { id: number } | undefined;
-    let previousLive: typeof hackathon.$inferSelect | undefined;
-    let activationSettings: Record<string, unknown> | null = null;
+    let previousActiveSeason: typeof seasons.$inferSelect | undefined;
 
     await event.context.drizzle.transaction(async (tx) => {
         // The in-memory queue only covers one process. A transaction-scoped
@@ -244,12 +256,12 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
         // SQLite fixtures have no `FOR UPDATE`, so skip it there.
         await acquireActivationLock(tx);
 
-        [previousActive] = await tx
-            .select({ id: seasons.id })
+        [previousActiveSeason] = await tx
+            .select()
             .from(seasons)
             .where(eq(seasons.is_active, 1))
             .limit(1);
-        [previousLive] = await tx.select().from(hackathon).limit(1);
+        previousActive = previousActiveSeason ? { id: previousActiveSeason.id } : undefined;
 
         let season: Season | undefined;
         if (seasonId !== null) {
@@ -341,11 +353,10 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             }
         }
 
-        // The manifest is cached per instance, so a concurrent activation on
-        // another instance cannot be fully serialized by the advisory lock here.
-        // Multi-instance season switching needs coordinated cache invalidation.
-        if (liveConfig && season?.is_active !== 1) {
-            const { id, submitted_count, live_overrides, ...settings } = liveConfig;
+        // Snapshot the outgoing live settings into its own season row before
+        // the switch. The manifest remains a comparison source and is not written.
+        if (currentLive && seasonId !== previousActiveSeason?.id) {
+            const { id, submitted_count, live_overrides, ...settings } = currentLive;
             await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));
         }
 
@@ -358,62 +369,34 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
                 // The singleton feeds every public read in database mode, so it
                 // needs the activated season's full settings, not three tweaks.
                 const settings = pickSeasonConfig(season as unknown as Record<string, unknown>);
-                await tx.update(hackathon).set(settings).where(eq(hackathon.id, 1));
+                await tx
+                    .update(hackathon)
+                    .set({ ...settings, live_overrides: {} })
+                    .where(eq(hackathon.id, 1));
             } else if (season.is_active !== 1) {
-                // Activating in manifest mode must move the operational switches
-                // with it. PostgreSQL stores them so no manifest write is needed.
+                // Activation replaces the previous season's overrides with values
+                // from the activated season. Only values that diverge from the
+                // manifest are stored, but every editable field participates.
                 const stored = pickSeasonConfig(season as unknown as Record<string, unknown>);
-                activationSettings = stored;
-                const operationalOverrides = Object.fromEntries(
-                    Object.entries(activationSettings).filter(([key]) =>
+                const operational = Object.fromEntries(
+                    Object.entries(stored).filter(([key]) =>
                         (LIVE_OVERRIDE_KEYS as readonly string[]).includes(key),
                     ),
                 );
+                const overrides = pickDivergingLiveOverrides(manifestSettings, operational);
                 await tx
                     .update(hackathon)
-                    .set({ ...activationSettings, live_overrides: operationalOverrides })
+                    .set({ ...stored, live_overrides: overrides })
                     .where(eq(hackathon.id, 1));
             }
         }
+
+        await writeAuditEvent(tx, event, {
+            action: "season.activate",
+            entity_type: "season",
+            entity_id: seasonId ?? "none",
+            before: { active_season_id: previousActive?.id ?? null },
+            after: { active_season_id: seasonId },
+        });
     });
-
-    // A remote manifest cannot be rewritten. The operational switches were
-    // already stored in PostgreSQL, so activation still applies them; only the
-    // manifest-owned schedule and theme stay under the remote file.
-    if (activationSettings && getHackathonConfigSource() === "local") {
-        try {
-            await writeHackathonConfig(activationSettings);
-        } catch (error) {
-            // Restore the previous active season instead of reporting a switch
-            // whose manifest write did not apply.
-            try {
-                await event.context.drizzle.transaction(async (tx) => {
-                    await acquireActivationLock(tx);
-                    // Another instance may have committed an activation after
-                    // ours. Never undo a newer switch with our stale snapshot.
-                    const [currentlyActive] = await tx
-                        .select({ id: seasons.id })
-                        .from(seasons)
-                        .where(eq(seasons.is_active, 1))
-                        .limit(1);
-                    if ((currentlyActive?.id ?? null) !== seasonId) return;
-
-                    await tx.update(seasons).set({ is_active: 0 }).where(eq(seasons.is_active, 1));
-                    if (previousActive) {
-                        await tx
-                            .update(seasons)
-                            .set({ is_active: 1 })
-                            .where(eq(seasons.id, previousActive.id));
-                    }
-                    if (previousLive) {
-                        const { id, ...previousSettings } = previousLive;
-                        await tx.update(hackathon).set(previousSettings).where(eq(hackathon.id, 1));
-                    }
-                });
-            } catch {
-                // Preserve the original activation failure for the caller.
-            }
-            throw error;
-        }
-    }
 }

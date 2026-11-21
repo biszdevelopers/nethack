@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { readBody } from "h3";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { setupNitroGlobals } from "../../api/helpers";
 
 describe("API request body limit middleware", () => {
@@ -43,6 +43,32 @@ describe("API request body limit middleware", () => {
         const event = eventFor("/api/teams", body);
 
         await expect(middleware(event)).rejects.toMatchObject({ statusCode: 413 });
+        expect(event._requestBody).toBeUndefined();
+        expect(event.node.req.isPaused()).toBe(true);
+    });
+
+    it("still bounds a body that lies about its Content-Length", async () => {
+        const body = Buffer.alloc(1024 * 1024 + 1);
+        const event = eventFor("/api/teams", body, {
+            "content-length": "16",
+        });
+
+        await expect(middleware(event)).rejects.toMatchObject({ statusCode: 413 });
+    });
+
+    it("asks the client to close the connection when a response is still writable", async () => {
+        const body = Buffer.alloc(1024 * 1024 + 1);
+        const setHeader = vi.fn();
+        const event = {
+            ...eventFor("/api/teams", body),
+            node: {
+                ...eventFor("/api/teams", body).node,
+                res: { headersSent: false, setHeader },
+            },
+        };
+
+        await expect(middleware(event)).rejects.toMatchObject({ statusCode: 413 });
+        expect(setHeader).toHaveBeenCalledWith("Connection", "close");
     });
 
     it("leaves profile updates unread for authorization and the route-specific limit", async () => {

@@ -3,7 +3,7 @@ import type { H3Event } from "h3";
 import { isDeepStrictEqual } from "node:util";
 import { withDefaultRubricCommentGuidance, type RubricDefinition } from "~~/shared/rubric";
 import { rubricTemplates, rubricVersions, seasons, teams } from "~~/server/database/schema";
-import { firstRow } from "./query";
+import { firstRow, lockForUpdateIfSupported } from "./query";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type RubricSeason = Pick<Season, "id" | "is_active" | "rubric_version_id">;
@@ -31,11 +31,9 @@ export async function resolveLiveRubricVersionId(event: H3Event, season: RubricS
     if (matches(current)) return current!.id;
 
     return db.transaction(async (tx) => {
-        const [locked] = await tx
-            .select()
-            .from(seasons)
-            .where(eq(seasons.id, season.id))
-            .for("update");
+        const [locked] = await lockForUpdateIfSupported(
+            tx.select().from(seasons).where(eq(seasons.id, season.id)).limit(1),
+        );
         if (!locked || locked.is_active !== 1) return locked?.rubric_version_id ?? null;
         const versions = await tx
             .select()
@@ -127,11 +125,7 @@ export async function createRubricVersion(
     const yamlRubric = hackathonUsesYaml() && (await readHackathonConfig()).rubric;
     return event.context.drizzle.transaction(async (tx) => {
         const seasonQuery = tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
-        const season = await firstRow(
-            typeof (seasonQuery as any).for === "function"
-                ? (seasonQuery as any).for("update")
-                : seasonQuery,
-        );
+        const season = await firstRow(lockForUpdateIfSupported(seasonQuery));
 
         if (!season) return null;
         if (yamlRubric && (season as { is_active?: number }).is_active === 1) {

@@ -43,6 +43,19 @@ describe("APIResponse envelope plugin", () => {
         expect(applyEnvelope({ ok: true }, 200, "/not-api")).toEqual({ ok: true });
     });
 
+    it("normalizes a path without segments before wrapping", () => {
+        const split = vi.spyOn(String.prototype, "split").mockReturnValueOnce([] as never);
+        try {
+            expect(applyEnvelope({ ok: true })).toEqual({
+                status: 200,
+                code: 200,
+                data: { ok: true },
+            });
+        } finally {
+            split.mockRestore();
+        }
+    });
+
     it("never wraps file downloads or other non-JSON responses", () => {
         const csv = {
             node: { res: { statusCode: 200, getHeader: () => "text/csv; charset=utf-8" } },

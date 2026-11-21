@@ -72,10 +72,19 @@ describe("live hackathon YAML", () => {
         await expect(reloaded.readHackathonConfig()).resolves.toEqual(parseHackathonConfig(yaml));
     });
 
-    it("falls back to the bundled manifest when a remote asset has no validated configuration", async () => {
+    it("fails closed when a remote asset has no validated configuration", async () => {
         vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/manifests/current.yml");
         fetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
-        await expect(readHackathonConfig()).resolves.toEqual(parseHackathonConfig(yaml));
+        const local = parseHackathonConfig(yaml);
+        await expect(readHackathonConfig()).resolves.toEqual({
+            ...local,
+            status: "paused",
+            voting_enabled: 0,
+            results_published: 0,
+            show_scores: 0,
+            show_ranking: 0,
+            judging_open: 0,
+        });
         expect(String(fetch.mock.calls[0]![0])).toBe(
             "https://assets.example.test/manifests/current.yml",
         );

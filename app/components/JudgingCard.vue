@@ -42,6 +42,9 @@ let dragging = false;
 const commentGuidance = computed(() => props.commentGuidance ?? DEFAULT_JUDGE_COMMENT_GUIDANCE);
 const safeRepoUrl = computed(() => safeUrl(props.team.project.repo_url));
 const safeDemoUrl = computed(() => safeUrl(props.team.project.demo_url));
+const safeVideoUrl = computed(() =>
+    safeUrl((props.team.project as APITeam["project"] & { video_url?: string | null }).video_url),
+);
 const hasDescription = computed(() => Boolean(props.team.project.description?.trim()));
 const hasSourcing = computed(() => Boolean(props.team.project.sourcing?.trim()));
 const teamLabel = computed(() => props.team.name?.trim() || "This team");
@@ -281,6 +284,26 @@ onBeforeUnmount(() => {
                         </UButton>
                         <p v-else class="text-sm text-muted">
                             {{ teamLabel }} did not provide a demo link.
+                        </p>
+                    </dd>
+                </div>
+                <div class="grid gap-1 p-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3">
+                    <dt class="text-sm font-semibold text-muted">Demonstration video</dt>
+                    <dd class="min-w-0">
+                        <UButton
+                            v-if="safeVideoUrl"
+                            :href="safeVideoUrl"
+                            external
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            variant="subtle"
+                            icon="i-lucide-video"
+                            class="min-h-11"
+                        >
+                            Watch demonstration video
+                        </UButton>
+                        <p v-else class="text-sm text-muted">
+                            {{ teamLabel }} did not provide a demonstration video link.
                         </p>
                     </dd>
                 </div>

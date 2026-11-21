@@ -120,4 +120,14 @@ describe("GET /api/seasons/active", () => {
 
         expect(result).toHaveProperty("announcement", "Preparation news");
     });
+
+    it("uses the default team member limit when no season is active", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx);
+
+        const result = await handler(createEvent());
+
+        expect(result).toHaveProperty("id", undefined);
+        expect(result).toHaveProperty("max_team_members", 6);
+    });
 });

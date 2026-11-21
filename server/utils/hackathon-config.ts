@@ -183,7 +183,17 @@ export async function readHackathonConfig(): Promise<HackathonConfig> {
             return await readCachedRemoteConfig();
         } catch {
             try {
-                return await readLocalConfig();
+                const fallback = await readLocalConfig();
+                // A stale bundled manifest must never silently open a live event.
+                return {
+                    ...fallback,
+                    status: "paused",
+                    voting_enabled: 0,
+                    results_published: 0,
+                    show_scores: 0,
+                    show_ranking: 0,
+                    judging_open: 0,
+                };
             } catch {
                 throw createError({
                     statusCode: 503,

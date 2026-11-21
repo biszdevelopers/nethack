@@ -9,18 +9,20 @@ The nethack platform implements multiple layers of security to protect user data
 
 ## HTTP Security Headers
 
-Every response from the Nitro server includes a baseline set of **6 security headers**, set by `server/middleware/security-headers.ts`:
+Every response from the Nitro server includes the baseline security headers below, set by `server/middleware/security-headers.ts`:
 
 | Header | Value |
 | --- | --- |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
-| `X-Frame-Options` | `DENY` |
+| `X-Frame-Options` | `DENY`; `SAMEORIGIN` only on `/docs*` for the admin iframe |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+| `Cross-Origin-Resource-Policy` | `same-origin` |
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), autoplay=(), encrypted-media=(), picture-in-picture=()` |
 | `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'nonce-<per-response-value>'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'` |
 
-The `Content-Security-Policy` header includes **10 directives** that restrict resource loading to same-origin sources by default, with allowances for nonce-bound Nuxt SSR scripts, Vue inline styles, font files, image blobs, and data URIs.
+The `Content-Security-Policy` header restricts resource loading to same-origin sources by default, with allowances for nonce-bound Nuxt SSR scripts, Vue inline styles, font files, image blobs, and data URIs. `frame-ancestors` is `'none'` except on `/docs*`, where it is `'self'`.
 
 The middleware runs for API routes, rendered HTML pages, and static assets. It generates a fresh cryptographic nonce for each response and the Nuxt server hooks apply it to renderer-owned hydration scripts. `script-src` does not allow `'unsafe-inline'`; inline styles remain allowed for Vue and Nuxt UI bindings. The `'unsafe-eval'` source expression is intentionally omitted.
 
@@ -38,33 +40,37 @@ The following environment variables directly affect platform security and must b
 | --- | --- | --- |
 | `BASIS_AUTH_COOKIE_SECRET` | At least 32 bytes | Encryption key for sessions and server-side token records |
 | `BASIS_AUTH_CLIENT_SECRET` | Provider-generated confidential value | Authenticates nethack at the basis-auth token endpoint |
-| `BASIS_AUTH_ISSUER` | Exact trusted issuer; HTTPS required in production except for loopback HTTP local testing | Discovery and issuer validation |
+| `BASIS_AUTH_ISSUER` | Exact trusted issuer URL; HTTP or HTTPS | Discovery and issuer validation |
 | `BASIS_AUTH_RESOURCE` | Exact registered audience | Resource-token audience validation |
 | `BASIS_AUTH_RESOURCE_SECRET` | Provider-generated resource secret | Signs the backchannel webhook proof and authenticates private listener calls |
 | `BASIS_AUTH_INTERNAL_URL` | HTTP(S) origin of the private listener, default `http://127.0.0.1:3001` | Webhook verification and user-state checks |
 | `CURRENT_URL_ORIGIN` | Public HTTPS origin, without a path; loopback HTTP accepted only while bound to loopback | Callback URL and same-origin validation for cookie-authenticated mutations |
 | `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10). Forwarded client addresses are used only when the socket peer exists and the forwarded chain is valid. |
-| `MICROSOFT_TENANT_ID` | Valid Microsoft Entra ID tenant | Required for Microsoft Graph API integration |
-| `MICROSOFT_CLIENT_ID` | Valid Microsoft Entra ID application ID | Required for Microsoft Graph API integration |
-| `MICROSOFT_CLIENT_SECRET` | Valid client secret | Used for the client credentials token flow in `server/plugins/microsoft.ts` |
-| `MICROSOFT_WEBHOOK_STATE` | At least 32 bytes when configured; keep it stable across restarts | Validates every notification in a Microsoft Graph webhook batch |
-| `MICROSOFT_WEBHOOK_ID` | Graph subscription ID returned on initial setup | Allows the server to refresh its existing subscription after restart |
+| `INITIAL_ADMIN_EMAILS` | Comma-separated addresses; unset uses the built-in fallback | Bootstrap administrator allowlist, matched case-insensitively and re-applied at sign-in |
+| `REQUIRE_VERIFIED_EMAIL` | `0` or `1` | Reject a missing `email_verified` claim at login; an explicit `false` is always rejected |
+| `ENFORCE_DEADLINES` | `1` | Enforce submission and voting deadlines. Set `0` only for an untimed rehearsal |
+| `SUBMISSION_GRACE_MS` | `0` | Post-deadline submission grace window |
+| `JUDGING_AFTER_PUBLISH` | `0` | Keep judging open after results in a finished season |
+| `TEAM_INVITE_TTL_DAYS` | `7` | Invitation link lifetime, 1–365 days |
 
 ## Rate Limiting
 
-All API endpoints are protected by an in-memory rate limiter. Sensitive routes consume requests from dedicated buckets:
+All API endpoints are protected by an in-memory fixed-window rate limiter. Sensitive routes consume requests from dedicated buckets:
 
-| Bucket           | Default                | Routes                                 |
-| ---------------- | ---------------------- | -------------------------------------- |
-| General API      | 1200 requests / minute | All non-sensitive API routes           |
-| Authentication   | 200 requests / minute  | Authentication routes                  |
-| Voting / scoring | 300 requests / minute  | `/api/ballot`, `/api/teams/:id/scores` |
-| File upload      | 100 requests / minute  | Upload routes                          |
+| Bucket | Default | Routes |
+| --- | --- | --- |
+| Request gate | 6000 requests / minute per IP | Every `/api/*` request before the body is buffered; health and the basis-auth backchannel are exempt |
+| General API | 1200 requests / minute | All non-sensitive API routes |
+| Judging drafts | 1200 requests / minute per judge | Draft reads, autosaves, and deletes |
+| Authentication | 200 requests / minute | Authentication routes |
+| Voting / scoring | 300 requests / minute | `/api/ballot`, `/api/teams/:id/scores` |
+| File upload | 100 requests / minute | Upload routes |
+| basis-auth backchannel | 600 requests / minute | `POST /api/auth/basis/backchannel` |
 
-- **Client identification:** Authenticated users are identified by `user:{id}`; unauthenticated requests by `ip:{ip}`
-- **Response:** 429 status with `Retry-After` header
-- **Configuration:** Override defaults via `RATE_LIMIT_GENERAL_MAX`, `RATE_LIMIT_AUTH_MAX`, `RATE_LIMIT_VOTE_MAX`, `RATE_LIMIT_UPLOAD_MAX`, and `RATE_LIMIT_WINDOW_MS`
-- **Cleanup:** Interval-based cleanup runs at most once every 5 minutes and removes entries with no requests in the last hour
+- **Client identification:** Session user (`user:{id}`), then a SHA-256 prefix of an explicit bearer token (`bearer:{hash}`), then the resolved IP (`ip:{ip}`)
+- **Response:** 429 status with `Retry-After`
+- **Map bound:** at most 10,000 tracked keys; eviction trims to 9,000
+- **Configuration:** Override defaults via the `RATE_LIMIT_*` variables and `RATE_LIMIT_WINDOW_MS`
 
 ::: warning Rate limiting is in-memory and per-process. Under high concurrency or with multiple server instances, the effective rate limit applies separately to each process. :::
 
@@ -74,7 +80,7 @@ See [Rate Limiting](./rate-limiting.md) for full details.
 
 `server/middleware/00.request-security.ts` checks every `POST`, `PUT`, `PATCH`, and `DELETE` request. Cookie-authenticated browser requests must send a matching `Origin` or `Referer`; requests marked `Sec-Fetch-Site: cross-site` are rejected. Production startup requires `CURRENT_URL_ORIGIN` to be an HTTPS origin with no path, query, fragment, or credentials, or a loopback HTTP origin while the server binds to loopback. Requests authenticated with an explicit `Authorization` header bypass this browser-cookie check and remain protected by token validation and route permissions.
 
-The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its upload slot and reading its separate 10 MiB allowance for base64-encoded images. Each user may buffer one profile update at a time, and the process allows at most four concurrent profile updates; excess requests are rejected with `503 Service Unavailable` and `Retry-After: 2` before the request body is read. This bounds concurrent decoded-image buffers while keeping the existing 7 MiB per-image validation and prevents one slow user from blocking everybody else. Microsoft Graph webhook payloads have a stricter 64 KiB streaming cap before JSON parsing. The webhook handlers fail closed if `MICROSOFT_WEBHOOK_STATE` is missing and validate the state on every notification in a batch. The same persistent value is sent to Graph when the subscription is created; set `MICROSOFT_WEBHOOK_ID` from the initial startup log so subsequent starts refresh that subscription instead of creating duplicates. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/nethack-request-limits.conf` inside the site configuration. Do not proxy compressed request bodies to the webhook endpoints.
+The application streams API request bodies through a **1 MiB default limit** before route validation. The user profile handler authenticates and authorizes a caller before acquiring its upload slot and reading its separate 10 MiB allowance for base64-encoded images against `PROFILE_UPDATE_DEADLINE_MS` (default 30 seconds). Each user may buffer one profile update at a time, and the process allows at most four concurrent profile updates; excess requests are rejected with `503 Service Unavailable` and `Retry-After: 2` before the request body is read. This bounds concurrent decoded-image buffers while keeping the 7 MiB per-image validation and prevents one slow user from blocking everybody else. Keep an ingress request-size cap and body timeout in place as a second boundary. For Nginx, include `deploy/nginx/basishacks-request-limits.conf` inside the site configuration. The retired Graph webhook paths now return `404`.
 
 ```nginx
 client_max_body_size 10m;
@@ -120,9 +126,15 @@ Critical authentication configuration is validated at server startup in `server/
 | `BASIS_AUTH_COOKIE_SECRET` | Must be set and at least 32 bytes (UTF-8 encoded) | `process.exit(1)` with fatal error message | Stderr warning, continues |
 | `BASIS_AUTH_ISSUER`, `BASIS_AUTH_CLIENT_ID`, `BASIS_AUTH_CLIENT_SECRET`, `BASIS_AUTH_RESOURCE` | All must be set | Fatal startup error when any is missing | Warning; login unavailable until configured |
 | `BASIS_AUTH_RESOURCE_SECRET`, `BASIS_AUTH_INTERNAL_URL` | Both must be set and the URL must be HTTP(S) | Fatal startup error | Warning; sign-in fails with `14408` until the backchannel is configured |
-| `MICROSOFT_*` env vars | All three must be set for Graph features | Warning if partially configured | Warning if partially configured |
+| `CURRENT_URL_ORIGIN` | Public HTTPS origin with no path, query, fragment, or credentials, or loopback HTTP only while bound to loopback | Fatal startup error | Not enforced |
+| `TRUSTED_PROXY_HOPS` | Integer 0–10 | Fatal startup error; warning at 0 | Warning |
+| `REQUIRE_VERIFIED_EMAIL` | Truthy enables strict verification | Warning when disabled | No warning |
 
 Resource access tokens are verified against basis-auth JWKS and are never signed by nethack.
+
+## Supply chain and release controls
+
+CI runs `gitleaks` over the repository history and publishes an SPDX SBOM artifact. The release workflow verifies that the tag is an ancestor of `main`, runs dependency audit, type check, lint, the full test suite, and the coverage gate before packaging. Release archives carry a SHA-256 checksum. `.github/dependabot.yml` opens grouped weekly npm updates and monthly documentation, GitHub Actions, and Docker updates. Workflow actions are currently referenced by major tag; pin each to a full commit SHA when bumping because tags are mutable. Production client source maps are disabled so original sources are not shipped.
 
 ## Database Security
 
@@ -162,24 +174,10 @@ export function validateExternalUrl(urlString: string): URL {
 
 All redirect parameters in the login flow are validated to prevent open redirect attacks:
 
-- **`login.get.ts`** — The `postLoginRedirect` parameter is allowed only when it does not start with `http://`, `https://`, or `//` (protocol-relative). Only relative paths are accepted.
-- **`dccallback.get.ts`** — The OAuth2 onsite login callback validates redirects before following them, ensuring they point to relative paths only.
+- **`login.get.ts`** — The `redirect` parameter is allowed only when it is a safe relative path; absolute and protocol-relative URLs are rejected.
+- **basis-auth callback** — The post-login redirect is re-validated from the encrypted transaction cookie before it is followed.
 - **`SafeLink.vue`** — User-provided links in rendered content (e.g. project descriptions) are rendered through the `SafeLink` component, which validates URLs with `isSafeUrl()` — only relative paths rooted at `/` and `http:`/`https:` URLs are rendered as clickable links; unsafe URLs are shown as plain strikethrough text.
 - **`SafeComark.vue`** — Markdown content rendered from user input uses the `SafeLink` component as its link renderer via `@comark/vue`, disables the default HTML/component plugins, and preserves single line breaks with the `breaks` plugin.
-
-## Unified Client Credential Errors
-
-The OAuth2 token endpoint (`token.post.ts`) returns a single, generic `"Invalid client credentials"` error for all token exchange failures — whether the client ID is unknown, the secret is wrong, or both. This prevents **user enumeration** through error message differences:
-
-```ts
-if (!app || !isSecretValid) {
-    throw createError({
-        statusCode: 400,
-        statusMessage: "invalid_client",
-        message: "Invalid client credentials", // Same message for every failure
-    });
-}
-```
 
 ## Token custody
 
@@ -195,31 +193,13 @@ Access and refresh tokens are sealed with AES-256-GCM into the HTTP-only `basis-
 
 ::: danger Never trust the frontend for permission checks. Always validate on the server. :::
 
-## Microsoft Graph API
+## Removed integrations
 
-- All Microsoft Graph API calls are centralized in `server/plugins/microsoft.ts` for auditability
-- Graph configuration reads the tenant and client ID from `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID`.
-- Graph features are independent from basis-auth and cannot authenticate a nethack session.
+The Microsoft Graph integration, its application/user tokens, and its ROPC credentials were removed. `server/plugins/microsoft.ts` and the webhook validation helpers no longer exist. The legacy `/_webhooks/lifecycle` and `/_webhooks/update` paths remain registered only to return `404`. The legacy `oauth2_applications` table remains as historical data; its hashed client-secret format is no longer used by the running application.
 
-## OAuth2 Client Secret Storage
+## Validation bypasses that do not exist
 
-Client secrets are **never stored in plaintext**. Instead:
-
-1. When a new secret is generated, it is created using `crypto.randomBytes(32).toString('hex')`
-2. The plain secret is hashed with **SHA-256** before storage: `createHash('sha256').update(plainSecret).digest('hex')`
-3. Multiple secrets can be stored per application, space-separated in the `client_secret` column
-4. Only the abbreviated hash (`sha256:XXXXXXXX...XXXXXXXX`) is shown in the UI
-5. The plain secret is shown **only once** at creation time and cannot be recovered
-
-```ts
-// Secret creation
-const plainSecret = randomBytes(32).toString("hex");
-const secretHash = createHash("sha256").update(plainSecret).digest("hex");
-
-// Secret validation
-const hash = createHash("sha256").update(plainSecret).digest("hex");
-if (part === hash) return true;
-```
+The running application has no native OAuth2 authorization, consent, or token endpoint. Browser authentication goes through basis-auth, which owns provider login and consent. There is no local path to issue or upgrade permissions outside the verified basis-auth token and the local administrator flag.
 
 ## Resource Access Tokens
 
@@ -243,15 +223,9 @@ basis-auth requires a verified backchannel logout URL for the resource before au
 
 The basis-auth browser flow always generates a fresh verifier and sends an S256 challenge. The verifier, state, and nonce remain only in the encrypted short-lived transaction session, and `openid-client` validates all three during callback processing.
 
-## Sensitive Scope Consent
+## Sensitive scope consent
 
-When an application requests a scope marked as `sensitive: true` in `shared/oauth2-scopes.ts`, the authorization flow requires **explicit user consent**:
-
-1. The user is redirected to a consent page
-2. The user can approve (`consent`), deny (`deny`), or cancel (`cancel`)
-3. Only after consent is the authorization code issued
-
-This prevents applications from silently accessing sensitive user data such as chat messages or all meetings.
+Consent for requested scopes belongs to basis-auth. This application requests `openid profile email offline_access` and does not run a local authorization or consent page. The legacy `shared/oauth2-scopes.ts` metadata remains only for historical records and rollback tooling.
 
 ---
 
@@ -266,7 +240,7 @@ A comprehensive XSS audit has been performed across all frontend components (`ap
 - **URL safety**: all project demo/repo URLs use `safeUrl()` computed properties; new uploaded objects use server-generated SHA-256 content-addressed filenames.
 - **Form maxlength attributes**: all key form inputs (`ProjectForm.vue`, `JudgingCard.vue`, `voting.vue`) now have `:maxlength` bound to the `MAX_*` constants from `shared/schemas.ts`, preventing users from exceeding validation limits before submission.
 
-**Result: Zero XSS vectors found.** The frontend is fully hardened against cross-site scripting attacks.
+The review found no direct HTML injection sinks at the time of writing. This is a point-in-time audit, not a guarantee; keep the no-`v-html` rule and rerun the review when adding new render paths.
 
 ---
 

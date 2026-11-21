@@ -116,7 +116,9 @@ export default defineNuxtConfig({
             // target, and both Node.js >= v24 and Bun support it without issue.
             target: "es2020",
             minify: "esbuild",
-            sourcemap: true,
+            // Client sourcemaps expose original sources in production; only
+            // development builds need them.
+            sourcemap: process.env.NODE_ENV !== "production",
             rollupOptions: {
                 onwarn(warning, warn) {
                     if (warning.message.includes("Sourcemap is likely to be incorrect")) return;

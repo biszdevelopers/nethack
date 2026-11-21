@@ -2,19 +2,48 @@ import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateL
 import { hasNethackPermission, NethackPermissions } from "~~/shared/permissions";
 import { TeamIdParams } from "~~/shared/schemas";
 import { getTeamEvaluationCounts } from "~~/server/utils/database/scores";
+import { getEventState } from "~~/server/utils/event-state";
 import { MIN_PUBLIC_FEEDBACK_REVIEWERS } from "~~/server/utils/score-feedback";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         const user = await optionalUser(event);
         const { id } = await getValidatedRouterParams(event, TeamIdParams.parse);
-        const isMember = user?.team_id === id;
 
         const team = await getTeam(event, id, true);
 
         if (!team) {
             throw createError({
-                status: 404,
+                statusCode: 404,
+                message: "Team '" + id + "' does not exist",
+            });
+        }
+
+        const state = await getEventState(event);
+        const viewerTeam = user?.team_id ? await getTeam(event, user.team_id) : null;
+        // A pointer to an archived team still identifies the person as that
+        // team's member for its historical detail page.
+        const isMember = viewerTeam?.id === id || user?.team_id === id;
+        const judgingStaff =
+            hasNethackPermission(
+                event.context.oauth2?.permissions,
+                NethackPermissions.Judging.assignmentsRead,
+            ) ||
+            hasNethackPermission(
+                event.context.oauth2?.permissions,
+                NethackPermissions.Judging.resultsRead,
+            );
+
+        // Active-season projects stay private until submissions close. Only the
+        // team itself and judging staff may inspect them before that point.
+        if (
+            team.season_id === state.season?.id &&
+            !state.galleryPublic &&
+            !isMember &&
+            !judgingStaff
+        ) {
+            throw createError({
+                statusCode: 404,
                 message: "Team '" + id + "' does not exist",
             });
         }

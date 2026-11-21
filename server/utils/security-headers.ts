@@ -28,6 +28,11 @@ export function applySecurityHeaders(event: H3Event): void {
     // Prevent the site from being embedded in frames / iframes (clickjacking).
     setHeader(event, "X-Frame-Options", isDocs ? "SAMEORIGIN" : "DENY");
 
+    // Isolate the browsing context from cross-origin openers and only allow
+    // same-origin subresources; the docs iframe is same-origin.
+    setHeader(event, "Cross-Origin-Opener-Policy", "same-origin");
+    setHeader(event, "Cross-Origin-Resource-Policy", "same-origin");
+
     // Stop browsers from MIME-sniffing responses away from the declared type.
     setHeader(event, "X-Content-Type-Options", "nosniff");
 

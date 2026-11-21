@@ -108,6 +108,33 @@ describe("init-database plugin", () => {
         errorLog.mockRestore();
     });
 
+    it("exits non-zero with a sanitized summary instead of leaving a zombie server", async () => {
+        const failure = Object.assign(new Error("connect failed postgres://user:secret@db/app"), {
+            code: "ECONNREFUSED",
+        });
+        mocks.createAndMigrateDatabase.mockRejectedValueOnce(failure);
+        const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+        const originalVitest = process.env.VITEST;
+        delete process.env.VITEST;
+        try {
+            await expect(initDatabase({ hooks: { hook: vi.fn() } })).rejects.toBe(failure);
+        } finally {
+            if (originalVitest === undefined) delete process.env.VITEST;
+            else process.env.VITEST = originalVitest;
+        }
+
+        expect(exit).toHaveBeenCalledWith(1);
+        expect(mocks.closeDatabase).toHaveBeenCalledTimes(1);
+        const summary = String(errorLog.mock.calls[0]?.[0]);
+        expect(summary).toContain("database_initialization_failed");
+        expect(summary).toContain("ECONNREFUSED");
+        expect(summary).not.toContain("secret");
+        expect(summary).not.toContain("postgres://");
+        exit.mockRestore();
+        errorLog.mockRestore();
+    });
+
     it("runs bounded profile cleanup after readiness, repeats daily, and clears the timer on close", async () => {
         vi.useFakeTimers();
         const database = {};
@@ -184,5 +211,49 @@ describe("init-database plugin", () => {
         await hook.mock.calls[0]![1]();
         warning.mockRestore();
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("sanitizes a non-Error startup failure", async () => {
+        mocks.createAndMigrateDatabase.mockRejectedValueOnce("plain startup failure");
+        const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+        await expect(initDatabase({ hooks: { hook: vi.fn() } })).rejects.toBe(
+            "plain startup failure",
+        );
+
+        const summary = JSON.parse(String(errorLog.mock.calls[0]?.[0]));
+        expect(summary).toMatchObject({
+            event: "database_initialization_failed",
+            code: "unknown",
+            message: "plain startup failure",
+        });
+        errorLog.mockRestore();
+    });
+
+    it("ignores a non-string startup error code", async () => {
+        mocks.createAndMigrateDatabase.mockRejectedValueOnce({
+            code: 42,
+            message: "numeric code",
+        });
+        const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+        await expect(initDatabase({ hooks: { hook: vi.fn() } })).rejects.toEqual(
+            expect.objectContaining({ code: 42 }),
+        );
+
+        const summary = JSON.parse(String(errorLog.mock.calls[0]?.[0]));
+        expect(summary).toMatchObject({ code: "unknown", message: "[object Object]" });
+        errorLog.mockRestore();
+    });
+
+    it("falls back to unknown when a startup rejection has no message", async () => {
+        mocks.createAndMigrateDatabase.mockRejectedValueOnce(null);
+        const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+        await expect(initDatabase({ hooks: { hook: vi.fn() } })).rejects.toBeNull();
+
+        const summary = JSON.parse(String(errorLog.mock.calls[0]?.[0]));
+        expect(summary).toMatchObject({ code: "unknown", message: "unknown" });
+        errorLog.mockRestore();
     });
 });

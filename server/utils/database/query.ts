@@ -1,3 +1,5 @@
+import type { H3Event } from "h3";
+
 /** Run a PostgreSQL Drizzle query and return its first row, if present. */
 export async function firstRow<T>(query: PromiseLike<T[]>): Promise<T | undefined> {
     const rows = await query;
@@ -21,6 +23,34 @@ export function lockForUpdateIfSupported<T>(query: T): T {
 /** True when the query builder supports PostgreSQL row locks. */
 export function supportsRowLocks(query: unknown): boolean {
     return typeof (query as { for?: unknown } | null)?.for === "function";
+}
+
+/**
+ * Memoize one lookup for the duration of a single request. The cache lives in a
+ * WeakMap keyed by the event, so it is unreachable after the response and can
+ * never leak between requests. Failed lookups are dropped so a caller can retry.
+ */
+const requestScopes = new WeakMap<H3Event, Map<string, Promise<unknown>>>();
+
+export function requestCache<T>(event: H3Event, key: string, load: () => Promise<T>): Promise<T> {
+    let existing = requestScopes.get(event);
+    if (!existing) {
+        existing = new Map();
+        requestScopes.set(event, existing);
+    }
+    const scope = existing;
+    const cached = scope.get(key);
+    if (cached) return cached as Promise<T>;
+
+    const pending = load();
+    scope.set(key, pending);
+    pending.catch(() => scope.delete(key));
+    return pending;
+}
+
+/** Drop every request-scoped lookup after a write the request later reads back. */
+export function invalidateRequestCaches(event: H3Event): void {
+    requestScopes.delete(event);
 }
 
 /**

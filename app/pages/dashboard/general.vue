@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ButtonProps } from "@nuxt/ui";
+import { NethackPermissions } from "~~/shared/permissions";
 
 definePageMeta({
     layout: "dashboard",
@@ -10,19 +11,42 @@ useHead({
     title: `General | ${WEBSITE_NAME}`,
 });
 
-const { data: hackathon, error: hackathonError } = await useApiFetch("/api/seasons/active", {
+const {
+    data: hackathon,
+    error: hackathonError,
+    refresh: refreshHackathon,
+} = await useApiFetch("/api/seasons/active", {
     $fetch: globalThis.$fetch,
 });
 if (hackathonError.value) {
     throw hackathonError.value;
 }
 
-const { user: data, error, refresh } = await useApiUser();
+const { user: data, error, refresh, status } = await useApiUser();
 if (error.value) {
     throw error.value;
 }
 
+const { can } = useNethackPermissions();
+const canUpdateProject = computed(() => can(NethackPermissions.Projects.updateOwn));
+const loading = computed(
+    () => !data.value && (status.value === "idle" || status.value === "pending"),
+);
+
 const isDirty = ref(false);
+
+const readOnlyReason = computed(() => {
+    if (hackathon.value?.status !== "in_progress") {
+        return "The submission period is not open. The form is read-only and nothing you type will be saved.";
+    }
+    if (data.value?.team?.project.submitted) {
+        return "This project is submitted and locked. You can no longer edit it.";
+    }
+    if (!canUpdateProject.value) {
+        return "Your account does not have the Projects.updateOwn permission, so this form is read-only.";
+    }
+    return "";
+});
 
 async function refreshData() {
     await withLoadingIndicator(async () => {
@@ -56,7 +80,22 @@ watch(isDirty, (value) => {
     }
 });
 
+async function refreshStatus() {
+    await Promise.allSettled([refreshHackathon(), refresh()]);
+}
+
+function onVisibilityChange() {
+    if (document.visibilityState === "visible") void refreshStatus();
+}
+
+onMounted(() => {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", refreshStatus);
+});
+
 onUnmounted(() => {
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("focus", refreshStatus);
     window.removeEventListener("beforeunload", beforeUnload);
 });
 
@@ -84,26 +123,44 @@ const links_noteam = ref<ButtonProps[]>([
 <template>
     <div>
         <h1 class="sr-only">General</h1>
-        <div v-if="data?.team == null && hackathon?.status !== 'not_started'">
+
+        <p v-if="loading" class="text-muted" aria-live="polite">Loading your project…</p>
+
+        <div v-else-if="data?.team == null && hackathon?.status !== 'not_started'">
             <UPageCTA
                 :links="links_noteam"
                 title="You don't have a team yet!"
-                description="You need to create a team before you can edit your project! Well... you can still create a solo team if you want to work alone :)"
+                description="You need a current-season team before you can edit a project. You can still create a solo team if you want to work alone :)"
             />
         </div>
 
         <div v-else-if="hackathon?.status !== 'not_started'" class="">
-            <h2 class="text-3xl bold mb-4">General</h2>
+            <h2 class="mb-4 text-3xl bold">General</h2>
 
             <p v-if="data?.team?.project.submitted" class="mb-4 glow">
                 You have submitted your project. Congratulations! 🎉
             </p>
-            <p v-else-if="hackathon?.status !== 'in_progress'" class="mb-4">
-                The submission period is over, and you can no longer submit your project.
-            </p>
+
+            <UAlert
+                v-else-if="readOnlyReason"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-lock"
+                title="Editing is closed"
+                :description="readOnlyReason"
+                class="mb-4"
+            />
+
+            <LargeCountdown
+                v-if="!readOnlyReason && hackathon?.end_timestamp"
+                :date="new Date(hackathon.end_timestamp)"
+                label="Submission closes in"
+                class="mb-6"
+            />
+
             <ProjectForm
                 :team="data?.team"
-                :disabled="hackathon?.status !== 'in_progress' || data?.team?.project.submitted"
+                :disabled="Boolean(readOnlyReason)"
                 @dirty="dateUpdated"
                 @refresh="refreshData"
             />

@@ -77,6 +77,7 @@ function validPayload(overrides: Record<string, unknown> = {}) {
             description: "This is a really awesome project built over the weekend.",
             demo_url: "https://demo.example.com",
             repo_url: "https://github.com/example/repo",
+            video_url: "https://www.youtube.com/watch?v=example",
         },
         ...overrides,
     };
@@ -101,6 +102,7 @@ describe("POST /api/teams/:id/submit", () => {
         expect(updated!.pathway).toBe("junior");
         expect(updated!.project_demo_url).toBe("https://demo.example.com");
         expect(updated!.project_repo_url).toBe("https://github.com/example/repo");
+        expect(updated!.project_video_url).toBe("https://www.youtube.com/watch?v=example");
     });
 
     it("includes sourcing notes when provided", async () => {
@@ -115,6 +117,7 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "Uses external assets.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
                 sourcing: "Used icons from FontAwesome",
             },
         });
@@ -137,6 +140,7 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "No external assets used.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
             },
         });
 
@@ -193,6 +197,56 @@ describe("POST /api/teams/:id/submit", () => {
         await expect(handler(createEvent())).rejects.toMatchObject({
             statusCode: 403,
             message: "Cannot submit project when hackathon is finished",
+        });
+    });
+
+    it("returns 403 with the paused message while the event is paused", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "paused" });
+        seedSeason(ctx);
+
+        const team = seedTeam(ctx, { name: "Paused Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "The event is paused",
+        });
+    });
+
+    it("returns 403 with the closed message once the deadline has passed", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "in_progress", end_timestamp: Date.now() - 60_000 });
+        seedSeason(ctx);
+
+        const team = seedTeam(ctx, { name: "Late Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Cannot submit project after submissions close",
+        });
+    });
+
+    it("returns 400 for a track that is not in the season rubric", async () => {
+        const team = seedTeam(ctx, { name: "Off-track Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload({ pathway: "unlisted" });
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "Choose a track that is available for this season.",
         });
     });
 

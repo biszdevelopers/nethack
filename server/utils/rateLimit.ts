@@ -1,4 +1,5 @@
 import type { H3Event } from "h3";
+import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 
 interface RateLimitConfig {
@@ -6,6 +7,12 @@ interface RateLimitConfig {
     windowMs: number;
     keyPrefix?: string;
     keyGenerator?: (event: H3Event) => Promise<string | null> | string | null;
+}
+
+export interface RateLimitDecision {
+    allowed: boolean;
+    retryAfter: number;
+    resetTime: Date;
 }
 
 function parseEnvInt(name: string, fallback: number): number {
@@ -27,6 +34,12 @@ export const RATE_LIMIT_VOTE_MAX = parseEnvInt("RATE_LIMIT_VOTE_MAX", 300);
 
 /** File upload rate limit (uploads per minute). */
 export const RATE_LIMIT_UPLOAD_MAX = parseEnvInt("RATE_LIMIT_UPLOAD_MAX", 100);
+
+/** Cheap process-wide request gate that runs before any body buffering. */
+export const RATE_LIMIT_REQUEST_GATE_MAX = parseEnvInt("RATE_LIMIT_REQUEST_GATE_MAX", 6000);
+
+/** basis-auth backchannel limit; high enough that revocation storms are never dropped. */
+export const RATE_LIMIT_BACKCHANNEL_MAX = parseEnvInt("RATE_LIMIT_BACKCHANNEL_MAX", 600);
 
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
     maxRequests: RATE_LIMIT_GENERAL_MAX,
@@ -57,83 +70,100 @@ export const UPLOAD_RATE_LIMIT_CONFIG: RateLimitConfig = {
     keyPrefix: "upload",
 };
 
-// Map to store request history: key -> array of timestamps
-const requestHistory = new Map<string, number[]>();
+/** Backchannel receivers are server-to-server; keep revocations well below the limit. */
+export const BACKCHANNEL_RATE_LIMIT_CONFIG: RateLimitConfig = {
+    maxRequests: RATE_LIMIT_BACKCHANNEL_MAX,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    keyPrefix: "backchannel",
+};
 
-// Cap the Map size to prevent unbounded memory growth. When the cap is hit,
-// expired keys are swept and the least-recently-used keys are dropped, so a
-// flood of one-off identifiers cannot reset an active client's bucket.
+export const REQUEST_GATE_RATE_LIMIT_CONFIG: RateLimitConfig = {
+    maxRequests: RATE_LIMIT_REQUEST_GATE_MAX,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    keyPrefix: "gate",
+};
+
+interface Bucket {
+    count: number;
+    resetAt: number;
+}
+
+// Fixed-window counters keep get/set O(1). Map insertion order doubles as the
+// LRU list: touching a key deletes and re-inserts it, so the head is coldest.
+const buckets = new Map<string, Bucket>();
+
 const MAX_TRACKED_KEYS = 10000;
 const EVICT_DOWN_TO_KEYS = 9000;
 
-// Interval-based cleanup (runs every 5 minutes)
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-let lastCleanup = 0;
-
-/** Clear the rate limit history — exposed for testing. */
+/** Clear the rate limit state — exposed for testing. */
 export function clearRateLimitHistory() {
-    requestHistory.clear();
-    lastCleanup = 0;
+    buckets.clear();
 }
 
-function cleanupStaleEntries(now: number, windowMs: number) {
-    if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
-    lastCleanup = now;
-    const retention = Math.max(60 * 60 * 1000, windowMs);
-    const cutoff = now - retention;
-    for (const [key, times] of requestHistory.entries()) {
-        const recentTimes = times.filter((t) => t > cutoff);
-        if (recentTimes.length === 0) {
-            requestHistory.delete(key);
-        } else {
-            requestHistory.set(key, recentTimes);
-        }
-    }
+/** Number of tracked identifiers — exposed for testing the bounded map. */
+export function getTrackedRateLimitKeys(): number {
+    return buckets.size;
 }
 
-/** Drop expired keys, then evict the least-recently-active keys down to the watermark. */
-function enforceCapacity(now: number, windowMs: number) {
-    const active: Array<{ key: string; lastSeen: number }> = [];
-    for (const [key, times] of requestHistory.entries()) {
-        const recent = times.filter((timestamp) => now - timestamp < windowMs);
-        if (recent.length === 0) {
-            requestHistory.delete(key);
-            continue;
-        }
-        requestHistory.set(key, recent);
-        active.push({ key, lastSeen: recent[recent.length - 1]! });
-    }
-
-    if (active.length <= MAX_TRACKED_KEYS) return;
-    active.sort((left, right) => left.lastSeen - right.lastSeen);
-    for (let index = 0; active.length - index > EVICT_DOWN_TO_KEYS; index += 1) {
-        requestHistory.delete(active[index]!.key);
+function enforceCapacity() {
+    if (buckets.size <= MAX_TRACKED_KEYS) return;
+    while (buckets.size > EVICT_DOWN_TO_KEYS) {
+        const oldest = buckets.keys().next();
+        if (oldest.done) return;
+        buckets.delete(oldest.value);
     }
 }
 
-export async function getClientIdentifier(event: H3Event): Promise<string> {
-    try {
-        const { readBasisAuthUserSession } = await import("~~/server/utils/basis-auth-session");
-        const session = readBasisAuthUserSession(event);
-        if (session?.userId) {
-            return `user:${session.userId}`;
-        }
-    } catch {
-        // User not authenticated, fall through to IP
+/** Consume one request from a key's fixed window without touching the event. */
+export function consumeRateLimit(
+    identifier: string,
+    config: Pick<RateLimitConfig, "maxRequests" | "windowMs">,
+    now = Date.now(),
+): RateLimitDecision {
+    const maxRequests = config.maxRequests;
+    if (maxRequests <= 0) {
+        return {
+            allowed: false,
+            retryAfter: Math.ceil(config.windowMs / 1000),
+            resetTime: new Date(now + config.windowMs),
+        };
     }
 
-    // Fall back to the direct peer unless the operator configured the exact
-    // number of trusted reverse proxies. Walk the forwarded chain from the
-    // server outward; the selected address is the first untrusted hop.
+    let bucket = buckets.get(identifier);
+    if (bucket && now < bucket.resetAt) {
+        buckets.delete(identifier);
+    } else {
+        bucket = { count: 0, resetAt: now + config.windowMs };
+    }
+    bucket.count += 1;
+    buckets.set(identifier, bucket);
+    enforceCapacity();
+
+    const allowed = bucket.count <= maxRequests;
+    return {
+        allowed,
+        retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+        resetTime: new Date(bucket.resetAt),
+    };
+}
+
+/** Number of trusted reverse proxies configured by the operator. */
+export function getTrustedProxyHops(): number {
+    const configured = process.env.TRUSTED_PROXY_HOPS;
+    if (!configured || !/^\d+$/.test(configured)) return 0;
+    const hops = Number(configured);
+    return hops >= 0 && hops <= 10 ? hops : 0;
+}
+
+/** Resolve the caller address, walking X-Forwarded-For only for trusted proxies. */
+export function getClientIp(event: H3Event): string {
     const request = event.node?.req;
     const socketAddress = request?.socket?.remoteAddress;
     let ip = socketAddress || "unknown";
-    const configuredHops = process.env.TRUSTED_PROXY_HOPS;
-    const trustedProxyHops =
-        configuredHops && /^\d+$/.test(configuredHops) ? Number(configuredHops) : 0;
+    const trustedProxyHops = getTrustedProxyHops();
 
-    if (socketAddress && trustedProxyHops > 0 && trustedProxyHops <= 10) {
-        const forwarded = getHeader(event, "x-forwarded-for");
+    if (socketAddress && trustedProxyHops > 0) {
+        const forwarded = readHeader(event, "x-forwarded-for");
         const parts = forwarded
             ?.split(",")
             .map((value) => value.trim())
@@ -145,7 +175,60 @@ export async function getClientIdentifier(event: H3Event): Promise<string> {
         }
     }
 
-    return `ip:${ip}`;
+    return ip;
+}
+
+function readHeader(event: H3Event, name: string): string | undefined {
+    const header = typeof getHeader === "function" ? getHeader(event, name) : undefined;
+    return typeof header === "string" ? header : undefined;
+}
+
+interface SessionContext {
+    authUserId?: number | null;
+}
+
+/** Session user id if the limiter already resolved it for this request. */
+export function getCachedSessionUserId(event: H3Event): number | undefined {
+    const context = event.context as SessionContext | undefined;
+    return typeof context?.authUserId === "number" ? context.authUserId : undefined;
+}
+
+let basisAuthSessionModule: typeof import("~~/server/utils/basis-auth-session") | undefined;
+
+async function loadSessionUserId(event: H3Event): Promise<number | undefined> {
+    const context = event.context as SessionContext | undefined;
+    if (context && context.authUserId !== undefined) return context.authUserId ?? undefined;
+
+    let userId: number | undefined;
+    try {
+        const module =
+            basisAuthSessionModule ?? (await import("~~/server/utils/basis-auth-session"));
+        basisAuthSessionModule = module;
+        const session = module.readBasisAuthUserSession(event);
+        const parsed = Number(session?.userId);
+        if (Number.isSafeInteger(parsed) && parsed > 0) userId = parsed;
+    } catch {
+        userId = undefined;
+    }
+
+    if (context) context.authUserId = userId ?? null;
+    return userId;
+}
+
+/** Stable, IPv4/IPv6-agnostic identifier for one caller. */
+export async function getClientIdentifier(event: H3Event): Promise<string> {
+    const userId = await loadSessionUserId(event);
+    if (userId) return `user:${userId}`;
+
+    const authorization = readHeader(event, "authorization");
+    const bearer = authorization ? /^Bearer\s+(\S+)$/i.exec(authorization.trim()) : null;
+    if (bearer?.[1]) {
+        // Hash instead of verifying: stable per token, no crypto cost per request.
+        const digest = createHash("sha256").update(bearer[1]).digest("hex").slice(0, 32);
+        return `bearer:${digest}`;
+    }
+
+    return `ip:${getClientIp(event)}`;
 }
 
 export function applyRateLimit(
@@ -166,55 +249,18 @@ export function applyRateLimit(
             identifier = `${finalConfig.keyPrefix}:${identifier}`;
         }
 
-        const now = Date.now();
-
-        // Run cleanup on a time-based interval instead of probabilistically
-        cleanupStaleEntries(now, finalConfig.windowMs);
-
-        // Treat maxRequests <= 0 as always-limited
-        if (finalConfig.maxRequests <= 0) {
-            setHeader(event, "Retry-After", Math.ceil(finalConfig.windowMs / 1000));
+        const decision = consumeRateLimit(identifier, finalConfig);
+        if (!decision.allowed) {
+            setHeader(event, "Retry-After", decision.retryAfter);
             throw createError({
                 status: 429,
                 statusMessage: "Too Many Requests",
                 data: {
                     message: `Rate limit exceeded. Max ${finalConfig.maxRequests} requests per ${finalConfig.windowMs / 1000}s.`,
-                    retryAfter: Math.ceil(finalConfig.windowMs / 1000),
+                    retryAfter: decision.retryAfter,
+                    resetTime: decision.resetTime.toISOString(),
                 },
             });
-        }
-
-        // Get or initialize request history for this identifier
-        let history = requestHistory.get(identifier) || [];
-
-        // Remove old requests outside the window
-        history = history.filter((timestamp) => now - timestamp < finalConfig.windowMs);
-
-        // Check if rate limit exceeded
-        if (history.length >= finalConfig.maxRequests) {
-            const oldestRequest = history[0]!;
-            const resetTime = new Date(oldestRequest + finalConfig.windowMs);
-            const retryAfter = Math.ceil((oldestRequest + finalConfig.windowMs - now) / 1000);
-
-            setHeader(event, "Retry-After", retryAfter);
-
-            throw createError({
-                status: 429,
-                statusMessage: "Too Many Requests",
-                data: {
-                    message: `Rate limit exceeded. Max ${finalConfig.maxRequests} requests per ${finalConfig.windowMs / 1000}s.`,
-                    retryAfter,
-                    resetTime: resetTime.toISOString(),
-                },
-            });
-        }
-
-        // Add current request
-        history.push(now);
-        requestHistory.set(identifier, history);
-
-        if (requestHistory.size > MAX_TRACKED_KEYS) {
-            enforceCapacity(now, finalConfig.windowMs);
         }
 
         return await handler(event);

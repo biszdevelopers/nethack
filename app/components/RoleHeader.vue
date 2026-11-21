@@ -13,6 +13,7 @@
 
         <template #right>
             <UColorModeButton class="hidden min-h-11 min-w-11 sm:inline-flex" />
+            <NotificationBell />
             <UButton
                 variant="ghost"
                 :class="[profileIconColor, 'min-h-11 min-w-11']"
@@ -22,7 +23,10 @@
                 <template v-if="userRef">
                     <UserAvatar :user="user" size="sm" />
                 </template>
-                <UIcon v-else name="i-material-symbols-account-circle-full" class="text-xl" />
+                <template v-else>
+                    <UIcon name="i-material-symbols-account-circle-full" class="text-xl" />
+                    <span class="ml-2 text-sm font-medium">Sign in</span>
+                </template>
             </UButton>
         </template>
 
@@ -46,13 +50,30 @@ import { NethackPermissions } from "~~/shared/permissions";
 
 const { user, sessionUser: userRef } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
-const { data: hackathon } = useApiFetch("/api/seasons/active", {
+
+type ActiveSeasonHeader = {
+    is_voting_open?: boolean;
+    is_gallery_public?: number | boolean | null;
+    is_submission_closed?: number | boolean | null;
+};
+
+const { data: hackathon } = useApiFetch<ActiveSeasonHeader>("/api/seasons/active", {
     lazy: true,
     $fetch: globalThis.$fetch,
 });
 
 const profileIconColor = computed(() => {
     return userRef.value ? "text-primary" : "text-ui-muted";
+});
+
+const galleryPublic = computed(() => Boolean(hackathon.value?.is_gallery_public));
+
+const canVote = computed(() => {
+    if (!hackathon.value?.is_voting_open) return false;
+    if (!can(NethackPermissions.Judging.assignmentsRead)) {
+        return Boolean(user.value?.team);
+    }
+    return false;
 });
 
 const dashboardContent: NavigationMenuItem[] = [
@@ -100,7 +121,14 @@ const navItems = computed<NavigationMenuItem[]>(() => {
             icon: "i-lucide-spotlight",
         },
     ];
-    if (hackathon.value?.is_voting_open && !can(NethackPermissions.Judging.assignmentsRead)) {
+    if (galleryPublic.value) {
+        links.push({
+            label: "Projects",
+            to: "/projects",
+            icon: "i-lucide-layout-grid",
+        });
+    }
+    if (canVote.value) {
         links.push({
             label: "Voting",
             to: "/voting",

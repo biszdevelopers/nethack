@@ -1,6 +1,7 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { SubmitTeamRequest, TeamIdParams } from "~~/shared/schemas";
 import { getRubricVersionForSeason } from "~~/server/utils/database/rubrics";
+import { getEventState } from "~~/server/utils/event-state";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 export default defineEventHandler(
@@ -15,11 +16,15 @@ export default defineEventHandler(
             });
         }
 
-        const hackathon = await getHackathon(event);
-        if (hackathon?.status !== "in_progress" && hackathon?.status !== "not_started") {
+        const state = await getEventState(event);
+        if (!state.submissionsOpen) {
             throw createError({
                 status: 403,
-                message: "Cannot submit project when hackathon is finished",
+                message: state.paused
+                    ? "The event is paused"
+                    : state.hackathon?.status === "finished" || state.hackathon?.status === "voting"
+                      ? "Cannot submit project when hackathon is finished"
+                      : "Cannot submit project after submissions close",
             });
         }
 
@@ -54,8 +59,10 @@ export default defineEventHandler(
         team.project_description = payload.project.description;
         team.project_demo_url = payload.project.demo_url;
         team.project_repo_url = payload.project.repo_url;
+        team.project_video_url = payload.project.video_url;
         team.sourcing = payload.project.sourcing ?? "";
         team.project_submitted = 1;
+        team.submitted_at = new Date();
 
         await updateTeam(event, team, { requireUnsubmitted: true });
 

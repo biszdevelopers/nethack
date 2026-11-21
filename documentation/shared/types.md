@@ -66,30 +66,37 @@ These interfaces match the SQL schema exactly. They include all columns, includi
 
 ### `Team`
 
-| Field                 | Type                  | Description                           |
-| --------------------- | --------------------- | ------------------------------------- |
-| `id`                  | `number`              | Primary key                           |
-| `name`                | `string`              | Team name                             |
-| `pathway`             | `TeamPathway \| null` | Junior or senior pathway              |
-| `score`               | `number \| null`      | Final weighted score                  |
-| `rank`                | `number \| null`      | Final rank                            |
-| `project_name`        | `string`              | Project name                          |
-| `project_description` | `string`              | Project description                   |
-| `project_demo_url`    | `string \| null`      | Demo URL                              |
-| `project_repo_url`    | `string \| null`      | Repository URL                        |
-| `project_submitted`   | `number`              | Whether project is submitted (0 or 1) |
-| `sourcing`            | `string`              | AI/tooling sourcing disclosure        |
-| `season_id`           | `number`              | Foreign key to season                 |
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `number` | Primary key |
+| `name` | `string` | Team name |
+| `pathway` | `TeamPathway \| null` | Junior or senior pathway |
+| `score` | `number \| null` | Final weighted score |
+| `rank` | `number \| null` | Final rank |
+| `project_name` | `string` | Project name |
+| `project_description` | `string` | Project description |
+| `project_demo_url` | `string \| null` | Demo URL |
+| `project_repo_url` | `string \| null` | Repository URL |
+| `project_video_url` | `string \| null` | Demonstration video URL |
+| `project_submitted` | `number` | Whether project is submitted (0 or 1) |
+| `submitted_at` | `Date \| null` | Submission timestamp |
+| `status` | `TeamStatus` | `active`, `withdrawn`, `disqualified`, or `no_show` |
+| `score_exact` | `number \| null` | Unrounded score used for exact ranking |
+| `owner_user_id` | `number \| null` | Team owner |
+| `sourcing` | `string` | AI-use disclosure |
+| `season_id` | `number` | Foreign key to season |
 
 ### `TeamScores`
 
-| Field           | Type     | Description                                  |
-| --------------- | -------- | -------------------------------------------- |
-| `team_id`       | `number` | Foreign key to team                          |
-| `judge_user_id` | `number` | Foreign key to judge user                    |
-| `scores`        | `string` | JSON string of rubric scores                 |
-| `reasoning`     | `string` | Judge's written reasoning                    |
-| `season_id`     | `number` | Optional season context for the scored entry |
+| Field               | Type     | Description                             |
+| ------------------- | -------- | --------------------------------------- |
+| `team_id`           | `number` | Foreign key to team                     |
+| `judge_user_id`     | `number` | Foreign key to judge user               |
+| `scores`            | `string` | JSON string of rubric scores            |
+| `reasoning`         | `string` | Judge's written reasoning               |
+| `season_id`         | `number` | Season context for the scored entry     |
+| `rubric_version_id` | `number` | Immutable rubric version the score used |
+| `created_at`        | `Date`   | Finalization time                       |
 
 ### `User`
 
@@ -97,11 +104,13 @@ These interfaces match the SQL schema exactly. They include all columns, includi
 | ----------------- | ---------------- | ------------------------------------------------- |
 | `id`              | `number`         | Primary key                                       |
 | `email`           | `string`         | User email (`@basischina.com`)                    |
-| `role`            | `string`         | Space-separated URI-encoded permission strings    |
 | `name`            | `string \| null` | Display name                                      |
-| `team_id`         | `number \| null` | Foreign key to team                               |
+| `team_id`         | `number \| null` | Foreign key to the active-season team             |
 | `profile_theme`   | `string \| null` | Profile theme as `"mode\|value"` string           |
 | `profile_picture` | `string \| null` | Basis-auth picture URL or legacy local asset path |
+| `auth_issuer`     | `string \| null` | Linked basis-auth issuer                          |
+| `auth_subject`    | `string \| null` | Linked basis-auth subject                         |
+| `is_admin`        | `number`         | Local administrator flag (0 or 1)                 |
 
 ### `Ballot`
 

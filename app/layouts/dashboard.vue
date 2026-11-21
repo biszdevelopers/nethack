@@ -86,7 +86,7 @@ const items = ref<NavigationMenuItem[][]>([
             <aside class="hidden lg:block lg:w-64 shrink-0">
                 <UCard>
                     <template #header>
-                        <span class="uppercase text-sm font-bold text-muted">
+                        <span class="text-sm font-bold text-muted">
                             {{ statusLabel }}
                         </span>
                         <h3 class="text-2xl bold glow">

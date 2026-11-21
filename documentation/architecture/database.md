@@ -5,7 +5,9 @@ description: Database schema, access patterns, per-table helpers, type conventio
 
 # Database
 
-nethack uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
+nethack uses PostgreSQL in development, CI, and production. Both Bun and Node.js use the same bounded `postgres` connection pool through Drizzle ORM. Configure a validated `DATABASE_URL`; `DATABASE_POOL_MAX` defaults to 10 and accepts values from 2 to 64. Connections set `statement_timeout = 15s`, `idle_in_transaction_session_timeout = 30s`, a 20-second idle timeout, a 30-minute maximum lifetime, and `prepare: false`. Database schema definitions live in `server/database/schema.ts`. The startup plugin applies migrations and seeds, and `server/middleware/02.database.ts` attaches the shared Drizzle instance to `event.context.drizzle` before route handlers run.
+
+Set `DATABASE_METRICS=1` to publish bounded query/pool timing summaries once per minute. `DATABASE_SLOW_QUERY_MS` (default 250) controls when a query appears in the slow-query log. Slow-query entries contain only the duration, threshold, and timestamp.
 
 ## Historical SQLite comparison
 
@@ -42,26 +44,31 @@ The legacy singleton (`id = 1`) is retained for export, import compatibility, an
 | `announcement` | `TEXT` | Admin-editable home-page announcement |
 | `live_overrides` | `JSONB` | Portal-managed operational switches that override `HACKATHON.yml` |
 
-Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`, and `announcement` are stored in `live_overrides` and applied on top of the manifest. The announcement also has a dedicated column so it can be read without parsing the JSON. Schedule, theme, and the rubric remain manifest-owned, so the operational switches and announcement keep working with a remote, read-only manifest.
+Portal changes to `status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`, the five schedule timestamps, `theme_name`, `theme_description`, and `announcement` are stored in PostgreSQL. They are written to the active season row and the `hackathon` singleton, with `live_overrides` retaining only values that diverge from the manifest. The manifest seeds and is compared against these settings; the portal never writes it, so every editable field applies immediately regardless of manifest location. The rubric remains a per-season immutable version.
 
 Schedule timestamps are epoch milliseconds. PostgreSQL stores them as `BIGINT`; Drizzle's `mode: "number"` keeps the application and API values as JavaScript numbers.
 
 ### `teams`
 
-| Column                | Type                                | Description                   |
-| --------------------- | ----------------------------------- | ----------------------------- |
-| `id`                  | `INTEGER PRIMARY KEY AUTOINCREMENT` | Team ID                       |
-| `name`                | `TEXT NOT NULL`                     | Team name                     |
-| `pathway`             | `TEXT`                              | `junior`, `senior`, or `NULL` |
-| `score`               | `INTEGER`                           | Final score (out of 100)      |
-| `rank`                | `INTEGER`                           | 1-based ranking               |
-| `project_name`        | `TEXT NOT NULL DEFAULT ''`          | Submitted project name        |
-| `project_description` | `TEXT NOT NULL DEFAULT ''`          | Project description           |
-| `project_demo_url`    | `TEXT`                              | Demo URL                      |
-| `project_repo_url`    | `TEXT`                              | Repository URL                |
-| `project_submitted`   | `INTEGER NOT NULL DEFAULT 0`        | Whether project is submitted  |
-| `sourcing`            | `TEXT NOT NULL DEFAULT ''`          | Sourcing information          |
-| `season_id`           | `INTEGER NOT NULL`                  | FK to `seasons.id`            |
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `SERIAL PRIMARY KEY` | Team ID |
+| `name` | `TEXT NOT NULL` | Team name |
+| `pathway` | `TEXT` | `junior`, `senior`, or `NULL` |
+| `score` | `INTEGER` | Final score (out of 100) |
+| `rank` | `INTEGER` | 1-based ranking |
+| `project_name` | `TEXT NOT NULL DEFAULT ''` | Submitted project name |
+| `project_description` | `TEXT NOT NULL DEFAULT ''` | Project description |
+| `project_demo_url` | `TEXT` | Demo URL |
+| `project_repo_url` | `TEXT` | Repository URL |
+| `project_video_url` | `TEXT` | Required demonstration video URL at submission |
+| `project_submitted` | `INTEGER NOT NULL DEFAULT 0` | Whether project is submitted |
+| `submitted_at` | `TIMESTAMPTZ` | Set when the project is submitted |
+| `status` | `TEXT NOT NULL DEFAULT 'active'` | `active`, `withdrawn`, `disqualified`, or `no_show` |
+| `score_exact` | `DOUBLE PRECISION` | Unrounded weighted score used for exact ranking |
+| `owner_user_id` | `INTEGER` | FK to `users.id` (set null on delete); owner of roster controls |
+| `sourcing` | `TEXT NOT NULL DEFAULT ''` | AI-use disclosure |
+| `season_id` | `INTEGER NOT NULL` | FK to `seasons.id` |
 
 ### `team_scores`
 
@@ -73,7 +80,9 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 | `judge_user_id` | `INTEGER NOT NULL` | FK to `users.id` |
 | `scores` | `TEXT NOT NULL` | JSON object of rubric scores |
 | `reasoning` | `TEXT NOT NULL DEFAULT '<no reasoning provided>'` | Judge's reasoning |
-| `season_id` | `INTEGER` | FK to `seasons.id` |
+| `season_id` | `INTEGER NOT NULL` | FK to `seasons.id` (restrict) |
+| `rubric_version_id` | `INTEGER` | Immutable rubric version the evaluation was scored against |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Finalization time |
 
 **Primary key**: `(team_id, judge_user_id)`
 
@@ -81,7 +90,7 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | User ID |
+| `id` | `SERIAL PRIMARY KEY` | User ID |
 | `email` | `TEXT NOT NULL UNIQUE` | User email |
 | `name` | `TEXT` | Display name |
 | `team_id` | `INTEGER` | FK to `teams.id` |
@@ -90,7 +99,7 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 | `auth_issuer` | `TEXT` | Linked basis-auth issuer |
 | `auth_subject` | `TEXT` | Linked basis-auth subject |
 | `tokens_valid_after` | `BIGINT` | Backchannel logout barrier in Unix seconds; tokens with `iat` at or before it are rejected |
-| `is_admin` | `INTEGER NOT NULL DEFAULT 0` | Locally promoted administrator flag; designated initial administrators are matched by email |
+| `is_admin` | `INTEGER NOT NULL DEFAULT 0` | Local administrator flag; `INITIAL_ADMIN_EMAILS` elevates a listed address at creation or sign-in |
 
 ::: warning The legacy `role` column is retired. Authorization comes from the validated basis-auth `permissions` claim, the participant compatibility bundle, and the local administrator flag. :::
 
@@ -98,23 +107,23 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 
 Each user has exactly one ballot for peer voting.
 
-| Column      | Type                                | Description                 |
-| ----------- | ----------------------------------- | --------------------------- |
-| `id`        | `INTEGER PRIMARY KEY AUTOINCREMENT` | Ballot ID                   |
-| `user_id`   | `INTEGER NOT NULL`                  | FK to `users.id` (unique)   |
-| `reasoning` | `TEXT`                              | Voter's reasoning           |
-| `submitted` | `INTEGER NOT NULL DEFAULT 0`        | Whether ballot is submitted |
+| Column      | Type                         | Description                 |
+| ----------- | ---------------------------- | --------------------------- |
+| `id`        | `SERIAL PRIMARY KEY`         | Ballot ID                   |
+| `user_id`   | `INTEGER NOT NULL`           | FK to `users.id` (unique)   |
+| `reasoning` | `TEXT`                       | Voter's reasoning           |
+| `submitted` | `INTEGER NOT NULL DEFAULT 0` | Whether ballot is submitted |
 
 ### `ballot_scores`
 
 Individual project scores within a ballot. Scores must be 1–5 or null.
 
-| Column       | Type                                | Description                            |
-| ------------ | ----------------------------------- | -------------------------------------- |
-| `id`         | `INTEGER PRIMARY KEY AUTOINCREMENT` | Score ID                               |
-| `ballot_id`  | `INTEGER NOT NULL`                  | FK to `ballots.id` (ON DELETE CASCADE) |
-| `project_id` | `INTEGER NOT NULL`                  | FK to `teams.id`                       |
-| `score`      | `INTEGER`                           | 1, 2, 3, 4, 5, or NULL                 |
+| Column       | Type                 | Description                            |
+| ------------ | -------------------- | -------------------------------------- |
+| `id`         | `SERIAL PRIMARY KEY` | Score ID                               |
+| `ballot_id`  | `INTEGER NOT NULL`   | FK to `ballots.id` (ON DELETE CASCADE) |
+| `project_id` | `INTEGER NOT NULL`   | FK to `teams.id`                       |
+| `score`      | `INTEGER`            | 1, 2, 3, 4, 5, or NULL                 |
 
 **Unique constraint**: `(ballot_id, project_id)`
 
@@ -148,12 +157,17 @@ Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted a
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | Season ID |
+| `id` | `SERIAL PRIMARY KEY` | Season ID |
 | `name` | `TEXT NOT NULL UNIQUE` | Season name |
 | `is_active` | `INTEGER NOT NULL DEFAULT 0` | Only one season can be active (CHECK 0 or 1) |
 | `announcement` | `TEXT` | Editable home-page announcement |
+| `max_team_members` | `INTEGER NOT NULL DEFAULT 6` | Per-season roster cap, constrained to 1–20 |
+| `results_published_at` | `TIMESTAMPTZ` | Set once when results are first published; a non-null value also freezes judging after publication |
+| `results_snapshot` | `JSONB` | Immutable standings snapshot written at publication |
 
-Each season stores a snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season and saves that configuration to the outgoing season when switching or clearing the active season. Activating a season also carries that season's announcement into the live overrides, so a message saved for an upcoming season appears on the public home page as soon as it goes live. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+Each season stores a complete snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season, saves that configuration to the outgoing season when switching or clearing the active season, and stores diverging values as live overrides. Activating a season also carries its announcement and schedule into the live overrides, so an upcoming season's message and dates appear as soon as it goes live. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+
+Creating a season copies only the schedule, theme, and rubric from the active season; operational switches, the vote cap, the announcement, and the score curve reset to their off/default values. Publishing results sets `results_published_at` and `results_snapshot`; the snapshot captures each team's ID, name, pathway, status, displayed and exact score, rank, and submission time. Publication also writes `results_published = 1` and turns off voting and judging unless those fields were explicitly supplied in the same request.
 
 The default `Season 1` seed omits its serial ID so PostgreSQL advances `seasons_id_seq` normally. Migration `0004` repairs the sequence for installations that already have explicitly seeded season rows and resets an empty table to generate ID 1.
 
@@ -195,15 +209,94 @@ Stores one peer ballot per user per season. The composite unique index lets a re
 
 Pending team invitations. A member invites an email address; the recipient must accept before their `users.team_id` changes. Invitations are unique per team and email and cascade away with the team.
 
-| Column       | Type                   | Description                           |
-| ------------ | ---------------------- | ------------------------------------- |
-| `id`         | `SERIAL PRIMARY KEY`   | Invitation ID                         |
-| `team_id`    | `INTEGER NOT NULL`     | FK to `teams.id` (ON DELETE CASCADE)  |
-| `email`      | `TEXT NOT NULL`        | Lowercased recipient address          |
-| `invited_by` | `INTEGER`              | FK to `users.id` (ON DELETE SET NULL) |
-| `created_at` | `TIMESTAMPTZ NOT NULL` | Invitation timestamp                  |
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `SERIAL PRIMARY KEY` | Invitation ID |
+| `team_id` | `INTEGER NOT NULL` | FK to `teams.id` (ON DELETE CASCADE) |
+| `email` | `TEXT NOT NULL` | Lowercased recipient address |
+| `invited_by` | `INTEGER` | FK to `users.id` (ON DELETE SET NULL) |
+| `token` | `TEXT UNIQUE` | SHA-256 digest of the bearer token; the raw token is returned once |
+| `expires_at` | `TIMESTAMPTZ` | Expiry; migration `0016` backfilled pending rows with creation time plus seven days |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Invitation timestamp |
 
-Teams accept at most `MAX_TEAM_MEMBERS` (6) members plus pending invitations.
+Teams accept at most that season's `max_team_members` members plus pending invitations. The default cap is 6 and the schema allows 1–20. Pending invitations are omitted from listings after they expire, and expired rows are deleted before a new invitation for the same email is created.
+
+### `judge_assignments`
+
+Optional per-season judge scope. With no rows, a judge sees every submitted project in the season except their own team and recused teams.
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `SERIAL PRIMARY KEY` | Assignment ID |
+| `season_id` | `INTEGER NOT NULL` | FK to `seasons.id` (cascade) |
+| `judge_user_id` | `INTEGER NOT NULL` | FK to `users.id` (cascade) |
+| `pathway` | `TEXT` | Restrict to one track; cannot be combined with `team_id` |
+| `team_id` | `INTEGER` | Restrict to one team; FK with cascade |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
+
+A unique index covers `(season_id, judge_user_id, coalesce(pathway, ''), coalesce(team_id, 0))`.
+
+### `judge_recusals`
+
+A judge's explicit conflict declaration. Recused teams are removed from that judge's queue and refused at scoring time.
+
+| Column          | Type                   | Description                  |
+| --------------- | ---------------------- | ---------------------------- |
+| `season_id`     | `INTEGER NOT NULL`     | FK to `seasons.id` (cascade) |
+| `judge_user_id` | `INTEGER NOT NULL`     | FK to `users.id` (cascade)   |
+| `team_id`       | `INTEGER NOT NULL`     | FK to `teams.id` (cascade)   |
+| `reason`        | `TEXT`                 | Optional explanation         |
+| `created_at`    | `TIMESTAMPTZ NOT NULL` | Creation time                |
+
+**Primary key**: `(season_id, judge_user_id, team_id)`
+
+### `judge_flags`
+
+One flag per season, judge, and team. Re-flagging reopens the row and refreshes its reason.
+
+| Column          | Type                   | Description                           |
+| --------------- | ---------------------- | ------------------------------------- |
+| `id`            | `SERIAL PRIMARY KEY`   | Flag ID                               |
+| `season_id`     | `INTEGER NOT NULL`     | FK to `seasons.id` (cascade)          |
+| `team_id`       | `INTEGER NOT NULL`     | FK to `teams.id` (cascade)            |
+| `judge_user_id` | `INTEGER NOT NULL`     | FK to `users.id` (cascade)            |
+| `reason`        | `TEXT NOT NULL`        | Explanation shown to organizers       |
+| `resolved_at`   | `TIMESTAMPTZ`          | Set when an administrator resolves it |
+| `resolved_by`   | `INTEGER`              | FK to `users.id` (set null)           |
+| `created_at`    | `TIMESTAMPTZ NOT NULL` | Creation time                         |
+
+### `admin_audit_events`
+
+Immutable record of administrative mutations. Rows are written in the same transaction as the change they describe.
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `SERIAL PRIMARY KEY` | Event ID |
+| `actor_user_id` | `INTEGER` | FK to `users.id` (set null) |
+| `action` | `TEXT NOT NULL` | Stable action name such as `team.status` or `score.delete` |
+| `entity_type` | `TEXT NOT NULL` | Entity kind |
+| `entity_id` | `TEXT` | Entity identifier, stored as text |
+| `before` / `after` | `JSONB` | Bounded state snapshots |
+| `reason` | `TEXT` | Optional operator reason |
+| `request_id` | `TEXT` | Request correlation ID |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
+
+### `notifications`
+
+One in-app notification per recipient.
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | `SERIAL PRIMARY KEY` | Notification ID |
+| `user_id` | `INTEGER NOT NULL` | FK to `users.id` (cascade) |
+| `type` | `TEXT NOT NULL` | `team_invite`, `team_invite_accepted`, `results_published`, or `judge_flag` |
+| `title` | `TEXT NOT NULL` | Display title |
+| `body` | `TEXT` | Optional detail |
+| `link` | `TEXT` | Optional relative link |
+| `read_at` | `TIMESTAMPTZ` | Read timestamp |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | Creation time |
+
+The list index is `(user_id, created_at)`.
 
 ### `awards`
 
@@ -346,6 +439,18 @@ const user = await drizzle.select().from(users).where(eq(users.id, userId)).get(
 
 ::: tip Always use Drizzle's parameterized query builders. Never interpolate user input directly into SQL strings. :::
 
+### Request-scoped caching and batching
+
+`requestCache(event, key, load)` memoizes a lookup in a `WeakMap` keyed by the H3 event, so it cannot leak across requests. Failed lookups are evicted for retry, and `invalidateRequestCaches(event)` clears the scope after a write the request reads back. Sharing one lookup across a request avoids repeated active-season, rubric, and visibility queries.
+
+List endpoints use keyset pagination where growth would otherwise materialize every row. `GET /api/teams` and `GET /api/judging/history/:seasonId` accept optional `limit` (1–50) and `after`, and return `next_cursor` when `limit` is supplied. Without `limit`, they keep the original full-array response.
+
+Scoring batches standings writes into chunks of 250 and persists each chunk with one `UPDATE ... FROM (VALUES ...)` statement, avoiding a separate update per team. Exact scores, the highest-weight rubric criterion, submission time, and team ID provide a deterministic order; equal results share a competition rank, and non-active teams receive no rank.
+
+### Concurrency and locks
+
+Timed and judged writes take row locks through `lockForUpdateIfSupported`, and season-wide operations serialize through PostgreSQL advisory locks. Season activation, migration startup, and asset lifecycle cleanup use advisory locks so concurrent processes cannot interleave. `team_scores` carries a composite foreign key to `teams(id, season_id)`, so a score cannot point across seasons.
+
 ## Per-table Helpers
 
 Each table has a dedicated helper module in `server/utils/database/`:
@@ -358,9 +463,11 @@ Each table has a dedicated helper module in `server/utils/database/`:
 | `scores.ts` | Judge score CRUD |
 | `ballots.ts` | Ballot and ballot score management |
 | `hackathon.ts` | Hackathon state queries and updates |
-| `oauth2_applications.ts` | Application CRUD, secret management, redirect URI management |
 | `seasons.ts` | `getSeasons`, `getSeasonById`, `getActiveSeason`, `setActiveSeason`, `getScoreRankVisibilityResolver` |
 | `awards.ts` | `getAwards`, `getAwardsForTeams`, `createAward`, `deleteTeamAwards`, `deleteAward` |
+| `judge-flags.ts` | `upsertJudgeFlag`, `resolveJudgeFlag`, `getJudgeFlags` |
+| `query.ts` | `firstRow`, `changedRows`, `lockForUpdateIfSupported`, `requestCache`, `invalidateRequestCaches`, `isUniqueViolation` |
+| `members.ts` | `getTeamMemberLimit`, invite creation/acceptance by ID or token, ownership transfer, disband |
 
 ## Type Conventions
 
@@ -370,11 +477,13 @@ TypeScript types in `shared/database.d.ts` must stay in sync with the SQL schema
 interface User {
     id: number;
     email: string;
-    role: string;
     name: string | null;
     team_id: number | null;
     profile_theme: string | null;
     profile_picture: string | null;
+    auth_issuer: string | null;
+    auth_subject: string | null;
+    is_admin: number;
 }
 ```
 
@@ -384,7 +493,6 @@ API response types in `shared/responses.d.ts` represent the public-facing shape 
 interface APIUser {
     id: number;
     email: string;
-    role: string;
     name: string | null;
     team_id: number | null;
     profile_theme: ProfileTheme | null; // parsed from "mode|value"
@@ -413,7 +521,9 @@ Drizzle Kit generates PostgreSQL migration files from `server/database/schema.ts
 bun run db:generate
 ```
 
-Apply pending migrations explicitly during release workflows with `bun run db:migrate`. Nitro also applies them at startup before it serves requests. `server/database/migrate.ts` takes a PostgreSQL advisory lock while applying migrations, so concurrent starts do not race the migration ledger. Keep schema changes and generated migration SQL in the same change.
+Apply pending migrations explicitly during release workflows with `bun run db:migrate`. Nitro also applies them at startup before it serves requests. `server/database/migrate.ts` opens a pinned connection, sets `statement_timeout = 0`, and takes a PostgreSQL advisory transaction lock while Drizzle applies its migrations. Concurrent starts therefore serialize, and a legitimate large DDL batch is not aborted by the ordinary 15-second statement timeout. The pool needs at least two connections for the lock and migration session. Keep schema changes and generated migration SQL in the same change.
+
+`0015` adds the audit, assignment, recusal, and notification tables; backfills `team_scores.season_id` and team ownership; normalizes boolean columns and duplicate names; and adds the new columns, indexes, foreign keys, and check constraints. `0016` adds `judge_flags`, `seasons.max_team_members`, invitation `token`/`expires_at`, and `teams.project_video_url`, backfills invitation expiry from creation time, and validates the roster cap. The SQLite importer uses a five-second `lock_timeout` before taking the same advisory lock.
 
 ## SQLite import
 

@@ -1,5 +1,5 @@
 <template>
-    <UPopover mode="hover" :open-delay="100" :ui="{ content: 'p-3' }">
+    <UPopover mode="click" :ui="{ content: 'p-3' }">
         <UButton
             :size="props.size"
             :icon="props.award.icon"

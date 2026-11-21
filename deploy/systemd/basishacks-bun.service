@@ -2,6 +2,11 @@
 Description=basishacks Nuxt server (Bun)
 After=network-online.target postgresql.service
 Wants=network-online.target
+# Restart storms are bounded; after the burst the unit stays failed for an
+# operator instead of looping. `systemctl reset-failed` clears the counter.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+OnFailure=basishacks-failure@%n.service
 
 [Service]
 Type=simple
@@ -21,9 +26,13 @@ UMask=0027
 LimitNOFILE=4096
 TasksMax=128
 MemoryHigh=450000000
+# 500 MB has held through release rehearsals; do not raise without a benchmark.
 MemoryMax=500000000
 # Runtime uploads are kept in the checked-out project and are ignored by git.
 ReadWritePaths=/opt/basishacks/current/assets
+# YAML_SOURCE_HACKATHON=local also writes the checked-out manifest; remote mode
+# caches under assets/ (already writable) and never edits the checkout.
+ReadWritePaths=-/opt/basishacks/current/HACKATHON.yml
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -35,6 +44,11 @@ ProtectControlGroups=true
 LockPersonality=true
 RestrictSUIDSGID=true
 CapabilityBoundingSet=
+
+# Health checks (from the host, no auth):
+#   curl --fail --silent http://127.0.0.1:3000/api/health/live
+#   curl --fail --silent http://127.0.0.1:3000/api/health/ready
+# Startup exits non-zero when the database cannot be initialized.
 
 [Install]
 WantedBy=multi-user.target

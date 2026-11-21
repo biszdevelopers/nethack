@@ -8,6 +8,19 @@ const PROFILE_ASSET_GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const PROFILE_ASSET_GC_MAX_SCANNED = 250;
 const PROFILE_ASSET_GC_MAX_DELETIONS = 25;
 
+function sanitizeStartupError(error: unknown) {
+    const source = error instanceof Error ? error.message : String(error ?? "");
+    const message = source
+        .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]")
+        .replace(/[\r\n]+/g, " ")
+        .slice(0, 300);
+    const code =
+        error && typeof error === "object" && "code" in error && typeof error.code === "string"
+            ? error.code.slice(0, 32)
+            : "unknown";
+    return { code, message: message || "unknown" };
+}
+
 export default defineNitroPlugin((nitroApp) => {
     let database: DrizzleDatabase | undefined;
     const initialization = (async () => {
@@ -16,14 +29,16 @@ export default defineNitroPlugin((nitroApp) => {
             database = initializedDatabase;
             await createAndMigrateDatabase(initializedDatabase);
         } catch (error) {
-            try {
-                await closeDatabase();
-            } catch (closeError) {
-                console.error(
-                    "[Nitro] Failed to close PostgreSQL after database initialization failed",
-                    closeError,
-                );
-            }
+            await closeDatabase().catch(() => undefined);
+            console.error(
+                JSON.stringify({
+                    event: "database_initialization_failed",
+                    ...sanitizeStartupError(error),
+                }),
+            );
+            // A server without a migrated database can only serve errors; exit
+            // so systemd restarts it instead of leaving a zombie process.
+            if (!process.env.VITEST) process.exit(1);
             throw error;
         }
     })();

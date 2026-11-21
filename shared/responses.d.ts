@@ -29,11 +29,14 @@ interface APITeam {
     rank?: number | null;
     score?: number | null;
     season_id: number;
+    status?: TeamStatus;
+    owner_user_id?: number | null;
     project: {
         name: string;
         description: string;
         demo_url: string | null;
         repo_url: string | null;
+        video_url: string | null;
         submitted: boolean;
         sourcing: string;
     };
@@ -103,6 +106,7 @@ interface ScoreFeedbackEntryResponse {
     criteria?: ScoreFeedbackCriterionResponse[];
     judge_id?: number;
     judge_name?: string | null;
+    created_at?: string | null;
 }
 
 interface TeamScoreFeedbackResponse {
@@ -113,6 +117,14 @@ interface TeamScoreFeedbackResponse {
     curve_preset: import("./score-curve").ScoreCurvePreset | null;
     curve_label: string | null;
     rank: number | null;
+    project: {
+        name: string;
+        description: string;
+        demo_url: string | null;
+        repo_url: string | null;
+        video_url: string | null;
+        sourcing: string;
+    };
     feedback_withheld_for_anonymity?: boolean;
     /** Evaluations skipped because their saved rubric or scores could not be read. */
     unavailable_evaluations: number;
@@ -132,6 +144,9 @@ interface PublicSeason {
     results_open_timestamp: number;
     theme_name: string | null;
     theme_description: string | null;
+    is_submission_closed?: boolean;
+    is_gallery_public?: boolean;
+    max_team_members?: number;
 }
 
 interface BoardApprovalResponse {
@@ -152,11 +167,22 @@ type GetTeamMembersResponse = {
 interface TeamInviteResponse {
     id: number;
     email: string;
+    expires_at: string | null;
 }
 
 type GetTeamInvitesResponse = {
     invites: TeamInviteResponse[];
+    max_team_members: number;
 };
+
+interface CreateTeamInviteResponse {
+    id: number;
+    email: string;
+    token: string;
+    expires_at: string;
+    invite_url: string;
+    message: string;
+}
 
 interface UserTeamInviteResponse {
     id: number;
@@ -223,4 +249,158 @@ interface ElectionBallot {
     email: string | null;
     submitted_at: number | null;
     vote: Record<string, number | null>;
+}
+
+// ---------------------------------------------------------------------------
+// Operational admin, notifications, awards, assignments, and peer-vote results
+// ---------------------------------------------------------------------------
+
+interface AdminStandingRow {
+    team_id: number;
+    name: string;
+    pathway: TeamPathway | null;
+    status: TeamStatus;
+    score_exact: number;
+    score: number;
+    rank: number | null;
+    awards: string[];
+    project_name: string;
+    project_demo_url: string | null;
+    project_repo_url: string | null;
+}
+
+interface AdminStandingsResponse {
+    season_id: number;
+    generated_at: string;
+    standings: AdminStandingRow[];
+}
+
+interface AdminPreflightResponse {
+    season_id: number;
+    submitted_teams: number;
+    teams_below_minimum_evaluations: number;
+    evaluations_total: number;
+    judges_with_evaluations: number;
+    assigned_judges: number;
+    mismatches: {
+        finished_without_results: number;
+        published_without_timestamp: number;
+        missing_event_end: number;
+        invalid_date_range: number;
+    };
+    vote_cap: {
+        max_votes_per_user: number;
+        max_eligible_projects: number;
+        feasible: boolean;
+    };
+    gates: {
+        submissions_open: boolean;
+        voting_open: boolean;
+        judging_open: boolean;
+        gallery_public: boolean;
+        results_visible: boolean;
+    };
+}
+
+interface AdminAuditEventResponse {
+    id: number;
+    actor_user_id: number | null;
+    action: string;
+    entity_type: string;
+    entity_id: string | null;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+    reason: string | null;
+    request_id: string | null;
+    created_at: string;
+}
+
+interface GetAdminAuditResponse {
+    events: AdminAuditEventResponse[];
+}
+
+interface NotificationResponse {
+    id: number;
+    type: string;
+    title: string;
+    body: string | null;
+    link: string | null;
+    read_at: string | null;
+    created_at: string;
+}
+
+interface GetNotificationsResponse {
+    notifications: NotificationResponse[];
+    unread: number;
+}
+
+interface JudgeAssignmentResponse {
+    id: number;
+    season_id: number;
+    judge_user_id: number;
+    pathway: string | null;
+    team_id: number | null;
+    created_at: string;
+    judge_email?: string;
+    judge_name?: string | null;
+}
+
+interface GetJudgeAssignmentsResponse {
+    assignments: JudgeAssignmentResponse[];
+}
+
+interface JudgeFlagResponse {
+    id: number;
+    season_id: number;
+    team_id: number;
+    team_name: string;
+    judge_user_id: number;
+    judge_email?: string;
+    judge_name?: string | null;
+    reason: string;
+    resolved_at: string | null;
+    resolved_by: number | null;
+    created_at: string;
+}
+
+interface GetJudgeFlagsResponse {
+    flags: JudgeFlagResponse[];
+}
+
+interface GetJudgingCalibrationResponse {
+    season_id: number;
+    evaluations: number;
+    overall_average: number | null;
+    standard_deviation: number;
+    judges: Array<{
+        judge_user_id: number;
+        name: string | null;
+        email: string | null;
+        evaluations: number;
+        average: number;
+        deviation: number;
+        outlier: boolean;
+    }>;
+    outliers: GetJudgingCalibrationResponse["judges"];
+}
+
+interface BallotResultsProject {
+    team_id: number;
+    name: string;
+    pathway: TeamPathway | null;
+    average_stars: number | null;
+    team_units: number;
+}
+
+interface BallotResultsResponse {
+    season_id: number;
+    results_visible: boolean;
+    voting_closed: boolean;
+    turnout: {
+        submitted_teams: number;
+        voting_teams: number;
+        ballots: number;
+        turnout_ratio: number;
+    };
+    projects: BallotResultsProject[];
 }

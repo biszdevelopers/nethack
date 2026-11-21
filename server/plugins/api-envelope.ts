@@ -9,6 +9,8 @@ const hasNonJsonContentType = (event: any) => {
 
 const isJsonApiResponse = (event: any, body: unknown) => {
     if (!event.path?.startsWith("/api/") || body === undefined || body === null) return false;
+    const pathname = String(event.path).split("?")[0] ?? "";
+    if (pathname === "/api/health" || pathname.startsWith("/api/health/")) return false;
     if (body instanceof Response || typeof body !== "object") return false;
     if (typeof (body as { pipe?: unknown }).pipe === "function") return false;
     if (hasNonJsonContentType(event)) return false;

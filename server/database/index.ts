@@ -1,4 +1,5 @@
 import postgres, { type Sql } from "postgres";
+import { tracingChannel } from "node:diagnostics_channel";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
 import { installDatabaseMetrics } from "../utils/database-observability";
@@ -43,17 +44,65 @@ export function getDatabasePoolMax(): number {
     return value;
 }
 
+const SLOW_QUERY_LOG_LIMIT = 20;
+const SLOW_QUERY_LOG_WINDOW_MS = 60_000;
+let slowQueryLoggingInstalled = false;
+
+/**
+ * Bounded slow-query logging for DATABASE_METRICS=1. Emits identifiers only
+ * (timing, never SQL text) and caps log volume per minute.
+ */
+function installSlowQueryLog(): void {
+    if (slowQueryLoggingInstalled || process.env.DATABASE_METRICS !== "1") return;
+    slowQueryLoggingInstalled = true;
+
+    const configured = Number(process.env.DATABASE_SLOW_QUERY_MS ?? 250);
+    const threshold = Number.isFinite(configured) && configured > 0 ? configured : 250;
+    let windowStart = Date.now();
+    let logged = 0;
+
+    tracingChannel("postgres:query").subscribe({
+        asyncEnd(context: object & { error?: unknown; result?: unknown }) {
+            const { sent, complete } = context as { sent?: number; complete?: number };
+            if (typeof sent !== "number" || typeof complete !== "number") return;
+            const duration = complete - sent;
+            if (duration < threshold) return;
+
+            const now = Date.now();
+            if (now - windowStart >= SLOW_QUERY_LOG_WINDOW_MS) {
+                windowStart = now;
+                logged = 0;
+            }
+            if (logged >= SLOW_QUERY_LOG_LIMIT) return;
+            logged += 1;
+            console.warn(
+                JSON.stringify({
+                    event: "postgres_slow_query",
+                    duration_ms: Math.round(duration),
+                    threshold_ms: threshold,
+                    timestamp: new Date(now).toISOString(),
+                }),
+            );
+        },
+    });
+}
+
 /** Return the process-wide PostgreSQL client and Drizzle instance. */
 export async function createDrizzleDatabase(): Promise<DrizzleDatabase> {
     if (database) return database;
 
     installDatabaseMetrics();
+    installSlowQueryLog();
     client = postgres(getDatabaseUrl(), {
         max: getDatabasePoolMax(),
         idle_timeout: 20,
         connect_timeout: 10,
         max_lifetime: 60 * 30,
         prepare: false,
+        connection: {
+            statement_timeout: 15_000,
+            idle_in_transaction_session_timeout: 30_000,
+        },
     });
     database = drizzle(client, { schema });
     return database;

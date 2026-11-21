@@ -31,8 +31,11 @@ describe("PostgreSQL Drizzle schema definitions", () => {
 
         expect(season.foreignKeys).toHaveLength(1);
         expect(season.foreignKeys[0]?.onDelete).toBe("restrict");
-        expect(team.foreignKeys).toHaveLength(1);
-        expect(team.foreignKeys[0]?.onDelete).toBe("restrict");
+        expect(team.foreignKeys).toHaveLength(2);
+        expect(team.foreignKeys.map((constraint) => constraint.onDelete).sort()).toEqual([
+            "restrict",
+            "set null",
+        ]);
     });
 
     it("pins normalized scoring and vote constraints in the schema", () => {
@@ -43,13 +46,24 @@ describe("PostgreSQL Drizzle schema definitions", () => {
         expect(hackathon.checks.map((constraint) => constraint.name)).toEqual([
             "hackathon_id_check",
             "hackathon_status_check",
+            "hackathon_voting_enabled_check",
+            "hackathon_results_published_check",
+            "hackathon_show_scores_check",
+            "hackathon_show_ranking_check",
+            "hackathon_judging_open_check",
         ]);
         expect(ballots.checks.map((constraint) => constraint.name)).toEqual([
             "ballot_scores_score_check",
         ]);
         expect(seasons.checks.map((constraint) => constraint.name)).toEqual([
             "seasons_is_active_check",
+            "seasons_max_team_members_check",
             "seasons_is_blank_start_check",
+            "seasons_voting_enabled_check",
+            "seasons_results_published_check",
+            "seasons_judging_open_check",
+            "seasons_show_scores_check",
+            "seasons_show_ranking_check",
             "seasons_board_approval_pair_check",
             "seasons_score_curve_preset_check",
             "seasons_status_check",

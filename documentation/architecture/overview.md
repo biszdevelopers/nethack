@@ -41,13 +41,13 @@ nethack/
 ├── server/                 # Nitro backend
 │   ├── api/                # API route handlers (file-based)
 │   ├── middleware/         # Server middleware (security-headers and debug-lockdown)
-│   ├── plugins/            # Database, Graph integration, and environment validation
+│   ├── plugins/            # Database initialization and fail-fast environment validation
 │   ├── types/              # Type augmentations (H3EventContext)
 │   └── utils/              # Server utilities
 │       ├── database/       # Per-table DB helpers (users, teams, scores, etc.)
 │       ├── auth.ts         # requireUser / optionalUser permission helpers
 │       ├── convert.ts      # DB row -> public API object transformers
-│       ├── rateLimit.ts    # In-memory rate limiter (5 tiers)
+│       ├── rateLimit.ts    # Fixed-window in-memory rate limiter
 │       ├── oauth2.ts       # Public origin and callback URL helpers
 │       ├── basis-auth.ts   # OIDC discovery, PKCE login, callback, and UserInfo
 │       ├── oauth2-jwt.ts   # basis-auth resource-token validation
@@ -117,6 +117,8 @@ Every incoming request has the following context attached by plugins and middlew
 | --- | --- | --- | --- |
 | `event.context.drizzle` | `DrizzleDatabase` | `02.database.ts` middleware | Database access |
 | `event.context.oauth2` | `OAuth2JWTContext` | `requireUser()` | basis-auth JWT payload, permissions, and local user |
+| `event.context.requestId` | `string` | `00.request-id.ts` | Request correlation for logs, errors, and audit rows |
+| `event.context.cspNonce` | `string` | security headers | Per-response script nonce |
 
 ## Key Architectural Decisions
 
@@ -150,6 +152,10 @@ The database layer uses Drizzle ORM with PostgreSQL through the `postgres` drive
 
 Authentication uses basis-auth OIDC. Access and refresh tokens are compressed, sealed with AES-256-GCM, and stored in a separate HTTP-only cookie; the cookie is secure in production and uses `SameSite=Lax`. The browser-safe session endpoint returns only the user ID, token expiry, and permissions. The full user record is fetched from PostgreSQL for authenticated requests.
 
+### Event gates
+
+`getEventState(event)` resolves the active season and merged event settings once per request. Submission, voting, judging, gallery, and results gates are derived from status, timestamps, and their switches. Mutations that change the settings call `invalidateEventStateCache(event)` so later reads in the same request see the new state.
+
 ### JWT permissions
 
 basis-auth access tokens carry the authoritative `permissions` array. Protected routes require the smallest applicable `nethack.*` permission; local user records do not store authorization roles. `nethack.all` is the explicit administrative permission and satisfies the nethack permission hierarchy.
@@ -160,8 +166,8 @@ basis-auth access tokens carry the authoritative `permissions` array. Protected 
 
 1. The browser asks for a page or API resource.
 2. Nuxt checks whether the route needs authentication.
-3. Nitro applies server middleware (OAuth2 bridge, rate limiting).
-4. The API handler validates input with Zod, checks permissions, and talks to PostgreSQL through Drizzle.
+3. Nitro assigns a request ID, applies the pre-body rate gate and security middleware, and attaches the database context.
+4. The API handler resolves event gates, validates input with Zod, checks permissions, and talks to PostgreSQL through Drizzle.
 5. The domain result is stripped of internal fields and wrapped as `{ status, code, data }`; failures use the canonical `APIError` envelope.
 
 </CollapsibleDetails>
@@ -180,10 +186,15 @@ URL validation is enforced at both layers to prevent SSRF and open redirect atta
 
 ### Security middleware
 
-Three Nitro server middleware files run on every request:
+Nitro server middleware runs in numeric order on every request:
 
-- **`security-headers.ts`** — Applies CSP, HSTS, `X-Frame-Options: DENY`, and other security headers to every response (pages and API) through the shared `server/utils/security-headers.ts` helper.
+- **`00.request-id.ts`** — Accepts a bounded caller `x-request-id` or generates a UUID, stores it in context, and echoes it on the response.
+- **`00.request-log.ts`** — Emits one bounded JSON line per dynamic request after the response finishes; static assets are skipped.
+- **`00.request-rate-gate.ts`** — Applies a cheap per-IP fixed-window gate before any request body is buffered. Health and the basis-auth backchannel are exempt.
+- **`00.request-security.ts`** — Rejects cross-site cookie-authenticated mutations and enforces the origin/CSRF boundary.
+- **`security-headers.ts`** — Applies CSP, HSTS, `X-Frame-Options` (`SAMEORIGIN` only for docs), cross-origin isolation headers, and the other baseline headers.
 - **`debug-lockdown.ts`** — Returns 404 for `/api/debug/*` and `/debug*` routes when `DISABLE_DEBUG_ROUTES` is set, including percent-encoded variants, and applies the baseline security headers to that 404.
+- **`02.database.ts`** — Attaches the shared Drizzle instance to `event.context.drizzle`.
 
 ### Startup environment validation
 
@@ -194,13 +205,11 @@ The `validate-environment.ts` Nitro plugin performs mandatory checks at server s
 
 ### OAuth2 JWT utilities
 
-The `basis-auth.ts` utility implements discovery and the browser login flow. `oauth2-jwt.ts` verifies protected-resource tokens against basis-auth JWKS with exact issuer, audience, algorithm, type, expiry, and permission-claim checks.
-
-`server/plugins/microsoft.ts` provides independent Graph features and is never used for login.
+The `basis-auth.ts` utility implements discovery and the browser login flow. `oauth2-jwt.ts` verifies protected-resource tokens against basis-auth JWKS with exact issuer, audience, algorithm, type, expiry, and permission-claim checks. Administrator grants combine the token permissions with the local `users.is_admin` flag; the configured initial-admin allowlist only fills in callers without local admin state. The former Microsoft Graph integration and its ROPC credentials were removed.
 
 ### Comprehensive test suite
 
-The project includes **<TestCount /> tests across 100 files** covering API endpoints, server utilities, database helpers, shared schemas, Vue components, pages, and composables.
+The project includes **<TestCount /> tests across 266 files** covering API endpoints, server utilities, database helpers, shared schemas, Vue components, pages, and composables.
 
 ### Shared code boundary
 

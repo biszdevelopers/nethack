@@ -3,7 +3,9 @@
         <template #default>
             <div class="flex flex-col gap-4">
                 <div class="flex flex-col">
-                    <span class="text-sm font-bold text-muted">{{ seasonDate }}</span>
+                    <span v-if="seasonDate" class="text-sm font-bold text-muted">
+                        {{ seasonDate }}
+                    </span>
                     <div class="flex flex-row gap-2">
                         <span class="">{{ seasonName }}</span>
                         <UBadge v-if="team.pathway" variant="outline" color="primary">
@@ -16,7 +18,7 @@
                     class="w-full flex flex-row justify-between items-center"
                 >
                     <div v-if="team.score !== null && team.score !== undefined" class="w-1/2">
-                        <span class="uppercase text-sm text-muted">original score</span>
+                        <span class="text-sm text-muted">original score</span>
                         <div class="w-1/2 flex items-baseline-last gap-1">
                             <span
                                 class="text-5xl font-bold"
@@ -28,7 +30,7 @@
                         </div>
                     </div>
                     <div v-if="team.rank" class="w-1/2">
-                        <span class="uppercase text-sm text-muted">ranking</span>
+                        <span class="text-sm text-muted">ranking</span>
                         <div class="flex items-baseline-last gap-1">
                             <span
                                 class="text-5xl font-bold"
@@ -53,14 +55,14 @@
                         </div>
                     </div>
                     <div class="w-1/2 blur-md select-none">
-                        <span class="uppercase text-sm text-muted">score</span>
+                        <span class="text-sm text-muted">score</span>
                         <div class="w-1/2 flex items-baseline-last gap-1">
                             <span class="text-5xl font-bold">---</span>
                             <span class="text-muted">/100</span>
                         </div>
                     </div>
                     <div class="w-1/2 blur-md select-none">
-                        <span class="uppercase text-sm text-muted">ranking</span>
+                        <span class="text-sm text-muted">ranking</span>
                         <div class="flex items-baseline-last gap-1">
                             <span class="text-5xl font-bold">#--</span>
                         </div>
@@ -76,9 +78,20 @@
                 <ScoreFeedbackPanel
                     v-if="seasonMeta.resultsPublished"
                     :team-id="team.id"
+                    :team="team"
                     :show-original-score="false"
                     :show-rank="false"
                 />
+                <UAlert
+                    v-else-if="seasonsError"
+                    color="warning"
+                    variant="subtle"
+                    title="Season status could not be loaded"
+                    description="Published feedback stays hidden until the season is reachable."
+                />
+                <p v-else-if="seasonsPending" class="text-sm text-muted" role="status">
+                    Checking published feedback…
+                </p>
                 <div class="flex flex-row gap-2">
                     <div v-for="award in team.awards" :key="award.namespace">
                         <AwardButton :award="award" size="md" />
@@ -94,7 +107,7 @@
                         See Project Details
                     </UButton>
                     <template #body>
-                        <ProjectCard :id="team.id" />
+                        <ProjectCard :id="team.id" :team="team" />
                     </template>
                 </UModal>
                 <ULink
@@ -112,18 +125,48 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from "~/utils/datetime";
+
 const props = defineProps<{
     team: GetTeamResponse;
 }>();
 
-const { data: seasons } = await useApiFetch<PublicSeason[]>("/api/seasons", { lazy: true });
+// Every score card on a page shares one season list instead of refetching it.
+// The 60s guard keeps publication changes from staying hidden for a whole session.
+const SEASON_CACHE_TTL_MS = 60_000;
+const seasonCache = useState<{ list: PublicSeason[]; at: number } | null>(
+    "score-card-seasons-cache",
+    () => null,
+);
+function cachedSeasonList(): PublicSeason[] | undefined {
+    const cached = seasonCache.value;
+    return cached && Date.now() - cached.at < SEASON_CACHE_TTL_MS ? cached.list : undefined;
+}
+const {
+    data: fetchedSeasons,
+    pending: seasonsPending,
+    error: seasonsError,
+} = await useApiFetch<PublicSeason[]>("/api/seasons", {
+    key: "score-card-seasons",
+    lazy: true,
+    getCachedData: (key: string, app: any) =>
+        cachedSeasonList() ?? app.payload.data[key] ?? app.static.data[key],
+});
+watch(
+    fetchedSeasons,
+    (value) => {
+        if (value) seasonCache.value = { list: value, at: Date.now() };
+    },
+    { immediate: true },
+);
+const seasons = computed(() => seasonCache.value?.list ?? fetchedSeasons.value ?? []);
 
 const seasonMeta = computed(() => {
     if (!props.team.season_id) return { name: "Unknown", date: null, resultsPublished: false };
-    const s = seasons.value?.find((s: any) => s.id === props.team.season_id);
+    const s = seasons.value.find((season) => season.id === props.team.season_id);
     return {
         name: s?.name ?? `Season ${props.team.season_id}`,
-        date: null,
+        date: s?.start_timestamp ? formatDateTime(s.start_timestamp) : null,
         resultsPublished: Boolean(s?.results_published),
     };
 });

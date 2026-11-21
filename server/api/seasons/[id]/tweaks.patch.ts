@@ -1,23 +1,35 @@
-import { UpdateSeasonTweaksRequest } from "~~/shared/schemas";
+import type { H3Event } from "h3";
+import { PositiveIntParam, UpdateSeasonTweaksRequest } from "~~/shared/schemas";
 import { NethackPermissions } from "~~/shared/permissions";
 
 const booleanFields = ["show_scores", "show_ranking"] as const;
+
+function parseSeasonId(event: H3Event): number {
+    const raw = getRouterParam(event, "id");
+    if (!raw || !/^\d+$/.test(raw)) {
+        throw createError({ statusCode: 400, statusMessage: "Invalid season ID" });
+    }
+    const parsed = PositiveIntParam.safeParse(raw);
+    if (!parsed.success) {
+        throw createError({ statusCode: 400, statusMessage: "Invalid season ID" });
+    }
+    return parsed.data;
+}
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         await requireUser(event, NethackPermissions.Seasons.update);
 
-        const rawId = getRouterParam(event, "id");
-        if (!rawId || !/^\d+$/.test(rawId)) {
-            throw createError({ statusCode: 400, message: "Invalid season ID" });
-        }
-
-        const id = Number(rawId);
-        if (!Number.isSafeInteger(id) || id < 1) {
-            throw createError({ statusCode: 400, message: "Invalid season ID" });
-        }
+        const id = parseSeasonId(event);
 
         const body = await readValidatedBody(event, UpdateSeasonTweaksRequest.parse);
+        const existing = await getSeasonById(event, id);
+        // Live visibility switches need the live-event grant in addition to
+        // the season editor grant. A missing season falls through to the
+        // updater's not-found result.
+        if (existing?.is_active === 1) {
+            await requireUser(event, NethackPermissions.Hackathon.update);
+        }
 
         const data: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(body)) {

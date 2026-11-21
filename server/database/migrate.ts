@@ -1,11 +1,10 @@
 import { resolve } from "node:path";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import type { Sql } from "postgres";
 import { getPostgresClient, type DrizzleDatabase } from "./index";
-import { hackathon, rubricTemplates, rubricVersions, seasons, users } from "./schema";
+import { hackathon, rubricTemplates, rubricVersions, seasons } from "./schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "../../shared/rubric";
-import { INITIAL_ADMIN_EMAILS } from "../utils/initial-admins";
 
 const MIGRATIONS_FOLDER = resolve(process.cwd(), "drizzle/postgres");
 const MIGRATION_LOCK_ID = BigInt("75110114284009");
@@ -20,6 +19,9 @@ export async function migrateDatabase(
     // transactional migrations through the bounded pool. The pool must have at
     // least two connections for the lock and migration sessions.
     await client.begin(async (connection) => {
+        // Migrations are maintenance work: do not let the pool's interactive
+        // statement timeout abort a legitimate large DDL batch.
+        await connection`SET LOCAL statement_timeout = 0`;
         await connection`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`;
         await migrate(database, { migrationsFolder });
     });
@@ -175,10 +177,9 @@ export async function seedDefaultSeasonAndRubrics(database: DrizzleDatabase): Pr
 
 /** Keep the designated initial administrators elevated across restarts and imports. */
 export async function seedInitialAdmins(database: DrizzleDatabase): Promise<void> {
-    await database
-        .update(users)
-        .set({ is_admin: 1 })
-        .where(inArray(sql`lower(${users.email})`, [...INITIAL_ADMIN_EMAILS]));
+    // Initial administrators are elevated when they first sign in. Re-elevating
+    // every configured email on boot would silently undo a deliberate demotion.
+    void database;
 }
 
 /** Migrate and seed before Nitro begins accepting requests. */
@@ -187,5 +188,4 @@ export async function createAndMigrateDatabase(database: DrizzleDatabase): Promi
     await seedHackathon(database);
     await seedDefaultSeasonAndRubrics(database);
     await seedNextSeason(database);
-    await seedInitialAdmins(database);
 }

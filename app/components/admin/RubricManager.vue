@@ -154,7 +154,9 @@ function validationIssues(value: RubricDefinition): string[] {
 }
 
 const issues = computed(() => validationIssues(definition.value));
-const canSave = computed(() => !loading.value && !savingVersion.value && issues.value.length === 0);
+const canSave = computed(
+    () => !loading.value && !savingVersion.value && !loadError.value && issues.value.length === 0,
+);
 
 async function loadRubric() {
     loading.value = true;
@@ -192,7 +194,7 @@ async function refreshRubric(keepEditor = false) {
 }
 
 async function saveVersion() {
-    if (yamlManaged.value) return;
+    if (yamlManaged.value || loadError.value) return;
     if (!canSave.value || !versionName.value.trim()) {
         if (!versionName.value.trim()) {
             toast.add({ title: "Enter a name for this rubric version.", color: "warning" });
@@ -271,7 +273,7 @@ async function createVersion(
     source: { sourceTemplateId: number } | { copyFromSeasonId: number },
     name: string,
 ) {
-    if (yamlManaged.value) return;
+    if (yamlManaged.value || loadError.value) return;
     savingVersion.value = true;
     try {
         await api(`/api/admin/seasons/${props.seasonId}/rubric`, {
@@ -309,6 +311,7 @@ async function createFromTemplate(template: RubricTemplateSummary) {
 }
 
 async function saveTemplate(updateExisting = false) {
+    if (loadError.value) return;
     if (issues.value.length > 0 || !templateName.value.trim()) {
         if (!templateName.value.trim()) {
             toast.add({ title: "Enter a name for the reusable template.", color: "warning" });
@@ -410,6 +413,13 @@ async function removeTemplate(template: RubricTemplateSummary) {
         >
             Loading rubric settings…
         </div>
+
+        <p
+            v-else-if="loadError"
+            class="rounded-xl border border-ui-border p-4 text-sm text-ui-text-muted"
+        >
+            Reload the rubric before editing. Nothing can be saved until it loads.
+        </p>
 
         <template v-else>
             <UAlert

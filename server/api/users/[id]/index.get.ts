@@ -1,6 +1,6 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { getUserPastTeams } from "~~/server/utils/database/members";
-import { getTeamById } from "~~/server/utils/database/teams";
+import { getTeamById, getTeam } from "~~/server/utils/database/teams";
 import { UserIdParams } from "~~/shared/schemas";
 import { hasNethackPermission, NethackPermissions } from "~~/shared/permissions";
 import { getTeamEvaluationCounts } from "~~/server/utils/database/scores";
@@ -29,9 +29,17 @@ export default defineEventHandler(
             }) satisfies APIUser;
         }
 
-        // Self view: return full GetUserResponse
-        const team = user.team_id ? await getTeamById(event, user.team_id) : null;
+        // Self view: return full GetUserResponse. `team` is the active-season
+        // membership only; a pointer left over from an earlier season becomes
+        // history so a returning participant can join a new team normally.
+        const team = user.team_id ? await getTeam(event, user.team_id) : null;
         const pastTeams = await getUserPastTeams(event, id);
+        if (user.team_id && !team) {
+            const staleTeam = await getTeamById(event, user.team_id);
+            if (staleTeam && !pastTeams.some((past) => past.id === staleTeam.id)) {
+                pastTeams.unshift(staleTeam);
+            }
+        }
 
         const allTeamIds = [...(team ? [team.id] : []), ...pastTeams.map((t) => t.id)];
         const awardsByTeam = await getAwardsForTeams(event, allTeamIds);

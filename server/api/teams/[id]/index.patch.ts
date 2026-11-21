@@ -1,6 +1,8 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { UpdateTeamRequest, TeamIdParams } from "~~/shared/schemas";
 import { getRubricVersionForSeason } from "~~/server/utils/database/rubrics";
+import { canManageTeam } from "~~/server/utils/database/teams";
+import { getEventState } from "~~/server/utils/event-state";
 import type { teams } from "~~/server/database/schema";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -16,11 +18,15 @@ export default defineEventHandler(
             });
         }
 
-        const hackathon = await getHackathon(event);
-        if (hackathon?.status !== "not_started" && hackathon?.status !== "in_progress") {
+        const state = await getEventState(event);
+        if (!state.submissionsOpen) {
             throw createError({
                 status: 403,
-                message: "Cannot edit team and project after hackathon has finished",
+                message: state.paused
+                    ? "The event is paused"
+                    : state.hackathon?.status === "finished"
+                      ? "Cannot edit team and project after hackathon has finished"
+                      : "Cannot edit team and project after submissions close",
             });
         }
 
@@ -49,6 +55,14 @@ export default defineEventHandler(
             }
         }
 
+        // Renaming is an owner decision; every member may still edit the draft.
+        if (payload.name !== undefined && !canManageTeam(team, user)) {
+            throw createError({
+                statusCode: 403,
+                message: "Only the team owner can rename the team",
+            });
+        }
+
         // Send only the supplied columns so a concurrent edit of a different
         // field is preserved.
         const updates: Partial<typeof teams.$inferInsert> = {};
@@ -63,6 +77,9 @@ export default defineEventHandler(
         }
         if (payload.project?.repo_url !== undefined) {
             updates.project_repo_url = payload.project.repo_url;
+        }
+        if (payload.project?.video_url !== undefined) {
+            updates.project_video_url = payload.project.video_url;
         }
         if (payload.project?.sourcing !== undefined) updates.sourcing = payload.project.sourcing;
 

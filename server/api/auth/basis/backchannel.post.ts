@@ -3,7 +3,7 @@ import {
     applyBasisAuthLogoutToken,
     handleBackchannelTest,
 } from "~~/server/utils/basis-auth-backchannel";
-import { applyRateLimit } from "~~/server/utils/rateLimit";
+import { applyRateLimit, BACKCHANNEL_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 /**
  * basis-auth resource receiver: webhook verification, logout tokens, and
@@ -38,5 +38,5 @@ export default defineEventHandler(
             statusMessage: "invalid_request",
             message: "Unsupported backchannel event",
         });
-    }),
+    }, BACKCHANNEL_RATE_LIMIT_CONFIG),
 );

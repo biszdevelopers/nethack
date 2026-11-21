@@ -56,12 +56,9 @@ Comprehensive environment variable validation plugin that runs at server startup
 
 `BASIS_AUTH_RESOURCE_SECRET` and `BASIS_AUTH_INTERNAL_URL` are required together, and the URL must use HTTP or HTTPS. They are needed to verify the resource's backchannel logout URL and to receive logout and revocation events; without them authorization-code sign-in fails with `14408 invalid_resource`. Missing or malformed values stop production startup and warn during development.
 
-#### Microsoft Graph configuration
+#### Production origin, proxy trust, and email verification
 
-Checks `MICROSOFT_TENANT_ID`, `MICROSOFT_CLIENT_ID`, and `MICROSOFT_CLIENT_SECRET`:
-
-- If any are set but not all three, logs a warning that Microsoft Graph features will be unavailable.
-- If none are set, silently skips (Microsoft features gracefully disabled).
+`CURRENT_URL_ORIGIN` must be a public HTTPS origin with no path, query, fragment, or credentials, or a loopback HTTP origin while the server binds to loopback. `TRUSTED_PROXY_HOPS` must be an integer from 0 to 10; a production value of 0 emits a warning because per-IP limits would collapse to the proxy address. When `REQUIRE_VERIFIED_EMAIL` is disabled in production, the plugin warns that an omitted `email_verified` claim is accepted. Startup failures use `process.exit(1)`.
 
 ```ts
 // server/plugins/validate-environment.ts — core pattern
@@ -77,103 +74,25 @@ if (!sessionPassword || sessionPasswordLength < 32) {
 
 ---
 
-### microsoft.ts
+### Removed Graph integration
 
-**File:** `server/plugins/microsoft.ts`
-
-Microsoft Graph API integration plugin. The default export attempts to initialize the application access token at startup when `MICROSOFT_TENANT_ID` and `MICROSOFT_CLIENT_ID` are configured; otherwise it logs a warning and Microsoft Graph features remain unavailable. If the token endpoint is unreachable or returns a non-success status, Graph features stay unavailable while the core app continues starting. When a persistent `MICROSOFT_WEBHOOK_STATE` is configured, startup creates a webhook subscription on first setup and refreshes the existing subscription when `MICROSOFT_WEBHOOK_ID` is set. All Microsoft Graph API calls are centralized in this file for auditability.
-
-::: warning Security Policy All Microsoft Graph API calls MUST be made through the wrappers in this file. Never call the Graph API directly from other modules. :::
-
-#### Token Management
-
-| Function | Description |
-| --- | --- |
-| `initializeMSAccessToken()` | Obtains an app-level access token via client credentials flow |
-| `getMSAccessToken()` | Returns the cached app-level token (lazy-initializes on first use) |
-| `initializeDummyUserAccessToken()` | Obtains a user-level token via ROPC flow for chat operations |
-| `getDummyUserAccessToken()` | Returns the cached user-level token |
-
-**App-level token:** Used for administrative operations (creating meetings, managing webhooks). Uses `client_credentials` grant type.
-
-**User-level token:** Used for chat operations (sending messages). Uses ROPC (Resource Owner Password Credentials) grant type with the dummy user. Auto-refreshes on 401 errors.
-
-#### Meeting Management
-
-```ts
-export async function createMicrosoftMeeting(
-    target: string,
-    subject: string,
-    htmlDescription: string,
-    startTime: string,
-    endTime: string,
-    attendees: any[],
-): Promise<Response>;
-```
-
-Creates a Microsoft Teams calendar event on behalf of a target user. Appends an auto-generated disclaimer to the event description.
-
-#### Chat Operations
-
-```ts
-export async function createOrGetExistingDirectChat(targetId: string): Promise<{ id: string }>;
-```
-
-Creates or retrieves a 1:1 chat between the dummy user and a target user. Results are cached in-memory (`directChatCache` map) to avoid repeated Graph API calls.
-
-```ts
-export async function sendChatMessage(chatId: string, content: string): Promise<Response>;
-export async function sendRichChatMessage(chatId: string, content: string): Promise<Response>;
-```
-
-Sends a plain text or HTML message to a Microsoft Teams chat.
-
-#### Webhook Management
-
-```ts
-export async function initializeChatbotWebhook(): Promise<void>;
-```
-
-Creates a Microsoft Graph subscription for chat message notifications:
-
-- **Change type:** `created,updated`
-- **Resource:** `/chats/getAllMessages`
-- **Notification URL:** `{CURRENT_URL_ORIGIN}/api/_webhooks/update`
-- **Lifecycle URL:** `{CURRENT_URL_ORIGIN}/api/_webhooks/lifecycle`
-- **Expiration:** 1 day (must be refreshed regularly)
-- **Client state:** Random 89-byte base64url string for validation
-
-```ts
-export async function refreshChatbotWebhook(): Promise<void>;
-```
-
-Extends the webhook subscription expiration by 1 day.
-
-```ts
-export function getMicrosoftWebhookState(): string | null;
-export function getChatbotWebhookId(): string | null;
-```
-
-Returns the current webhook state and subscription ID.
-
-#### Polling
-
-```ts
-export async function pollChatbotMessages(): Promise<void>;
-```
-
-Manually polls chat messages via the delta endpoint (fallback for webhook failures).
-
-#### Internal Request Helpers
-
-| Function | Description |
-| --- | --- |
-| `requestMicrosoft(endpoint, method, body)` | Makes an authenticated request using the app-level token (refreshes once on 401) |
-| `requestUserMicrosoft(endpoint, method, body)` | Makes an authenticated request using the user-level token (auto-refreshes on 401) |
+`server/plugins/microsoft.ts`, its ROPC user credentials, and the webhook validation helpers were removed. The legacy `POST /api/_webhooks/update` and `POST /api/_webhooks/lifecycle` paths remain registered only to return `404`. There is no Microsoft Graph dependency at startup.
 
 ---
 
 ## Middleware
+
+### 00.request-id.ts
+
+Accepts an incoming `x-request-id` matching `^[A-Za-z0-9._-]{8,128}$` or generates a UUID. Stores it in `event.context.requestId` and echoes it on every response. Audit rows and 5xx logs use the same value.
+
+### 00.request-log.ts
+
+Emits one JSON line after the response finishes, with `event`, `method`, `pathname`, `status`, `duration_ms`, `request_id`, and the user ID when the session was resolved. Static asset paths and file extensions are skipped. It never logs a query string, body, cookie, or token.
+
+### 00.request-rate-gate.ts
+
+Consumes one request from a per-IP fixed window before any body is buffered. It skips `/api/health*` and `/api/auth/basis/backchannel`, and returns `429` with `Retry-After` when the gate is exhausted. Route-level limits still apply.
 
 ### security-headers.ts
 
@@ -184,7 +103,9 @@ Applies a baseline set of HTTP security headers to every Nitro response (HTML pa
 | Header | Value | Purpose |
 | --- | --- | --- |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | Enforce HTTPS for two years, include subdomains, and declare HSTS preload eligibility. |
-| `X-Frame-Options` | `DENY` | Prevent clickjacking by disallowing framing. |
+| `X-Frame-Options` | `DENY`; `SAMEORIGIN` only on `/docs*` | Prevent clickjacking; allow the admin portal to embed the protected docs. |
+| `Cross-Origin-Opener-Policy` | `same-origin` | Isolate the browsing context from cross-origin openers. |
+| `Cross-Origin-Resource-Policy` | `same-origin` | Restrict subresources to the same origin. |
 | `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing. |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Send full URL for same-origin requests, only origin for cross-origin. |
 | `Permissions-Policy` | `camera=(), microphone=(), ...` | Disable powerful browser features the app does not use. |

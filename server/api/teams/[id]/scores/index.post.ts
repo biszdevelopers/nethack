@@ -2,12 +2,12 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { SubmitTeamScoresRequest, TeamIdParams } from "~~/shared/schemas";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { getTeam } from "~~/server/utils/database/teams";
-import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { rubricVersions } from "~~/server/database/schema";
 import { and, eq } from "drizzle-orm";
 import { databaseErrorCodes, firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { isJudgingOpen } from "~~/server/utils/judging";
+import { getEventState } from "~~/server/utils/event-state";
+import { getJudgeScope, isJudgingOpen, judgeCanEvaluate } from "~~/server/utils/judging";
 import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import {
     commentContainsJudgeIdentity,
@@ -27,11 +27,9 @@ export default defineEventHandler(
             });
         }
 
-        const [hackathon, season] = await Promise.all([
-            getHackathon(event),
-            getActiveSeason(event),
-        ]);
-        if (!isJudgingOpen(hackathon) || !season) {
+        const state = await getEventState(event);
+        const season = state.season;
+        if (!isJudgingOpen(state.hackathon, season) || !season) {
             throw createError({
                 status: 409,
                 message: "Scoring is not open",
@@ -52,6 +50,13 @@ export default defineEventHandler(
             throw createError({
                 status: 400,
                 message: "Team has not submitted a project",
+            });
+        }
+        const scope = await getJudgeScope(event.context.drizzle, season.id, judge.id);
+        if (!judgeCanEvaluate(scope, team)) {
+            throw createError({
+                status: 403,
+                message: "This project is outside your judging assignment",
             });
         }
 

@@ -14,17 +14,18 @@ The platform manages the entire hackathon lifecycle:
 | Feature | Description |
 | --- | --- |
 | **Hackathon Management & Scheduling** | Control event state (`not_started`, `in_progress`, `voting`, `finished`, `paused`), schedule start and end times, and manage the event timeline. |
-| **Editable Announcements** | The home-page message is an admin-editable season field stored in PostgreSQL, so organizers can publish preparation news without editing code or a remote manifest. Empty announcements are hidden. |
+| **Editable announcements** | The home-page message is an admin-editable season field stored in PostgreSQL and shown inside the schedule section. Empty announcements are hidden. |
 | **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. Invited users accept from their dashboard before they join. |
-| **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, and sourcing information. Submissions are accepted only during `not_started` or `in_progress` states. |
-| **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. |
-| **Judge Scoring** | Judges use season-specific, versioned weighted rubrics with track-specific criteria and integer score ranges. Guided comment prompts and templates help judges write useful anonymous feedback. |
+| **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, a required demonstration video URL, and a required AI-use disclosure (with an explicit "No AI used" option). Submission requires checklist acknowledgement and is irreversible; an administrator can reopen it before results. |
+| **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. Ballots are retained per user and season. |
+| **Results** | People's Choice aggregates one unit per voting team and reports turnout after voting closes and results are published. The public results page shows standings, awards, certificates, the public rubric, and calendar milestones. |
+| **Judge Scoring** | Judges use season-specific, versioned weighted rubrics with track-specific criteria and integer score ranges. Assignments narrow a judge to a pathway or team, and recusals remove conflicts. Guided comment prompts and templates help judges write useful anonymous feedback. |
 | **Published Feedback** | Competitors can review anonymous comments after results are published and at least three judges have evaluated their team. Organizers can inspect full feedback, including judge identities, at any time. Configurable score curves change display only and preserve original scores and rankings. |
-| **Mod Portal** | Administrative dashboard for managing users, teams, seasons, and debug tools. |
-| **Graph API** | Independent meeting scheduling and Teams chat integration. It is not an authentication provider. |
+| **Mod Portal** | Administrative dashboard for users, teams, seasons, awards, audit log, judge coverage and flags, preflight, standings, and debug tools. |
+| **Notifications and Audit** | Team invitations, accepted invitations, results publication, and judge flags create in-app notifications. Administrative mutations write an immutable audit row with actor, before/after, reason, and request ID. |
 | **DeepSeek AI Chatbot** | In-memory chat session store powered by the OpenAI SDK for DeepSeek AI interactions in debug routes. |
 | **SafeLink / SafeComark Components** | Client-side components that sanitize user-provided links and markdown content. `SafeComark` renders `@comark/vue`'s `Markdown` with default plugins disabled, line breaks preserved, and every link mapped to `SafeLink`. |
-| **Security Middleware** | A middleware pipeline including HTTP security headers (6 headers, 10 CSP directives), debug route lockdown (`DISABLE_DEBUG_ROUTES`), and rate limiting (5 tiers). |
+| **Security Middleware** | A middleware pipeline including request IDs and structured logs, a pre-body rate gate, HTTP security headers, debug route lockdown (`DISABLE_DEBUG_ROUTES`), CSRF checks, and fixed-window rate limits. |
 | **Season Showcases** | Public, art-directed winner experiences and a season-driven archive of submitted project descriptions, demos, repositories, awards, and published ranks from past rounds. |
 
 ## Technology Stack
@@ -60,7 +61,7 @@ Authentication is delegated to one provider:
 
 ### basis-auth
 
-The browser uses basis-auth discovery and authorization code with S256 PKCE, state, nonce, a confidential client secret, validated ID tokens, and UserInfo. The first verified login can attach to an existing user by normalized email; repeat logins resolve by stable issuer and subject. Graph credentials are used only for independent Graph features.
+The browser uses basis-auth discovery and authorization code with S256 PKCE, state, nonce, a confidential client secret, validated ID tokens, and UserInfo. The first verified login can attach to an existing user by normalized email; repeat logins resolve by stable issuer and subject. Administrator access comes from the verified permission claim plus the local `is_admin` flag; the `INITIAL_ADMIN_EMAILS` allowlist elevates those addresses at sign-in.
 
 ## Roles & Permissions
 
@@ -101,11 +102,11 @@ The platform supports multiple hackathon seasons stored in the `seasons` table. 
 
 - **Name**: the display name of the season.
 - **Active status**: only one season can be active at a time (partial unique index on `is_active`).
-- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `show_scores`, `show_ranking`, `max_votes_per_user`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The active season uses settings from `HACKATHON.yml` plus PostgreSQL live overrides (including the announcement).
+- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `results_published_at`, `results_snapshot`, `show_scores`, `show_ranking`, `max_votes_per_user`, `max_team_members`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The manifest seeds values for a new installation, while PostgreSQL owns every editable setting and the active season's live state.
 
-Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed.
+Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed. A new season copies only the schedule, theme, and rubric; its operational switches start off. Publishing results writes a timestamp and standings snapshot and freezes voting and judging unless they are explicitly reopened.
 
-Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings are edited in the configured YAML manifest; a local manifest is written in place by the portal, while a remote manifest stays read-only. The administration page also updates stored settings for other seasons, and new seasons start as a copy of the live event.
+Season management happens through the `/api/seasons/` endpoints and the Seasons page at `/developers/season`. The page separates running the event from editing season settings and from site-wide settings. Running uses explicit stage actions, season settings use one explicit save, and the award catalog is managed separately because it is not season-specific. The manifest seeds and is compared against PostgreSQL values but is never written by the portal.
 
 ## Directory Structure
 
@@ -122,14 +123,19 @@ nethack/
 │   ├── pages/                  # File-based routing
 │   │   ├── dashboard/          # Dashboard pages (teams, general, results)
 │   │   ├── developers/         # Admin/mod portal
+│   │   │   ├── audit.vue       # Audit log
+│   │   │   ├── awards.vue      # Award definitions and assignments
 │   │   │   ├── debug.vue       # Debug tools
 │   │   │   ├── deepseek.vue    # DeepSeek AI chat interface
+│   │   │   ├── judging.vue     # Judge coverage and flags
 │   │   │   ├── season.vue      # Hackathon Administration (seasons + config)
 │   │   │   ├── teams.vue       # Team management
 │   │   │   └── users.vue       # User management
 │   │   ├── user/               # User profile pages
-│   │   ├── api/oauth2/         # OAuth2 authorize page
 │   │   ├── judging/            # Judge scoring interface
+│   │   ├── notifications.vue   # Notification list
+│   │   ├── projects.vue        # Public gallery after peer voting opens
+│   │   ├── results.vue         # Public results after publication
 │   │   ├── voting.vue          # Peer voting interface
 │   │   └── showcase.vue        # Project showcase
 │   ├── utils/                  # Frontend utilities (consts, errors, loading)
@@ -147,17 +153,21 @@ nethack/
 │   │   ├── teams/              # Team CRUD, member management, scoring, submission
 │   │   ├── users/              # User CRUD and profile pictures
 │   │   └── _webhooks/          # Lifecycle and update webhooks
+│   ├── routes/                 # Health, calendar.ics, sitemap, security.txt, docs
 │   ├── middleware/             # Server middleware
-│   │   ├── security-headers.ts # HTTP security headers (6 headers, CSP, HSTS, etc.)
+│   │   ├── 00.request-id.ts    # Request IDs
+│   │   ├── 00.request-log.ts   # Bounded JSON request logs
+│   │   ├── 00.request-rate-gate.ts # Pre-body per-IP gate
+│   │   ├── security-headers.ts # HTTP security headers (CSP, HSTS, etc.)
 │   │   ├── debug-lockdown.ts   # Disables debug routes in production via DISABLE_DEBUG_ROUTES
 │   ├── database/               # Drizzle ORM schema, migration runner, and DB wrapper
 │   │   ├── schema.ts           # Drizzle table definitions
 │   │   ├── migrate.ts          # Custom migration runner, legacy schema repair, seeding
 │   │   └── index.ts            # Bounded PostgreSQL pool and Drizzle instance
 │   ├── plugins/                # Nitro plugins
-│   │   ├── init-database.ts    # Database initialization and attach Drizzle to event context
-│   │   ├── microsoft.ts        # MS Graph API token initialization and centralized API calls
-│   │   └── validate-environment.ts # Session and basis-auth configuration guard
+│   │   ├── api-envelope.ts     # Canonical response envelope
+│   │   ├── init-database.ts    # Database initialization and migrations
+│   │   └── validate-environment.ts # Fail-fast configuration guard
 │   ├── types/                  # Type augmentations (H3EventContext, OAuth2 JWT)
 │   └── utils/                  # Server utilities
 │       ├── database/           # Per-table DB helpers
@@ -171,8 +181,11 @@ nethack/
 │       │   ├── teams.ts
 │       │   └── users.ts
 │       ├── auth.ts             # requireUser / optionalUser permission helpers
+│       ├── event-state.ts      # Submission, voting, judging, gallery, results gates
+│       ├── audit.ts            # Administrative audit rows
+│       ├── notifications.ts    # In-app notifications
 │       ├── convert.ts          # DB row to public API object transformers
-│       ├── rateLimit.ts        # In-memory rate limiter (5 tiers: general/judging-draft/auth/vote/upload)
+│       ├── rateLimit.ts        # Fixed-window in-memory rate limiter
 │       ├── basis-auth.ts       # OIDC discovery, PKCE login, callback and UserInfo
 │       ├── oauth2.ts           # Public-origin helper
 │       ├── oauth2-jwt.ts       # basis-auth resource-token validation
@@ -203,9 +216,7 @@ nethack/
 ├── tests/                      # Vitest test suite
 │   ├── setup.ts                # Global test setup, in-memory DB, mocks
 │   ├── **/*.test.ts            # API, server utility, shared, component, page, etc.
-│   ├── index.js                # Legacy test runner (kept for reference)
-│   ├── test.deepseek.ts        # Legacy DeepSeek API tests (reference)
-│   └── test.microsoft.ts       # Legacy MS Graph API tests (reference)
+│   └── index.js                # Legacy test runner (kept for reference)
 │
 ├── bun-shim/                   # Compatibility shim for `bun test`
 │   └── shim.test.ts            # Prints guidance to use `bun run test`
@@ -225,11 +236,11 @@ The configured `HACKATHON.yml` controls the global event state. The status field
 
 | Status | Description |
 | --- | --- |
-| `not_started` | Before the event: teams can form and submit projects. |
-| `in_progress` | During the event: project submissions are accepted. |
-| `voting` | After the event: the voting phase; peer voting and judging follow their portal toggles. |
-| `finished` | Event completed: the finishing phase; results visibility follows its portal toggles. |
-| `paused` | Event paused for maintenance. |
+| `not_started` | Before the event: teams can form and submit projects before the deadline. |
+| `in_progress` | During the event: project submissions are accepted before the deadline. |
+| `voting` | Submissions are closed, the public gallery opens, and peer voting and judging follow their switches and deadlines. |
+| `finished` | Event completed: the public gallery stays open, and results visibility follows publication. Publishing freezes judging unless `JUDGING_AFTER_PUBLISH` is on. |
+| `paused` | Event paused for maintenance; every mutation and both voting/judging gates are closed. |
 
 ### Pathways
 

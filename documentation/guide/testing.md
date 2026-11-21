@@ -112,4 +112,4 @@ To prevent accidental use, `bunfig.toml` scopes `bun test` to a single shim (`bu
 
 ## Legacy Test Scripts
 
-`tests/index.js`, `tests/test.oauth2.js`, `tests/test.microsoft.ts`, and `tests/test.deepseek.ts` are legacy manual test runners kept for reference. They are not part of the active Vitest suite and do not contribute to coverage.
+`tests/index.js`, `tests/test.oauth2.js`, and `tests/test.deepseek.ts` are legacy manual test runners kept for reference. They are not part of the active Vitest suite and do not contribute to coverage.

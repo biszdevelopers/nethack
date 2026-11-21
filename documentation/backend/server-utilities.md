@@ -42,7 +42,15 @@ The database layer uses Drizzle ORM. The canonical schema lives in `server/datab
 export async function createDrizzleDatabase(): Promise<DrizzleDatabase>;
 ```
 
-Creates the process-wide Drizzle ORM instance backed by a bounded `postgres` connection pool. It validates the PostgreSQL URL and pool size before connecting.
+Creates the process-wide Drizzle ORM instance backed by a bounded `postgres` connection pool. It validates the PostgreSQL URL and pool size before connecting. Connections use `statement_timeout = 15s`, `idle_in_transaction_session_timeout = 30s`, a 20-second idle timeout, a 30-minute maximum lifetime, and `prepare: false`.
+
+### Database observability
+
+`DATABASE_METRICS=1` installs bounded query and pool-acquisition histograms plus a slow-query logger. Slow queries above `DATABASE_SLOW_QUERY_MS` (default 250) log the duration and threshold, never the SQL text, and are capped at 20 lines per minute.
+
+### Query helpers
+
+`server/utils/database/query.ts` provides `firstRow`, `changedRows`, `lockForUpdateIfSupported`, `supportsRowLocks`, `isUniqueViolation`, `databaseErrorCodes`, `requestCache`, and `invalidateRequestCaches`. `requestCache(event, key, load)` memoizes one lookup for the request in a `WeakMap`; a rejected load is evicted so a later caller can retry. `invalidateRequestCaches(event)` clears the scope after a write that the request later reads back.
 
 ### `getDb`
 
@@ -76,32 +84,34 @@ Parses a `"mode|value"` string from the database into a `{ mode, value }` object
 ### `convertUserToPublic`
 
 ```ts
-export function convertUserToPublic(user: User): APIUser;
+export function convertUserToPublic(
+    user: User,
+    options?: { includeEmail?: boolean; includeTeam?: boolean },
+): APIUser;
 ```
 
 Strips internal fields from a `User` row and returns a public `APIUser`:
 
-| Output Field      | Source                           |
-| ----------------- | -------------------------------- |
-| `id`              | `user.id`                        |
-| `email`           | `user.email`                     |
-| `role`            | `user.role`                      |
-| `name`            | `user.name`                      |
-| `team_id`         | `user.team_id`                   |
-| `profile_theme`   | Parsed from `user.profile_theme` |
-| `profile_picture` | `user.profile_picture`           |
+| Output Field      | Source                                               |
+| ----------------- | ---------------------------------------------------- |
+| `id`              | `user.id`                                            |
+| `email`           | `user.email` (omitted when `includeEmail` is false)  |
+| `name`            | `user.name`                                          |
+| `team_id`         | `user.team_id` (omitted when `includeTeam` is false) |
+| `profile_theme`   | Parsed from `user.profile_theme`                     |
+| `profile_picture` | `user.profile_picture`                               |
 
 ### `convertTeamToPublic`
 
 ```ts
 export function convertTeamToPublic(
     team: Team,
-    withScore: boolean = false,
+    options: { withScore?: boolean; withRank?: boolean } | boolean = {},
     awards: ResolvedAward[] = [],
 ): APITeam;
 ```
 
-Converts a `Team` row to a public `APITeam`. The `withScore` parameter controls whether the score is included (default: `false`). Pass resolved awards to include them in the `awards` array.
+Converts a `Team` row to a public `APITeam`. A boolean second argument is treated as `withScore`; the object form controls score and rank independently (`withRank` defaults to true). Pass resolved awards to include them in the `awards` array.
 
 | Output Field | Source                                                         |
 | ------------ | -------------------------------------------------------------- |
@@ -120,7 +130,7 @@ The `project` object also includes `submitted` (boolean) and `sourcing`.
 
 ## rateLimit.ts
 
-In-memory rate limiting middleware with five pre-configured tiers.
+In-memory fixed-window rate limiting with pre-configured tiers. A request reads and increments one bucket, so both operations are O(1).
 
 ### Built-in tier configurations
 
@@ -131,6 +141,8 @@ In-memory rate limiting middleware with five pre-configured tiers.
 | `AUTH_RATE_LIMIT_CONFIG` | 200 req/min | `RATE_LIMIT_AUTH_MAX` | `auth` | Authentication routes |
 | `VOTE_RATE_LIMIT_CONFIG` | 300 req/min | `RATE_LIMIT_VOTE_MAX` | `vote` | `/api/ballot`, `/api/teams/:id/scores` |
 | `UPLOAD_RATE_LIMIT_CONFIG` | 100 req/min | `RATE_LIMIT_UPLOAD_MAX` | `upload` | Upload routes |
+| `BACKCHANNEL_RATE_LIMIT_CONFIG` | 600 req/min | `RATE_LIMIT_BACKCHANNEL_MAX` | `backchannel` | basis-auth backchannel receiver |
+| `REQUEST_GATE_RATE_LIMIT_CONFIG` | 6000 req/min per IP | `RATE_LIMIT_REQUEST_GATE_MAX` | `gate` | Pre-body gate on `/api/*` |
 
 ### Configuration interface
 
@@ -149,10 +161,11 @@ interface RateLimitConfig {
 export async function getClientIdentifier(event: H3Event): Promise<string>;
 ```
 
-Returns a unique identifier for the client using a two-tier strategy:
+Returns a unique identifier for the client:
 
-1. **Authenticated requests**: `user:{id}` — extracted from the basis-auth session via `readBasisAuthUserSession(event)`.
-2. **Unauthenticated requests**: `ip:{address}` — uses the direct socket peer by default, or `unknown`. Set `TRUSTED_PROXY_HOPS` to the exact 0–10 proxy count to select the first untrusted address from a valid `x-forwarded-for` chain.
+1. **Session user**: `user:{id}` — read from the basis-auth session when available.
+2. **Bearer token**: `bearer:{sha256-prefix}` — stable per token without verifying it on every request.
+3. **IP address**: `ip:{address}` — the socket peer by default. Set `TRUSTED_PROXY_HOPS` to the exact 0–10 proxy count to select the entry that many positions from the right of a valid `x-forwarded-for` chain.
 
 This ensures authenticated users are not rate-limited by other users' activity behind a shared NAT, while unauthenticated users are still protected at the IP level.
 
@@ -169,19 +182,53 @@ Wraps an API handler with rate limiting. Returns 429 with a `Retry-After` header
 
 **Features:**
 
-- Per-identifier request tracking with sliding window.
+- Per-identifier fixed windows with O(1) increment and reset.
 - Optional custom `keyGenerator` and `keyPrefix`.
-- Interval-based cleanup of stale entries every 5 minutes.
-- Hard cap of 10,000 tracked keys to prevent unbounded memory growth.
+- Map insertion order doubles as an LRU list; the map is capped at 10,000 keys and trims to 9,000.
 - `maxRequests <= 0` is treated as always-limited.
+- `consumeRateLimit(identifier, config, now?)` exposes the same decision without an H3 event; the pre-body gate uses it.
 
 ### `clearRateLimitHistory`
 
 ```ts
 export function clearRateLimitHistory(): void;
+export function getTrackedRateLimitKeys(): number;
 ```
 
-Clears the in-memory rate limit history. Exposed primarily for tests.
+Clear or inspect the in-memory counters. Exposed primarily for tests.
+
+## event-state.ts
+
+Resolves the event gates once per request and caches the result in a `WeakMap` keyed by the event.
+
+```ts
+interface EventGates {
+    paused: boolean;
+    submissionsOpen: boolean;
+    submissionsClosed: boolean;
+    votingOpen: boolean;
+    judgingOpen: boolean;
+    galleryPublic: boolean;
+    resultsVisible: boolean;
+}
+```
+
+- Submissions require `not_started` or `in_progress`, not `paused`, and `now <= end_timestamp + SUBMISSION_GRACE_MS` when deadlines are enforced.
+- `/api/seasons/active` and the team endpoints expose the gallery gate. The active-season gallery and team detail are private to members, judging staff, and administrators until the event enters peer voting, even if the submission deadline has passed while the season is still in progress.
+- Voting closes at `voting_end_timestamp`; judging is frozen after publication in a finished season unless `JUDGING_AFTER_PUBLISH` is on.
+- `invalidateEventStateCache(event)` clears the request cache after a settings mutation.
+
+## audit.ts
+
+`writeAuditEvent(db, event, entry)` appends an `admin_audit_events` row inside the caller's transaction. It stores the validated actor ID, a stable action and entity, optional before/after JSON, an optional reason, and the request ID. Never include secrets in the payloads.
+
+## notifications.ts
+
+- `createNotification(db, userId, input)`
+- `notifyUserByEmail(event, { email, ...input })` — silently skips an address without an account
+- `notifyTeamOwner(event, team, input)` — falls back to the earliest current member when ownership is unset
+- `notifySeasonParticipants(event, seasonId, input)` — batches current members of submitted teams in chunks of 250
+- `deleteNotificationsForUsers(db, userIds)`
 
 ---
 
@@ -435,7 +482,9 @@ Computes weighted judge scores and rankings for a season.
 export async function computeScores(event: H3Event, seasonID: number): Promise<void>;
 ```
 
-`calculateSeasonScores` reads each saved evaluation with its pinned rubric version, normalizes the configured criterion ranges, applies the per-track weights, and calculates the arithmetic mean across judges. Tied teams share a rank. A judge finalization reads only that project's saved evaluations plus the current track's cached score/rank values, then writes the project score and ranks that changed. This avoids reloading and recomputing every evaluation in the season for each submitted ballot. The authorized admin recompute action still uses `computeScores` to rebuild the full season and persists results in batches.
+`calculateSeasonScores` reads each saved evaluation with its pinned rubric version, normalizes the configured criterion ranges, applies the per-track weights, and calculates the arithmetic mean across judges. It ranks by exact score, then the highest-weight criterion, submission time, and team ID; teams with identical results share a competition rank, and `withdrawn`, `disqualified`, and `no_show` teams receive no rank.
+
+`calculateSeasonScoresWithDatabase` writes a batch of 250 teams per statement using `UPDATE ... FROM (VALUES ...)`. This avoids evaluating one CASE arm per team and keeps the transaction's touch count proportional to the number of batches. A judge finalization reads only that project's saved evaluations plus current track values; the authorized admin recompute action rebuilds the full season.
 
 ---
 
@@ -454,8 +503,8 @@ Per-table database helper modules in `server/utils/database/`.
 | `updateUserName(event, user)` | Update user's name |
 | `updateUserProfileTheme(event, user)` | Update user's profile theme |
 | `updateUserProfilePicture(event, user)` | Update user's profile picture |
-| `updateUserRole(event, userID, role)` | Update user's role |
-| `deleteUsers(event, userIDs)` | Delete users and their related records, including owned OAuth2 applications |
+| `deleteUsers(event, userIDs)` | Delete users and their related records, detach legacy OAuth2 applications, and refuse to remove the last administrator |
+| `findOrLinkBasisAuthUser` | Also applies `INITIAL_ADMIN_EMAILS` elevation at sign-in |
 
 ### teams.ts
 
@@ -469,7 +518,10 @@ Per-table database helper modules in `server/utils/database/`.
 | `getTeamBySeason(event, teamID, seasonId)` | Get team by ID and season |
 | `getAllTeamsAllSeasons(event)` | Get all teams across all seasons |
 | `getTeamsBySeason(event, seasonId)` | Get teams by season ID |
-| `createTeam(event, teamName)` | Create a new team in the active season; throws 403 if no season is active |
+| `createTeam(event, teamName, ownerUserID)` | Create a new team in the active season with its owner |
+| `canManageTeam(team, user)` | Owner check; a legacy team without an owner remains manageable by its members |
+| `transferTeamOwnership(event, teamID, userID)` | Move roster controls to another current member |
+| `disbandTeam(event, teamID)` | Record member history, detach members, delete invitations, and set `status = 'withdrawn'` |
 | `updateTeam(event, team)` | Update all team fields; throws 404 if the team does not exist |
 | `deleteTeams(event, teamIDs)` | Delete teams and related records |
 
@@ -490,7 +542,13 @@ Per-table database helper modules in `server/utils/database/`.
 | `getUserPastTeams(event, userID)` | Get teams a user was previously in |
 | `addUserPastTeam(event, userID, teamID)` | Record a past team membership |
 | `removeTeamMember(event, teamID, userID)` | Remove a member (records past team first); rejects removing the last member with 409 so the team cannot be orphaned |
-| `addTeamMember(event, teamID, userID)` | Add a member to a team |
+| `addTeamMember(event, teamID, userID)` | Add a member to a team, allowing a pointer from an earlier season |
+| `getTeamMemberLimit(event)` | Read the active season's `max_team_members`, with the historical default as a fallback |
+| `createTeamInvite(event, teamID, email, invitedBy)` | Store a SHA-256 token digest and expiry; return the raw token once |
+| `getTeamInvites(event, teamID)` | List non-expired invitations without tokens |
+| `acceptTeamInvite(event, inviteID, user)` | Accept by row ID after email, expiry, season, status, and capacity checks |
+| `acceptTeamInviteByToken(event, token, user)` | Accept by hashing the raw token and matching its digest |
+| `declineTeamInvite(event, inviteID, email)` | Delete an invitation addressed to the caller |
 
 ### hackathon.ts
 
@@ -525,6 +583,14 @@ Per-table database helper modules in `server/utils/database/`.
 
 `SEASON_TWEAK_FIELDS` lists the tweakable columns shared by the `seasons` and `hackathon` tables.
 
+### judging.ts
+
+`getJudgeScope(db, seasonId, judgeUserId)` returns `{ assigned, allProjects, teamIds, pathways, recusedTeamIds }`. `judgeScopeWhere(scope)` turns it into a SQL predicate, and `judgeCanEvaluate(scope, team)` applies the same rule in memory. With no assignment rows, all submitted projects remain visible. An assignment with neither a pathway nor a team grants all projects; otherwise it narrows to the listed pathway or team. Recusals always remove a team. `isJudgingOpen(hackathon, season)` applies the paused, switch, and publication rules.
+
+### judge-flags.ts
+
+`upsertJudgeFlag`, `resolveJudgeFlag`, and `getJudgeFlags` manage the organizer conflict queue. Upserting reopens a resolved flag, writes a `judging.flag` audit row, and notifies every administrator. Resolution writes `judging.flag_resolved`.
+
 ### peer-voting.ts
 
 **File:** `server/utils/database/peer-voting.ts`
@@ -546,25 +612,4 @@ Per-table database helper modules in `server/utils/database/`.
 | `deleteTeamAwards(event, teamId)`         | Delete all awards for a team           |
 | `deleteAward(event, teamId, award)`       | Delete a specific award for a team     |
 
-Award definitions live in the PostgreSQL `awards` table.
-
-### oauth2_applications.ts
-
-| Function | Description |
-| --- | --- |
-| `getOAuth2ApplicationCountByOwner(event, ownerId)` | Count applications owned by a user |
-| `getOAuth2Application(event, clientID)` | Get an application by client ID |
-| `getAllOAuth2Applications(event)` | List all applications |
-| `deleteOAuth2Applications(event, clientIDs)` | Delete applications by client ID |
-| `getOAuth2ApplicationSecretAbbreviated(event, clientID)` | List abbreviated secret hashes |
-| `addOAuth2ApplicationSecret(event, clientID)` | Add a new secret (SHA-256 hashed) |
-| `removeOAuth2ApplicationSecret(event, clientID, abbreviated)` | Remove a secret by abbreviated hash |
-| `validateOAuth2ApplicationSecret(event, clientID, plainSecret)` | Validate a secret against stored hashes |
-| `getOAuth2ApplicationRedirectUris(event, clientID)` | List redirect URIs |
-| `addOAuth2ApplicationRedirectUri(event, clientID, uri)` | Add a redirect URI |
-| `removeOAuth2ApplicationRedirectUri(event, clientID, uri)` | Remove a redirect URI |
-| `getOAuth2ApplicationScopes(event, clientID)` | List configured scopes |
-| `addOAuth2ApplicationScopes(event, clientID, scopes)` | Add scopes |
-| `removeOAuth2ApplicationScope(event, clientID, scope)` | Remove a scope |
-
-**Max applications per user:** 2 (`MAX_APPLICATIONS_PER_USER`).
+Award definitions live in the PostgreSQL `awards` table and are managed through `/api/admin/awards`.

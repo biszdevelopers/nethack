@@ -11,7 +11,8 @@ import {
     seedUser,
     type TestContext,
 } from "./helpers";
-import { awards, teamAwards, teamScores } from "~~/server/database/schema";
+import { awards, teamAwards, teamScores, teams } from "~~/server/database/schema";
+import { eq } from "drizzle-orm";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
@@ -346,6 +347,36 @@ describe("GET /api/admin/teams", () => {
         expect(result[0]).toHaveProperty("members", []);
         expect(result[1]).toHaveProperty("name", "Team B");
         expect(result[1]).toHaveProperty("members", []);
+    });
+
+    it("returns the operational status, owner, submission time, and exact score", async () => {
+        gRequirePermission().mockResolvedValue({ id: 1, role: "admin" });
+
+        const owner = seedUser(ctx, { email: "owner@basischina.com" });
+        const team = seedTeam(ctx, {
+            name: "Readiness Team",
+            owner_user_id: owner.id,
+            status: "withdrawn",
+            project_video_url: "https://www.youtube.com/watch?v=example",
+        });
+        const submittedAt = new Date("2026-05-06T07:08:09.000Z");
+        ctx.drizzle
+            .update(teams)
+            .set({ score_exact: 87.5, submitted_at: submittedAt })
+            .where(eq(teams.id, team.id))
+            .run();
+
+        const result = await teamsHandler(createEvent());
+
+        expect(result[0]).toMatchObject({
+            status: "withdrawn",
+            owner_user_id: owner.id,
+            score_exact: 87.5,
+            project_video_url: "https://www.youtube.com/watch?v=example",
+        });
+        expect(new Date(result[0].submitted_at as Date).toISOString()).toBe(
+            submittedAt.toISOString(),
+        );
     });
 
     it("returns members grouped by team", async () => {

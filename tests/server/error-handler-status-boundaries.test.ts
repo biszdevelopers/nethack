@@ -47,7 +47,7 @@ describe("canonical error handler status boundaries", () => {
             status,
             code: status,
             error,
-            error_description: "safe failure",
+            error_description: status === 401 ? "Invalid access token" : "safe failure",
         });
         expect(h3.setResponseStatus).toHaveBeenCalledWith(event, status);
         expect(h3.setResponseHeader).toHaveBeenCalledWith(event, "cache-control", "no-store");

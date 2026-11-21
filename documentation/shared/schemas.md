@@ -17,10 +17,10 @@ All configurable length limits are defined as exported constants at the top of `
 | --- | --- | --- |
 | `MAX_EMAIL_LENGTH` | 254 | `BasisEmail` |
 | `MAX_PROJECT_NAME_LENGTH` | 100 | `ProjectName` |
-| `MAX_PROJECT_DESCRIPTION_LENGTH` | 2,147,483,647 | `ProjectDescription`, `UpdateTeamRequest.project.description` |
-| `MAX_PROJECT_SOURCE_LENGTH` | 2,147,483,647 | `UpdateTeamRequest.project.sourcing`, `SubmitTeamRequest.project.sourcing` |
+| `MAX_PROJECT_DESCRIPTION_LENGTH` | 10,000 | `ProjectDescription`, `UpdateTeamRequest.project.description` |
+| `MAX_PROJECT_SOURCE_LENGTH` | 2,000 | `UpdateTeamRequest.project.sourcing`, `SubmitTeamRequest.project.sourcing` |
 | `MAX_URL_LENGTH` | 2048 | `ProjectUrl`, `RequiredProjectUrl` |
-| `MAX_REASONING_LENGTH` | 2,147,483,647 | `CreateTeamScoresRequest.reasoning`, `SubmitVoteRequest.reasoning` |
+| `MAX_REASONING_LENGTH` | 10,000 | `CreateTeamScoresRequest.reasoning`, `SubmitVoteRequest.reasoning` |
 | `MAX_USER_NAME_LENGTH` | 50 | `UpdateUserRequest.name` |
 | `MAX_OAUTH2_CODE_LENGTH` | 1024 | `OAuth2TokenRequest.code` |
 | `MAX_CLIENT_ID_LENGTH` | 256 | `OAuth2TokenRequest.client_id`, `ApplicationIdParams` |
@@ -28,7 +28,6 @@ All configurable length limits are defined as exported constants at the top of `
 | `MAX_CODE_VERIFIER_LENGTH` | 128 | `OAuth2TokenRequest.code_verifier` |
 | `MAX_REDIRECT_URI_LENGTH` | 2048 | `OAuth2TokenRequest.redirect_uri` |
 | `MAX_SCOPE_LENGTH` | 128 | (scope string validation) |
-| `MAX_REASONING_LENGTH` | 2,147,483,647 | `CreateTeamScoresRequest.reasoning`, `SubmitVoteRequest.reasoning` |
 | `MAX_SECRET_ABBREVIATED_LENGTH` | 16 | Abbreviated client secret display |
 | `MAX_REASONING_LENGTH` | 2000 | `CreateTeamScoresRequest.reasoning`, `SubmitVoteRequest.reasoning` |
 | `MAX_VOTE_SCORES` | 200 | `SubmitVoteRequest.scores` array length |
@@ -193,7 +192,7 @@ Coerces string route params to positive integers. Used by:
 | `project.description` | `string` | Optional, max 2000 characters |
 | `project.demo_url` | `ProjectUrl` | Optional, valid URL or empty string (transformed to `null`) |
 | `project.repo_url` | `ProjectUrl` | Optional, valid URL or empty string (transformed to `null`) |
-| `project.sourcing` | `string` | Optional, max 2000 characters |
+| `project.sourcing` | `string` | Required at submission, max 2000 characters |
 
 **API endpoint:** `PATCH /api/teams/:id`
 
@@ -203,6 +202,8 @@ Coerces string route params to positive integers. Used by:
 | ----------- | --------------- | --------------------------------------------- |
 | `judging`   | `BooleanString` | Optional. Filters teams for judging view      |
 | `season_id` | `number`        | Optional. Positive integer, filters by season |
+| `limit`     | `number`        | Optional. 1–50; enables keyset pagination     |
+| `after`     | `number`        | Optional. Positive team ID cursor             |
 
 **API endpoint:** `GET /api/teams` (query parameters)
 
@@ -215,23 +216,54 @@ Coerces string route params to positive integers. Used by:
 
 **Project sub-schema:**
 
-| Field                 | Type                 | Constraints                   |
-| --------------------- | -------------------- | ----------------------------- |
-| `project.name`        | `ProjectName`        | Required, 1–100 characters    |
-| `project.description` | `ProjectDescription` | Required, 30–2000 characters  |
-| `project.demo_url`    | `RequiredProjectUrl` | Required, valid URL, max 2048 |
-| `project.repo_url`    | `RequiredProjectUrl` | Required, valid URL, max 2048 |
-| `project.sourcing`    | `string`             | Optional, max 2000 characters |
+| Field | Type | Constraints |
+| --- | --- | --- |
+| `project.name` | `ProjectName` | Required, 1–100 characters |
+| `project.description` | `ProjectDescription` | Required, 30–2000 characters |
+| `project.demo_url` | `RequiredProjectUrl` | Required, valid URL, max 2048 |
+| `project.repo_url` | `RequiredProjectUrl` | Required, valid URL, max 2048 |
+| `project.video_url` | `RequiredProjectUrl` | Required, valid URL, max 2048 |
+| `project.sourcing` | `string` | AI-use disclosure; required at submission (use the explicit "No AI used" value when applicable), max 2000 characters |
 
 **API endpoint:** `POST /api/teams/:id/submit`
 
 ### `AddTeamMemberRequest`
 
-| Field   | Type         | Constraints                       |
-| ------- | ------------ | --------------------------------- |
+| Field | Type | Constraints |
+| --- | --- | --- |
 | `email` | `BasisEmail` | Must be a `@basischina.com` email |
+| `allowUnclaimed` | `boolean` | Optional. Permit an invitation before the address has an account |
 
 **API endpoint:** `POST /api/teams/:id/users`
+
+### `TransferTeamOwnerRequest`
+
+| Field     | Type     | Constraints                                     |
+| --------- | -------- | ----------------------------------------------- |
+| `user_id` | `number` | Positive integer; must be a current team member |
+
+**API endpoint:** `PATCH /api/teams/:id/owner`
+
+### `TeamInviteTokenParams`
+
+| Field   | Type     | Constraints                                 |
+| ------- | -------- | ------------------------------------------- |
+| `token` | `string` | Exactly 64 lowercase hexadecimal characters |
+
+**API endpoint:** `POST /api/team-invites/token/:token/accept`
+
+### `JudgeFlagRequest` / `JudgeRecusalRequest`
+
+| Schema | Fields |
+| --- | --- |
+| `JudgeFlagRequest` | `{ team_id: number, reason: string (5–1000) }` |
+| `JudgeRecusalRequest` | `{ team_id: number, season_id?: number, reason?: string (max 500) }` |
+| `JudgeAssignmentRequest` | `{ judge_user_id: number, season_id?: number, pathway?: string \| null, team_id?: number \| null }`; pathway and team are mutually exclusive |
+| `AdminTeamStatusRequest` | `{ status: 'active' \| 'withdrawn' \| 'disqualified' \| 'no_show', reason?: string (max 500) }` |
+| `AdminTeamReopenRequest` | `{ reason?: string (max 500) }` |
+| `AdminAuditQuery` | `{ season_id?: number, limit: 1–200 (default 50) }` |
+| `NotificationsQuery` | `{ limit: 1–100 (default 50) }` |
+| `CreateAwardRequest` | `{ namespace, name, description?, icon, color? }`; namespace matches `^[a-z0-9][a-z0-9_-]*$` |
 
 ---
 
@@ -242,8 +274,7 @@ Coerces string route params to positive integers. Used by:
 | Field | Type | Constraints |
 | --- | --- | --- |
 | `name` | `string` | Optional, max 30 characters |
-| `profile_theme_image` | `File \| string \| null` | Optional. File must be ≤ 7 MiB and JPEG/JPG/PNG/GIF/WebP. String must be a valid base64 data URL for one of those types. `null` clears the image. |
-| `avatar` | `File \| string \| null` | Optional. Same constraints as `profile_theme_image`. |
+| `profile_theme_image` | `File \| string \| null` | Optional. File must be ≤ 7 MiB and JPEG/JPG/PNG/GIF/WebP. String must be a valid base64 data URL for one of those types. `null` clears the image. Avatars come from basis-auth at login and are not accepted here. |
 
 **Image validation details:**
 

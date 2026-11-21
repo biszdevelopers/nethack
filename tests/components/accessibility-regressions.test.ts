@@ -41,21 +41,12 @@ describe("targeted accessibility regressions", () => {
         expect(source).toContain(":aria-label=\"userRef ? 'Open your profile' : 'Sign in'\"");
     });
 
-    it("associates every season switch with its visible label and touch target", () => {
+    it("labels result visibility and keeps season actions touch-sized", () => {
         const source = readSource("app", "pages", "developers", "season.vue");
-        const labels = [
-            "Voting Enabled",
-            "Judging Open",
-            "Results Published",
-            "Show Scores",
-            "Show Ranking",
-        ];
 
-        for (const label of labels) {
-            expect(source).toContain(`label: "${label}"`);
-        }
-        expect(source).toContain(':label="toggle.label"');
-        expect(source.match(/:ui="\{ label: 'min-h-11 cursor-pointer py-3' \}"/g)).toHaveLength(1);
+        expect(source).toContain('label="Show scores to participants"');
+        expect(source).toContain('label="Show rankings publicly"');
+        expect(source.match(/class="min-h-11"/g)?.length ?? 0).toBeGreaterThan(6);
     });
 
     it("disables score animation when reduced motion is requested", () => {

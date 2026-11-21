@@ -90,6 +90,9 @@ export async function getTeamScoreFeedback(
         const exactNormalizedScore = calculateWeightedRubricScore(track, scores);
         total += exactNormalizedScore;
         validCount += 1;
+        const createdAt = evaluation.created_at
+            ? new Date(evaluation.created_at as unknown as string | number).toISOString()
+            : null;
 
         const entry = {
             rubric_name: version.name,
@@ -99,6 +102,7 @@ export async function getTeamScoreFeedback(
             scores,
             criteria: track.criteria,
             reasoning: evaluation.reasoning,
+            created_at: createdAt,
         };
         feedback.push(
             options.includeJudgeIdentity
@@ -117,7 +121,10 @@ export async function getTeamScoreFeedback(
         [feedback[index], feedback[swapIndex]] = [feedback[swapIndex]!, feedback[index]!];
     }
 
-    const rawScore = validCount > 0 ? Math.round(total / validCount) : (team.score ?? null);
+    const rawScore =
+        validCount > 0
+            ? Math.round((total / validCount) * 100) / 100
+            : (team.score_exact ?? team.score ?? null);
     // The anonymity threshold counts reviewers, not readable score payloads.
     // A saved evaluation still counts when its rubric is gone, matching the
     // total evaluation counts used by the public list and detail endpoints.
@@ -126,7 +133,7 @@ export async function getTeamScoreFeedback(
     const visibleFeedback = feedbackWithheldForAnonymity
         ? []
         : options.publicView === true
-          ? feedback.map(({ reasoning }) => ({ reasoning }))
+          ? feedback.map(({ reasoning, created_at }) => ({ reasoning, created_at }))
           : feedback;
     const curvePreset = isScoreCurvePreset(season.score_curve_preset)
         ? season.score_curve_preset
@@ -141,6 +148,14 @@ export async function getTeamScoreFeedback(
         curve_preset: curvePreset,
         curve_label: curvePreset === "original" ? null : SCORE_CURVE_PRESETS[curvePreset].label,
         rank: team.rank,
+        project: {
+            name: team.project_name,
+            description: team.project_description,
+            demo_url: team.project_demo_url,
+            repo_url: team.project_repo_url,
+            video_url: team.project_video_url,
+            sourcing: team.sourcing,
+        },
         feedback: visibleFeedback,
         unavailable_evaluations: unavailable,
         ...(options.publicView === true

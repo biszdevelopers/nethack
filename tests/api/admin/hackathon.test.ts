@@ -123,6 +123,32 @@ describe("PATCH /api/admin/hackathon", () => {
         expect(result.hackathon.results_published).toBe(0);
     });
 
+    it("freezes results and closes judgment and voting on publication", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        ctx.drizzle
+            .update(hackathon)
+            .set({ voting_enabled: 1, judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+        mockBody.value = { results_published: 1 };
+
+        await patchHandler(createEvent());
+
+        const seasonRow = ctx.drizzle
+            .select()
+            .from(seasons)
+            .where(eq(seasons.id, season.id))
+            .get()!;
+        expect(seasonRow).toMatchObject({
+            results_published: 1,
+            voting_enabled: 0,
+            judging_open: 0,
+        });
+        expect(seasonRow.results_published_at).toBeInstanceOf(Date);
+        expect(seasonRow.results_snapshot).toMatchObject({ season_id: season.id });
+    });
+
     it("rejects invalid status", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { status: "invalid_status" };
@@ -292,7 +318,7 @@ theme_description: null
         rmSync(manifestDirectory, { recursive: true, force: true });
     });
 
-    it("writes live settings into a local manifest and mirrors them", async () => {
+    it("stores live settings as overrides and leaves a local manifest untouched", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         const season = seedSeason(ctx);
         mockBody.value = { voting_enabled: 1, theme_name: "Manifest theme" };
@@ -303,9 +329,7 @@ theme_description: null
             voting_enabled: 1,
             theme_name: "Manifest theme",
         });
-        const written = readFileSync(manifestPath, "utf8");
-        expect(written).toContain("# organizer note stays put");
-        expect(written).toContain("Manifest theme");
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
         expect(ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()).toMatchObject(
             { voting_enabled: 1, theme_name: "Manifest theme" },
         );
@@ -314,26 +338,26 @@ theme_description: null
         ).toMatchObject({ voting_enabled: 1, theme_name: "Manifest theme" });
     });
 
-    it("writes live settings into a local manifest even when no season is active", async () => {
+    it("stores overrides even when no season is active", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { theme_name: "No active season" };
 
         await expect(patchHandler(createEvent())).resolves.toHaveProperty("hackathon");
 
-        expect(readFileSync(manifestPath, "utf8")).toContain("No active season");
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
         expect(
             ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()!.theme_name,
         ).toBe("No active season");
     });
 
-    it("writes settings for the active season into the manifest", async () => {
+    it("stores active season settings as overrides", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         const season = seedSeason(ctx);
         mockBody.value = { season_id: season.id, theme_name: "Active theme" };
 
         await expect(patchHandler(createEvent())).resolves.toHaveProperty("seasons");
 
-        expect(readFileSync(manifestPath, "utf8")).toContain("Active theme");
+        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
     });
 
     it("stores operational switches without rewriting the manifest", async () => {
@@ -349,18 +373,52 @@ theme_description: null
             {
                 status: "finished",
                 voting_enabled: 0,
-                live_overrides: { status: "finished", voting_enabled: 0 },
+                // Only the switch that diverges from the manifest is stored.
+                live_overrides: { status: "finished" },
             },
         );
     });
 
-    it("rejects live edits when the manifest is remote", async () => {
+    it("accepts live edits when the manifest is remote", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/HACKATHON.yml");
-        mockBody.value = { theme_name: "Not writable" };
+        mockBody.value = { theme_name: "Remote update" };
 
-        await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        const result = await patchHandler(createEvent());
+
+        expect(result.hackathon).toMatchObject({ theme_name: "Remote update" });
         expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
+    });
+
+    it("rejects schedule ranges that are out of order", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        const cases = [
+            [
+                { start_timestamp: 2_000, end_timestamp: 1_000 },
+                "The event must end after it starts.",
+            ],
+            [
+                { voting_start_timestamp: 5_000, voting_end_timestamp: 4_000 },
+                "Voting must end after voting starts.",
+            ],
+            [
+                {
+                    voting_start_timestamp: 1_000,
+                    voting_end_timestamp: 5_000,
+                    results_open_timestamp: 4_000,
+                },
+                "Results must open after voting closes.",
+            ],
+        ] as const;
+
+        for (const [timestamps, message] of cases) {
+            mockBody.value = { season_id: season.id, ...timestamps };
+            await expect(patchHandler(createEvent())).rejects.toMatchObject({
+                statusCode: 400,
+                message,
+            });
+        }
     });
 
     it("rejects an unknown season", async () => {

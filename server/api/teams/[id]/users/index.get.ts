@@ -1,5 +1,5 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { getTeamById } from "~~/server/utils/database/teams";
+import { getTeamById, getTeam } from "~~/server/utils/database/teams";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { getAllTeamMembers, getTeamMembers } from "~~/server/utils/database/members";
 import { NethackPermissions } from "~~/shared/permissions";
@@ -14,8 +14,10 @@ export default defineEventHandler(
         if (!team) throw createError({ statusCode: 404, message: "Team not found" });
 
         // Member emails are visible only to the current roster and to portal
-        // administrators. A former member sees no PII after leaving.
-        if (requester.team_id !== teamID) {
+        // administrators. A stale membership pointer from an earlier season
+        // must not grant access to another active team's roster.
+        const currentTeam = requester.team_id ? await getTeam(event, requester.team_id) : null;
+        if (currentTeam?.id !== teamID) {
             await requireUser(event, NethackPermissions.all);
         }
 
