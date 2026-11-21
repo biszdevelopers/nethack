@@ -15,6 +15,11 @@ const errorNameForStatus = (status: number, statusMessage?: string) => {
     return "server_error";
 };
 
+function logLine(value: unknown, limit: number): string {
+    if (typeof value !== "string") return "";
+    return value.replace(/\p{Cc}+/gu, " ").slice(0, limit);
+}
+
 export default defineNitroErrorHandler((input, event) => {
     const original = (input.cause ?? input) as any;
     const status = original.status ?? original.statusCode ?? input.statusCode ?? 500;
@@ -25,16 +30,32 @@ export default defineNitroErrorHandler((input, event) => {
             : new APIError(
                   errorNameForStatus(status, original.statusMessage ?? input.statusMessage),
                   isSafe
-                      ? original.message || input.message || "The request is invalid"
+                      ? status === 401
+                          ? "Invalid access token"
+                          : original.message || input.message || "The request is invalid"
                       : "The request could not be completed",
                   status,
               );
 
-    if (!isSafe) console.error("Unhandled API error", input);
+    if (!isSafe) {
+        // Never log the error object: driver errors can embed SQL, parameters,
+        // cookies, or credentials. Keep a bounded, structured summary instead.
+        console.error(
+            JSON.stringify({
+                event: "unhandled_request_error",
+                status,
+                status_message: logLine(original.statusMessage ?? input.statusMessage, 120),
+                message: logLine(original.message ?? input.message, 300),
+                request_id: (event.context as Record<string, unknown> | undefined)?.requestId,
+                route: typeof event.path === "string" ? event.path.split("?")[0] : undefined,
+                method: event.method,
+            }),
+        );
+    }
     setResponseStatus(event, apiError.status);
     setResponseHeader(event, "cache-control", "no-store");
     setResponseHeader(event, "vary", "Accept");
-    if (apiError.error === "invalid_token") {
+    if (apiError.error === "invalid_token" && status === 401) {
         setResponseHeader(event, "www-authenticate", 'Bearer error="invalid_token"');
     }
 

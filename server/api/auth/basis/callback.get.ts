@@ -61,10 +61,7 @@ export default defineEventHandler(
             ) {
                 throw error;
             }
-            console.error(
-                "basis-auth callback failed:",
-                error instanceof Error ? error.message : "unknown error",
-            );
+            console.warn("basis-auth callback failed");
             throw createError({
                 statusCode: 401,
                 statusMessage: "Authentication failed",

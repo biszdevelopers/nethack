@@ -32,7 +32,7 @@ export default defineEventHandler(
 
         return results.map((user) => ({
             ...convertUserToPublic(user as User),
-            is_admin: Boolean(user.is_admin || isInitialAdminEmail(user.email)),
+            is_admin: Boolean(user.is_admin),
             is_initial_admin: isInitialAdminEmail(user.email),
             past_team_ids: pastTeamIdsByUser.get(user.id)?.join(",") ?? null,
         }));

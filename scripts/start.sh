@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# The runtime selector is plain JavaScript so it runs on either supported
-# runtime. Prefer Node here; fall back to Bun when only Bun is installed.
+# The selector is plain JavaScript and runs on either supported runtime. Use
+# whichever executable is installed; it then picks Bun 1.3+ before Node 24+.
 if command -v node >/dev/null 2>&1; then
     exec node scripts/start-runtime.mjs
 fi

@@ -31,12 +31,6 @@ export default defineNitroPlugin(() => {
         }
     }
 
-    const msTenantId = process.env.MICROSOFT_TENANT_ID;
-    const msClientId = process.env.MICROSOFT_CLIENT_ID;
-    const msClientSecret = process.env.MICROSOFT_CLIENT_SECRET;
-    const msConfigValues = [msTenantId, msClientId, msClientSecret];
-    const msConfigSetCount = msConfigValues.filter(Boolean).length;
-
     const basisAuthVariables = [
         "BASIS_AUTH_ISSUER",
         "BASIS_AUTH_CLIENT_ID",
@@ -124,25 +118,25 @@ export default defineNitroPlugin(() => {
         } else {
             console.warn(`[WARNING] ${message}`);
         }
-    }
-
-    if (msConfigSetCount > 0 && msConfigSetCount < 3) {
+    } else if (isProduction && Number(process.env.TRUSTED_PROXY_HOPS ?? 0) === 0) {
+        // The hop count cannot be detected from the app. Behind nginx, leaving
+        // this at 0 collapses every client into the proxy's single IP bucket.
         console.warn(
-            "[WARNING] Graph configuration is incomplete. " +
-                `Configured: ${msConfigSetCount}/3 ` +
-                "(MICROSOFT_TENANT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET). " +
-                "Graph features will be unavailable until all three are configured.",
+            "[WARNING] TRUSTED_PROXY_HOPS is 0 in production. If exactly one reverse proxy " +
+                "sits in front of this app, set TRUSTED_PROXY_HOPS=1 so per-IP rate limits " +
+                "see real client addresses.",
         );
     }
 
-    const webhookState = process.env.MICROSOFT_WEBHOOK_STATE;
-    if (webhookState && new TextEncoder().encode(webhookState).byteLength < 32) {
-        const message = "MICROSOFT_WEBHOOK_STATE must be at least 32 bytes when configured.";
-        if (isProduction) {
-            console.error(`[FATAL] ${message}`);
-            process.exit(1);
-        } else {
-            console.warn(`[WARNING] ${message}`);
-        }
+    const requireVerifiedEmail = ["1", "true", "yes", "on"].includes(
+        process.env.REQUIRE_VERIFIED_EMAIL?.trim().toLowerCase() ?? "",
+    );
+    if (isProduction && !requireVerifiedEmail) {
+        // An omitted claim is accepted in the default mode; an explicit false
+        // is always rejected. Warn without logging any address.
+        console.warn(
+            "[WARNING] REQUIRE_VERIFIED_EMAIL is disabled in production. " +
+                "Accounts are accepted when the identity provider omits the email_verified claim.",
+        );
     }
 });

@@ -6,9 +6,12 @@ on:
         tags:
             - "v*"
 
+# Actions are referenced by major tag; pin each to a full commit SHA when
+# bumping. Tags are mutable and can be moved by the upstream owner.
 jobs:
     create-release:
         runs-on: ubuntu-latest
+        timeout-minutes: 45
         services:
             postgres:
                 image: postgres:17-alpine
@@ -29,6 +32,14 @@ jobs:
             # 1. Check out the code
             - name: Checkout code
               uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            # Only released commits that already passed on main are allowed.
+            - name: Verify the tag is on main
+              run: |
+                  git fetch --no-tags origin main
+                  git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
             # 2. Get the short commit ID (e.g., a1b2c3d)
             - name: Get Short Commit SHA
@@ -55,11 +66,44 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
+            - name: Cache docs dependencies
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.bun/install/cache
+                      documentation/node_modules
+                  key: ${{ runner.os }}-docs-bun-${{ hashFiles('documentation/package.json', 'documentation/bun.lock') }}
+                  restore-keys: |
+                      ${{ runner.os }}-docs-bun-
+
+            # `prebuild` builds the docs before Nuxt, so docs dependencies must
+            # be installed before the build step.
+            - name: Install docs dependencies
+              working-directory: documentation
+              run: bun install --frozen-lockfile
+
+            - name: Audit dependencies
+              run: bun audit
+
+            - name: Type-check
+              run: |
+                  ln -s "$PWD/node_modules" ../basis-schema/node_modules
+                  bun run typecheck
+
+            - name: Lint
+              run: bun run lint
+
             # 3. Gate the release on the same suite that guards the branch
             - name: Run the test suite
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_release_test
+                  BASISHACKS_POSTGRES_TEST: "1"
               run: bun run test
 
             - name: Enforce 100% executable source coverage
+              env:
+                  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/basishacks_release_test
+                  BASISHACKS_POSTGRES_TEST: "1"
               run: bun run test:coverage
 
             # 4. Build Nuxt Application using Bun
@@ -109,8 +153,12 @@ jobs:
 
                   tar -czf $FILENAME -C release-package .
 
+                  # Publish an integrity file alongside the archive.
+                  sha256sum $FILENAME > $FILENAME.sha256
+
                   # Save filename for the next step
                   echo "filename=$FILENAME" >> $GITHUB_ENV
+                  echo "checksum=$FILENAME.sha256" >> $GITHUB_ENV
 
             - name: Verify extracted tarball database tools and Node.js app startup
               env:
@@ -191,6 +239,8 @@ jobs:
                       - **Version:** ${{ steps.get_version.outputs.version }}
                       - **Commit SHA:** `${{ steps.vars.outputs.sha_short }}`
                       - **Architecture:** Linux amd64
-                  files: ${{ env.filename }}
+                  files: |
+                      ${{ env.filename }}
+                      ${{ env.checksum }}
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Automatically provided by GitHub

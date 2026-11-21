@@ -18,10 +18,26 @@ env:
     BASIS_AUTH_COOKIE_SECRET: ${{ secrets.BASIS_AUTH_COOKIE_SECRET || 'ci-session-cookie-secret-at-least-32-bytes-long' }}
 
 jobs:
+    # Pin every action to a full commit SHA when bumping; tags are mutable.
+    secret-scan:
+        name: Secret scan
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Scan history for leaked secrets
+              uses: gitleaks/gitleaks-action@v2
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     build-and-test:
         name: Build, Test & Docs
         runs-on: ubuntu-latest
-        timeout-minutes: 25
+        timeout-minutes: 30
         services:
             postgres:
                 image: postgres:17-alpine
@@ -75,6 +91,9 @@ jobs:
                   # project's installed dependencies to it for vue-tsc.
                   ln -s "$PWD/node_modules" ../basis-schema/node_modules
                   bun run typecheck
+
+            - name: Lint
+              run: bun run lint
 
             - name: Run PostgreSQL integration tests
               run: bun run test:postgres
@@ -162,6 +181,7 @@ jobs:
                   path: |
                       .tmp-playwright-results/**/error-context.md
                       .tmp-playwright-results/**/test-failed-*.png
+                      .tmp-playwright-results/**/trace.zip
                   if-no-files-found: ignore
                   retention-days: 3
                   include-hidden-files: true
@@ -188,3 +208,33 @@ jobs:
 
             - name: Verify production-only install
               run: bun install --production --frozen-lockfile
+
+    sbom:
+        name: SBOM
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Generate SPDX SBOM
+              uses: anchore/sbom-action@v0
+              with:
+                  format: spdx-json
+                  artifact-name: basishacks-sbom.spdx.json
+                  upload-artifact: true
+
+    secret-scan:
+        name: Secret Scan
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Checkout full history
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Scan for committed secrets
+              uses: gitleaks/gitleaks-action@v2
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

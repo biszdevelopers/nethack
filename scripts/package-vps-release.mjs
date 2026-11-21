@@ -36,6 +36,7 @@ if (!existsSync(resolve(docsBuild, "index.html"))) {
 }
 
 await mkdir(releaseRoot, { recursive: true });
+await mkdir(resolve(releaseRoot, "assets"), { recursive: true });
 await cp(resolve(projectRoot, ".output"), resolve(releaseRoot, ".output"), { recursive: true });
 await cp(docsBuild, resolve(releaseRoot, "docs"), { recursive: true });
 await cp(resolve(projectRoot, "drizzle/postgres"), resolve(releaseRoot, "drizzle/postgres"), {
@@ -47,6 +48,10 @@ await cp(resolve(projectRoot, "scripts/start.sh"), resolve(releaseRoot, "scripts
 await cp(
     resolve(projectRoot, "scripts/start-runtime.mjs"),
     resolve(releaseRoot, "scripts/start-runtime.mjs"),
+);
+await cp(
+    resolve(projectRoot, "scripts/backup-postgres.mjs"),
+    resolve(releaseRoot, "scripts/backup-postgres.mjs"),
 );
 await cp(resolve(projectRoot, ".env.example"), resolve(releaseRoot, ".env.example"));
 await cp(resolve(projectRoot, "HACKATHON.yml"), resolve(releaseRoot, "HACKATHON.yml"));
@@ -147,6 +152,7 @@ if (includeProductionDependencies) {
 for (const requiredPath of [
     ".output/server/index.mjs",
     "docs/index.html",
+    "assets",
     ".output/tools/db-migrate.mjs",
     ".output/tools/export-hackathon.mjs",
     ".output/tools/import-sqlite-to-postgres.mjs",
@@ -156,6 +162,7 @@ for (const requiredPath of [
     "HACKATHON.yml",
     "scripts/start.sh",
     "scripts/start-runtime.mjs",
+    "scripts/backup-postgres.mjs",
     "package.json",
     ...(includeProductionDependencies
         ? [

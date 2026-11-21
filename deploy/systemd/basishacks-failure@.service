@@ -1,0 +1,10 @@
+[Unit]
+Description=basishacks unit failure notification (%i)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger -p daemon.err -t basishacks-failure "%i entered a failed state; see systemctl status %i and journalctl -u %i"
+
+[Install]
+WantedBy=multi-user.target

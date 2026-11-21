@@ -40,6 +40,12 @@ export const BASIS_AUTH_REQUESTED_SCOPES = [
     "offline_access",
 ] as const;
 
+/** Opt-in strict mode: an absent email_verified claim is rejected. */
+function requiresVerifiedEmail(): boolean {
+    const value = process.env.REQUIRE_VERIFIED_EMAIL?.trim().toLowerCase();
+    return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
 export interface BasisAuthConfig {
     issuer: string;
     clientId: string;
@@ -251,9 +257,10 @@ export async function completeBasisAuthFlow(
         throw new Error("basis-auth did not return an email address");
     }
     // Email links local history and initial-admin elevation, so reject an
-    // explicitly unverified address. Providers that omit the claim are trusted
-    // as before.
-    if ((userInfo as { email_verified?: unknown }).email_verified === false) {
+    // explicitly unverified address. REQUIRE_VERIFIED_EMAIL also rejects an
+    // omitted claim; by default providers that omit it are trusted as before.
+    const emailVerified = (userInfo as { email_verified?: unknown }).email_verified;
+    if (emailVerified === false || (requiresVerifiedEmail() && emailVerified !== true)) {
         throw new Error("basis-auth did not verify the email address");
     }
 
