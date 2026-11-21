@@ -4,10 +4,10 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam, SaveJudgingDraftRequest } from "~~/shared/schemas";
 import { judgingDrafts, rubricVersions, teamScores } from "~~/server/database/schema";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
-import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { getTeam } from "~~/server/utils/database/teams";
 import { firstRow } from "~~/server/utils/database/query";
-import { isJudgingOpen } from "~~/server/utils/judging";
+import { getJudgeScope, isJudgingOpen, judgeCanEvaluate } from "~~/server/utils/judging";
+import { getEventState } from "~~/server/utils/event-state";
 import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import { applyRateLimit, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -24,18 +24,23 @@ export default defineEventHandler(
             });
         }
         const body = await readValidatedBody(event, SaveJudgingDraftRequest.parse);
-        const [season, eventState] = await Promise.all([
-            getActiveSeason(event),
-            getHackathon(event),
-        ]);
+        const state = await getEventState(event);
+        const season = state.season;
 
-        if (!season || !isJudgingOpen(eventState)) {
+        if (!season || !isJudgingOpen(state.hackathon, season)) {
             throw createError({ statusCode: 409, message: "Judging is not open" });
         }
 
         const team = await getTeam(event, teamId);
         if (!team?.project_submitted || team.season_id !== season.id) {
             throw createError({ statusCode: 404, message: "Submitted project not found" });
+        }
+        const scope = await getJudgeScope(event.context.drizzle, season.id, judge.id);
+        if (!judgeCanEvaluate(scope, team)) {
+            throw createError({
+                statusCode: 403,
+                message: "This project is outside your judging assignment",
+            });
         }
 
         const finalized = await firstRow(
