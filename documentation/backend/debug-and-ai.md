@@ -1,6 +1,6 @@
 ---
 title: Debug & AI
-description: Debug file utilities, DeepSeek AI chat sessions, and the Microsoft Teams chatbot integration.
+description: Debug file utilities and DeepSeek AI chat sessions.
 ---
 
 # Debug & AI
@@ -104,26 +104,9 @@ The mod portal page `/developers/deepseek` provides the chat UI and is available
 
 ---
 
-## Microsoft Teams Integration
+## Removed Microsoft Teams integration
 
-The unused test-message and anonymous no-op routes have been removed. Microsoft Graph webhook notifications continue to use the validated routes below; application login remains independent from Graph.
-
-### Webhooks
-
-Microsoft Graph change notifications are received at:
-
-| Method | Path                       | Description                          |
-| ------ | -------------------------- | ------------------------------------ |
-| POST   | `/api/_webhooks/update`    | Chat message change notifications    |
-| POST   | `/api/_webhooks/lifecycle` | Subscription lifecycle notifications |
-
-Both endpoints first check for a `validationToken` query parameter; when present they respond with `200 OK` and echo the token as `text/plain`. They then validate the `clientState` against `getMicrosoftWebhookState()` and return `403 Forbidden` if it does not match.
-
-`/api/_webhooks/update` returns `200 OK` with the canonical envelope containing `data: { message: "Received" }` after logging the change type and resource.
-
-`/api/_webhooks/lifecycle` returns `202 Accepted` with the canonical envelope containing `data: { message: "Received" }`. When the lifecycle event is `reauthorizationRequired`, it calls `refreshChatbotWebhook()` to extend the subscription.
-
-See [Plugins & Middleware](./plugins-middleware) for subscription creation and refresh details.
+The Microsoft Graph integration, its ROPC credentials, meeting/chat helpers, subscription refresh, and webhook validation were removed. `POST /api/_webhooks/update` and `POST /api/_webhooks/lifecycle` remain only to return `404` for a stale subscription. There is no startup dependency on Microsoft Graph.
 
 ---
 

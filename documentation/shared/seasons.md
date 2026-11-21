@@ -20,8 +20,11 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 | `voting_enabled` | integer | Toggle peer voting; open whenever this flag is `1` and the event is not `paused` |
 | `judging_open` | integer | Toggle judge scoring; open whenever this flag is `1` and the event is not `paused` |
 | `results_published` | integer | Publish results to participants |
+| `results_published_at` | timestamptz | Set once at first publication; also freezes judging after publication in a finished season |
+| `results_snapshot` | jsonb | Immutable standings snapshot written at publication |
 | `show_scores` | integer | Show scores to participants |
 | `show_ranking` | integer | Show rankings to participants |
+| `max_team_members` | integer | Per-season roster cap (1–20, default 6) |
 | `score_curve_preset` | text | Presentation curve: `original`, `gentle`, `moderate`, or `strong` |
 | `max_votes_per_user` | integer | Maximum projects that may receive stars per ballot; `0` means unlimited |
 | `schedule_start` / `schedule_end` | text | Display dates |
@@ -33,7 +36,7 @@ The `seasons` table stores the season name, its active state, and a full per-sea
 
 The live state comes from the selected YAML manifest. A local manifest is editable from the admin page, which writes the change back into the file (comments and the rubric block are preserved); a remote manifest is read-only. Other seasons always keep their own editable stored settings. The announcement is a PostgreSQL live override, so it stays editable even when the manifest is remote. The legacy singleton remains available for PostgreSQL rollback mode.
 
-Creating a season copies the live event settings and the active season's score display curve, and activating a season that was never configured seeds it from the live settings first, so switching seasons cannot blank the theme, schedule, or status. Activating a settings-copy season with no rubric materializes an immutable copy of the active season's rubric version before the switch, so submissions and judging are not left without a rubric.
+Creating a settings-copy season copies only the active season's schedule, theme, and rubric. Operational switches, the vote cap, the announcement, and the score curve reset: `not_started`, voting/judging/results/visibility off, `max_votes_per_user = 0`, `announcement = null`, `score_curve_preset = original`. A new season therefore never inherits the previous event's state. Activating a season that was never configured seeds its schedule and theme from the live settings first, and a settings-copy season with no rubric materializes an immutable copy of the active season's rubric version before the switch, so submissions and judging are not left without a rubric.
 
 ## Tweakable Settings
 
@@ -46,7 +49,13 @@ Creating a season copies the live event settings and the active season's score d
 
 `getScoreRankVisibilityResolver(event)` returns a resolver mapping a season ID to `{ resultsPublished, showScores, showRanking }`. The active season uses live YAML settings and other seasons use their stored settings. Unknown seasons keep results private in YAML mode.
 
-The dev-portal toggles are authoritative: `isJudgingOpen` and `isVotingOpen` depend only on their respective switch, and the explicit `paused` maintenance state is the sole override. The event phase does not silently veto a toggle, and publishing results does not close judging. Because judging can remain open after publication by explicit choice, a new evaluation can change the persisted public score and rank; turn `judging_open` off when the ranking must freeze. Judge comments are available to current and past team members only after `results_published` is enabled and at least three judges have submitted evaluations for that team. Until then, the endpoint withholds all comments and individual score details to reduce the chance of identifying a judge. Public feedback returns only comment text and randomizes evaluation order; it omits judge identities and rubric or track metadata. Administrators with the all-permissions grant can inspect full evaluations, including judge names and account IDs, before or after publication. Participants see the overall score only when results are published, at least three evaluations exist, and `show_scores` is enabled; rank requires published results, at least three evaluations, and `show_ranking`.
+The gates combine their switches with the event state:
+
+- Judging requires `judging_open`, is closed while `paused`, and is frozen after `results_published_at` is set in a `finished` season unless `JUDGING_AFTER_PUBLISH` is enabled.
+- Voting requires `voting_enabled`, is closed while `paused`, and closes at `voting_end_timestamp` unless `ENFORCE_DEADLINES` is disabled.
+- Submissions require `not_started` or `in_progress` and close at `end_timestamp + SUBMISSION_GRACE_MS`.
+
+Publication writes `results_published_at` and `results_snapshot` and turns off judging and voting unless the same request sets them explicitly. If judging is reopened after publication with `JUDGING_AFTER_PUBLISH`, a new evaluation can change the persisted public score and rank. Judge comments are available to current and past team members only after `results_published` is enabled and at least three judges have submitted evaluations for that team. Until then, the endpoint withholds all comments and individual score details to reduce the chance of identifying a judge. Public feedback returns only comment text and randomizes evaluation order; it omits judge identities and rubric or track metadata. Administrators with the all-permissions grant can inspect full evaluations, including judge names and account IDs, before or after publication. Participants see the overall score only when results are published, at least three evaluations exist, and `show_scores` is enabled; rank requires published results, at least three evaluations, and `show_ranking`.
 
 `score_curve_preset` affects the displayed score returned to participants; it never changes persisted judge evaluations, the computed uncurved average, or rankings. The presets are `original` (unchanged), `gentle`, `moderate`, and `strong`; configure the season in the administration UI.
 
@@ -56,6 +65,7 @@ The dev-portal toggles are authoritative: `isJudgingOpen` and `isVotingOpen` dep
 | --- | --- | --- | --- |
 | GET | `/api/seasons` | Public, read-only | List safe season details; unreleased themes are redacted |
 | GET | `/api/seasons/active` | None | Get the active season merged with the global hackathon state |
+| GET | `/api/seasons/active/rubric` | None | Public tracks and criteria for the active season |
 | PATCH | `/api/seasons/active` | `PORTAL_SEASONS_EDIT` or admin | Set the active season |
 | GET | `/api/seasons/:id/tweaks` | Public, read-only | Get safe public season details; unreleased themes and organizer-only fields are hidden |
 | PATCH | `/api/seasons/:id/tweaks` | `PORTAL_SEASONS_EDIT` or admin | Update a season's tweakable settings |
@@ -65,7 +75,7 @@ The dev-portal toggles are authoritative: `isJudgingOpen` and `isVotingOpen` dep
 
 For both season-tweaks routes, the `id` must be a positive safe integer. Missing or malformed IDs return `400`; a valid ID for a season that does not exist returns `404`. The public `GET` response uses the `PublicSeason` allowlist and redacts theme values while a season has not started or is paused.
 
-`GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, `start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, `results_open_timestamp`, `theme_name`, `theme_description`, and `announcement`. It also returns the server-computed gates `is_judging_open` (the `judging_open` toggle is on and the event is not `paused`) and `is_voting_open` (voting is enabled and the event is not `paused`), so the judging and voting UIs never duplicate the conditions their APIs enforce. The portal toggles are authoritative: the event phase and published-results flag do not silently veto them, so each switch always dictates its effective state. Theme fields are hidden when the hackathon status is `not_started` or `paused`; the announcement is always returned so organizers can publish preparation news before an event starts.
+`GET /api/seasons/active` returns the active season record together with the global `hackathon` state, including `status`, the five timestamps, `theme_name`, `theme_description`, `announcement`, `max_team_members`, `is_submission_closed`, and `is_gallery_public`. It also returns the server-computed gates `is_judging_open` and `is_voting_open`, so the judging and voting UIs never duplicate the conditions their APIs enforce. Judging requires `judging_open`, is off while `paused`, and is frozen after publication in a `finished` season unless `JUDGING_AFTER_PUBLISH` is on. Voting requires `voting_enabled`, is off while `paused`, and closes at `voting_end_timestamp` unless `ENFORCE_DEADLINES` is off. Theme fields are hidden when the hackathon status is `not_started` or `paused`; the announcement is always returned so organizers can publish preparation news before an event starts.
 
 `PATCH /api/seasons/active` accepts `SetActiveSeasonRequest`:
 
@@ -102,7 +112,7 @@ At least one field is required. Boolean values are stored as `0`/`1`.
 | `getActiveSeason(event)` | Get the currently active season |
 | `setActiveSeason(event, seasonId)` | Activate one configured season and deactivate all others; throws 404 if it does not exist and 409 if a blank-start season's required settings or rubric are missing. Settings-copy seasons inherit the active rubric when their pointer is empty |
 | `getSeasonActivationBlockers(season)` | Return missing theme, event dates, voting dates, and rubric requirements |
-| `pickSeasonConfig(source)` | Select live event settings copied when an administrator creates a settings-copy season |
+| `pickSeasonConfig(source)` | Select live settings used to seed an activated but unconfigured season; new-season creation separately copies only schedule, theme, and rubric |
 | `isUnconfiguredSeason(season)` | Detect a season that was never configured |
 | `updateSeasonTweaks(event, seasonId, data)` | Update stored tweaks. Live edits are rejected in YAML mode. |
 | `getScoreRankVisibilityResolver(event)` | Build a season-ID-to-visibility resolver with a global fallback |

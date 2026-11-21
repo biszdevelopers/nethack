@@ -101,7 +101,7 @@ Migrations are generated with Drizzle Kit:
 bun run db:generate
 ```
 
-The `db:migrate` script applies the pending PostgreSQL migration files and then seeds the hackathon row, default season/rubric, and designated administrators. It uses the Drizzle migrator directly (not Drizzle Kit). In practice, the server also applies migrations automatically on startup, so manual runs are usually unnecessary:
+The `db:migrate` script applies the pending PostgreSQL migration files and then seeds the hackathon row, default season/rubric, and next-season shell. It uses the Drizzle migrator directly (not Drizzle Kit). Administrator elevation happens when an account in `INITIAL_ADMIN_EMAILS` is created or signs in. In practice, the server also applies migrations automatically on startup, so manual runs are usually unnecessary:
 
 ```bash
 bun run db:migrate

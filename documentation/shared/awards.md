@@ -31,7 +31,7 @@ CREATE TABLE awards (
 
 ## Catalog
 
-The initial migration seeds the `perfect_score` award. Add or change awards by editing rows in the `awards` table; no application-code or schema change is required.
+The initial migration seeds the `perfect_score` award. Administrators manage the catalog through `/api/admin/awards` and assign awards to teams through `/api/admin/teams/:id/awards`; each mutation writes an audit row. A namespace still assigned to a team cannot be deleted (`409`).
 
 ## API Representation
 
@@ -49,7 +49,7 @@ interface APIAward {
 }
 ```
 
-`APITeam.awards` is an array of `APIAward` objects. The `convertTeamToPublic` helper receives awards resolved by `server/utils/database/awards.ts`; `text` is the stored award description.
+`APITeam.awards` is an array of `APIAward` objects. The `convertTeamToPublic` helper receives awards resolved by `server/utils/database/awards.ts`; `text` is the stored award description. Public team payloads include awards only after that team's season publishes results; judging staff and administrators bypass the gate.
 
 ## Database Helpers
 

@@ -12,12 +12,12 @@ Production and development use PostgreSQL through Drizzle ORM and the `postgres`
 Set `DATABASE_URL` in the process environment or protected environment file. It must be a valid `postgres://` or `postgresql://` URL. `DATABASE_POOL_MAX` defaults to `10` and accepts integers from `2` through `64`. The app uses a bounded pool; PostgreSQL itself is outside the app service memory limit.
 
 ```dotenv
-DATABASE_URL=postgresql://nethack:replace_me@127.0.0.1:5432/nethack
+DATABASE_URL=postgresql://basishacks:replace_me@127.0.0.1:5432/nethack
 DATABASE_POOL_MAX=10
 CURRENT_URL_ORIGIN=https://nethack.biszweb.club
 ```
 
-Use a dedicated PostgreSQL role with only the privileges needed by the application. Keep the URL, `CURRENT_URL_ORIGIN`, and authentication secrets in a root-readable deployment `.env` file, such as `/etc/nethack/nethack.env`, and never commit production credentials. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` as the nethack callback in basis-auth and update that client's display label there.
+Use a dedicated PostgreSQL role with only the privileges needed by the application. Keep the URL, `CURRENT_URL_ORIGIN`, and authentication secrets in a root-readable deployment `.env` file, such as `/etc/basishacks/basishacks.env`, and never commit production credentials. Register `${CURRENT_URL_ORIGIN}/api/auth/basis/callback` as the basishacks callback in basis-auth and update that client's display label there.
 
 Event schedule fields (`start_timestamp`, `end_timestamp`, `voting_start_timestamp`, `voting_end_timestamp`, and `results_open_timestamp`) are epoch milliseconds exposed as JavaScript numbers. PostgreSQL stores these values as `bigint` so current-era millisecond values fit without changing the API representation. The latest migration widens existing integer columns without changing their stored values.
 
@@ -29,7 +29,11 @@ bun run db:migrate
 node .output/tools/db-migrate.mjs
 ```
 
-The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. Migration `0004` advances or resets the `seasons` serial sequence to match existing rows and adds a foreign key from `seasons.rubric_version_id` to `rubric_versions.id`. It clears only dangling rubric pointers before adding the constraint; startup seeding restores the default version pointer before requests are served. The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. Production-only installs skip source preparation because the Nuxt output has already been built. GitHub tag archives perform these steps automatically.
+The migration runner takes a PostgreSQL advisory lock so two starting processes do not apply the same migration concurrently. It disables the connection's 15-second `statement_timeout` for the migration transaction, so a legitimate DDL batch is not aborted, while the lock still serializes concurrent starts. Migration `0004` advances or resets the `seasons` serial sequence to match existing rows and adds a foreign key from `seasons.rubric_version_id` to `rubric_versions.id`. It clears only dangling rubric pointers before adding the constraint; startup seeding restores the default version pointer before requests are served.
+
+Migration `0015` adds the audit, assignment, recusal, and notification tables; backfills team ownership and score season IDs; normalizes legacy booleans and duplicate names; and adds the team status, score, and season constraints. Migration `0016` adds `judge_flags`, `seasons.max_team_members`, invitation tokens and expiry, and `teams.project_video_url`. Both migrations rewrite data before enforcing constraints, so take a verified snapshot and plan a maintenance window for a populated database. The SQLite importer applies a five-second `lock_timeout` before taking the same advisory lock.
+
+The release package includes its Drizzle migration journal/SQL, `package.json`, `bun.lock`, and production dependencies. When building locally, run `bun install --production --frozen-lockfile` after `bun run build`, then set `VPS_RELEASE_INCLUDE_NODE_MODULES=1` while running `bun run release:package`. Production-only installs skip source preparation because the Nuxt output has already been built. GitHub tag archives perform these steps automatically; release artifacts include a SHA-256 checksum, and CI publishes an SPDX SBOM.
 
 Before any manual data reconciliation or schema change to a populated PostgreSQL database, take a custom-format snapshot and verify it with `pg_restore --list`:
 
@@ -37,7 +41,9 @@ Before any manual data reconciliation or schema change to a populated PostgreSQL
 bun run db:backup -- --output .tmp-postgres-before-change.dump
 ```
 
-The backup command reads credentials from `DATABASE_URL` in `.env`, refuses to overwrite an existing file, and only writes inside the workspace. Snapshot files matching `.tmp-postgres-*.dump` are ignored by git.
+The backup command reads credentials from `DATABASE_URL` in `.env`, forces `pg_restore` through every data block into stdout before publishing the file, refuses to overwrite an existing file, and keeps an explicit snapshot path inside the workspace. Snapshot files matching `.tmp-postgres-*.dump` are ignored by git.
+
+For scheduled production backups, `bun run db:backup --with-assets` writes a verified custom-format dump, a SHA-256 sidecar, and an assets tarball under `BACKUP_DIR` (default `/srv/backups/basishacks`), then prunes managed snapshots older than `BACKUP_RETENTION_DAYS` (default 14). A restore check is available with `--restore-check <dump> --confirm-scratch-restore` against `PG_RESTORE_SCRATCH_URL`; never point that scratch URL at production. Set `BACKUP_RSYNC_TARGET` to copy completed files off the host. The supplied `basishacks-backup.timer` runs daily at 03:15 with a randomized delay. Create the backup directory and give it to the service account before enabling the timer; the unit's mount namespace cannot create its own writable paths. Restore by stopping the app, running `pg_restore` into the target database, restoring the matching assets archive, and starting the app so migrations can run. Test the restore procedure before relying on the backup.
 
 ## Move the live hackathon configuration to YAML
 
@@ -62,9 +68,9 @@ Run the importer only for a cutover from an existing SQLite deployment. It reads
 Schedule a maintenance window, stop the old app, and take a verified SQLite backup. For example, when the SQLite command-line tool is installed:
 
 ```bash
-sqlite3 /srv/nethack/database/basishacks.sqlite \
-  ".backup '/srv/backups/nethack-pre-postgres.sqlite'"
-sqlite3 /srv/backups/nethack-pre-postgres.sqlite 'PRAGMA integrity_check;'
+sqlite3 /srv/basishacks/database/basishacks.sqlite \
+  ".backup '/srv/backups/basishacks-pre-postgres.sqlite'"
+sqlite3 /srv/backups/basishacks-pre-postgres.sqlite 'PRAGMA integrity_check;'
 ```
 
 The integrity check must return `ok`. Keep the original database and a separate backup until the new release has been verified. Back up user-uploaded files separately; the importer moves database rows only. The importer opens SQLite read-only and enables `query_only`; missing required relationships outside `team_scores`, unknown non-metadata tables, or a broken schema stop the import without changing the source. `team_scores` rows whose team or judge references are invalid are preserved with their complete source payload in `sqlite_legacy_data` and excluded from active scores. Only linked score rows are imported into the foreign-key-constrained PostgreSQL table. Review the import report's `archivedOrphanRows` counts before cutover.
@@ -76,10 +82,10 @@ CI fixtures and local SQLite files without confirmed production provenance are r
 Runtime uploads now live in the project-root `/assets` directory. It is gitignored, so an in-place pull/build/start deployment preserves it. Before a re-clone, checkout replacement, or first deployment with existing uploads, copy the prior runtime storage into the new checkout's `/assets`, preserving the `assets/` and `userassets/` collection layout and existing names. For example, adapt the source and destination to the actual old and new project paths:
 
 ```bash
-sudo install -d -o nethack -g nethack -m 0750 /opt/nethack/current/assets
-sudo rsync -a /path/to/previous/runtime-assets/ /opt/nethack/current/assets/
-sudo chown -R nethack:nethack /opt/nethack/current/assets
-sudo chmod -R u+rwX,go-rwx /opt/nethack/current/assets
+sudo install -d -o nethack -g nethack -m 0750 /opt/basishacks/current/assets
+sudo rsync -a /path/to/previous/runtime-assets/ /opt/basishacks/current/assets/
+sudo chown -R nethack:nethack /opt/basishacks/current/assets
+sudo chmod -R u+rwX,go-rwx /opt/basishacks/current/assets
 ```
 
 If the previous checkout stored legacy profile images in `public/userassets`, copy them into the new checkout's `/assets/userassets/` collection with their existing filenames too. Review same-name conflicts before copying and do not overwrite files silently. Keep a separate backup until representative profile images and permalink uploads have been checked after cutover. Preserve legacy non-hashed filenames unchanged: automatic collection deliberately ignores them. Debug uploads have been retired. Existing files remain accessible at their original `/assets/uploads/*` and `/userast/*` URLs. The application no longer schedules cleanup of debug permalink files. The committed static showcase under `public/assets` is not runtime storage and must not be copied over `/assets`.
@@ -93,7 +99,7 @@ Configure `DATABASE_URL` and `DATABASE_POOL_MAX`, then run the bundled PostgreSQ
 Set `SQLITE_IMPORT_PATH` to the verified backup path. The check command reads and validates the SQLite file without contacting PostgreSQL or changing either database:
 
 ```bash
-export SQLITE_IMPORT_PATH=/srv/backups/nethack-pre-postgres.sqlite
+export SQLITE_IMPORT_PATH=/srv/backups/basishacks-pre-postgres.sqlite
 bun run db:import-sqlite:check
 ```
 
@@ -132,7 +138,7 @@ Before cutover, compare the reported row counts with a read-only query against P
 For the direct Git checkout deployment, keep using the same project directory, install dependencies, build, apply migrations, and start the server:
 
 ```bash
-cd /opt/nethack/current
+cd /opt/basishacks/current
 bun install --frozen-lockfile
 bun run build
 bun run db:migrate
@@ -148,15 +154,22 @@ Keep the gitignored project-root `/assets` directory in the checked-out project 
 
 ## systemd service
 
-Ready-to-copy unit files are in `deploy/systemd/nethack-bun.service` and `deploy/systemd/nethack-node.service`. Both set a 450,000,000-byte soft memory threshold and a 500,000,000-byte hard limit, grant write access only to the project's `/assets` upload directory, and run with systemd filesystem protections.
+Ready-to-copy unit files are in `deploy/systemd/basishacks-bun.service` and `deploy/systemd/basishacks-node.service`. Both set a 450,000,000-byte soft memory threshold and a 500,000,000-byte hard limit, grant write access only to the project's `/assets` upload directory, and run with systemd filesystem protections. They also set `StartLimitIntervalSec=60` and `StartLimitBurst=5`, so a restart loop stops and stays failed for an operator instead of spinning, and `OnFailure=basishacks-failure@%n.service` writes an alert to the journal.
 
-Create a dedicated `nethack` system user, install the project under `/opt/nethack/current`, ensure `/opt/nethack/current/assets` exists and is owned by that user, and create `/etc/nethack/nethack.env` with mode `0600`. The service unit's `ReadWritePaths` must point at that checkout's `/assets` directory. Then install one of the service units:
+Create a dedicated `basishacks` system user, install the project under `/opt/basishacks/current`, ensure `/opt/basishacks/current/assets` exists and is owned by that user, and create `/etc/basishacks/basishacks.env` with mode `0600`. The service unit's `ReadWritePaths` must point at that checkout's `/assets` directory. Then install one of the service units:
 
 ```bash
-sudo install -m 0644 deploy/systemd/nethack-bun.service /etc/systemd/system/nethack.service
+sudo install -m 0644 deploy/systemd/basishacks-bun.service /etc/systemd/system/basishacks.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now nethack.service
-sudo systemctl status nethack.service
+sudo systemctl enable --now basishacks.service
+sudo systemctl status basishacks.service
 ```
 
-Choose the Node unit instead when running Node.js. Do not enable both units on the same port. PostgreSQL needs its own backup, disk, and memory monitoring; its usage is separate from the app service's cgroup limit.
+Choose the Node unit instead when running Node.js. Do not enable both units on the same port. Install `basishacks-failure@.service`, `basishacks-backup.service`, and `basishacks-backup.timer` alongside the app unit. Verify health from the host:
+
+```bash
+curl --fail --silent http://127.0.0.1:3000/api/health/live
+curl --fail --silent http://127.0.0.1:3000/api/health/ready
+```
+
+`/api/health/live` never touches the database. `/api/health/ready` returns `503` when PostgreSQL does not answer within two seconds; wire it into the load balancer or an external check. Startup exits non-zero when the database cannot be initialized, which makes a failed start visible in `systemctl status`. PostgreSQL needs its own backup, disk, and memory monitoring; its usage is separate from the app service's cgroup limit.
