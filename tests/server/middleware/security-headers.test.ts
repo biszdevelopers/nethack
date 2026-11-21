@@ -50,6 +50,14 @@ describe("security headers middleware", () => {
             "Permissions-Policy",
             expect.stringContaining("camera=()"),
         );
+        expect(event.node.res.setHeader).toHaveBeenCalledWith(
+            "Cross-Origin-Opener-Policy",
+            "same-origin",
+        );
+        expect(event.node.res.setHeader).toHaveBeenCalledWith(
+            "Cross-Origin-Resource-Policy",
+            "same-origin",
+        );
 
         const cspCall = event.node.res.setHeader.mock.calls.find(
             ([name]: [string]) => name === "Content-Security-Policy",
@@ -375,12 +383,12 @@ describe("security headers middleware", () => {
         expect(typeof middleware).toBe("function");
     });
 
-    it("sets exactly 6 different security headers", async () => {
+    it("sets exactly 8 different security headers", async () => {
         const event = createMockEvent("/dashboard");
         await middleware(event);
 
-        // setHeader should have been called 6 times — once per header
-        expect(event.node.res.setHeader).toHaveBeenCalledTimes(6);
+        // setHeader should have been called 8 times — once per header
+        expect(event.node.res.setHeader).toHaveBeenCalledTimes(8);
     });
 
     it("does not set duplicate headers", async () => {
@@ -391,7 +399,7 @@ describe("security headers middleware", () => {
             ([name]: [string]) => name,
         );
         const uniqueNames = new Set(callNames);
-        expect(uniqueNames.size).toBe(7);
+        expect(uniqueNames.size).toBe(9);
         expect(uniqueNames.size).toBe(callNames.length);
     });
 
@@ -407,7 +415,7 @@ describe("security headers middleware", () => {
         expect(event1.context.cspNonce).not.toBe(event2.context.cspNonce);
     });
 
-    it("the six baseline headers match the expected set", async () => {
+    it("the eight baseline headers match the expected set", async () => {
         const event = createMockEvent("/dashboard");
         await middleware(event);
 
@@ -421,11 +429,13 @@ describe("security headers middleware", () => {
             "Referrer-Policy",
             "Permissions-Policy",
             "Content-Security-Policy",
+            "Cross-Origin-Opener-Policy",
+            "Cross-Origin-Resource-Policy",
         ];
         for (const name of expected) {
             expect(callNames).toContain(name);
         }
-        expect(callNames).toHaveLength(6);
+        expect(callNames).toHaveLength(8);
     });
 
     it.each(["/api", "/api/teams/42", "/api/auth/session?refresh=1"])(

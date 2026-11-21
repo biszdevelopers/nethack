@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import {
     createTestContext,
     mockParams,
+    mockQueryState,
     mockSession,
     resetMockState,
     resetTestContext,
@@ -196,6 +197,30 @@ describe("GET /api/judging/history/:seasonId", () => {
             items: [],
             unavailable_evaluations: 0,
         });
+    });
+
+    it("paginates the history by team id when a limit is provided", async () => {
+        const season = seedSeason(ctx);
+        const teamIds = Array.from(
+            { length: 3 },
+            () => seedTeam(ctx, { pathway: "junior", season_id: season.id }).id,
+        );
+        for (const teamId of teamIds) {
+            addEvaluation(season.id, teamId, { rubric_version_id: season.rubric_version_id });
+        }
+        mockParams.values.seasonId = String(season.id);
+
+        mockQueryState.value = { limit: 2 };
+        const first = await handler(createEvent());
+        expect(first.items.map((item: JudgingHistoryItem) => item.team.id)).toEqual(
+            teamIds.slice(0, 2),
+        );
+        expect(first.next_cursor).toBe(teamIds[1]);
+
+        mockQueryState.value = { limit: 2, after: first.next_cursor };
+        const second = await handler(createEvent());
+        expect(second.items.map((item: JudgingHistoryItem) => item.team.id)).toEqual([teamIds[2]]);
+        expect(second.next_cursor).toBeNull();
     });
 
     it("rejects an unknown season", async () => {

@@ -75,6 +75,10 @@ const runScript = async (options: RunOptions = {}) => {
     const mkdir = vi.fn(async () => undefined);
     const stat = vi.fn(async () => ({ size: options.statSize ?? 42 }));
     const rename = vi.fn(async () => undefined);
+    const chmod = vi.fn(async () => undefined);
+    const readFile = vi.fn(async () => Buffer.from("dump"));
+    const writeFile = vi.fn(async () => undefined);
+    const readdir = vi.fn(async () => []);
     let unlinkCalls = 0;
     const unlink = vi.fn(async () => {
         unlinkCalls += 1;
@@ -87,11 +91,21 @@ const runScript = async (options: RunOptions = {}) => {
     });
     const existsSync = vi.fn(() => options.exists ?? false);
     vi.doMock("node:child_process", () => ({ spawn }));
-    vi.doMock("node:fs/promises", () => ({ mkdir, stat, rename, unlink }));
+    vi.doMock("node:fs/promises", () => ({
+        chmod,
+        mkdir,
+        readdir,
+        readFile,
+        rename,
+        stat,
+        unlink,
+        writeFile,
+    }));
     vi.doMock("node:fs", () => ({ existsSync }));
     vi.stubEnv("DATABASE_URL", options.databaseUrl ?? "");
     vi.stubEnv("PG_DUMP_BIN", options.dumpBinary ?? "");
     vi.stubEnv("PG_RESTORE_BIN", options.restoreBinary ?? "");
+    vi.stubEnv("BACKUP_DIR", repositoryRoot);
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     process.argv = [process.execPath, scriptPath, ...(options.argv ?? [])];
@@ -103,6 +117,10 @@ const runScript = async (options: RunOptions = {}) => {
     return {
         spawn,
         mkdir,
+        chmod,
+        readFile,
+        writeFile,
+        readdir,
         stat,
         rename,
         unlink,
@@ -187,7 +205,7 @@ describe("PostgreSQL snapshot script", () => {
         expect(firstCall?.[1]).toHaveLength(4);
         expect(firstCall?.[1]?.[3]).toMatch(
             new RegExp(
-                `^--file=${repositoryRoot.replaceAll("\\", "\\\\")}[\\\\/]\\.tmp-postgres-.+\\.dump\\.${process.pid}\\.partial$`,
+                `^--file=${repositoryRoot.replaceAll("\\", "\\\\")}[\\\\/]basishacks-.+\\.dump\\.${process.pid}\\.partial$`,
             ),
         );
         expect(environment).toEqual(
@@ -254,12 +272,14 @@ describe("PostgreSQL snapshot script", () => {
         {
             name: "unexpected argument",
             argv: ["unexpected"],
-            message: "Usage: node scripts/backup-postgres.mjs [--output <workspace path>]",
+            message:
+                "Usage: node scripts/backup-postgres.mjs [--output <path>] [--with-assets] [--retention-days <days>] [--restore-check <dump> --confirm-scratch-restore]",
         },
         {
             name: "extra trailing argument",
             argv: ["--output", "snapshot.dump", "extra"],
-            message: "Usage: node scripts/backup-postgres.mjs [--output <workspace path>]",
+            message:
+                "Usage: node scripts/backup-postgres.mjs [--output <path>] [--with-assets] [--retention-days <days>] [--restore-check <dump> --confirm-scratch-restore]",
         },
     ])("rejects a $name", async ({ argv, message }) => {
         const run = await runScript({ argv, databaseUrl: "postgres://localhost/app" });

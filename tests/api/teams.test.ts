@@ -125,10 +125,24 @@ function createEvent(overrides: Record<string, unknown> = {}) {
     };
 }
 
+/** Close submissions without enabling voting so the gallery becomes public. */
+function closeSubmissions() {
+    ctx.drizzle.update(hackathon).set({ status: "voting" }).where(eq(hackathon.id, 1)).run();
+}
+
 describe("GET /api/teams", () => {
+    it("hides active-season projects until submissions close", async () => {
+        seedTeam(ctx, { name: "Private Draft", project_submitted: 1 });
+
+        const inbox = await listHandler(createEvent());
+
+        expect(inbox).toEqual([]);
+    });
+
     it("returns all teams for the active season", async () => {
         seedTeam(ctx, { name: "Team Alpha", project_submitted: 1 });
         seedTeam(ctx, { name: "Team Beta", project_submitted: 1 });
+        closeSubmissions();
 
         const result = await listHandler(createEvent());
 
@@ -146,6 +160,7 @@ describe("GET /api/teams", () => {
             season_id: past.id,
             project_submitted: 1,
         });
+        closeSubmissions();
 
         const result = await listHandler(createEvent());
 
@@ -173,6 +188,58 @@ describe("GET /api/teams", () => {
 
         expect(result).toHaveLength(1);
         expect(result[0]).toHaveProperty("name", "Team S2");
+    });
+
+    it("returns a keyset page when limit is requested", async () => {
+        seedTeam(ctx, { name: "Team Alpha", project_submitted: 1 });
+        seedTeam(ctx, { name: "Team Beta", project_submitted: 1 });
+        seedTeam(ctx, { name: "Team Gamma", project_submitted: 1 });
+        closeSubmissions();
+
+        mockQueryState.value = { limit: 2 };
+        const firstPage = await listHandler(createEvent());
+
+        expect(firstPage.items.map((team: GetTeamResponse) => team.name)).toEqual([
+            "Team Alpha",
+            "Team Beta",
+        ]);
+        expect(typeof firstPage.next_cursor).toBe("number");
+
+        mockQueryState.value = { limit: 2, after: firstPage.next_cursor };
+        const secondPage = await listHandler(createEvent());
+
+        expect(secondPage.items.map((team: GetTeamResponse) => team.name)).toEqual(["Team Gamma"]);
+        expect(secondPage.next_cursor).toBeNull();
+    });
+
+    it("keeps the public listing to a bounded number of queries", async () => {
+        for (const name of ["Alpha", "Beta", "Gamma"]) {
+            seedTeam(ctx, { name: `Query ${name}`, project_submitted: 1 });
+        }
+        closeSubmissions();
+
+        const sqlite = ctx.sqlite;
+        const originalPrepare = sqlite.prepare.bind(sqlite);
+        let statements = 0;
+        sqlite.prepare = (sql: string) => {
+            statements += 1;
+            return originalPrepare(sql);
+        };
+        try {
+            const result = await listHandler(createEvent());
+            expect(result).toHaveLength(3);
+        } finally {
+            sqlite.prepare = originalPrepare;
+        }
+        // One per concern: event state, teams, awards, season list, evaluation counts.
+        expect(statements).toBeLessThanOrEqual(8);
+    });
+
+    it("rejects an invalid listing pagination limit", async () => {
+        closeSubmissions();
+        mockQueryState.value = { limit: 500 };
+
+        await expect(listHandler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
     });
 
     it("returns unjudged teams for judges with judging query", async () => {
@@ -432,6 +499,13 @@ describe("GET /api/teams/:id", () => {
         await expect(getHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
     });
 
+    it("returns 404 for a submitted active project to an anonymous visitor before submissions close", async () => {
+        const team = seedTeam(ctx, { name: "Early Project", project_submitted: 1 });
+        mockParams.values["id"] = String(team.id);
+
+        await expect(getHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
     it("allows judging staff to open an unsubmitted project", async () => {
         const team = seedTeam(ctx, { name: "Draft Team" });
         mockParams.values["id"] = String(team.id);
@@ -580,6 +654,7 @@ describe("GET /api/teams/:id", () => {
     it("hides rank in the public team listing when the hackathon toggle is off", async () => {
         const team = seedTeam(ctx, { name: "Team Alpha", project_submitted: 1 });
         ctx.drizzle.update(teams).set({ rank: 3 }).where(eq(teams.id, team.id)).run();
+        closeSubmissions();
 
         const result = await listHandler(createEvent());
 
@@ -601,6 +676,7 @@ describe("GET /api/teams/:id", () => {
         });
         seedTeamEvaluations(ctx, team, 3);
         ctx.drizzle.update(teams).set({ rank: 3 }).where(eq(teams.id, team.id)).run();
+        closeSubmissions();
 
         const result = await listHandler(createEvent());
 
@@ -1034,6 +1110,21 @@ describe("GET /api/teams/:id/users", () => {
 });
 
 describe("POST /api/teams/:id/users", () => {
+    it("returns 404 for a team from a previous season", async () => {
+        const oldSeason = seedSeason(ctx, { name: "Old invite season", is_active: 0 });
+        const team = seedTeam(ctx, { name: "Old Team", season_id: oldSeason.id });
+        seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { email: "newbie@basischina.com" };
+
+        await expect(addMemberHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 404,
+            message: "Team not found",
+        });
+    });
+
     it("invites a user without joining them immediately", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", name: "Owner", team_id: team.id });
@@ -1049,10 +1140,13 @@ describe("POST /api/teams/:id/users", () => {
 
         const result = await addMemberHandler(createEvent());
 
-        expect(result).toEqual({ message: "Invitation sent" });
+        expect(result).toMatchObject({ message: "Invitation sent" });
+        expect(result.token).toMatch(/^[a-f0-9]{64}$/);
+        expect(result.invite_url).toContain(result.token);
 
         const invite = ctx.drizzle.select().from(teamInvites).get();
         expect(invite).toMatchObject({ team_id: team.id, email: "newbie@basischina.com" });
+        expect(invite!.token).not.toBe(result.token);
         const unchanged = ctx.drizzle.select().from(users).where(eq(users.id, newMember.id)).get();
         expect(unchanged!.team_id).toBeNull();
     });
@@ -1063,9 +1157,12 @@ describe("POST /api/teams/:id/users", () => {
 
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
-        mockBody.value = { email: "Future.Student@basischina.com" };
+        mockBody.value = {
+            email: "Future.Student@basischina.com",
+            allowUnclaimed: true,
+        };
 
-        await expect(addMemberHandler(createEvent())).resolves.toEqual({
+        await expect(addMemberHandler(createEvent())).resolves.toMatchObject({
             message: "Invitation sent",
         });
         expect(ctx.drizzle.select().from(teamInvites).get()).toMatchObject({
@@ -1126,7 +1223,7 @@ describe("POST /api/teams/:id/users", () => {
 
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
-        mockBody.value = { email: "late@basischina.com" };
+        mockBody.value = { email: "late@basischina.com", allowUnclaimed: true };
 
         await expect(addMemberHandler(createEvent())).rejects.toMatchObject({
             statusCode: 409,
@@ -1152,9 +1249,9 @@ describe("POST /api/teams/:id/users", () => {
     it("returns 403 when hackathon has finished", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "finished" });
-        seedSeason(ctx);
+        const season = seedSeason(ctx);
 
-        const team = seedTeam(ctx, { name: "Team" });
+        const team = seedTeam(ctx, { name: "Team", season_id: season.id });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
 
         mockSession.value = { user: { id: 1 } };
@@ -1187,7 +1284,7 @@ describe("POST /api/teams/:id/users", () => {
 
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
-        mockBody.value = { email: "newbie@basischina.com" };
+        mockBody.value = { email: "newbie@basischina.com", allowUnclaimed: true };
 
         await addMemberHandler(createEvent());
         await expect(addMemberHandler(createEvent())).rejects.toMatchObject({
@@ -1233,9 +1330,9 @@ describe("DELETE /api/teams/:id/users/:user", () => {
     it("returns 403 when hackathon has finished", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "finished" });
-        seedSeason(ctx);
+        const season = seedSeason(ctx);
 
-        const team = seedTeam(ctx, { name: "Team" });
+        const team = seedTeam(ctx, { name: "Team", season_id: season.id });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
         const member = seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
 

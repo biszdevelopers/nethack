@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { createMockEvent } from "./helpers";
 import {
     getTeamMembers,
@@ -7,7 +8,11 @@ import {
     addUserPastTeam,
     removeTeamMember,
     addTeamMember,
+    createTeamInvite,
+    getTeamMemberLimit,
 } from "~~/server/utils/database/members";
+import { teamInvites } from "~~/server/database/schema";
+import { invalidateRequestCaches } from "~~/server/utils/database/query";
 
 describe("members database helpers", () => {
     let event: Awaited<ReturnType<typeof createMockEvent>>;
@@ -158,6 +163,35 @@ describe("members database helpers", () => {
         it("returns an empty array for a non-existent user id", async () => {
             const teams = await getUserPastTeams(event, 999);
             expect(teams).toHaveLength(0);
+        });
+
+        it("includes a current pointer to a team from an ended season", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Past season', 0)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Archived Team', 2)")
+                .run();
+            event.context.drizzle.prepare("UPDATE users SET team_id = 3 WHERE id = 1").run();
+
+            const teams = await getUserPastTeams(event, 1);
+            expect(teams.map((team) => team.id)).toEqual([3]);
+        });
+
+        it("does not duplicate a team that is both current history and a past row", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Past season', 0)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Archived Team', 2)")
+                .run();
+            event.context.drizzle.prepare("UPDATE users SET team_id = 3 WHERE id = 1").run();
+            event.context.drizzle
+                .prepare("INSERT INTO user_past_teams(user_id, team_id) VALUES(1, 3)")
+                .run();
+
+            const teams = await getUserPastTeams(event, 1);
+            expect(teams.map((team) => team.id)).toEqual([3]);
         });
     });
 
@@ -319,6 +353,47 @@ describe("members database helpers", () => {
             await expect(addTeamMember(event, 2, 1)).rejects.toThrow(
                 "User not found or already in a team",
             );
+        });
+    });
+
+    describe("team limits and invite TTL", () => {
+        it("uses the active season's member limit and falls back when no season is active", async () => {
+            event.context.drizzle
+                .prepare("UPDATE seasons SET max_team_members = 4 WHERE id = 1")
+                .run();
+            await expect(getTeamMemberLimit(event)).resolves.toBe(4);
+
+            event.context.drizzle.prepare("UPDATE seasons SET is_active = 0").run();
+            invalidateRequestCaches(event);
+            await expect(getTeamMemberLimit(event)).resolves.toBe(6);
+        });
+
+        it("clamps invalid invite TTL values to the default and floors valid ones", async () => {
+            const readExpiryDays = async (email: string) => {
+                await createTeamInvite(event, 1, email, 1);
+                const invite = event.context.drizzle
+                    .select()
+                    .from(teamInvites)
+                    .where(eq(teamInvites.email, email))
+                    .get() as { expires_at?: string | Date | null };
+                const expires = new Date(invite.expires_at ?? 0).getTime();
+                return Math.round((expires - Date.now()) / (24 * 60 * 60 * 1000));
+            };
+
+            const original = process.env.TEAM_INVITE_TTL_DAYS;
+            try {
+                process.env.TEAM_INVITE_TTL_DAYS = "not-a-number";
+                await expect(readExpiryDays("ttl-invalid@example.com")).resolves.toBe(7);
+                process.env.TEAM_INVITE_TTL_DAYS = "400";
+                await expect(readExpiryDays("ttl-high@example.com")).resolves.toBe(7);
+                process.env.TEAM_INVITE_TTL_DAYS = "3.9";
+                await expect(readExpiryDays("ttl-float@example.com")).resolves.toBe(3);
+                process.env.TEAM_INVITE_TTL_DAYS = "0";
+                await expect(readExpiryDays("ttl-zero@example.com")).resolves.toBe(7);
+            } finally {
+                if (original === undefined) delete process.env.TEAM_INVITE_TTL_DAYS;
+                else process.env.TEAM_INVITE_TTL_DAYS = original;
+            }
         });
     });
 });

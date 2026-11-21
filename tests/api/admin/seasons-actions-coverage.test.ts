@@ -127,15 +127,27 @@ describe("PATCH /api/admin/seasons action edges", () => {
 });
 
 describe("POST /api/admin/seasons action edges", () => {
+    const forcedFields = {
+        status: "not_started",
+        voting_enabled: 0,
+        results_published: 0,
+        results_published_at: null,
+        results_snapshot: null,
+        show_scores: 0,
+        show_ranking: 0,
+        judging_open: 0,
+        max_votes_per_user: 0,
+        announcement: null,
+        score_curve_preset: "original",
+    };
+
     it("creates an inactive season as a copy of the live settings", async () => {
         mockBody.value = { name: "New season" };
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
         expect(mocks.insertValues).toHaveBeenCalledWith({
-            status: "voting",
-            theme_name: "Live theme",
-            score_curve_preset: "gentle",
+            ...forcedFields,
             name: "New season",
             is_active: 0,
             is_blank_start: 0,
@@ -149,6 +161,7 @@ describe("POST /api/admin/seasons action edges", () => {
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.insertValues).toHaveBeenCalledWith({
+            ...forcedFields,
             name: "Offline season",
             is_active: 0,
             is_blank_start: 0,
@@ -161,9 +174,7 @@ describe("POST /api/admin/seasons action edges", () => {
         await postHandler(event);
 
         expect(mocks.insertValues).toHaveBeenCalledWith({
-            status: "voting",
-            theme_name: "Live theme",
-            score_curve_preset: "gentle",
+            ...forcedFields,
             name: "New season",
             is_active: 0,
             is_blank_start: 0,
@@ -204,6 +215,7 @@ describe("POST /api/admin/seasons action edges", () => {
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.insertValues).toHaveBeenCalledWith({
+            ...forcedFields,
             name: "Blank shell",
             is_active: 0,
             is_blank_start: 1,

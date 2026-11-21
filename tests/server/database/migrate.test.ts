@@ -50,10 +50,11 @@ describe("PostgreSQL migrations", () => {
         await migrateDatabase(database, migrationsFolder, client);
 
         expect(begin).toHaveBeenCalledTimes(1);
-        expect(connection).toHaveBeenCalledTimes(1);
-        expect(calls[0]?.strings.join("?")).toContain("pg_advisory_xact_lock(?)");
-        expect(calls[0]?.values).toEqual([BigInt("75110114284009")]);
-        expect(events).toEqual(["lock", "migrate"]);
+        expect(connection).toHaveBeenCalledTimes(2);
+        expect(calls[0]?.strings.join("?")).toContain("statement_timeout");
+        expect(calls[1]?.strings.join("?")).toContain("pg_advisory_xact_lock(?)");
+        expect(calls[1]?.values).toEqual([BigInt("75110114284009")]);
+        expect(events).toEqual(["lock", "lock", "migrate"]);
         expect(mocks.migrate).toHaveBeenCalledWith(database, { migrationsFolder });
     });
 
@@ -144,6 +145,7 @@ describe("PostgreSQL migrations", () => {
 
         expect(events).toEqual([
             "begin-migration-transaction",
+            "advisory-lock",
             "advisory-lock",
             "migrations",
             "seed:hackathon",

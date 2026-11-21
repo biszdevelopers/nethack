@@ -233,8 +233,11 @@ describe("GET /api/users/:id", () => {
 
         const result = await getHandler(createEvent());
 
-        expect(result.team.score).toBeNull();
-        expect(result.team.rank).toBeNull();
+        // The membership pointer belongs to an archived season, so it becomes
+        // history instead of the current team.
+        expect(result.team).toBeNull();
+        expect(result.past_teams[0].score).toBeNull();
+        expect(result.past_teams[0].rank).toBeNull();
     });
 
     it("applies the anonymity threshold independently to each past team", async () => {
@@ -438,17 +441,20 @@ describe("DELETE /api/users", () => {
 
         await expect(deleteHandler(createEvent())).rejects.toMatchObject({
             statusCode: 403,
-            message: "You cannot delete yourself or a designated initial administrator",
+            message: "You cannot delete yourself",
         });
         expect(ctx.drizzle.select().from(users).all()).toHaveLength(1);
     });
 
-    it("refuses to delete a designated initial administrator", async () => {
-        const cindy = seedUser(ctx, { email: "Cindy.Cheng-Bisz@basischina.com" });
+    it("refuses to delete the last remaining administrator", async () => {
+        const cindy = seedUser(ctx, { email: "Cindy.Cheng-Bisz@basischina.com", is_admin: 1 });
         vi.mocked(globalThis.requirePermission).mockResolvedValue({ id: 999, role: "admin" });
         mockBody.value = { ids: [cindy.id] };
 
-        await expect(deleteHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
+        await expect(deleteHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "At least one administrator must remain",
+        });
         expect(ctx.drizzle.select().from(users).all()).toHaveLength(1);
     });
 

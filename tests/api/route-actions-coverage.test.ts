@@ -53,7 +53,10 @@ vi.mock("~~/server/utils/scoring", () => ({
     calculateSeasonScores: mocks.calculateSeasonScores,
     calculateSeasonScoresWithDatabase: mocks.calculateSeasonScoresWithDatabase,
 }));
-vi.mock("~~/server/utils/database/query", () => ({ firstRow: mocks.firstRow }));
+vi.mock("~~/server/utils/database/query", () => ({
+    firstRow: mocks.firstRow,
+    lockForUpdateIfSupported: (query: unknown) => query,
+}));
 vi.mock("~~/server/utils/database/rubrics", () => ({
     resolveLiveRubricVersionId: async (
         _event: unknown,
@@ -66,7 +69,18 @@ vi.mock("~~/server/utils/database/rubrics", () => ({
 const event = {
     context: {
         drizzle: {
-            select: vi.fn(),
+            select: vi.fn(() => {
+                const chain: any = {
+                    from: () => chain,
+                    where: () => chain,
+                    limit: async () => [],
+                    for: () => chain,
+                };
+                return chain;
+            }),
+            insert: vi.fn(() => ({
+                values: async () => [],
+            })),
             selectDistinct: vi.fn(() => ({
                 from: () => ({ where: async () => [] }),
             })),
@@ -155,7 +169,7 @@ describe("logout route actions", () => {
         });
 
         await expect(logout({} as any)).resolves.toEqual({ loggedOut: true });
-        expect(warning).toHaveBeenCalledWith("basis-auth token revocation failed", failure);
+        expect(warning).toHaveBeenCalledWith("basis-auth token revocation failed");
         expect(mocks.clearBasisAuthUserSession).toHaveBeenCalledOnce();
     });
 
@@ -166,7 +180,7 @@ describe("logout route actions", () => {
         mocks.revokeBasisAuthToken.mockRejectedValue(failure);
 
         await expect(logout({} as any)).resolves.toEqual({ loggedOut: true });
-        expect(warning).toHaveBeenCalledWith("basis-auth token revocation failed", failure);
+        expect(warning).toHaveBeenCalledWith("basis-auth token revocation failed");
         expect(mocks.clearBasisAuthUserSession).toHaveBeenCalledOnce();
     });
 });

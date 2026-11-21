@@ -412,6 +412,26 @@ describe("SQLite importer source inspection", () => {
 
     it("allows recognized and metadata tables but rejects every unmapped source table", () => {
         expect(validateSourceTables(new Set(["users", "_cf_METADATA"]))).toEqual(["_cf_METADATA"]);
+        expect(
+            validateSourceTables(
+                new Set([
+                    "users",
+                    "notifications",
+                    "judge_flags",
+                    "judge_assignments",
+                    "judge_recusals",
+                    "team_invites",
+                    "admin_audit_events",
+                ]),
+            ),
+        ).toEqual([
+            "notifications",
+            "judge_flags",
+            "judge_assignments",
+            "judge_recusals",
+            "team_invites",
+            "admin_audit_events",
+        ]);
         expect(() => validateSourceTables(new Set(["mystery_records"]))).toThrow(
             "unrecognized non-metadata table(s): mystery_records",
         );

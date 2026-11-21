@@ -59,6 +59,31 @@ describe("canonical API error handler", () => {
         expect(console.error).toHaveBeenCalled();
     });
 
+    it("logs only a bounded structured summary, never the error object", () => {
+        const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+        const error = new Error("SELECT * FROM users WHERE token = 'secret'");
+
+        const event = {
+            headers: { accept: "application/json" },
+            context: { requestId: "req-42" },
+            path: "/api/teams?token=secret",
+            method: "POST",
+        };
+        handler(error, event);
+
+        expect(errorLog).toHaveBeenCalledOnce();
+        const payload = JSON.parse(String(errorLog.mock.calls[0]?.[0]));
+        expect(payload).toMatchObject({
+            event: "unhandled_request_error",
+            status: 500,
+            request_id: "req-42",
+            route: "/api/teams",
+            method: "POST",
+        });
+        expect(errorLog.mock.calls[0]?.[1]).toBeUndefined();
+        errorLog.mockRestore();
+    });
+
     it("renders only the API error code for HTML clients", () => {
         const error = new Error("database <connection> failed");
         error.stack = "Error: database <connection> failed\n    at loadDatabase";

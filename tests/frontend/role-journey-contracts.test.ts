@@ -16,13 +16,12 @@ const between = (source: string, start: string, end: string) => {
 describe("public action paths", () => {
     const home = readSource("pages", "index.vue");
 
-    it("gives the dashboard link an accessible name even before the event starts", () => {
-        // The visible UAlert only renders after the event starts; a visually
-        // hidden span names the link in the not_started state. Using a static
-        // aria-label instead would clash with the alert's visible text and
-        // trip axe's label-content-name-mismatch rule.
-        expect(home).toContain('<ULink href="/dashboard">');
-        expect(home).toContain('<span v-if="status === \'not_started\'" class="sr-only">');
+    it("always renders a visible primary call to action instead of a hidden link", () => {
+        expect(home).toContain('label: "Go to dashboard"');
+        expect(home).toContain('label: "Sign in to join"');
+        expect(home).toContain('v-if="primaryCta"');
+        expect(home).not.toContain('class="sr-only"');
+        expect(home).not.toContain('<ULink href="/dashboard">');
     });
 });
 
@@ -36,7 +35,7 @@ describe("participant action paths", () => {
     it("collects the required AI-use disclosure with the project", () => {
         expect(projectForm).toContain('name="project.sourcing"');
         expect(projectForm).toContain("AI-use disclosure");
-        expect(projectForm).toContain("formState.project.sourcing");
+        expect(projectForm).toContain("projectFormState.project.sourcing");
     });
 
     it("gives peer-voting controls names, live scores, and 44px touch targets", () => {
@@ -84,21 +83,22 @@ describe("participant action paths", () => {
     it("autosaves only locally changed fields and preserves blank URLs as null", () => {
         const autosave = between(
             projectForm,
+            "async function saveDirtyFields",
             "async function triggerAutosave",
-            "let autosaveInterval",
         );
-        expect(autosave).toContain("if (disabled || !dirty.value || !defaultTeam)");
-        expect(autosave).toContain("const payload = autosavePayload()");
+        expect(autosave).toContain("const sent = snapshotProjectForm(projectFormState)");
+        expect(autosave).toContain("projectAutosavePayload(sent, lastSaved.value)");
         expect(autosave).toContain('method: "PATCH"');
         expect(autosave).toContain("body: payload");
-        expect(autosave).toContain("lastSaved = snapshotForm()");
-        expect(autosave).toContain('autosaveStatus.value = "Auto-save failed"');
+        expect(autosave).toContain("lastSaved.value = sent");
+        expect(autosave).toContain('autosaveStatus.value = "Changes are not saved"');
 
-        expect(projectForm).toContain("current.project[key] === lastSaved.project[key]");
-        expect(projectForm).toContain('key === "demo_url" || key === "repo_url"');
+        const autosaveHelper = readSource("utils", "project-autosave.ts");
+        expect(autosaveHelper).toContain("current.project[field] === lastSaved.project[field]");
+        expect(autosaveHelper).toContain("URL_FIELDS");
     });
 
-    it("requires a confirmation step before final submission and clears the pending form event", () => {
+    it("requires a confirmation step before final submission", () => {
         const onSubmit = between(
             projectForm,
             "async function onSubmit",
@@ -106,25 +106,29 @@ describe("participant action paths", () => {
         );
         const confirmSubmit = between(projectForm, "async function confirmSubmit", "</script>");
         expect(onSubmit).toContain('if (intent.value === "submit")');
-        expect(onSubmit).toContain("pendingSubmitEvent = event");
+        expect(onSubmit).toContain("validateSubmission()");
         expect(onSubmit).toContain("showConfirmModal.value = true");
-        expect(confirmSubmit).toContain("const event = pendingSubmitEvent");
-        expect(confirmSubmit).toContain("pendingSubmitEvent = null");
-        expect(confirmSubmit).toContain("if (event)");
-        expect(confirmSubmit).toContain("await performSubmit(event)");
-        expect(confirmSubmit).toContain("await nextTick()");
+        expect(confirmSubmit).toContain("await performSubmit()");
+        expect(confirmSubmit).toContain('intent.value = "save"');
     });
 
     it("uses separate save and submit endpoints, reports failures, and refreshes after a save", () => {
+        const performSave = between(
+            projectForm,
+            "async function performSave",
+            "async function onSubmit",
+        );
         const performSubmit = between(
             projectForm,
             "async function performSubmit",
             "async function confirmSubmit",
         );
-        expect(performSubmit).toContain('method: "PATCH"');
+        expect(performSave).toContain('saveDirtyFields("manual")');
+        expect(performSave).toContain('title: "Failed to save project"');
+        expect(performSave).toContain('emit("refresh")');
         expect(performSubmit).toContain('method: "POST"');
         expect(performSubmit).toContain("/submit");
-        expect(performSubmit).toContain('title: "Failed to update project"');
+        expect(performSubmit).toContain('title: "Failed to submit project"');
         expect(performSubmit).toContain('emit("refresh")');
     });
 });
@@ -245,7 +249,7 @@ describe("judge action paths", () => {
         expect(judgingQueue).toContain("async function openPreviousProject()");
         expect(judgingQueue).toContain("function retryQueue()");
         expect(judgingQueue).toContain(
-            "void Promise.all([queueFetch.refresh(), summaryFetch.refresh(), rubricFetch.refresh()])",
+            "void Promise.allSettled([queueFetch.refresh(), summaryFetch.refresh(), rubricFetch.refresh()])",
         );
         expect(judgingQueue).toContain("onBeforeRouteLeave(async () =>");
         expect(judgingQueue).toContain(
@@ -325,6 +329,34 @@ describe("judging history and workspace navigation", () => {
     });
 });
 
+describe("judge governance actions", () => {
+    const queue = readSource("pages", "judging", "continue.vue");
+    const scoringCard = readSource("components", "JudgingCard.vue");
+    const votingCard = readSource("components", "VotingProjectCard.vue");
+
+    it("flags a project for organizers and records recusals from the workspace", () => {
+        expect(queue).toContain('"/api/judging/flag"');
+        expect(queue).toContain('"/api/judging/recusals"');
+        expect(queue).toContain("team_id: teamID");
+        expect(queue).toContain("team_id: team.id");
+        expect(queue).toContain("Flag for organizer");
+        expect(queue).toContain("Recuse me");
+        expect(queue).toContain("dropRecusedProject");
+    });
+
+    it("keeps submission and queue state accurate after a recusal", () => {
+        expect(queue).toContain("items.filter((item) => item.team.id !== teamID)");
+        expect(queue).toContain("void summaryFetch.refresh()");
+    });
+
+    it("shows saved demonstration video links to judges and voters", () => {
+        expect(scoringCard).toContain("safeVideoUrl");
+        expect(scoringCard).toContain("Watch demonstration video");
+        expect(votingCard).toContain("safeVideoUrl");
+        expect(votingCard).toContain("Demonstration video");
+    });
+});
+
 describe("judge results and admin controls", () => {
     const feedback = readSource("components", "ScoreFeedbackPanel.vue");
     const seasonAdmin = readSource("pages", "developers", "season.vue");
@@ -385,7 +417,7 @@ describe("judge results and admin controls", () => {
         expect(rubricManager).toContain("weightTotal !== 100");
         expect(rubricManager).toContain("criterion.maxScore <= criterion.minScore");
         expect(rubricManager).toContain(
-            "!loading.value && !savingVersion.value && issues.value.length === 0",
+            "!loading.value && !savingVersion.value && !loadError.value",
         );
         expect(rubricManager).toContain(
             ':disabled="yamlManaged || !canSave || !versionName.trim()"',

@@ -123,6 +123,32 @@ describe("PATCH /api/admin/hackathon", () => {
         expect(result.hackathon.results_published).toBe(0);
     });
 
+    it("freezes results and closes judgment and voting on publication", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        ctx.drizzle
+            .update(hackathon)
+            .set({ voting_enabled: 1, judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+        mockBody.value = { results_published: 1 };
+
+        await patchHandler(createEvent());
+
+        const seasonRow = ctx.drizzle
+            .select()
+            .from(seasons)
+            .where(eq(seasons.id, season.id))
+            .get()!;
+        expect(seasonRow).toMatchObject({
+            results_published: 1,
+            voting_enabled: 0,
+            judging_open: 0,
+        });
+        expect(seasonRow.results_published_at).toBeInstanceOf(Date);
+        expect(seasonRow.results_snapshot).toMatchObject({ season_id: season.id });
+    });
+
     it("rejects invalid status", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { status: "invalid_status" };
@@ -349,7 +375,8 @@ theme_description: null
             {
                 status: "finished",
                 voting_enabled: 0,
-                live_overrides: { status: "finished", voting_enabled: 0 },
+                // Only the switch that diverges from the manifest is stored.
+                live_overrides: { status: "finished" },
             },
         );
     });

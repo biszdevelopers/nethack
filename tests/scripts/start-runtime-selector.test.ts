@@ -44,9 +44,9 @@ describe("startup runtime selection", () => {
 });
 
 describe("startup selector wiring", () => {
-    it("launches Bun when it is supported", () => {
-        const run = vi.fn(() => 23);
-        const exitCode = runStartSelector({
+    it("launches Bun when it is supported", async () => {
+        const run = vi.fn(async () => 23);
+        const exitCode = await runStartSelector({
             readVersion: (command) => (command === "bun" ? "1.3.14" : "v24.0.0"),
             run,
         });
@@ -55,9 +55,9 @@ describe("startup selector wiring", () => {
         expect(run).toHaveBeenCalledWith("bun", ["start-fix.mjs"]);
     });
 
-    it("launches Node when Bun is too old", () => {
-        const run = vi.fn(() => 24);
-        const exitCode = runStartSelector({
+    it("launches Node when Bun is too old", async () => {
+        const run = vi.fn(async () => 24);
+        const exitCode = await runStartSelector({
             readVersion: (command) => (command === "bun" ? "1.2.9" : "v24.0.0"),
             run,
         });
@@ -66,11 +66,11 @@ describe("startup selector wiring", () => {
         expect(run).toHaveBeenCalledWith("node", ["start-fix.mjs"]);
     });
 
-    it("reports unsupported runtimes without launching anything", () => {
+    it("reports unsupported runtimes without launching anything", async () => {
         const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const run = vi.fn();
 
-        const exitCode = runStartSelector({
+        const exitCode = await runStartSelector({
             readVersion: (command) => (command === "node" ? "v22.0.0" : undefined),
             run,
         });
@@ -82,12 +82,12 @@ describe("startup selector wiring", () => {
         expect(run).not.toHaveBeenCalled();
     });
 
-    it("probes the real runtimes when no dependencies are injected", () => {
+    it("probes the real runtimes when no dependencies are injected", async () => {
         const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
         const originalPath = process.env.PATH;
         process.env.PATH = "";
         try {
-            expect(runStartSelector()).toBe(127);
+            expect(await runStartSelector()).toBe(127);
             expect(stderr).toHaveBeenCalled();
         } finally {
             if (originalPath === undefined) delete process.env.PATH;
@@ -95,26 +95,26 @@ describe("startup selector wiring", () => {
         }
     });
 
-    it("reads a real runtime version and spawns a real command", () => {
+    it("reads a real runtime version and spawns a real command", async () => {
         expect(parseRuntimeVersion(probeVersion("node"))).not.toBeNull();
-        expect(spawnRuntime("node", ["--version"])).toBe(0);
+        expect(await spawnRuntime("node", ["--version"])).toBe(0);
     });
 
-    it("reports a launch that cannot start as exit code 1", () => {
-        expect(spawnRuntime("basishacks-missing-runtime-xyz", [])).toBe(1);
+    it("reports a launch that cannot start as exit code 1", async () => {
+        expect(await spawnRuntime("basishacks-missing-runtime-xyz", [])).toBe(1);
     });
 });
 
 describe("direct execution guard", () => {
-    it("runs only when the module is the process entry point", () => {
-        const run = vi.fn(() => 0);
+    it("runs only when the module is the process entry point", async () => {
+        const run = vi.fn(async () => 0);
         const dependencies = { readVersion: () => "1.3.14", run };
         const moduleUrl = pathToFileURL("/apps/scripts/start-runtime.mjs").href;
         const entryPath = "/apps/scripts/start-runtime.mjs";
 
-        expect(runIfDirect(moduleUrl, undefined, dependencies)).toBeNull();
-        expect(runIfDirect(moduleUrl, "/apps/scripts/other.mjs", dependencies)).toBeNull();
-        expect(runIfDirect(moduleUrl, entryPath, dependencies)).toBe(0);
+        expect(await runIfDirect(moduleUrl, undefined, dependencies)).toBeNull();
+        expect(await runIfDirect(moduleUrl, "/apps/scripts/other.mjs", dependencies)).toBeNull();
+        expect(await runIfDirect(moduleUrl, entryPath, dependencies)).toBe(0);
         expect(run).toHaveBeenCalledWith("bun", ["start-fix.mjs"]);
     });
 

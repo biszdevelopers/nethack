@@ -243,7 +243,11 @@ describe("GET /api/teams/:id/scores", () => {
             "A third anonymous comment.",
         );
         expect(
-            response.feedback.every((entry: any) => Object.keys(entry).join() === "reasoning"),
+            response.feedback.every(
+                (entry: any) =>
+                    Object.keys(entry).sort().join() === "created_at,reasoning" &&
+                    !("scores" in entry),
+            ),
         ).toBe(true);
         expect(JSON.stringify(response)).not.toMatch(
             /judge_user_id|judge-two@example|judge-three@example|rubric_name|rubric_version|track_name/,
@@ -311,6 +315,41 @@ describe("GET /api/admin/teams/:id/scores", () => {
         const response = await adminHandler(createEvent());
 
         expect(response.feedback).toMatchObject([{ judge_id: judge.id, judge_name: null }]);
+    });
+
+    it("includes the project context with its video URL and evaluation timestamps", async () => {
+        const { team } = await seedPublishedEvaluation();
+        const createdAt = "2026-03-04T10:00:00.000Z";
+        ctx.drizzle
+            .update(teams)
+            .set({
+                project_name: "Context Project",
+                project_description: "A project description.",
+                project_demo_url: "https://demo.example.test",
+                project_repo_url: "https://github.com/example/project",
+                project_video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "Open assets only",
+            })
+            .where(eq(teams.id, team.id))
+            .run();
+        ctx.drizzle
+            .update(teamScores)
+            .set({ created_at: new Date(createdAt) })
+            .where(eq(teamScores.team_id, team.id))
+            .run();
+        vi.mocked(globalThis.requireUser).mockResolvedValue({ id: 99, role: "admin" } as any);
+
+        const response = await adminHandler(createEvent());
+
+        expect(response.project).toEqual({
+            name: "Context Project",
+            description: "A project description.",
+            demo_url: "https://demo.example.test",
+            repo_url: "https://github.com/example/project",
+            video_url: "https://www.youtube.com/watch?v=example",
+            sourcing: "Open assets only",
+        });
+        expect(response.feedback[0]!.created_at).toBe(createdAt);
     });
 
     it("returns not found when the requested team does not exist", async () => {

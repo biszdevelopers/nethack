@@ -59,14 +59,18 @@ describe("request security middleware", () => {
         expect(() => middleware(eventFor("OPTIONS"))).not.toThrow();
     });
 
-    it("allows server-to-server Graph webhook posts without weakening browser mutations", () => {
+    it("keeps only the signed basis-auth backchannel exempt from browser origin checks", () => {
         vi.stubEnv("CURRENT_URL_ORIGIN", "https://portal.example");
 
-        expect(() => middleware(eventFor("POST", {}, "/api/_webhooks/update"))).not.toThrow();
-        expect(() => middleware(eventFor("POST", {}, "/api/_webhooks/lifecycle"))).not.toThrow();
+        expect(() => middleware(eventFor("POST", {}, "/api/_webhooks/update"))).toThrow(
+            "Cross-site request rejected",
+        );
+        expect(() => middleware(eventFor("POST", {}, "/api/_webhooks/lifecycle"))).toThrow(
+            "Cross-site request rejected",
+        );
         expect(() =>
             middleware(eventFor("POST", {}, "/api/_webhooks/update?validationToken=abc")),
-        ).not.toThrow();
+        ).toThrow("Cross-site request rejected");
         expect(() => middleware(eventFor("POST", {}, "/api/auth/basis/backchannel"))).not.toThrow();
         expect(() => middleware(eventFor("POST", {}, "/api/_webhooks/other"))).toThrow(
             "Cross-site request rejected",
