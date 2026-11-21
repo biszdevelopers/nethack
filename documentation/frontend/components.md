@@ -30,7 +30,7 @@ The main navigation header rendered at the top of every page. Uses `UHeader` fro
 | Dashboard (with children: Overview, General, Teams, Results) | Always visible |
 | Showcase | Always visible |
 | Beneath the Surface | Always visible |
-| Projects | Always visible; the gallery itself stays empty until submissions close |
+| Projects | Always visible in the navigation after peer voting opens; the gallery itself stays empty before that stage |
 | Results | Always visible; publication gates the content |
 | Voting | Voting is open and the user is not a judge or admin |
 | Judging | User is a judge or admin; the page stays reachable outside the voting phase so completed evaluations can be reviewed |

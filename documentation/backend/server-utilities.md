@@ -214,7 +214,7 @@ interface EventGates {
 ```
 
 - Submissions require `not_started` or `in_progress`, not `paused`, and `now <= end_timestamp + SUBMISSION_GRACE_MS` when deadlines are enforced.
-- `/api/seasons/active` and the team endpoints expose the gallery gate. The active-season gallery and team detail are private to members, judging staff, and administrators until submissions close.
+- `/api/seasons/active` and the team endpoints expose the gallery gate. The active-season gallery and team detail are private to members, judging staff, and administrators until the event enters peer voting, even if the submission deadline has passed while the season is still in progress.
 - Voting closes at `voting_end_timestamp`; judging is frozen after publication in a finished season unless `JUDGING_AFTER_PUBLISH` is on.
 - `invalidateEventStateCache(event)` clears the request cache after a settings mutation.
 

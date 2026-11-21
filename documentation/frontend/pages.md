@@ -13,12 +13,9 @@ The nethack frontend contains **37 page files** in `app/pages/`, mapped to route
 
 **File:** `app/pages/index.vue`
 
-The home page. Fetches the active hackathon season from `/api/seasons/active` and renders:
+The home page. Fetches the active hackathon season from `/api/seasons/active` and renders, in order:
 
-- **Welcome message** with the `WEBSITE_NAME` constant
-- **Announcement** — admin-editable copy from `announcement` is shown above the schedule when set; the page contains no hardcoded season or event text
-- **Status alert** — links to `/dashboard` when the hackathon has started or finished
-- **Schedule section** — conditionally renders `LargeCountdown` components based on hackathon status:
+- **Schedule** — the first section; `LargeCountdown` components follow the event status, and the admin-editable `announcement` appears inside this section. The table below lists the countdowns:
 
 | Status        | Countdowns shown                 |
 | ------------- | -------------------------------- |
@@ -26,11 +23,15 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 | `in_progress` | Hackathon ends, Voting starts    |
 | `voting`      | Voting ends, Results released    |
 | `paused`      | Maintenance message              |
-| `finished`    | No countdowns                    |
+| `finished`    | Schedule section is hidden       |
 
 - **Detailed schedule** — collapsible section with `DateTime` components for all timestamps
-- **Theme section** — reveals theme name and description once set, otherwise shows a countdown to the start date
-- **Resources section** — links to last year's showcase and the rules page
+- **Theme** — reveals the theme name and description once set, otherwise shows the start date
+- **How it works** — six numbered steps from team formation through results
+- **FAQ** — four short answers with a link to the full FAQ
+- **Support and archives** — FAQ, rules, contact, showcase, and gated catalog/results links
+
+The page does not render a separate marketing hero or a facts grid; the schedule is the top of the page. A current-season catalog link appears only after the event enters peer voting.
 
 **Layout:** `default`
 
@@ -42,7 +43,7 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 
 **File:** `app/pages/projects.vue`
 
-Public project gallery. It fetches `/api/seasons/active` and requests `/api/teams` only when `is_gallery_public` or `is_submission_closed` is true. The server returns only the caller's own team before submissions close, so non-members see an empty gallery rather than a hidden-project leak. The page supports search, pathway filters, and a selected-project query parameter.
+Public project gallery. It fetches `/api/seasons/active` and requests `/api/teams` only when `is_gallery_public` is true. The server exposes that flag only after the event enters peer voting, so an in-progress season whose deadline has passed still keeps its catalog hidden. Before that point the server returns only the caller's own team, so non-members see an empty gallery rather than a hidden-project leak. The page supports search, pathway filters, and a selected-project query parameter.
 
 **Layout:** `default`
 
@@ -430,13 +431,13 @@ Judge coverage and flag queue. Administrators create assignments for a pathway o
 
 **File:** `app/pages/developers/season.vue`
 
-Hackathon Administration page (admin-only, hard 403 for non-admins). The page is split into tabs so no single scroll holds every control. It opens on the active season and warns when a stored (non-live) season is selected, so settings never appear to apply while silently targeting an archived season.
+Seasons page (admin-only, hard 403 for non-admins). The page separates running the event, editing one season's settings, managing the season list, managing the rubric, and site-wide data. It opens on the active season and marks other seasons as stored so settings never appear to apply while silently targeting an archived season.
 
-- **Overview** — theme, schedule, and the current visitor-facing toggles for the selected season, with shortcuts to the editing tabs. The schedule uses the same stored values as the editable fields.
-- **Seasons** — pick the season to manage, rename it, set `max_team_members`, activate it (`PATCH /api/seasons/active`), create one via `POST /api/admin/seasons`, or delete an unused inactive season via `DELETE /api/admin/seasons/:id` (seasons holding team, judging, or peer-voting history are rejected so archived results are never silently erased). A new settings-copy season inherits only the schedule, theme, and rubric; every operational switch starts off. A banner shows whether the selected season is live or stored, with a one-click activation action.
-- **Event settings** — status, vote cap, voting/judging/results toggles, theme, visitor announcement, and schedule timestamps, auto-saved one field at a time through `/api/admin/hackathon`. Status, voting, judging, results, show-score/show-ranking, and the announcement are PostgreSQL overrides, so they can be switched even when the manifest is remote. Each field is compared with the selected season's own value, not another season's. Schedule and theme write to a local `HACKATHON.yml` (comments preserved); a remote manifest keeps those fields read-only and explains where to edit them. Other seasons keep their own editable stored settings.
-- **Scoring** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version; the history shows which version is active. Organizers can copy a prior season, load its rubric to customize, and apply or copy reusable named templates. A track used by a submitted project must be reassigned before removal.
-- **Data** — download an anonymized JSON snapshot or CSV via `GET /api/admin/database/export`; judge IDs and draft evaluations are omitted, and the exported live settings include portal overrides. Database export is streamed inside a repeatable-read, read-only transaction. Season standings download from the mod portal landing page as CSV with exact scores and ranks.
+- **Run season** — the selected season's stage, a single next action (open submissions, open peer voting and judging, publish results, finish), readiness checks, pause/resume, and live counts from `/api/admin/preflight`
+- **Season settings** — one explicit-save form for schedule, theme, announcement, vote cap, and results visibility, all stored against the selected season and applied immediately when it is live
+- **Seasons** — the season list, creation with optional settings copy, activation prerequisites, rename, delete, team limit, and blank-start board approval. Activation uses `PATCH /api/seasons/active`; a new season uses `POST /api/admin/seasons`; an inactive season uses `DELETE /api/admin/seasons/:id`, and seasons holding team, judging, or peer-voting history are rejected so archived results are never silently erased
+- **Rubric** — score display curve and the judging rubric. The rubric editor publishes the live rubric by editing `HACKATHON.yml` when its `rubric` section is configured; for database-managed seasons it edits track keys and labels, criteria, integer score ranges, and weights. Weights must total 100% for each track. Saving creates a new immutable version, and the history shows which version is active
+- **Site and data** — links to the site-wide award catalog and the anonymized database export. The award catalog is independent of seasons, while award assignments belong to a team. The export streams inside a repeatable-read, read-only transaction and omits judge identities, invitation tokens, and OAuth client secrets
 
 **Layout:** `developers-dashboard`
 

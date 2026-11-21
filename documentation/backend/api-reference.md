@@ -151,7 +151,7 @@ List submitted teams for the active season, or filter by season.
 | --- | --- |
 | **Auth** | Public for the normal listing; `judging=true` requires `nethack.Judging.assignmentsRead` |
 | **Query** | `judging` (if `true`, returns submitted teams in the current judge's assignment and recusal scope, excluding the judge's own team); `season_id` (optional season filter; when omitted, only the active season is listed); `limit` (1–50) and `after` (team ID cursor) |
-| **Privacy** | Before submissions close, the active-season listing returns only the caller's own team. Past-season listings are not gated by the active event. |
+| **Privacy** | Before the event enters peer voting, the active-season listing returns only the caller's own team, even if the submission deadline has passed while the season is still in progress. Past-season listings are not gated by the active event. |
 | **Response** | `APITeam[]`; only teams with `project_submitted = 1` and `status = 'active'` are public, ordered by team ID. With `limit`, returns `{ items, next_cursor }`; `next_cursor` is the last team ID or `null`. In the public listing, each team's `rank` is only included after that team's season publishes results, at least three judges have evaluated the team, and its `show_ranking` setting is enabled. Awards follow the same publication gate |
 
 ### POST `/api/teams`
@@ -172,7 +172,7 @@ Get a single team's details.
 | Field | Details |
 | --- | --- |
 | **Auth** | Public; optional authentication enables the caller's team membership to control score visibility |
-| **Privacy** | An active-season team is visible only to its current members, judging staff, and administrators until submissions close; everyone else receives 404. An unsubmitted team is visible only to its members and users with `nethack.Judging.resultsRead` or `nethack.all`. Past-season teams remain readable |
+| **Privacy** | An active-season team is visible only to its current members, judging staff, and administrators until the event enters peer voting; everyone else receives 404. An unsubmitted team is visible only to its members and users with `nethack.Judging.resultsRead` or `nethack.all`. Past-season teams remain readable |
 | **Response** | `APITeam`; a team member sees `score` only after results are published, at least three judges have evaluated the team, and its season's `show_scores` setting is enabled. Rank requires publication, at least three evaluations, and `show_ranking`. Users with `nethack.Judging.resultsRead` or `nethack.all` bypass these public visibility gates |
 
 ### PATCH `/api/teams/:id`
@@ -475,7 +475,7 @@ Get the currently active season (public).
 
 ### PATCH `/api/seasons/active`
 
-Set the active season. The activated season's operational switches (status, voting, judging, results, visibility) are stored in PostgreSQL and apply immediately, even with a remote manifest. With a local manifest, its schedule and theme are also written into `HACKATHON.yml`; if that write fails, the previous active season is restored and the request fails. With a remote manifest, schedule and theme stay under the remote file.
+Set the active season. The activated season's full settings, including schedule and theme, are stored in PostgreSQL and apply immediately regardless of where the manifest is hosted. The portal does not write `HACKATHON.yml`; it seeds and compares values only. Activation snapshots the outgoing season and writes the activated season's settings to the live singleton.
 
 | Field          | Details                                                    |
 | -------------- | ---------------------------------------------------------- |
@@ -678,9 +678,9 @@ Read live hackathon configuration and all seasons. The response includes `config
 
 ### PATCH `/api/admin/hackathon`
 
-Update settings for a live or stored season. For live settings, the operational switches (`status`, `voting_enabled`, `results_published`, `judging_open`, `show_scores`, `show_ranking`, `max_votes_per_user`) and the visitor-facing `announcement` are stored in PostgreSQL and override the manifest, so no manifest write is needed and a remote manifest can still be switched and updated.
+Update settings for a live or stored season. All editable fields, including the schedule, theme, announcement, operational switches, vote cap, and results visibility, are stored in PostgreSQL and apply immediately to the live season. The manifest seeds and is compared against these values but is never rewritten, so a remote manifest no longer blocks any field.
 
-Setting `results_published = 1` for the first time writes `results_published_at` and a `results_snapshot` of the standings. Unless the same request supplies them, it also sets `judging_open = 0` and `voting_enabled = 0`, freezing both. It then notifies current members of submitted teams. Schedule and theme fields write to a local `HACKATHON.yml`; a remote manifest returns `409` for those fields. Nullable text fields (`announcement`, `theme_name`, `theme_description`, `schedule_start`, `schedule_end`) accept an explicit `null` to clear them. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
+Setting `results_published = 1` for the first time writes `results_published_at` and a `results_snapshot` of the standings. Unless the same request supplies them, it also sets `judging_open = 0` and `voting_enabled = 0`, freezing both. It then notifies current members of submitted teams; a notification failure is logged but does not roll back the published results. Schedule and theme fields are ordinary live settings and never write to `HACKATHON.yml`. Nullable text fields (`announcement`, `theme_name`, `theme_description`, `schedule_start`, `schedule_end`) accept an explicit `null` to clear them. The route rejects schedule ranges that end before they start. Historical and future seasons keep their own stored settings and additionally require the season-update permission.
 
 | Field        | Details                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -798,7 +798,7 @@ The Microsoft Graph integration and both webhook handlers were removed. `POST /a
 | `GET` | `/api/health/ready` | None | Runs `select 1` with a two-second deadline; `{ status: "ok" }` or `503 { status: "unavailable" }` |
 | `GET` | `/calendar.ics` | None | RFC 5545 calendar of scheduled event start, submission close, voting start/end, and results release |
 | `GET` | `/.well-known/security.txt` | None | RFC 9116 security contact, cached for one day |
-| `GET` | `/sitemap.xml` | None | Public pages plus `/projects` after submissions close and `/results` after publication; past-season archives remain listed |
+| `GET` | `/sitemap.xml` | None | Public pages plus `/projects` after the event enters peer voting and `/results` after publication; past-season archives remain listed |
 | `GET` | `/docs/*` | Judge or administrator | Protected VitePress documentation |
 
 Health responses set `Cache-Control: no-store`. The readiness check reports no database details.

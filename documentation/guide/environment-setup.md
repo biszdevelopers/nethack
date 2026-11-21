@@ -136,7 +136,7 @@ Copy the output and paste it as the value for `BASIS_AUTH_COOKIE_SECRET`.
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. A local manifest is writable from the mod portal; a remote manifest is read-only. | `local` |
+| `YAML_SOURCE_HACKATHON` | Blank or `local` reads the checkout's `HACKATHON.yml`; an assets server origin or full HTTPS manifest URL loads it remotely; `database` restores PostgreSQL-backed live settings. Remote manifests are revalidated at most every five minutes. The manifest seeds and is compared against live settings, but every editable event field is stored in PostgreSQL and can be changed from the portal regardless of manifest location. | `local` |
 | `HACKATHON_CONFIG_PATH` | Local manifest the portal reads and, in `local` mode, rewrites | `HACKATHON.yml` |
 | `HACKATHON_CACHE_PATH` | File that stores the last successfully fetched remote manifest, used when the assets server is unavailable at startup | `assets/hackathon-config.yml` |
 | `BASIS_AUTH_PICTURE_CACHE_DIR` | Directory that stores basis-auth avatar bytes so profile pictures survive a provider outage | `assets/basis-auth-pictures` |

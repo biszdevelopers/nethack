@@ -14,7 +14,7 @@ The platform manages the entire hackathon lifecycle:
 | Feature | Description |
 | --- | --- |
 | **Hackathon Management & Scheduling** | Control event state (`not_started`, `in_progress`, `voting`, `finished`, `paused`), schedule start and end times, and manage the event timeline. |
-| **Editable Announcements** | The home-page message is an admin-editable season field stored in PostgreSQL, so organizers can publish preparation news without editing code or a remote manifest. Empty announcements are hidden. |
+| **Editable announcements** | The home-page message is an admin-editable season field stored in PostgreSQL and shown inside the schedule section. Empty announcements are hidden. |
 | **Team Creation & Management** | Participants create teams, invite members via `@basischina.com` email, and manage team membership. Invited users accept from their dashboard before they join. |
 | **Project Submission** | Teams submit projects with name, description, demo URL, repository URL, a required demonstration video URL, and a required AI-use disclosure (with an explicit "No AI used" option). Submission requires checklist acknowledgement and is irreversible; an administrator can reopen it before results. |
 | **Peer Voting** | Participants vote on projects by distributing 10 stars across eligible projects in the same pathway. The total must equal exactly 10. Ballots are retained per user and season. |
@@ -102,11 +102,11 @@ The platform supports multiple hackathon seasons stored in the `seasons` table. 
 
 - **Name**: the display name of the season.
 - **Active status**: only one season can be active at a time (partial unique index on `is_active`).
-- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `results_published_at`, `results_snapshot`, `show_scores`, `show_ranking`, `max_votes_per_user`, `max_team_members`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The active season uses settings from `HACKATHON.yml` plus PostgreSQL live overrides (including the announcement).
+- **Per-season configuration**: every hackathon config field is stored per season (`status`, `voting_enabled`, `judging_open`, `results_published`, `results_published_at`, `results_snapshot`, `show_scores`, `show_ranking`, `max_votes_per_user`, `max_team_members`, `schedule_start`, `schedule_end`, all five timestamps, `theme_name`, `theme_description`, `announcement`). The manifest seeds values for a new installation, while PostgreSQL owns every editable setting and the active season's live state.
 
 Teams are associated with a specific season via the `season_id` foreign key. The active season determines which teams and projects are displayed. A new season copies only the schedule, theme, and rubric; its operational switches start off. Publishing results writes a timestamp and standings snapshot and freezes voting and judging unless they are explicitly reopened.
 
-Season management happens through the `/api/seasons/` endpoints and the Hackathon Administration page at `/developers/season`. Live settings are edited in the configured YAML manifest; a local manifest is written in place by the portal, while a remote manifest stays read-only. The administration page also updates stored settings for other seasons.
+Season management happens through the `/api/seasons/` endpoints and the Seasons page at `/developers/season`. The page separates running the event from editing season settings and from site-wide settings. Running uses explicit stage actions, season settings use one explicit save, and the award catalog is managed separately because it is not season-specific. The manifest seeds and is compared against PostgreSQL values but is never written by the portal.
 
 ## Directory Structure
 
@@ -134,7 +134,7 @@ nethack/
 │   │   ├── user/               # User profile pages
 │   │   ├── judging/            # Judge scoring interface
 │   │   ├── notifications.vue   # Notification list
-│   │   ├── projects.vue        # Public gallery after submissions close
+│   │   ├── projects.vue        # Public gallery after peer voting opens
 │   │   ├── results.vue         # Public results after publication
 │   │   ├── voting.vue          # Peer voting interface
 │   │   └── showcase.vue        # Project showcase
@@ -238,7 +238,7 @@ The configured `HACKATHON.yml` controls the global event state. The status field
 | --- | --- |
 | `not_started` | Before the event: teams can form and submit projects before the deadline. |
 | `in_progress` | During the event: project submissions are accepted before the deadline. |
-| `voting` | Submissions are closed, so the public gallery opens; peer voting and judging follow their switches and deadlines. |
+| `voting` | Submissions are closed, the public gallery opens, and peer voting and judging follow their switches and deadlines. |
 | `finished` | Event completed: the public gallery stays open, and results visibility follows publication. Publishing freezes judging unless `JUDGING_AFTER_PUBLISH` is on. |
 | `paused` | Event paused for maintenance; every mutation and both voting/judging gates are closed. |
 
