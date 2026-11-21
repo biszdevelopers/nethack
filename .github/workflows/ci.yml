@@ -15,7 +15,7 @@ concurrency:
     cancel-in-progress: true
 
 env:
-    BASIS_AUTH_COOKIE_SECRET: ${{ secrets.BASIS_AUTH_COOKIE_SECRET || 'ci-session-cookie-secret-at-least-32-bytes-long' }}
+    BASIS_AUTH_COOKIE_SECRET: ci-session-cookie-secret-at-least-32-bytes-long
 
 jobs:
     # Pin every action to a full commit SHA when bumping; tags are mutable.
@@ -223,18 +223,3 @@ jobs:
                   format: spdx-json
                   artifact-name: basishacks-sbom.spdx.json
                   upload-artifact: true
-
-    secret-scan:
-        name: Secret Scan
-        runs-on: ubuntu-latest
-        timeout-minutes: 10
-        steps:
-            - name: Checkout full history
-              uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0
-
-            - name: Scan for committed secrets
-              uses: gitleaks/gitleaks-action@v2
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

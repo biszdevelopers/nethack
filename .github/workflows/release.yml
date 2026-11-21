@@ -240,7 +240,7 @@ jobs:
                       - **Commit SHA:** `${{ steps.vars.outputs.sha_short }}`
                       - **Architecture:** Linux amd64
                   files: |
-                      ${{ env.filename }}
-                      ${{ env.checksum }}
+                      production-*.tar.gz
+                      production-*.tar.gz.sha256
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Automatically provided by GitHub
