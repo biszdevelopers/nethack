@@ -1,5 +1,5 @@
 import { NethackPermissions } from "~~/shared/permissions";
-import { AdminUpdateHackathonRequest, LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
+import { AdminUpdateHackathonRequest } from "~~/shared/schemas";
 import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 import {
@@ -13,12 +13,7 @@ import { writeAuditEvent } from "~~/server/utils/audit";
 import { invalidateEventStateCache } from "~~/server/utils/event-state";
 import { notifySeasonParticipants } from "~~/server/utils/notifications";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import {
-    getHackathonConfigSource,
-    hackathonUsesYaml,
-    readHackathonConfig,
-    writeHackathonConfig,
-} from "~~/server/utils/hackathon-config";
+import { hackathonUsesYaml, readHackathonConfig } from "~~/server/utils/hackathon-config";
 
 async function readManifestSettings(): Promise<Record<string, unknown> | null> {
     if (!hackathonUsesYaml()) return null;
@@ -43,6 +38,39 @@ async function applyResultFreeze(
     season: Season,
     config: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+    const effective = { ...season, ...config };
+    const scheduleKeys = [
+        "start_timestamp",
+        "end_timestamp",
+        "voting_start_timestamp",
+        "voting_end_timestamp",
+        "results_open_timestamp",
+    ];
+    const touchesSchedule = scheduleKeys.some((key) => Object.hasOwn(config, key));
+    const start = Number(effective.start_timestamp);
+    const end = Number(effective.end_timestamp);
+    const votingStart = Number(effective.voting_start_timestamp);
+    const votingEnd = Number(effective.voting_end_timestamp);
+    const resultsOpen = Number(effective.results_open_timestamp);
+    if (touchesSchedule && start > 0 && end > 0 && end <= start) {
+        throw createError({
+            statusCode: 400,
+            message: "The event must end after it starts.",
+        });
+    }
+    if (touchesSchedule && votingStart > 0 && votingEnd > 0 && votingEnd <= votingStart) {
+        throw createError({
+            statusCode: 400,
+            message: "Voting must end after voting starts.",
+        });
+    }
+    if (touchesSchedule && votingEnd > 0 && resultsOpen > 0 && resultsOpen < votingEnd) {
+        throw createError({
+            statusCode: 400,
+            message: "Results must open after voting closes.",
+        });
+    }
+
     if (config.results_published !== 1 || season.results_published === 1) return config;
 
     const standings = await calculateSeasonScoresWithDatabase(tx, season.id, false);
@@ -103,25 +131,8 @@ export default defineEventHandler(
         let publishedSeasonId: number | null = null;
 
         if (hackathonUsesYaml() && targetsLiveSettings) {
-            const operational: Record<string, unknown> = {};
-            const statics: Record<string, unknown> = {};
-            for (const [key, value] of Object.entries(configFields)) {
-                if ((LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
-                    operational[key] = value;
-                } else {
-                    statics[key] = value;
-                }
-            }
-            if (Object.keys(statics).length > 0 && getHackathonConfigSource() !== "local") {
-                throw createError({
-                    statusCode: 409,
-                    message:
-                        "Schedule and theme come from the remote HACKATHON.yml. Only status and visibility switches can change here.",
-                });
-            }
-
             const manifest = await readManifestSettings();
-            const snapshot = await db.transaction(async (tx) => {
+            await db.transaction(async (tx) => {
                 const previousSeason =
                     targetSeasonId === null
                         ? undefined
@@ -154,21 +165,30 @@ export default defineEventHandler(
                     publishedResults = true;
                     publishedSeasonId = previousSeason.id;
                 }
+
+                // Every editable setting is a PostgreSQL live override. The
+                // manifest is a seed and comparison source only; the portal
+                // never writes it, so schedule and theme edits apply instantly.
                 const overrides = divergingOverrides(
                     manifest,
-                    operational,
+                    configFields,
                     previousLive.live_overrides ?? {},
+                );
+                const hackathonConfig = Object.fromEntries(
+                    Object.entries(seasonConfig).filter(
+                        ([key]) => key !== "results_published_at" && key !== "results_snapshot",
+                    ),
                 );
 
                 if (previousSeason) {
                     await tx
                         .update(seasons)
-                        .set({ ...statics, ...seasonConfig })
+                        .set(seasonConfig)
                         .where(eq(seasons.id, previousSeason.id));
                 }
                 await tx
                     .update(hackathon)
-                    .set({ ...statics, ...seasonConfig, live_overrides: overrides })
+                    .set({ ...hackathonConfig, live_overrides: overrides })
                     .where(eq(hackathon.id, 1));
 
                 await writeAuditEvent(tx, event, {
@@ -187,50 +207,7 @@ export default defineEventHandler(
                         : null,
                     after: seasonConfig,
                 });
-
-                return { previousSeason, previousLive };
             });
-
-            if (Object.keys(statics).length > 0) {
-                try {
-                    await writeHackathonConfig(statics);
-                } catch (error) {
-                    // The manifest is the source of truth for schedule and
-                    // theme. Restore the exact rows we changed rather than
-                    // reporting a save the manifest never received.
-                    try {
-                        await db.transaction(async (tx) => {
-                            if (snapshot.previousSeason) {
-                                await lockForUpdateIfSupported(
-                                    tx
-                                        .select()
-                                        .from(seasons)
-                                        .where(eq(seasons.id, snapshot.previousSeason.id))
-                                        .limit(1),
-                                );
-                            }
-                            await lockForUpdateIfSupported(
-                                tx.select().from(hackathon).where(eq(hackathon.id, 1)).limit(1),
-                            );
-                            if (snapshot.previousSeason) {
-                                const { id, ...seasonRow } = snapshot.previousSeason;
-                                await tx
-                                    .update(seasons)
-                                    .set(seasonRow as typeof seasons.$inferInsert)
-                                    .where(eq(seasons.id, id));
-                            }
-                            const { id: liveId, ...liveRow } = snapshot.previousLive;
-                            await tx
-                                .update(hackathon)
-                                .set(liveRow as typeof hackathon.$inferInsert)
-                                .where(eq(hackathon.id, liveId));
-                        });
-                    } catch {
-                        // Preserve the original manifest failure for the caller.
-                    }
-                    throw error;
-                }
-            }
         } else if (hackathonUsesYaml()) {
             if (season_id === undefined) {
                 throw createError({ statusCode: 400, message: "season_id is required" });
@@ -325,12 +302,18 @@ export default defineEventHandler(
         invalidateHackathonCache(event);
         invalidateEventStateCache(event);
         if (publishedResults && publishedSeasonId !== null) {
-            await notifySeasonParticipants(event, publishedSeasonId, {
-                type: "results_published",
-                title: "Results are published",
-                body: "The event results and score feedback are now available.",
-                link: "/dashboard/results",
-            });
+            try {
+                await notifySeasonParticipants(event, publishedSeasonId, {
+                    type: "results_published",
+                    title: "Results are published",
+                    body: "The event results and score feedback are now available.",
+                    link: "/dashboard/results",
+                });
+            } catch (error) {
+                // Publication is already committed; a notification failure must
+                // not make the organizer retry a completed publication.
+                console.error("results notification failed", error);
+            }
         }
 
         const updated = await getHackathon(event);

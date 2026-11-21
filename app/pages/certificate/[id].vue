@@ -103,7 +103,7 @@ function printCertificate() {
             class="certificate rounded-xl border-2 border-default bg-default p-8 text-center sm:p-12"
             aria-labelledby="certificate-heading"
         >
-            <p class="font-mono text-xs tracking-[0.3em] text-primary uppercase">
+            <p class="font-mono text-xs tracking-wide text-primary">
                 {{ WEBSITE_NAME }}
             </p>
             <h1 id="certificate-heading" class="mt-4 text-3xl font-black sm:text-4xl">

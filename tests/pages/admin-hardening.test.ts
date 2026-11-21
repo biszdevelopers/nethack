@@ -5,72 +5,69 @@ import { resolve } from "node:path";
 const readSource = (...segments: string[]) =>
     readFileSync(resolve(import.meta.dirname, "..", "..", ...segments), "utf-8");
 
-describe("admin season form safety", () => {
+describe("admin season operations", () => {
     const season = readSource("app", "pages", "developers", "season.vue");
 
-    it("captures the season and value when an edit happens", () => {
-        expect(season).toContain("const seasonId = selectedSeasonId.value;");
-        expect(season).toContain("const raw = hackathonForm[key];");
-        expect(season).toContain(
-            "saveQueue = saveQueue.then(() => writeField(key, seasonId, raw))",
-        );
-        expect(season).toContain(
-            "async function writeField(key: string, seasonId: number | null, raw: unknown)",
-        );
-        expect(season).toContain("if (seasonId !== null) body.season_id = seasonId;");
-    });
-
-    it("flushes the save queue before create, delete, rename, and activation", () => {
-        expect((season.match(/await saveQueue;/g) ?? []).length).toBeGreaterThanOrEqual(6);
+    it("saves season settings explicitly in one request", () => {
+        expect(season).toContain("async function saveSettings()");
+        expect(season).toContain('await apiFetch("/api/admin/hackathon"');
+        expect(season).toContain("season_id: season.id,");
+        expect(season).not.toContain("saveQueue");
+        expect(season).not.toContain("saveField(");
+        expect(season).toContain("Every field here belongs to");
     });
 
     it("guards unsaved edits on route leave and browser unload", () => {
         expect(season).toContain('import { onBeforeRouteLeave } from "vue-router";');
         expect(season).toContain('window.addEventListener("beforeunload", warnBeforeUnload)');
         expect(season).toContain("onBeforeRouteLeave(() => {");
-        expect(season).toContain("Some season settings are still saving");
+        expect(season).toContain("Discard the unsaved season settings?");
     });
 
-    it("confirms live switches and describes the publish freeze", () => {
-        expect(season).toContain("Pausing the event immediately disables voting and judging");
-        expect(season).toContain("freezes the published scores and ranks");
-        expect(season).toContain("results_published: 1,");
-        expect(season).toContain("judging_open: 0,");
-        expect(season).toContain("voting_enabled: 0,");
-    });
-
-    it("derives the visible capabilities from paused and published state", () => {
-        expect(season).toContain(
-            'const paused = computed(() => hackathonForm.status === "paused");',
-        );
-        expect(season).toContain(
-            "const published = computed(() => Number(hackathonForm.results_published) === 1);",
-        );
-        expect(season).toContain("!paused.value && Number(hackathonForm.voting_enabled) === 1");
-        expect(season).toContain("published.value && Number(hackathonForm.show_scores) === 1");
-        expect(season).toContain('v-for="capability in capabilities"');
+    it("drives the lifecycle from clear stage actions", () => {
+        expect(season).toContain('payload.status = "in_progress";');
+        expect(season).toContain('payload.status = "voting";');
+        expect(season).toContain("payload.results_published = 1;");
+        expect(season).toContain("payload.judging_open = 0;");
+        expect(season).toContain("payload.voting_enabled = 0;");
+        expect(season).toContain('key: "publish"');
+        expect(season).toContain('key: "finish"');
     });
 
     it("validates schedule order inline before saving", () => {
         expect(season).toContain("The event must end after it starts.");
         expect(season).toContain("Voting must end after voting starts.");
         expect(season).toContain("Results must open after voting closes.");
-        expect(season).toContain(':error="timestampErrors.end_timestamp"');
-        expect(season).toContain(':error="timestampErrors.results_open_timestamp"');
-        expect(season).toContain("@change=\"saveTimestamp('end_timestamp')\"");
+        expect(season).toContain(':error="settingsErrors.end_timestamp"');
+        expect(season).toContain(':error="settingsErrors.results_open_timestamp"');
+        expect(season).toContain("if (!settingsValid.value)");
     });
 
     it("labels the vote cap for what it actually limits", () => {
-        expect(season).toContain('label="Max projects a voter can score"');
-        expect(season).toContain("Each voter can give stars to at most this many projects.");
+        expect(season).toContain('label="Maximum stars per voter"');
+        expect(season.replace(/\s+/g, " ")).toContain(
+            "Each ballot always distributes exactly 10 stars.",
+        );
         expect(season).not.toContain("Max Votes Per User");
     });
 
-    it("describes the new-season copy accurately", () => {
-        expect(season).toContain(
-            "New season copies the live event's schedule and theme and inherits its",
-        );
-        expect(season).toContain("Status, voting, judging, results, and visibility switches");
+    it("separates season settings from site-wide settings", () => {
+        expect(season).toContain("Site-wide awards");
+        expect(season).toContain('to="/developers/awards"');
+        expect(season).toContain("The award catalog is independent of seasons.");
+    });
+
+    it("saves the team limit through the season endpoint", () => {
+        expect(season).toContain("async function saveTeamLimit()");
+        expect(season).toContain('await apiFetch("/api/admin/seasons"');
+        expect(season).toContain("max_team_members");
+    });
+
+    it("shows the activation prerequisites instead of blocking silently", () => {
+        expect(season).toContain("const activationBlockers = computed");
+        expect(season).toContain("Set the event dates.");
+        expect(season).toContain("Publish a judging rubric.");
+        expect(season).toContain("Record board approval.");
     });
 });
 

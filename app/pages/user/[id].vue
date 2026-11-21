@@ -60,9 +60,7 @@ const backgroundUrl = computed(() => getProfileThemeUrl(user.value?.profile_them
                 <div class="flex items-center gap-4">
                     <UserAvatar :user="user" size="lg" />
                     <div class="min-w-0">
-                        <p class="font-mono text-xs tracking-[0.18em] text-muted uppercase">
-                            Member profile
-                        </p>
+                        <p class="font-mono text-xs tracking-wide text-muted">Member profile</p>
                         <h1 class="mt-1 truncate text-2xl font-bold text-primary glow sm:text-3xl">
                             {{ user.name || "Unnamed member" }}
                         </h1>

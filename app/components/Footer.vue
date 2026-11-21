@@ -273,9 +273,7 @@ const { data: activeSeason } = useApiFetch<ActiveSeasonFooter>("/api/seasons/act
     $fetch: globalThis.$fetch,
 });
 
-const galleryPublic = computed(() =>
-    Boolean(activeSeason.value?.is_gallery_public || activeSeason.value?.is_submission_closed),
-);
+const galleryPublic = computed(() => Boolean(activeSeason.value?.is_gallery_public));
 
 const isAdmin = computed(() => {
     if (status.value === "idle" || status.value === "pending") return false;

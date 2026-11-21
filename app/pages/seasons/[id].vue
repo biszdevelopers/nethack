@@ -161,9 +161,7 @@ const displayCurve = computed(() => {
                         <div class="mt-3 overflow-x-auto">
                             <table class="w-full text-left text-sm">
                                 <thead>
-                                    <tr
-                                        class="border-b border-default text-xs uppercase text-muted"
-                                    >
+                                    <tr class="border-b border-default text-xs text-muted">
                                         <th scope="col" class="py-2 pr-3 font-semibold">
                                             Criterion
                                         </th>

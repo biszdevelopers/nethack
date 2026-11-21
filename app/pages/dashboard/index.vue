@@ -224,7 +224,7 @@ onUnmounted(() => {
                     </template>
                     <template v-else-if="hackathon?.status === 'in_progress'">
                         The hackathon is in progress -
-                        <span class="glow">HACK AWAY!</span>
+                        <span class="glow">Hack away!</span>
                     </template>
                     <template v-else-if="hackathon?.status === 'voting'">
                         The hackathon is completed, and judging and peer voting are underway!

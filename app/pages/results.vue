@@ -125,9 +125,7 @@ useHead(
 <template>
     <div class="mt-4">
         <header class="max-w-3xl">
-            <p class="font-mono text-xs tracking-[0.28em] text-primary uppercase">
-                Final standings
-            </p>
+            <p class="font-mono text-xs tracking-wide text-primary">Final standings</p>
             <h1 class="mt-3 text-4xl font-black tracking-tight sm:text-6xl">Results</h1>
             <p class="mt-4 text-base leading-7 text-muted">
                 <template v-if="season?.name">{{ season.name }} standings.</template>
@@ -175,9 +173,7 @@ useHead(
 
             <template v-else>
                 <section v-if="peopleChoice" class="mt-10 border border-default bg-elevated/40 p-6">
-                    <p class="font-mono text-xs tracking-[0.24em] text-primary uppercase">
-                        People's Choice
-                    </p>
+                    <p class="font-mono text-xs tracking-wide text-primary">People's Choice</p>
                     <h2 class="mt-2 text-3xl font-bold">{{ peopleChoice.team.project.name }}</h2>
                     <p class="mt-1 text-sm text-muted">
                         {{ peopleChoice.team.name }} · {{ peopleChoice.stars }} average stars from
@@ -233,9 +229,7 @@ useHead(
                                 class="border border-default p-5"
                                 :class="team.rank === 1 ? 'md:order-first' : ''"
                             >
-                                <p class="font-mono text-xs text-muted uppercase">
-                                    Rank #{{ team.rank }}
-                                </p>
+                                <p class="font-mono text-xs text-muted">Rank #{{ team.rank }}</p>
                                 <h3 class="mt-2 break-words text-xl font-bold">
                                     {{ team.project.name || "Untitled project" }}
                                 </h3>

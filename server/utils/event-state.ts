@@ -115,6 +115,9 @@ export function resolveEventGates(
         Boolean(season?.results_published_at) &&
         !judgingAfterPublish;
     const judgingOpen = !paused && Boolean(hackathon.judging_open) && !publishedWhileFinished;
+    // The current-season catalog stays hidden until peer voting opens, even if
+    // the submission deadline passes while the event is still marked in progress.
+    const catalogStage = hackathon.status === "voting" || hackathon.status === "finished";
 
     return {
         paused,
@@ -122,7 +125,7 @@ export function resolveEventGates(
         submissionsClosed,
         votingOpen,
         judgingOpen,
-        galleryPublic: submissionsClosed && isPublicGalleryEnabled(),
+        galleryPublic: !paused && catalogStage && isPublicGalleryEnabled(),
         resultsVisible: Boolean(hackathon.results_published),
     };
 }

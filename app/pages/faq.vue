@@ -60,7 +60,7 @@ useHead(
 <template>
     <div class="mt-4 max-w-4xl">
         <header>
-            <p class="font-mono text-xs tracking-[0.28em] text-primary uppercase">Help centre</p>
+            <p class="font-mono text-xs tracking-wide text-primary">Help centre</p>
             <h1 class="mt-3 text-4xl font-black tracking-tight sm:text-6xl">FAQ</h1>
             <p class="mt-4 max-w-2xl text-base leading-7 text-muted">
                 Short answers for participants. The

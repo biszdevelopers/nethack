@@ -41,9 +41,7 @@ useHead(
                     <UIcon name="i-lucide-arrow-left" />
                     All showcases
                 </NuxtLink>
-                <p class="mt-10 font-mono text-xs tracking-[0.25em] text-primary uppercase">
-                    Season archive
-                </p>
+                <p class="mt-10 font-mono text-xs tracking-wide text-primary">Season archive</p>
                 <h1 class="mt-3 break-words text-4xl font-black tracking-tight sm:text-6xl">
                     {{ season.name }}
                 </h1>

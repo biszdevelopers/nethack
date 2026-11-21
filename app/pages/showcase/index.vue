@@ -53,9 +53,7 @@ useHead(
             <div class="mx-auto max-w-7xl">
                 <div class="mb-10 flex flex-wrap items-end justify-between gap-5">
                     <div>
-                        <p class="font-mono text-xs tracking-[0.28em] text-error uppercase">
-                            Previous season
-                        </p>
+                        <p class="font-mono text-xs tracking-wide text-error">Previous season</p>
                         <h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
                             From the archive
                         </h2>
@@ -78,9 +76,7 @@ useHead(
                         class="relative z-10 flex min-h-[30rem] flex-col justify-between p-7 sm:min-h-[36rem] sm:p-11 lg:p-14"
                     >
                         <div class="flex items-center justify-between gap-4">
-                            <span class="text-xs tracking-[0.24em] text-white/60 uppercase">
-                                February 2026
-                            </span>
+                            <span class="text-xs tracking-wide text-white/60">February 2026</span>
                             <UIcon
                                 name="i-lucide-arrow-up-right"
                                 class="size-7 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"
@@ -89,9 +85,7 @@ useHead(
 
                         <div>
                             <p class="mb-3 text-lg text-white/70">When there is</p>
-                            <h3
-                                class="signal-title text-6xl font-black uppercase sm:text-8xl lg:text-9xl"
-                            >
+                            <h3 class="signal-title text-6xl font-black sm:text-8xl lg:text-9xl">
                                 Signal
                             </h3>
                             <p class="mt-6 max-w-xl text-sm leading-6 text-white/65 sm:text-base">

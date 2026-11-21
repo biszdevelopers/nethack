@@ -49,13 +49,9 @@
             <div v-if="cursorAuraVisible" class="team1-cursor-aura" :style="team1AuraStyle" />
             <Transition name="slide-right">
                 <div v-if="team1showDescriptionRef" class="team1-description transition-content">
-                    <p
-                        class="block lg:hidden text-8xl text-left metallic-gold uppercase mb-12 bold"
-                    >
-                        #1
-                    </p>
+                    <p class="block lg:hidden text-8xl text-left metallic-gold mb-12 bold">#1</p>
 
-                    <h3 class="text-2xl text-left text-neutral-400 uppercase leading-16">
+                    <h3 class="text-2xl text-left text-neutral-400 leading-16">
                         Featuring 白鹿青崖间
                     </h3>
                     <h2 class="text-4xl sm:text-6xl text-left leading-16 bold glow">Syl</h2>
@@ -108,9 +104,7 @@
                 <div class="flex flex-col items-center justify-center">
                     <p class="hidden max-sm:block metallic-silver text-8xl z-4 bold mb-4">#2</p>
 
-                    <h3 class="bold z-3 text-2xl text-neutral-400 uppercase leading-16">
-                        =^^= presents
-                    </h3>
+                    <h3 class="bold z-3 text-2xl text-neutral-400 leading-16">=^^= presents</h3>
                     <div class="metallic-silver team2-background-number select-none max-sm:hidden">
                         #2
                     </div>
@@ -567,7 +561,6 @@ onUnmounted(() => {
 }
 
 .neon {
-    text-transform: uppercase;
     animation: flicker 1.5s infinite alternate;
 }
 

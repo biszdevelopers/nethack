@@ -16,12 +16,17 @@ const between = (source: string, start: string, end: string) => {
 describe("public action paths", () => {
     const home = readSource("pages", "index.vue");
 
-    it("always renders a visible primary call to action instead of a hidden link", () => {
-        expect(home).toContain('label: "Go to dashboard"');
-        expect(home).toContain('label: "Sign in to join"');
-        expect(home).toContain('v-if="primaryCta"');
-        expect(home).not.toContain('class="sr-only"');
-        expect(home).not.toContain('<ULink href="/dashboard">');
+    it("keeps the schedule first and the page sections in a clear order", () => {
+        const schedule = home.indexOf('<h2 id="schedule-heading"');
+        const theme = home.indexOf('<h2 id="theme-heading"');
+        const how = home.indexOf('<h2 id="how-it-works-heading"');
+        const faq = home.indexOf('<h2 id="faq-heading"');
+        expect(schedule).toBeGreaterThan(-1);
+        expect(schedule).toBeLessThan(theme);
+        expect(theme).toBeLessThan(how);
+        expect(how).toBeLessThan(faq);
+        expect(home).not.toContain("primaryCta");
+        expect(home).not.toContain("The official event platform is");
     });
 });
 
@@ -319,13 +324,13 @@ describe("judging history and workspace navigation", () => {
         expect(queue).toContain("Jump to any project in this season's judging queue.");
     });
 
-    it("targets the active season and shows the same schedule on every tab", () => {
+    it("targets the active season and keeps season fields together", () => {
         expect(seasonAdmin).toContain(
-            "seasons.value.find((season: Season) => season.is_active === 1)",
+            "const active = seasons.value.find((season) => season.is_active === 1)",
         );
-        expect(seasonAdmin).toContain("formatFormTimestamp(hackathonForm.start_timestamp)");
-        expect(seasonAdmin).toContain("You are editing a stored season, not the live event");
-        expect(seasonAdmin).toContain("These settings control the live site");
+        expect(seasonAdmin).toContain("Every field here belongs to");
+        expect(seasonAdmin).toContain("Season settings");
+        expect(seasonAdmin).toContain("Save changes");
     });
 });
 
@@ -396,13 +401,13 @@ describe("judge results and admin controls", () => {
         const saveCurve = between(
             seasonAdmin,
             "async function saveScoreCurvePreset",
-            "const seasonNameSaving",
+            "const databaseExporting",
         );
-        expect(saveCurve).toContain("if (seasonId === null) return");
-        expect(saveCurve).toContain("/api/admin/seasons/${seasonId}/score-curve");
+        expect(saveCurve).toContain("const previous = scoreCurvePreset.value");
+        expect(saveCurve).toContain("/api/admin/seasons/${season.id}/score-curve");
         expect(saveCurve).toContain('method: "PATCH"');
-        expect(saveCurve).toContain("scoreCurvePreset.value =");
-        expect(saveCurve).toContain('title: "Could not update score curve"');
+        expect(saveCurve).toContain("scoreCurvePreset.value = previous");
+        expect(saveCurve).toContain('title: "Could not save the score curve"');
         expect(seasonAdmin.replace(/\s+/g, " ")).toContain(
             "The original judge average stays saved",
         );

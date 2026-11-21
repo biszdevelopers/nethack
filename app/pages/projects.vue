@@ -7,7 +7,6 @@ type ActiveSeasonResponse = {
     end_timestamp?: number;
     results_open_timestamp?: number;
     is_gallery_public?: number | boolean | null;
-    is_submission_closed?: number | boolean | null;
 };
 
 const { data: season, error: seasonError } = await useApiFetch<ActiveSeasonResponse>(
@@ -16,9 +15,7 @@ const { data: season, error: seasonError } = await useApiFetch<ActiveSeasonRespo
 );
 if (seasonError.value) throw seasonError.value;
 
-const galleryOpen = computed(() =>
-    Boolean(season.value?.is_gallery_public || season.value?.is_submission_closed),
-);
+const galleryOpen = computed(() => Boolean(season.value?.is_gallery_public));
 
 const {
     data: teams,
@@ -88,7 +85,7 @@ useHead(
     pageSeo({
         title: `Projects | ${WEBSITE_NAME}`,
         description:
-            "Browse the projects submitted to the BIBS-C Network Hackathon. The gallery opens when submissions close.",
+            "Browse the projects submitted to the BIBS-C Network Hackathon. The gallery opens when peer voting begins.",
         path: "/projects",
         robots: galleryOpen.value ? "index, follow" : "noindex, nofollow",
     }),
@@ -98,7 +95,7 @@ useHead(
 <template>
     <div class="mt-4">
         <header class="max-w-3xl">
-            <p class="font-mono text-xs tracking-[0.28em] text-primary uppercase">Public gallery</p>
+            <p class="font-mono text-xs tracking-wide text-primary">Public gallery</p>
             <h1 class="mt-3 text-4xl font-black tracking-tight sm:text-6xl">Projects</h1>
             <p class="mt-4 text-base leading-7 text-muted">
                 Every team that submitted a project for the active season. Ranks and awards appear
@@ -112,11 +109,11 @@ useHead(
             aria-labelledby="gallery-locked-heading"
         >
             <h2 id="gallery-locked-heading" class="text-2xl font-bold">
-                Projects are hidden until submissions close
+                Projects are hidden until peer voting opens
             </h2>
             <p class="mt-3 max-w-2xl text-sm leading-6 text-muted">
                 This protects unfinished work while teams are still building. The gallery opens
-                automatically once submissions close.
+                automatically when the event enters the peer-voting stage.
             </p>
             <div class="mt-6 flex flex-wrap gap-3">
                 <UButton to="/rules" variant="subtle" class="min-h-11">Read the rules</UButton>

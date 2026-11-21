@@ -11,15 +11,15 @@ const home = readSource("app", "pages", "index.vue");
 const sitemap = readSource("server", "routes", "sitemap.xml.ts");
 
 describe("public gallery gate", () => {
-    it("fails closed when the season does not expose gallery flags", () => {
+    it("fails closed when the season does not expose the gallery flag", () => {
         expect(projects).toContain("is_gallery_public");
-        expect(projects).toContain("is_submission_closed");
-        expect(projects).toContain("Boolean(season.value?.is_gallery_public");
+        expect(projects).toContain("Boolean(season.value?.is_gallery_public)");
+        expect(projects).not.toContain("is_submission_closed");
         expect(projects).toContain("immediate: galleryOpen.value");
     });
 
     it("explains the hidden state without loading project data", () => {
-        expect(projects).toContain("Projects are hidden until submissions close");
+        expect(projects).toContain("Projects are hidden until peer voting opens");
         expect(projects).toContain('v-if="!galleryOpen"');
         expect(projects).toContain('useApiFetch<GetTeamResponse[]>("/api/teams"');
     });
@@ -56,23 +56,29 @@ describe("public results gate", () => {
 });
 
 describe("landing page contract", () => {
-    it("separates the event name from the platform name", () => {
-        expect(home).toContain("BIBS-C Network Hackathon");
-        expect(home).toContain("{{ WEBSITE_NAME }}");
+    it("puts the schedule, theme, how-it-works, and FAQ in order", () => {
+        const schedule = home.indexOf('id="schedule-heading"');
+        const theme = home.indexOf('id="theme-heading"');
+        const how = home.indexOf('id="how-it-works-heading"');
+        const faq = home.indexOf('id="faq-heading"');
+        expect(schedule).toBeGreaterThan(-1);
+        expect(schedule).toBeLessThan(theme);
+        expect(theme).toBeLessThan(how);
+        expect(how).toBeLessThan(faq);
     });
 
-    it("describes eligibility, dates, prizes, team size, and time commitment", () => {
-        expect(home).toContain("BIBS-C Network students with a basis-auth account");
-        expect(home).toContain("First, Second, and Third Prize");
-        expect(home).toContain("MAX_TEAM_MEMBERS");
+    it("keeps the schedule copy, timezone, and theme details", () => {
         expect(home).toContain("Asia/Shanghai (UTC+8)");
+        expect(home).toContain("Detailed schedule");
+        expect(home).toContain("The theme will be revealed");
+        expect(home).not.toContain("MAX_TEAM_MEMBERS");
+        expect(home).not.toContain("First, Second, and Third Prize");
     });
 
-    it("renders a visible status-aware CTA", () => {
-        expect(home).toContain('label: "Sign in to join"');
-        expect(home).toContain('label: "Go to dashboard"');
-        expect(home).toContain('label: "See results"');
-        expect(home).not.toContain('class="sr-only"');
+    it("does not reintroduce a generic hero or all-caps labels", () => {
+        expect(home).not.toContain("The official event platform is");
+        expect(home).not.toContain("primaryCta");
+        expect(home).not.toContain("uppercase");
     });
 
     it("links internally with to instead of href", () => {

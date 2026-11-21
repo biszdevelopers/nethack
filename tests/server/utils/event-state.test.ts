@@ -35,7 +35,7 @@ describe("event gates", () => {
         });
         expect(afterDeadline.submissionsOpen).toBe(false);
         expect(afterDeadline.submissionsClosed).toBe(true);
-        expect(afterDeadline.galleryPublic).toBe(true);
+        expect(afterDeadline.galleryPublic).toBe(false);
     });
 
     it("keeps the grace window and deadline enforcement configurable", () => {

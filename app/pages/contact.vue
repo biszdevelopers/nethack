@@ -15,7 +15,7 @@ useHead(
 <template>
     <div class="mt-4 max-w-3xl">
         <header>
-            <p class="font-mono text-xs tracking-[0.28em] text-primary uppercase">Support</p>
+            <p class="font-mono text-xs tracking-wide text-primary">Support</p>
             <h1 class="mt-3 text-4xl font-black tracking-tight sm:text-6xl">Contact</h1>
             <p class="mt-4 text-base leading-7 text-muted">
                 The BIBS-C Developers' Club runs the hackathon and maintains {{ WEBSITE_NAME }}.

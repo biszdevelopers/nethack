@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
-
 type ActiveSeasonResponse = {
     id?: number;
     name?: string;
@@ -14,7 +12,6 @@ type ActiveSeasonResponse = {
     theme_description?: string | null;
     announcement?: string | null;
     is_gallery_public?: number | boolean | null;
-    is_submission_closed?: number | boolean | null;
     results_published?: number | boolean | null;
 };
 
@@ -33,8 +30,6 @@ const hackathon = computed(() => {
     return data.value;
 });
 
-const { loggedIn } = useBasisAuthSession();
-
 const status = computed(() => hackathon.value.status);
 const startDate = computed(() => new Date(hackathon.value.start_timestamp));
 const endDate = computed(() => new Date(hackathon.value.end_timestamp));
@@ -49,78 +44,8 @@ const hasEnd = computed(() => hackathon.value.end_timestamp > 0);
 const hasVotingStart = computed(() => hackathon.value.voting_start_timestamp > 0);
 const hasVotingEnd = computed(() => hackathon.value.voting_end_timestamp > 0);
 const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0);
-const galleryPublic = computed(() =>
-    Boolean(hackathon.value.is_gallery_public || hackathon.value.is_submission_closed),
-);
-
+const galleryPublic = computed(() => Boolean(hackathon.value.is_gallery_public));
 const resultsPublished = computed(() => Boolean(hackathon.value.results_published));
-
-const statusLabel = computed(
-    () =>
-        ({
-            not_started: "Submissions open",
-            in_progress: "Building in progress",
-            voting: "Peer voting open",
-            finished: "Event finished",
-            paused: "Maintenance",
-        })[status.value] ?? status.value,
-);
-
-type Cta = { to: string; label: string };
-
-const primaryCta = computed<Cta | null>(() => {
-    if (status.value === "paused") return null;
-
-    if (status.value === "not_started" || status.value === "in_progress") {
-        return loggedIn.value
-            ? { to: "/dashboard", label: "Go to dashboard" }
-            : { to: "/api/login?redirect=/dashboard", label: "Sign in to join" };
-    }
-
-    if (status.value === "voting") {
-        return loggedIn.value
-            ? { to: "/voting", label: "Vote for your favorites" }
-            : { to: "/api/login?redirect=/dashboard", label: "Sign in to vote" };
-    }
-
-    if (status.value === "finished") {
-        return resultsPublished.value
-            ? { to: "/results", label: "See results" }
-            : { to: "/dashboard", label: "Go to dashboard" };
-    }
-
-    return null;
-});
-
-const secondaryCta = computed<Cta>(() =>
-    resultsPublished.value && primaryCta.value?.to !== "/results"
-        ? { to: "/results", label: "See results" }
-        : { to: "/rules", label: "Read the rules" },
-);
-
-const dateRange = computed(() => {
-    if (!hasStart.value && !hasEnd.value) return "To be announced";
-    if (hasStart.value && hasEnd.value) {
-        return `${formatDateTime(startDate.value)} to ${formatDateTime(endDate.value)}`;
-    }
-    return formatDateTime(hasStart.value ? startDate.value : endDate.value);
-});
-
-const facts = computed(() => [
-    { label: "Event", value: "BIBS-C Network Hackathon" },
-    { label: "Platform", value: WEBSITE_NAME },
-    { label: "Dates", value: dateRange.value },
-    { label: "Eligibility", value: "BIBS-C Network students with a basis-auth account" },
-    { label: "Team size", value: `1 to ${MAX_TEAM_MEMBERS} members` },
-    {
-        label: "Commitment",
-        value: "Plan for the full event window, plus a 2–3 minute silent demonstration video.",
-    },
-    {
-        label: "Prizes",
-        value: "First, Second, and Third Prize, plus Honorable Mentions. Amounts are confirmed by organizers.",
-    },
-]);
 
 const steps = [
     {
@@ -179,77 +104,17 @@ useHead(
 </script>
 
 <template>
-    <div class="mt-4">
-        <section class="border-b border-default pb-10">
-            <div class="flex flex-wrap items-center gap-3">
-                <span
-                    class="border border-primary px-3 py-1 font-mono text-xs tracking-[0.2em] text-primary uppercase"
-                >
-                    {{ statusLabel }}
-                </span>
-                <span class="text-xs text-muted">All deadlines use Asia/Shanghai (UTC+8)</span>
-            </div>
-
-            <h1
-                class="mt-6 text-[clamp(2.75rem,9vw,7rem)] leading-[0.88] font-black tracking-[-0.04em]"
-            >
-                BIBS-C Network
-                <span class="block text-primary">Hackathon</span>
-            </h1>
-
-            <p class="mt-6 max-w-3xl text-lg leading-8 text-muted">
-                The official event platform is
-                <span class="font-semibold text-default">{{ WEBSITE_NAME }}</span>
-                . Teams use it to register, submit projects, vote for their favorites, and publish
-                results. Build something real, document it clearly, and show how you used AI.
-            </p>
-
-            <div class="mt-7 flex flex-wrap gap-3">
-                <UButton v-if="primaryCta" :to="primaryCta.to" size="xl" class="min-h-11">
-                    {{ primaryCta.label }}
-                </UButton>
-                <UButton v-else size="xl" class="min-h-11" disabled>
-                    Maintenance in progress
-                </UButton>
-                <UButton :to="secondaryCta.to" size="xl" variant="subtle" class="min-h-11">
-                    {{ secondaryCta.label }}
-                </UButton>
-            </div>
-
-            <p v-if="status === 'paused'" class="mt-4 text-sm text-muted" role="status">
-                The website is under maintenance. Please check back later.
-            </p>
-
-            <dl
-                class="mt-10 grid grid-cols-1 border-l border-t border-default sm:grid-cols-2 lg:grid-cols-3"
-            >
-                <div
-                    v-for="fact in facts"
-                    :key="fact.label"
-                    class="border-r border-b border-default p-4"
-                >
-                    <dt class="font-mono text-xs tracking-[0.18em] text-muted uppercase">
-                        {{ fact.label }}
-                    </dt>
-                    <dd class="mt-2 text-sm leading-6">{{ fact.value }}</dd>
-                </div>
-            </dl>
-
-            <p
-                v-if="announcement"
-                class="mt-6 border-l-2 border-primary pl-4 whitespace-pre-wrap text-muted"
-            >
-                {{ announcement }}
-            </p>
-        </section>
-
-        <section v-if="status !== 'finished'" class="mt-10">
+    <div class="space-y-12">
+        <section v-if="status !== 'finished'" aria-labelledby="schedule-heading">
             <div class="flex flex-wrap items-end justify-between gap-3">
-                <h2 class="text-3xl font-bold">Schedule</h2>
+                <h2 id="schedule-heading" class="text-3xl font-bold">Schedule</h2>
                 <p class="text-sm text-muted">Times shown in Asia/Shanghai (UTC+8)</p>
             </div>
 
-            <ul v-if="status !== 'paused'" class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <p v-if="status === 'paused'" class="mt-5 text-muted">
+                The website is currently under maintenance. Please check back later.
+            </p>
+            <ul v-else class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <li v-if="status === 'not_started' && hasStart">
                     <LargeCountdown :date="startDate" label="Hackathon starts" />
                 </li>
@@ -266,6 +131,13 @@ useHead(
                     <LargeCountdown :date="resultsOpenDate" label="Results released" />
                 </li>
             </ul>
+
+            <p
+                v-if="announcement"
+                class="mt-6 border-l-2 border-primary pl-4 whitespace-pre-wrap text-muted"
+            >
+                {{ announcement }}
+            </p>
 
             <UCollapsible class="mt-6">
                 <template #default="{ open }">
@@ -311,8 +183,31 @@ useHead(
             </UCollapsible>
         </section>
 
-        <section class="mt-12">
-            <h2 class="text-3xl font-bold">How it works</h2>
+        <section aria-labelledby="theme-heading">
+            <h2 id="theme-heading" class="text-3xl font-bold">Theme</h2>
+            <p v-if="!hackathon.theme_name" class="mt-5 text-muted">
+                The theme will be revealed
+                <template v-if="hasStart">
+                    on
+                    <DateTime class="font-semibold text-default" :date="startDate" />
+                </template>
+                <template v-else>soon</template>
+                .
+            </p>
+            <template v-else>
+                <p class="mt-5 text-lg">
+                    The theme is
+                    <span class="font-bold text-primary">{{ hackathon.theme_name }}</span>
+                    .
+                </p>
+                <p v-if="themeDescription" class="mt-3 max-w-3xl whitespace-pre-wrap text-muted">
+                    {{ themeDescription }}
+                </p>
+            </template>
+        </section>
+
+        <section aria-labelledby="how-it-works-heading">
+            <h2 id="how-it-works-heading" class="text-3xl font-bold">How it works</h2>
             <ol
                 class="mt-5 grid grid-cols-1 gap-px border border-default bg-default sm:grid-cols-2 lg:grid-cols-3"
             >
@@ -326,30 +221,31 @@ useHead(
             </ol>
         </section>
 
-        <section class="mt-12">
-            <h2 class="text-3xl font-bold">Theme</h2>
-            <p v-if="!hackathon.theme_name" class="mt-3 text-muted">
-                The theme will be revealed
-                <template v-if="hasStart">
-                    on
-                    <DateTime class="font-semibold text-default" :date="startDate" />
-                </template>
-                <template v-else>soon</template>
-                .
-            </p>
-            <template v-else>
-                <p class="mt-3 text-lg">
-                    The theme is
-                    <span class="font-bold text-primary">{{ hackathon.theme_name }}</span>
-                    .
-                </p>
-                <p v-if="themeDescription" class="mt-3 max-w-3xl whitespace-pre-wrap text-muted">
-                    {{ themeDescription }}
-                </p>
-            </template>
+        <section aria-labelledby="faq-heading">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+                <h2 id="faq-heading" class="text-3xl font-bold">FAQ</h2>
+                <ULink to="/faq" class="inline-flex min-h-11 items-center gap-1 text-sm">
+                    All questions
+                    <UIcon name="i-lucide-arrow-right" />
+                </ULink>
+            </div>
+            <div class="mt-5 divide-y divide-default border-y border-default">
+                <details v-for="item in faqTeaser" :key="item.question" class="group py-4">
+                    <summary
+                        class="flex min-h-11 cursor-pointer items-center justify-between gap-3 font-semibold"
+                    >
+                        {{ item.question }}
+                        <UIcon
+                            name="i-lucide-chevron-down"
+                            class="shrink-0 transition group-open:rotate-180"
+                        />
+                    </summary>
+                    <p class="mt-2 max-w-3xl text-sm leading-6 text-muted">{{ item.answer }}</p>
+                </details>
+            </div>
         </section>
 
-        <section class="mt-12 grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <section aria-label="Support and archives" class="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div class="border border-default p-6">
                 <h2 class="text-2xl font-bold">Questions before you start?</h2>
                 <p class="mt-3 text-sm leading-6 text-muted">
@@ -379,31 +275,11 @@ useHead(
             </div>
         </section>
 
-        <section class="mt-12">
-            <div class="flex flex-wrap items-end justify-between gap-3">
-                <h2 class="text-3xl font-bold">FAQ</h2>
-                <ULink to="/faq" class="inline-flex min-h-11 items-center gap-1 text-sm">
-                    All questions
-                    <UIcon name="i-lucide-arrow-right" />
-                </ULink>
-            </div>
-            <div class="mt-5 divide-y divide-default border-y border-default">
-                <details v-for="item in faqTeaser" :key="item.question" class="group py-4">
-                    <summary
-                        class="flex min-h-11 cursor-pointer items-center justify-between gap-3 font-semibold"
-                    >
-                        {{ item.question }}
-                        <UIcon
-                            name="i-lucide-chevron-down"
-                            class="shrink-0 transition group-open:rotate-180"
-                        />
-                    </summary>
-                    <p class="mt-2 max-w-3xl text-sm leading-6 text-muted">{{ item.answer }}</p>
-                </details>
-            </div>
-        </section>
-
-        <section v-if="galleryPublic || resultsPublished" class="mt-12 flex flex-wrap gap-3">
+        <section
+            v-if="galleryPublic || resultsPublished"
+            aria-label="Season archives"
+            class="flex flex-wrap gap-3"
+        >
             <UButton v-if="galleryPublic" to="/projects" variant="subtle" class="min-h-11">
                 Browse this season's projects
             </UButton>

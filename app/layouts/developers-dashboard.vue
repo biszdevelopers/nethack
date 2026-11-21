@@ -98,7 +98,7 @@ const name = computed(() => user.value?.name || "Log In");
                     <div v-for="group in sidebarGroups" :key="group.id" class="space-y-1">
                         <p
                             v-if="!collapsed"
-                            class="px-2 text-xs font-semibold uppercase tracking-wide text-ui-text-muted"
+                            class="px-2 text-xs font-semibold tracking-wide text-ui-text-muted"
                         >
                             {{ group.label }}
                         </p>

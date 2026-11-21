@@ -64,7 +64,17 @@ describe("pickDivergingLiveOverrides", () => {
             {},
         );
 
-        expect(overrides).toEqual({ status: "finished", voting_enabled: 0 });
+        expect(overrides).toEqual({
+            status: "finished",
+            voting_enabled: 0,
+            theme_description: "Not a live override",
+        });
+    });
+
+    it("ignores incoming keys that are not live overrides", () => {
+        const overrides = pickDivergingLiveOverrides(null, { custom: 1 }, {});
+
+        expect(overrides).toEqual({});
     });
 
     it("keeps stored values for keys absent from the incoming settings", () => {

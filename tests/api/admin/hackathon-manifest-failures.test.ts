@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,7 +15,7 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "../helpers";
-import { adminAuditEvents, hackathon, notifications, seasons } from "~~/server/database/schema";
+import { adminAuditEvents, notifications, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 const mocks = vi.hoisted(() => ({
@@ -239,64 +239,5 @@ describe("PATCH /api/admin/hackathon historical season in manifest mode", () => 
         mockBody.value = { status: "finished" };
 
         await expect(patchHandler(createEvent())).resolves.toHaveProperty("hackathon");
-    });
-});
-
-describe("PATCH /api/admin/hackathon manifest write rollback", () => {
-    it("restores the season and live rows when the manifest write fails", async () => {
-        seedHackathon(ctx, { theme_name: "Original" });
-        const season = seedSeason(ctx);
-        mocks.writeHackathonConfig.mockRejectedValueOnce(new Error("disk full"));
-        mockBody.value = { theme_name: "Broken" };
-
-        await expect(patchHandler(createEvent())).rejects.toThrow("disk full");
-
-        expect(
-            ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get()!.theme_name,
-        ).toBeNull();
-        expect(
-            ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()!.theme_name,
-        ).toBe("Original");
-        expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
-    });
-
-    it("restores live rows when no season is active", async () => {
-        seedHackathon(ctx, { theme_name: "Original" });
-        mocks.writeHackathonConfig.mockRejectedValueOnce(new Error("disk full"));
-        mockBody.value = { theme_name: "Broken" };
-
-        await expect(patchHandler(createEvent())).rejects.toThrow("disk full");
-
-        expect(ctx.drizzle.select().from(seasons).all()).toHaveLength(0);
-        expect(
-            ctx.drizzle.select().from(hackathon).where(eq(hackathon.id, 1)).get()!.theme_name,
-        ).toBe("Original");
-    });
-
-    it("preserves the manifest error when the rollback transaction also fails", async () => {
-        seedHackathon(ctx);
-        seedSeason(ctx);
-        mocks.writeHackathonConfig.mockRejectedValueOnce(new Error("manifest offline"));
-        mockBody.value = { theme_name: "Broken" };
-        const realDrizzle = ctx.drizzle as any;
-        let transactions = 0;
-        const flakyDrizzle = new Proxy(realDrizzle, {
-            get(target, property) {
-                if (property === "transaction") {
-                    return async (callback: any) => {
-                        transactions += 1;
-                        if (transactions === 1) return target.transaction(callback);
-                        throw new Error("rollback unavailable");
-                    };
-                }
-                const value = Reflect.get(target, property, target);
-                return typeof value === "function" ? value.bind(target) : value;
-            },
-        });
-
-        await expect(
-            patchHandler(createEvent({ context: { drizzle: flakyDrizzle } })),
-        ).rejects.toThrow("manifest offline");
-        expect(transactions).toBe(2);
     });
 });

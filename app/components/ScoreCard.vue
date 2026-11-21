@@ -18,7 +18,7 @@
                     class="w-full flex flex-row justify-between items-center"
                 >
                     <div v-if="team.score !== null && team.score !== undefined" class="w-1/2">
-                        <span class="uppercase text-sm text-muted">original score</span>
+                        <span class="text-sm text-muted">original score</span>
                         <div class="w-1/2 flex items-baseline-last gap-1">
                             <span
                                 class="text-5xl font-bold"
@@ -30,7 +30,7 @@
                         </div>
                     </div>
                     <div v-if="team.rank" class="w-1/2">
-                        <span class="uppercase text-sm text-muted">ranking</span>
+                        <span class="text-sm text-muted">ranking</span>
                         <div class="flex items-baseline-last gap-1">
                             <span
                                 class="text-5xl font-bold"
@@ -55,14 +55,14 @@
                         </div>
                     </div>
                     <div class="w-1/2 blur-md select-none">
-                        <span class="uppercase text-sm text-muted">score</span>
+                        <span class="text-sm text-muted">score</span>
                         <div class="w-1/2 flex items-baseline-last gap-1">
                             <span class="text-5xl font-bold">---</span>
                             <span class="text-muted">/100</span>
                         </div>
                     </div>
                     <div class="w-1/2 blur-md select-none">
-                        <span class="uppercase text-sm text-muted">ranking</span>
+                        <span class="text-sm text-muted">ranking</span>
                         <div class="flex items-baseline-last gap-1">
                             <span class="text-5xl font-bold">#--</span>
                         </div>

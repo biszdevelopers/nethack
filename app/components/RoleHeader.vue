@@ -66,9 +66,7 @@ const profileIconColor = computed(() => {
     return userRef.value ? "text-primary" : "text-ui-muted";
 });
 
-const galleryPublic = computed(() =>
-    Boolean(hackathon.value?.is_gallery_public || hackathon.value?.is_submission_closed),
-);
+const galleryPublic = computed(() => Boolean(hackathon.value?.is_gallery_public));
 
 const canVote = computed(() => {
     if (!hackathon.value?.is_voting_open) return false;
