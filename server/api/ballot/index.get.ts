@@ -1,11 +1,11 @@
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { NethackPermissions } from "~~/shared/permissions";
-import { isVotingOpen } from "~~/server/utils/voting";
+import { getEventState } from "~~/server/utils/event-state";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
-        const hackathon = await getHackathon(event);
-        if (!isVotingOpen(hackathon)) {
+        const state = await getEventState(event);
+        if (!state.votingOpen) {
             throw createError({
                 statusCode: 409,
                 message: "Peer voting is closed",
@@ -30,7 +30,7 @@ export default defineEventHandler(
 
         const projects = await getSubmittedTeams(event);
         const eligibleProjects = projects.filter(
-            (p) => p.id !== user.team_id && p.pathway === userTeam.pathway,
+            (p) => p.id !== userTeam.id && p.status === "active" && p.pathway === userTeam.pathway,
         );
 
         const peerVote = await getPeerVoteByUser(event, user.id, userTeam.season_id);
@@ -57,7 +57,7 @@ export default defineEventHandler(
             ),
             scores,
             reasoning,
-            max_votes_per_user: Math.max(0, Number(hackathon!.max_votes_per_user)),
+            max_votes_per_user: Math.max(0, Number(state.hackathon?.max_votes_per_user ?? 0)),
         } satisfies GetBallotResponse;
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

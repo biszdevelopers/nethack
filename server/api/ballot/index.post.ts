@@ -1,12 +1,13 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { SubmitVoteRequest } from "~~/shared/schemas";
+import { getEventState } from "~~/server/utils/event-state";
+import { upsertPeerVote } from "~~/server/utils/database/peer-voting";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { isVotingOpen } from "~~/server/utils/voting";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
-        const hackathon = await getHackathon(event);
-        if (!isVotingOpen(hackathon)) {
+        const state = await getEventState(event);
+        if (!state.votingOpen) {
             throw createError({
                 statusCode: 409,
                 message: "Peer voting is closed",
@@ -33,7 +34,7 @@ export default defineEventHandler(
 
         const projects = await getSubmittedTeams(event);
         const eligibleProjects = projects.filter(
-            (p) => p.id !== user.team_id && p.pathway === userTeam.pathway,
+            (p) => p.id !== userTeam.id && p.status === "active" && p.pathway === userTeam.pathway,
         );
 
         if (payload.scores.length !== eligibleProjects.length) {
@@ -45,7 +46,7 @@ export default defineEventHandler(
 
         // The portal's Max Votes Per User setting caps how many projects may
         // receive stars. Zero means no cap.
-        const maxScoredProjects = Math.max(0, Number(hackathon!.max_votes_per_user));
+        const maxScoredProjects = Math.max(0, Number(state.hackathon?.max_votes_per_user ?? 0));
         if (
             maxScoredProjects > 0 &&
             payload.scores.filter((score) => score > 0).length > maxScoredProjects
@@ -64,6 +65,7 @@ export default defineEventHandler(
         await upsertPeerVote(event, {
             user_id: user.id,
             season_id: userTeam.season_id,
+            team_id: userTeam.id,
             score: JSON.stringify(scoreObj),
             reasoning: payload.reasoning,
         });

@@ -1,6 +1,7 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { CreateTeamRequest } from "~~/shared/schemas";
 import { createTeam } from "~~/server/utils/database/teams";
+import { getEventState } from "~~/server/utils/event-state";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
 export default defineEventHandler(
@@ -14,11 +15,13 @@ export default defineEventHandler(
             });
         }
 
-        const hackathon = await getHackathon(event);
-        if (hackathon?.status !== "not_started" && hackathon?.status !== "in_progress") {
+        const state = await getEventState(event);
+        if (!state.submissionsOpen) {
             throw createError({
                 statusCode: 403,
-                message: "Cannot create team after hackathon has finished",
+                message: state.paused
+                    ? "The event is paused"
+                    : "Cannot create team after submissions close",
             });
         }
 
