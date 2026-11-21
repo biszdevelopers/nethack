@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { apiFetch } from "~~/app/composables/useApiFetch";
+import { onBeforeRouteLeave } from "vue-router";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
@@ -38,16 +39,23 @@ const {
 });
 const hackathon = computed(() => adminData.value?.hackathon ?? null);
 const seasons = computed(() => adminData.value?.seasons ?? []);
+const selectedSeasonId = ref<number | null>(null);
 
-/**
- * A remote manifest cannot be written from the portal, so its live settings
- * stay read-only. Other seasons keep editable stored settings.
- */
-const configReadOnly = computed(
-    () =>
+function seasonFor(seasonId: number | null): Season | null {
+    return seasonId === null
+        ? null
+        : ((seasons.value as Season[]).find((season) => season.id === seasonId) ?? null);
+}
+
+/** A remote manifest cannot be written from the portal, so its live settings stay read-only. */
+function isConfigReadOnlyFor(seasonId: number | null): boolean {
+    return (
         adminData.value?.configSource === "remote" &&
-        (selectedSeasonId.value === null || selectedSeasonIsActive.value),
-);
+        (seasonId === null || seasonFor(seasonId)?.is_active === 1)
+    );
+}
+
+const configReadOnly = computed(() => isConfigReadOnlyFor(selectedSeasonId.value));
 
 // ---------------------------------------------------------------------------
 // Helpers: ms epoch <-> datetime-local
@@ -105,6 +113,7 @@ const allFieldKeys = [
     "show_scores",
     "show_ranking",
     "max_votes_per_user",
+    "max_team_members",
     "theme_name",
     "theme_description",
     "announcement",
@@ -177,7 +186,11 @@ function applyConfig(seasonId: number | null) {
         const value = source[key];
         if (tsKeys.includes(key)) {
             hackathonForm[key] = tsToDatetime(value);
-        } else if (boolKeys.has(key) || key === "max_votes_per_user") {
+        } else if (
+            boolKeys.has(key) ||
+            key === "max_votes_per_user" ||
+            key === "max_team_members"
+        ) {
             hackathonForm[key] = Number(value ?? 0);
         } else {
             hackathonForm[key] = value ?? "";
@@ -191,13 +204,17 @@ function applyConfig(seasonId: number | null) {
 function normalize(key: string, val: any): any {
     if (typeof val === "boolean") return val ? 1 : 0;
     if (tsKeys.includes(key)) return datetimeToTs(val as string);
-    if (key === "max_votes_per_user") return Number(val);
+    if (key === "max_votes_per_user" || key === "max_team_members") return Number(val);
     return val;
 }
 
-/** Compare a normalized value against the selected season, falling back to live settings. */
-function hasChanged(key: string, normalized: any): boolean {
-    const season = selectedSeason.value;
+/** Compare a normalized value against a specific season, falling back to live settings. */
+function hasChanged(
+    key: string,
+    normalized: any,
+    seasonId: number | null = selectedSeasonId.value,
+): boolean {
+    const season = seasonFor(seasonId);
     const rawBaseline = season
         ? (season as unknown as Record<string, unknown>)[key]
         : (hackathon.value as any)?.[key];
@@ -205,11 +222,19 @@ function hasChanged(key: string, normalized: any): boolean {
     // A stored season's NULL means "empty", not "inherit the live value".
     const baseline =
         rawBaseline === null
-            ? boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)
+            ? boolKeys.has(key) ||
+              key === "max_votes_per_user" ||
+              key === "max_team_members" ||
+              tsKeys.includes(key)
                 ? 0
                 : ""
             : rawBaseline;
-    if (boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)) {
+    if (
+        boolKeys.has(key) ||
+        key === "max_votes_per_user" ||
+        key === "max_team_members" ||
+        tsKeys.includes(key)
+    ) {
         return Number(normalized) !== Number(baseline);
     }
     return normalized !== baseline;
@@ -219,13 +244,17 @@ function hasChanged(key: string, normalized: any): boolean {
  * Save one field at a time. Sending only the field the organizer touched means
  * a stale form can never overwrite unrelated settings.
  *
+ * The season and the value are captured when the edit happens, so a queued
+ * write cannot land on a different season after create/delete/switch.
  * Saves are serialized: a second quick edit waits for the first refresh, then
  * re-reads the form so neither the server nor the visible form is left stale.
  */
 let saveQueue: Promise<void> = Promise.resolve();
 
 function saveField(key: string) {
-    saveQueue = saveQueue.then(() => writeField(key)).catch(() => undefined);
+    const seasonId = selectedSeasonId.value;
+    const raw = hackathonForm[key];
+    saveQueue = saveQueue.then(() => writeField(key, seasonId, raw)).catch(() => undefined);
     return saveQueue;
 }
 
@@ -235,18 +264,42 @@ async function selectSeason(id: number | null) {
     selectedSeasonId.value = id;
 }
 
-async function writeField(key: string) {
-    if (configReadOnly.value && !(LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
+async function writeField(key: string, seasonId: number | null, raw: unknown) {
+    if (isConfigReadOnlyFor(seasonId) && !(LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
         return;
     }
-    const raw = hackathonForm[key];
     if (raw === undefined || raw === null) return;
     const value = normalize(key, raw);
     if (typeof value === "number" && Number.isNaN(value)) return;
-    if (!hasChanged(key, value)) return;
+    if (!hasChanged(key, value, seasonId)) return;
+
+    if (key === "max_team_members") {
+        if (seasonId === null) return;
+        saving.value = true;
+        try {
+            await apiFetch("/api/admin/seasons", {
+                method: "PATCH",
+                body: { id: seasonId, max_team_members: value },
+            });
+            try {
+                await refreshAdmin();
+            } catch {
+                // The field is already saved; a later refresh will resync the view.
+            }
+        } catch (error) {
+            toast.add({
+                title: "Could not save the team limit",
+                description: getErrorMessage(error),
+                color: "error",
+            });
+        } finally {
+            saving.value = false;
+        }
+        return;
+    }
 
     const body: Record<string, unknown> = { [key]: value };
-    if (selectedSeasonId.value !== null) body.season_id = selectedSeasonId.value;
+    if (seasonId !== null) body.season_id = seasonId;
 
     saving.value = true;
     try {
@@ -263,10 +316,10 @@ async function writeField(key: string) {
             color: "error",
         });
         // Revert only the failed field so other pending edits are not wiped.
-        const source = (selectedSeason.value ?? hackathon.value) as Record<string, unknown> | null;
+        const source = (seasonFor(seasonId) ?? hackathon.value) as Record<string, unknown> | null;
         const value = source?.[key];
         if (tsKeys.includes(key)) hackathonForm[key] = tsToDatetime(value);
-        else if (boolKeys.has(key) || key === "max_votes_per_user") {
+        else if (boolKeys.has(key) || key === "max_votes_per_user" || key === "max_team_members") {
             hackathonForm[key] = Number(value ?? 0);
         } else hackathonForm[key] = value ?? "";
     } finally {
@@ -274,10 +327,36 @@ async function writeField(key: string) {
     }
 }
 
+const hasPendingEdits = computed(() => {
+    if (!formInitialized.value) return false;
+    if (saving.value) return true;
+    return allFieldKeys.some((key) => {
+        const raw = hackathonForm[key];
+        if (raw === undefined || raw === null) return false;
+        const value = normalize(key, raw);
+        if (typeof value === "number" && Number.isNaN(value)) return false;
+        return hasChanged(key, value);
+    });
+});
+
+const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (!hasPendingEdits.value) return;
+    event.preventDefault();
+    event.returnValue = "";
+};
+
+onMounted(() => window.addEventListener("beforeunload", warnBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", warnBeforeUnload));
+onBeforeRouteLeave(() => {
+    if (!hasPendingEdits.value) return true;
+    return window.confirm(
+        "Some season settings are still saving or have not been applied. Leave this page and discard them?",
+    );
+});
+
 // ---------------------------------------------------------------------------
 // Selected season
 // ---------------------------------------------------------------------------
-const selectedSeasonId = ref<number | null>(null);
 const activeTab = ref("overview");
 
 const tabItems = [
@@ -307,6 +386,135 @@ const selectedSeasonIsActive = computed(() => selectedSeason.value?.is_active ==
 const statusLabel = computed(
     () => statusLabels[hackathonForm.status] ?? statusLabels.not_started ?? "",
 );
+
+const timestampErrors = computed<Record<string, string>>(() => {
+    const errors: Record<string, string> = {};
+    const start = datetimeToTs(String(hackathonForm.start_timestamp ?? ""));
+    const end = datetimeToTs(String(hackathonForm.end_timestamp ?? ""));
+    const votingStart = datetimeToTs(String(hackathonForm.voting_start_timestamp ?? ""));
+    const votingEnd = datetimeToTs(String(hackathonForm.voting_end_timestamp ?? ""));
+    const resultsOpen = datetimeToTs(String(hackathonForm.results_open_timestamp ?? ""));
+
+    if (start && end && end <= start) {
+        errors.end_timestamp = "The event must end after it starts.";
+    }
+    if (votingStart && votingEnd && votingEnd <= votingStart) {
+        errors.voting_end_timestamp = "Voting must end after voting starts.";
+    }
+    if (votingEnd && resultsOpen && resultsOpen < votingEnd) {
+        errors.results_open_timestamp = "Results must open after voting closes.";
+    }
+    return errors;
+});
+
+function saveTimestamp(key: string) {
+    const message = timestampErrors.value[key];
+    if (message) {
+        toast.add({
+            title: "Fix the schedule order first",
+            description: message,
+            color: "warning",
+        });
+        return;
+    }
+    saveField(key);
+}
+
+const paused = computed(() => hackathonForm.status === "paused");
+const published = computed(() => Number(hackathonForm.results_published) === 1);
+const capabilities = computed(() => [
+    { label: "Voting", value: !paused.value && Number(hackathonForm.voting_enabled) === 1 },
+    { label: "Judging", value: !paused.value && Number(hackathonForm.judging_open) === 1 },
+    { label: "Results published", value: published.value },
+    {
+        label: "Scores visible",
+        value: published.value && Number(hackathonForm.show_scores) === 1,
+    },
+    {
+        label: "Ranking visible",
+        value: published.value && Number(hackathonForm.show_ranking) === 1,
+    },
+]);
+
+const liveToggleKeys = new Set(["voting_enabled", "judging_open", "results_published"]);
+const publishing = ref(false);
+
+function toggleChangeMessage(key: string, next: number): string {
+    const seasonName = selectedSeason.value?.name ?? "the live event";
+    if (key === "results_published" && next === 1) {
+        return `Publish results for ${seasonName}?\n\nThis closes judging and voting immediately and freezes the published scores and ranks.`;
+    }
+    const label =
+        toggleFields.find((toggle) => toggle.key === key)?.label?.toLowerCase() ?? "this switch";
+    return `Turn ${label} ${next === 1 ? "on" : "off"} for ${seasonName}? This applies to the public site immediately.`;
+}
+
+async function publishResults() {
+    const seasonId = selectedSeasonId.value;
+    if (seasonId === null || publishing.value) return;
+    if (
+        !window.confirm(
+            `Publish results for ${selectedSeason.value?.name ?? "this season"}?\n\nThis closes judging and voting immediately and freezes the published scores and ranks.`,
+        )
+    ) {
+        return;
+    }
+    publishing.value = true;
+    try {
+        await saveQueue;
+        await apiFetch("/api/admin/hackathon", {
+            method: "PATCH",
+            body: {
+                season_id: seasonId,
+                results_published: 1,
+                judging_open: 0,
+                voting_enabled: 0,
+            },
+        });
+        hackathonForm.results_published = 1;
+        hackathonForm.judging_open = 0;
+        hackathonForm.voting_enabled = 0;
+        await refreshAdmin();
+        toast.add({
+            title: "Results published",
+            description: "Judging and voting are closed and the standings are frozen.",
+            color: "success",
+        });
+    } catch (error) {
+        toast.add({
+            title: "Could not publish results",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        publishing.value = false;
+    }
+}
+
+function changeToggle(key: string, value: boolean | "indeterminate") {
+    const next = value === true ? 1 : 0;
+    if (Number(hackathonForm[key]) === next) return;
+    if (key === "results_published" && next === 1) {
+        void publishResults();
+        return;
+    }
+    if (liveToggleKeys.has(key) && !window.confirm(toggleChangeMessage(key, next))) return;
+    hackathonForm[key] = next;
+    saveField(key);
+}
+
+function changeStatus(value: string | number) {
+    const next = String(value);
+    if (next === hackathonForm.status) return;
+    const label = statusLabels[next] ?? next;
+    const liveNote =
+        selectedSeasonIsActive.value && next === "paused"
+            ? "Pausing the event immediately disables voting and judging for everyone."
+            : "This applies to the public site immediately.";
+    if (!window.confirm(`Set the status to ${label}?\n\n${liveNote}`)) return;
+    hackathonForm.status = next;
+    saveField("status");
+}
 
 const seasonItems = computed(() => [
     { label: "None", value: null },
@@ -338,6 +546,7 @@ watch(
 async function saveScoreCurvePreset(value: ScoreCurvePreset) {
     const seasonId = selectedSeasonId.value;
     if (seasonId === null) return;
+    await saveQueue;
     scoreCurveSaving.value = true;
     try {
         await apiFetch(`/api/admin/seasons/${seasonId}/score-curve`, {
@@ -365,6 +574,7 @@ const seasonNameSaving = ref(false);
 
 async function renameSeason() {
     if (selectedSeasonId.value === null || !seasonNameForm.value.trim()) return;
+    await saveQueue;
     seasonNameSaving.value = true;
     try {
         await apiFetch("/api/admin/seasons", {
@@ -432,6 +642,7 @@ async function setActiveSeason() {
     ) {
         return;
     }
+    await saveQueue;
     activating.value = true;
     try {
         await apiFetch("/api/seasons/active", {
@@ -452,6 +663,7 @@ const creatingSeason = ref(false);
 async function createSeason(copyLiveSettings = true) {
     const name = prompt("New season name:");
     if (!name || !name.trim()) return;
+    await saveQueue;
     creatingSeason.value = true;
     try {
         const result = await apiFetch<{ seasons: Season[] }>("/api/admin/seasons", {
@@ -475,6 +687,7 @@ async function deleteSeason() {
     const season = selectedSeason.value;
     if (!season || season.is_active === 1) return;
     if (!confirm(`Delete "${season.name}"? This cannot be undone.`)) return;
+    await saveQueue;
     deletingSeason.value = true;
     try {
         const result = await apiFetch<{ seasons: Season[] }>(`/api/admin/seasons/${season.id}`, {
@@ -643,16 +856,16 @@ async function deleteSeason() {
                         </template>
                         <ul class="grid gap-2 sm:grid-cols-2">
                             <li
-                                v-for="toggle in toggleFields"
-                                :key="toggle.key"
+                                v-for="capability in capabilities"
+                                :key="capability.label"
                                 class="flex items-center justify-between gap-3"
                             >
-                                <span>{{ toggle.label }}</span>
+                                <span>{{ capability.label }}</span>
                                 <UBadge
-                                    :color="hackathonForm[toggle.key] ? 'success' : 'neutral'"
+                                    :color="capability.value ? 'success' : 'neutral'"
                                     variant="subtle"
                                 >
-                                    {{ hackathonForm[toggle.key] ? "On" : "Off" }}
+                                    {{ capability.value ? "On" : "Off" }}
                                 </UBadge>
                             </li>
                         </ul>
@@ -662,6 +875,17 @@ async function deleteSeason() {
                             </UButton>
                             <UButton class="min-h-11" variant="soft" @click="activeTab = 'scoring'">
                                 Scoring and rubric
+                            </UButton>
+                            <UButton
+                                v-if="selectedSeasonId !== null && !published"
+                                class="min-h-11"
+                                color="warning"
+                                variant="soft"
+                                :loading="publishing"
+                                :disabled="publishing"
+                                @click="publishResults"
+                            >
+                                Publish results
                             </UButton>
                         </div>
                     </UCard>
@@ -719,11 +943,12 @@ async function deleteSeason() {
                             </UButton>
                         </div>
                         <p class="text-sm text-ui-text-muted mt-3">
-                            New season copies the current live settings; Blank season starts with
-                            event switches off and no theme, schedule, or rubric. A season must have
-                            event dates, voting dates, a theme, a rubric, and recorded board
-                            approval before activation. Activation switches the public site, voting,
-                            and judging immediately.
+                            New season copies the live event's schedule and theme and inherits its
+                            active rubric. Status, voting, judging, results, and visibility switches
+                            start off. Blank season skips the schedule and theme but still inherits
+                            the rubric. A season must have event dates, voting dates, a theme, a
+                            rubric, and recorded board approval before activation. Activation
+                            switches the public site, voting, and judging immediately.
                         </p>
                     </UCard>
 
@@ -817,7 +1042,7 @@ async function deleteSeason() {
                         <fieldset class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <UFormField label="Status" name="status" class="w-full">
                                 <USelect
-                                    v-model="hackathonForm.status"
+                                    :model-value="hackathonForm.status"
                                     :items="[
                                         { label: 'Not Started', value: 'not_started' },
                                         { label: 'In Progress', value: 'in_progress' },
@@ -827,13 +1052,14 @@ async function deleteSeason() {
                                     ]"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @update:model-value="saveField('status')"
+                                    @update:model-value="changeStatus"
                                 />
                             </UFormField>
 
                             <UFormField
-                                label="Max Votes Per User"
+                                label="Max projects a voter can score"
                                 name="max_votes_per_user"
+                                help="Each voter can give stars to at most this many projects. Set 0 for no cap."
                                 class="w-full"
                             >
                                 <UInput
@@ -848,18 +1074,34 @@ async function deleteSeason() {
                                 />
                             </UFormField>
 
+                            <UFormField
+                                label="Max team members"
+                                name="max_team_members"
+                                help="Maximum roster size per team for this season (1-20). Default 6."
+                                class="w-full"
+                            >
+                                <UInput
+                                    v-model="hackathonForm.max_team_members"
+                                    type="number"
+                                    name="max_team_members"
+                                    min="1"
+                                    max="20"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                    @change="saveField('max_team_members')"
+                                />
+                            </UFormField>
+
                             <div
                                 v-for="toggle in toggleFields"
                                 :key="toggle.key"
                                 class="flex items-center gap-3"
                             >
                                 <UCheckbox
-                                    v-model="hackathonForm[toggle.key]"
+                                    :model-value="Boolean(hackathonForm[toggle.key])"
                                     :label="toggle.label"
                                     :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                                    :true-value="1"
-                                    :false-value="0"
-                                    @update:model-value="saveField(toggle.key)"
+                                    @update:model-value="(value) => changeToggle(toggle.key, value)"
                                 />
                             </div>
 
@@ -925,25 +1167,35 @@ async function deleteSeason() {
                             :disabled="configReadOnly"
                             class="grid grid-cols-1 md:grid-cols-2 gap-4"
                         >
-                            <UFormField label="Start" name="start_timestamp" class="w-full">
+                            <UFormField
+                                label="Start"
+                                name="start_timestamp"
+                                class="w-full"
+                                :error="timestampErrors.start_timestamp"
+                            >
                                 <UInput
                                     v-model="hackathonForm.start_timestamp"
                                     type="datetime-local"
                                     name="start_timestamp"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('start_timestamp')"
+                                    @change="saveTimestamp('start_timestamp')"
                                 />
                             </UFormField>
 
-                            <UFormField label="End" name="end_timestamp" class="w-full">
+                            <UFormField
+                                label="End"
+                                name="end_timestamp"
+                                class="w-full"
+                                :error="timestampErrors.end_timestamp"
+                            >
                                 <UInput
                                     v-model="hackathonForm.end_timestamp"
                                     type="datetime-local"
                                     name="end_timestamp"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('end_timestamp')"
+                                    @change="saveTimestamp('end_timestamp')"
                                 />
                             </UFormField>
 
@@ -951,6 +1203,7 @@ async function deleteSeason() {
                                 label="Voting Start"
                                 name="voting_start_timestamp"
                                 class="w-full"
+                                :error="timestampErrors.voting_start_timestamp"
                             >
                                 <UInput
                                     v-model="hackathonForm.voting_start_timestamp"
@@ -958,7 +1211,7 @@ async function deleteSeason() {
                                     name="voting_start_timestamp"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('voting_start_timestamp')"
+                                    @change="saveTimestamp('voting_start_timestamp')"
                                 />
                             </UFormField>
 
@@ -966,6 +1219,7 @@ async function deleteSeason() {
                                 label="Voting End"
                                 name="voting_end_timestamp"
                                 class="w-full"
+                                :error="timestampErrors.voting_end_timestamp"
                             >
                                 <UInput
                                     v-model="hackathonForm.voting_end_timestamp"
@@ -973,7 +1227,7 @@ async function deleteSeason() {
                                     name="voting_end_timestamp"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('voting_end_timestamp')"
+                                    @change="saveTimestamp('voting_end_timestamp')"
                                 />
                             </UFormField>
 
@@ -981,6 +1235,7 @@ async function deleteSeason() {
                                 label="Results Open"
                                 name="results_open_timestamp"
                                 class="w-full"
+                                :error="timestampErrors.results_open_timestamp"
                             >
                                 <UInput
                                     v-model="hackathonForm.results_open_timestamp"
@@ -988,7 +1243,7 @@ async function deleteSeason() {
                                     name="results_open_timestamp"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('results_open_timestamp')"
+                                    @change="saveTimestamp('results_open_timestamp')"
                                 />
                             </UFormField>
                         </fieldset>

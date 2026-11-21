@@ -17,6 +17,18 @@ if (!can(NethackPermissions.Judging.assignmentsRead)) {
     throw await navigateTo("/");
 }
 
+const isAdmin = computed(() => can(NethackPermissions.all));
+const { data: assignments, error: assignmentsError } =
+    await useApiFetch<GetJudgeAssignmentsResponse>("/api/admin/judging/assignments", {
+        lazy: true,
+        server: false,
+        immediate: isAdmin.value,
+    });
+const assignmentCount = computed(() => assignments.value?.assignments.length ?? 0);
+const assignedJudgeCount = computed(
+    () => new Set((assignments.value?.assignments ?? []).map((row) => row.judge_user_id)).size,
+);
+
 const {
     data: summary,
     error,
@@ -73,6 +85,32 @@ async function openQueue() {
                 </UButton>
             </template>
         </UAlert>
+
+        <UCard v-if="isAdmin" variant="subtle" class="mb-6">
+            <template #header>
+                <h2 class="text-xl font-semibold">Judge coverage</h2>
+            </template>
+            <p v-if="assignmentsError" class="text-sm text-muted">
+                Judge assignment coverage is not available on this deployment, but you can still
+                manage assignments in the developer portal.
+            </p>
+            <p v-else-if="assignmentCount === 0" class="text-sm text-muted">
+                No judge assignments are configured, so every judge sees the full queue.
+            </p>
+            <p v-else class="text-sm">
+                {{ assignmentCount }}
+                {{ assignmentCount === 1 ? "assignment" : "assignments" }}
+                across {{ assignedJudgeCount }} {{ assignedJudgeCount === 1 ? "judge" : "judges" }}.
+            </p>
+            <UButton
+                to="/developers/judging"
+                variant="outline"
+                class="mt-3 min-h-11"
+                trailing-icon="i-lucide-arrow-right"
+            >
+                Manage judge assignments
+            </UButton>
+        </UCard>
 
         <UAlert
             v-if="error"

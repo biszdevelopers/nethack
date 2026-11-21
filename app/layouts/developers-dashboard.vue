@@ -27,6 +27,8 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
             items: [
                 { label: "Users", icon: "i-lucide-user", to: "/developers/users" },
                 { label: "Teams", icon: "i-lucide-users", to: "/developers/teams" },
+                { label: "Judging", icon: "i-lucide-gavel", to: "/developers/judging" },
+                { label: "Awards", icon: "i-lucide-award", to: "/developers/awards" },
             ],
         },
         {
@@ -38,6 +40,7 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
                     icon: "i-lucide-book-open",
                     to: "/developers/docs",
                 },
+                { label: "Audit log", icon: "i-lucide-scroll-text", to: "/developers/audit" },
                 { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
                 {
                     label: "DeepSeek",
