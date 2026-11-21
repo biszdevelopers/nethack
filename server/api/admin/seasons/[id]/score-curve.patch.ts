@@ -2,11 +2,12 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
 import { isScoreCurvePreset } from "~~/shared/score-curve";
+import { PositiveIntParam } from "~~/shared/schemas";
 import { seasons } from "~~/server/database/schema";
 import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
-const ParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const ParamsSchema = z.object({ id: PositiveIntParam });
 const BodySchema = z.object({ preset: z.string().refine(isScoreCurvePreset) });
 
 export default defineEventHandler(

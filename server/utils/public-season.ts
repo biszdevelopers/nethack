@@ -1,4 +1,7 @@
-export function toPublicSeason(season: Season): PublicSeason {
+export function toPublicSeason(
+    season: Season,
+    options: { is_submission_closed?: boolean; is_gallery_public?: boolean } = {},
+): PublicSeason {
     // Allowlist the published phases: an unexpected legacy status must not
     // reveal a theme that the organizer never published.
     const themeIsPublished =
@@ -19,5 +22,7 @@ export function toPublicSeason(season: Season): PublicSeason {
         results_open_timestamp: season.results_open_timestamp,
         theme_name: themeIsPublished ? season.theme_name : null,
         theme_description: themeIsPublished ? season.theme_description : null,
+        is_submission_closed: options.is_submission_closed,
+        is_gallery_public: options.is_gallery_public,
     } satisfies PublicSeason;
 }
