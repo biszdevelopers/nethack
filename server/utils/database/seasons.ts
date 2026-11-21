@@ -5,12 +5,7 @@ import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { getHackathon, invalidateHackathonCache, pickDivergingLiveOverrides } from "./hackathon";
 import { firstRow, requestCache, supportsRowLocks } from "./query";
 import { writeAuditEvent } from "../audit";
-import {
-    getHackathonConfigSource,
-    hackathonUsesYaml,
-    readHackathonConfig,
-    writeHackathonConfig,
-} from "../hackathon-config";
+import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 /**
  * Per-season tweakable settings. In PostgreSQL rollback mode these fields
@@ -243,7 +238,6 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
     // transaction. Rollback snapshots are taken inside it, after the advisory
     // lock, so a concurrent activation on another instance cannot be undone.
     const currentLive = await getHackathon(event);
-    const liveConfig = hackathonUsesYaml() ? currentLive : null;
     let manifestSettings: Record<string, unknown> | null = null;
     if (hackathonUsesYaml()) {
         try {
@@ -255,8 +249,6 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
     }
     let previousActive: { id: number } | undefined;
     let previousActiveSeason: typeof seasons.$inferSelect | undefined;
-    let previousLive: typeof hackathon.$inferSelect | undefined;
-    let activationSettings: Record<string, unknown> | null = null;
 
     await event.context.drizzle.transaction(async (tx) => {
         // The in-memory queue only covers one process. A transaction-scoped
@@ -270,7 +262,6 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             .where(eq(seasons.is_active, 1))
             .limit(1);
         previousActive = previousActiveSeason ? { id: previousActiveSeason.id } : undefined;
-        [previousLive] = await tx.select().from(hackathon).limit(1);
 
         let season: Season | undefined;
         if (seasonId !== null) {
@@ -362,11 +353,10 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             }
         }
 
-        // The manifest is cached per instance, so a concurrent activation on
-        // another instance cannot be fully serialized by the advisory lock here.
-        // Multi-instance season switching needs coordinated cache invalidation.
-        if (liveConfig && season?.is_active !== 1) {
-            const { id, submitted_count, live_overrides, ...settings } = liveConfig;
+        // Snapshot the outgoing live settings into its own season row before
+        // the switch. The manifest remains a comparison source and is not written.
+        if (currentLive && seasonId !== previousActiveSeason?.id) {
+            const { id, submitted_count, live_overrides, ...settings } = currentLive;
             await tx.update(seasons).set(settings).where(eq(seasons.is_active, 1));
         }
 
@@ -384,11 +374,10 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
                     .set({ ...settings, live_overrides: {} })
                     .where(eq(hackathon.id, 1));
             } else if (season.is_active !== 1) {
-                // Activating in manifest mode must move the operational switches
-                // with it. Store only switches that intentionally diverge from
-                // the manifest, replacing any overrides from the previous season.
+                // Activation replaces the previous season's overrides with values
+                // from the activated season. Only values that diverge from the
+                // manifest are stored, but every editable field participates.
                 const stored = pickSeasonConfig(season as unknown as Record<string, unknown>);
-                activationSettings = stored;
                 const operational = Object.fromEntries(
                     Object.entries(stored).filter(([key]) =>
                         (LIVE_OVERRIDE_KEYS as readonly string[]).includes(key),
@@ -410,45 +399,4 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             after: { active_season_id: seasonId },
         });
     });
-
-    // A remote manifest cannot be rewritten. The operational switches were
-    // already stored in PostgreSQL, so activation still applies them; only the
-    // manifest-owned schedule and theme stay under the remote file.
-    if (activationSettings && getHackathonConfigSource() === "local") {
-        try {
-            await writeHackathonConfig(activationSettings);
-        } catch (error) {
-            // Restore the previous active season instead of reporting a switch
-            // whose manifest write did not apply.
-            try {
-                await event.context.drizzle.transaction(async (tx) => {
-                    await acquireActivationLock(tx);
-                    // Another instance may have committed an activation after
-                    // ours. Never undo a newer switch with our stale snapshot.
-                    const [currentlyActive] = await tx
-                        .select({ id: seasons.id })
-                        .from(seasons)
-                        .where(eq(seasons.is_active, 1))
-                        .limit(1);
-                    if ((currentlyActive?.id ?? null) !== seasonId) return;
-
-                    await tx.update(seasons).set({ is_active: 0 }).where(eq(seasons.is_active, 1));
-                    if (previousActiveSeason) {
-                        const { id, ...previousSeasonSettings } = previousActiveSeason;
-                        await tx
-                            .update(seasons)
-                            .set({ ...previousSeasonSettings, is_active: 1 })
-                            .where(eq(seasons.id, id));
-                    }
-                    if (previousLive) {
-                        const { id, ...previousSettings } = previousLive;
-                        await tx.update(hackathon).set(previousSettings).where(eq(hackathon.id, 1));
-                    }
-                });
-            } catch {
-                // Preserve the original activation failure for the caller.
-            }
-            throw error;
-        }
-    }
 }
