@@ -1,5 +1,15 @@
 <script setup lang="ts">
-useHead({ title: `Rules | ${WEBSITE_NAME}` });
+const RULES_VERSION = "1.0";
+const RULES_EFFECTIVE_DATE = "21 November 2026";
+
+useHead(
+    pageSeo({
+        title: `Rules | ${WEBSITE_NAME}`,
+        description:
+            "The binding competition rules for the BIBS-C Network Hackathon: eligibility, submissions, repository and video requirements, AI-use disclosure, privacy, and appeals.",
+        path: "/rules",
+    }),
+);
 </script>
 
 <template>
@@ -12,11 +22,11 @@ useHead({ title: `Rules | ${WEBSITE_NAME}` });
                 evaluated, and the standards of conduct expected throughout the competition.
             </p>
             <p>
-                These rules are currently being finalized and
-                <span class="font-semibold text-blue-600 dark:text-blue-300">may be revised</span>
-                before the competition begins. All participants are responsible for reviewing the
-                latest published version before submitting their work. The final published version
-                will govern participation and submissions.
+                <span class="font-semibold">Version {{ RULES_VERSION }}.</span>
+                This version took effect on {{ RULES_EFFECTIVE_DATE }} and is the binding document
+                for the current season. Organizers may publish a later version with reasonable
+                notice; the latest published version governs participation and submissions.
+                Participants are responsible for reviewing it before submitting their work.
             </p>
             <div
                 class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-4 text-gray-800 dark:text-gray-100"
@@ -372,6 +382,7 @@ useHead({ title: `Rules | ${WEBSITE_NAME}` });
             </p>
             <h3 class="text-xl font-semibold">1.4. Responsible Use of Artificial Intelligence</h3>
             <p>
+                <strong class="text-blue-700 dark:text-blue-300">Required disclosure.</strong>
                 AI tools are permitted in this competition. We recognize that they can help
                 participants learn, explore ideas, solve problems, and develop software more
                 efficiently. However, using AI does not remove your responsibility for the work you
@@ -582,9 +593,10 @@ useHead({ title: `Rules | ${WEBSITE_NAME}` });
             <p>
                 <strong class="text-blue-700 dark:text-blue-300">Required.</strong>
                 Your complete project source code must be hosted in a publicly accessible repository
-                on a recognized version control platform.
+                on a recognized version control platform. GitHub is the preferred platform because
+                it matches the submission form and the organizers' evaluation workflow.
             </p>
-            <p>Acceptable platforms include, but are not limited to:</p>
+            <p>Acceptable platforms include:</p>
             <ul class="list-disc list-inside ml-4 space-y-1">
                 <li>
                     <ULink href="https://github.com" target="_blank" rel="noopener noreferrer">
@@ -1211,6 +1223,61 @@ useHead({ title: `Rules | ${WEBSITE_NAME}` });
                 </a>
             </p>
             <p>Members of the BISZ Developers' Club leadership will respond to inquiries.</p>
+            <h3 class="text-xl font-semibold">6.5. Time Zone and Deadlines</h3>
+            <p>
+                Every deadline published on {{ WEBSITE_NAME }} uses
+                <strong class="text-blue-700 dark:text-blue-300">Asia/Shanghai (UTC+8)</strong>
+                . Timestamps on the website show this zone explicitly. Participants in other zones
+                are responsible for converting the deadline correctly; the platform closes
+                submissions at the displayed time, not at a participant's local time.
+            </p>
+            <h3 class="text-xl font-semibold">6.6. Late Submissions</h3>
+            <p>
+                Submissions received after the published deadline are not accepted. The only
+                exception is a documented platform failure that prevented submission before the
+                deadline and that the organizers can verify from server logs. A local computer,
+                network, or account problem is not grounds for an extension. Contact the organizers
+                immediately if you believe a platform failure affected your submission.
+            </p>
+            <h3 class="text-xl font-semibold">6.7. Clarifications, Appeals, and Arbitration</h3>
+            <p>
+                Questions about the rules should be sent before the submission deadline so the
+                answer can be applied consistently. If a participant believes a judging result,
+                penalty, or eligibility decision is wrong, they may appeal in writing to
+                <a
+                    href="mailto:devclub-bisz@basischina.com"
+                    class="font-semibold text-blue-700 dark:text-blue-300 hover:underline dark:hover:text-blue-200"
+                >
+                    devclub-bisz@basischina.com
+                </a>
+                within 48 hours of the published result. The appeal must identify the team, the
+                decision, and the evidence the participant wants reviewed.
+            </p>
+            <p>
+                The BIBS-C Developers' Club leadership reviews appeals as a panel and may request a
+                live explanation or additional evidence. Panel decisions are final and binding.
+                Appeals that are abusive, repetitive without new evidence, or filed after the
+                48-hour window may be declined without review.
+            </p>
+            <h3 id="privacy-and-data-retention" class="text-xl font-semibold">
+                6.8. Privacy and Data Retention
+            </h3>
+            <p>
+                The organizers process basis-auth account identifiers, names, email addresses, team
+                membership, project submissions, peer ballots, judge evaluations, and administrative
+                audit records to run the competition and publish the showcase. Access is limited to
+                organizers and judges who need the data for their role. Passwords, authentication
+                tokens, and private credentials are never displayed to other participants.
+            </p>
+            <p>
+                Competition records are retained for the life of the {{ WEBSITE_NAME }} archive so
+                results and past seasons remain verifiable. Anonymous judge comments may remain
+                visible to a team after publication. Participants may request access, correction, or
+                deletion of their personal data by writing to the contact address above; deletion
+                requests that would remove a published result or violate an archival obligation will
+                be handled by explaining the remaining legal or competition basis. Public showcase
+                consent and its withdrawal deadline are described in Phase 5.
+            </p>
         </section>
 
         <footer class="my-8 text-center">

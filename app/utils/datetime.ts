@@ -2,6 +2,8 @@ export type DateInput = Date | string | number | null | undefined;
 
 /** Every participant-facing timestamp is rendered in this zone. */
 export const DISPLAY_TIME_ZONE = "Asia/Shanghai";
+/** Short label shown next to rendered timestamps. */
+export const DISPLAY_TIME_ZONE_LABEL = "UTC+8";
 /** Asia/Shanghai has no DST, so a fixed offset keeps form conversions exact. */
 const DISPLAY_UTC_OFFSET = "+08:00";
 
@@ -17,16 +19,12 @@ export function toValidDate(value: DateInput): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** Formats a timestamp in the display zone so every surface agrees. */
+/** Formats a timestamp in the display zone so server and browser agree. */
 export function formatDateTime(value: DateInput): string {
     const date = toValidDate(value);
     if (!date) return "Date unavailable";
 
-    return date.toLocaleString("en-CA", {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: DISPLAY_TIME_ZONE,
-    });
+    return toDateTimeLocalString(date).replace("T", " ");
 }
 
 /** Builds a `datetime-local` value from the display zone, not the browser zone. */

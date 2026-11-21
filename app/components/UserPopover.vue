@@ -1,6 +1,11 @@
 <template>
-    <UPopover mode="hover" @update:open="handleHover">
-        <slot />
+    <UPopover mode="click" @update:open="handleOpen">
+        <button
+            type="button"
+            class="inline-flex min-h-11 items-center gap-1 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+            <slot />
+        </button>
 
         <template #content>
             <div class="min-w-[200px] overflow-hidden">
@@ -14,6 +19,10 @@
                         </div>
                     </div>
                 </template>
+
+                <div v-else-if="loadError" class="p-3 text-sm text-default" role="status">
+                    This profile card could not be loaded.
+                </div>
 
                 <template v-else-if="hoveredUser">
                     <div
@@ -102,12 +111,14 @@ const hasHovered = ref(false);
 const hoveredUser = ref<APIUser | null>(null);
 const backgroundUrl = computed(() => getProfileThemeUrl(hoveredUser.value?.profile_theme));
 const pending = ref(false);
+const loadError = ref(false);
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
-const handleHover = async (isOpen: boolean) => {
+const handleOpen = async (isOpen: boolean) => {
     if (!isOpen || hasHovered.value) return;
     hasHovered.value = true;
+    loadError.value = false;
 
     pending.value = true;
     try {
@@ -116,9 +127,9 @@ const handleHover = async (isOpen: boolean) => {
         } else {
             hoveredUser.value = props.user;
         }
-    } catch (e) {
+    } catch {
         hasHovered.value = false;
-        console.error("Failed to fetch user:", e);
+        loadError.value = true;
     } finally {
         pending.value = false;
     }

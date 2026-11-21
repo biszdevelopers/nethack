@@ -3,15 +3,13 @@ definePageMeta({
     layout: "fullwidth-nostick",
 });
 
-useHead({
-    title: `Showcase | ${WEBSITE_NAME}`,
-    meta: [
-        {
-            name: "description",
-            content: "Explore the winning projects and season showcases from nethack.",
-        },
-    ],
-});
+useHead(
+    pageSeo({
+        title: `Showcase | ${WEBSITE_NAME}`,
+        description: "Explore the winning projects and season showcases from nethack.",
+        path: "/showcase",
+    }),
+);
 </script>
 
 <template>

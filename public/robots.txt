@@ -1,2 +1,10 @@
 User-Agent: *
-Disallow:
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /judging
+Disallow: /voting
+Disallow: /profile
+Disallow: /developers
+Disallow: /debug
+Disallow: /docs/
+Disallow: /user/

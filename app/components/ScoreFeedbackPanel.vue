@@ -5,12 +5,13 @@ import { SCORE_CURVE_PRESETS } from "~~/shared/score-curve";
 const props = withDefaults(
     defineProps<{
         teamId: number;
+        team?: GetTeamResponse | null;
         admin?: boolean;
         showSummary?: boolean;
         showOriginalScore?: boolean;
         showRank?: boolean;
     }>(),
-    { admin: false, showSummary: true, showOriginalScore: true, showRank: true },
+    { admin: false, showSummary: true, showOriginalScore: true, showRank: true, team: null },
 );
 
 const headingId = useId();
@@ -18,9 +19,11 @@ const endpoint = computed(() =>
     props.admin ? `/api/admin/teams/${props.teamId}/scores` : `/api/teams/${props.teamId}/scores`,
 );
 const { data, pending, error } = await useApiFetch<TeamScoreFeedbackResponse>(endpoint);
-const { data: projectTeam } = await useApiFetch<GetTeamResponse>(
+const { data: fetchedTeam } = await useApiFetch<GetTeamResponse>(
     () => `/api/teams/${props.teamId}`,
+    { immediate: !props.team },
 );
+const projectTeam = computed(() => props.team ?? fetchedTeam.value);
 const curve = computed(() =>
     data.value?.curve_preset ? SCORE_CURVE_PRESETS[data.value.curve_preset] : null,
 );

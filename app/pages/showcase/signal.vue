@@ -278,9 +278,13 @@ definePageMeta({
     title: `Signal | ${WEBSITE_NAME}`,
 });
 
-useHead({
-    title: `Signal | ${WEBSITE_NAME}`,
-});
+useHead(
+    pageSeo({
+        title: `Signal | ${WEBSITE_NAME}`,
+        description: "The Signal project showcase from the BIBS-C Network Hackathon.",
+        path: "/showcase/signal",
+    }),
+);
 
 useHead({
     link: [
@@ -396,13 +400,18 @@ const resetTeam1Cursor = () => {
     team1Proximity.value = 0;
 };
 
-let handleScroll;
+let handleScroll = null;
+let scrollFrame = 0;
+
+function scheduleScroll() {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        handleScroll?.();
+    });
+}
 
 onMounted(() => {
-    console.log(
-        "can u believe i actually wrote this by myself (well like 60% and the css)?? lol. if u can buy us infinite tokens that would be nice :)",
-    );
-
     dirtyLoading.value = false;
 
     handleScroll = () => {
@@ -411,7 +420,8 @@ onMounted(() => {
 
         // Team 1 video scroll animation
         const element = team1Ref.value;
-        if (element && videoRef.value) {
+        const video = videoRef.value;
+        if (element && video) {
             const rect = element.getBoundingClientRect();
 
             const elementTop = rect.top + window.scrollY - window.innerHeight / 2; // preload twice height
@@ -423,7 +433,9 @@ onMounted(() => {
                 if (!team1showDescriptionRef.value) team1showDescriptionRef.value = true;
 
                 const progress = (scrollY - elementTop) / elementHeight;
-                videoRef.value.currentTime = progress * videoRef.value.duration;
+                if (Number.isFinite(video.duration) && Number.isFinite(progress)) {
+                    video.currentTime = Math.min(1, Math.max(0, progress)) * video.duration;
+                }
             }
         }
 
@@ -446,11 +458,15 @@ onMounted(() => {
         }
     };
 
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", scheduleScroll, { passive: true });
+    window.addEventListener("resize", scheduleScroll, { passive: true });
+    scheduleScroll();
 });
 
 onUnmounted(() => {
-    if (handleScroll) window.removeEventListener("scroll", handleScroll);
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    window.removeEventListener("scroll", scheduleScroll);
+    window.removeEventListener("resize", scheduleScroll);
 });
 </script>
 
