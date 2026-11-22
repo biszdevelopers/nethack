@@ -123,6 +123,7 @@
         "vue-tsc": "^3.3.14"
     },
     "patchedDependencies": {
-        "@rollup/plugin-node-resolve@16.0.3": "patches/@rollup%2Fplugin-node-resolve@16.0.3.patch"
+        "@rollup/plugin-node-resolve@16.0.3": "patches/@rollup%2Fplugin-node-resolve@16.0.3.patch",
+        "@nuxt/icon@2.6.3": "patches/@nuxt%2Ficon@2.6.3.patch"
     }
 }

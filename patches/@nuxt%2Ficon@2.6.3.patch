@@ -1,0 +1,26 @@
+diff --git a/dist/module.mjs b/dist/module.mjs
+--- a/dist/module.mjs
++++ b/dist/module.mjs
+@@ -1,6 +1,5 @@
+ import fs from 'node:fs/promises';
+ import { addVitePlugin, getLayerDirectories, addTemplate, logger, defineNuxtModule, createResolver, getNuxtVersion, addPlugin, addComponent, addServerHandler, hasNuxtModule, resolvePath as resolvePath$1, updateTemplates } from '@nuxt/kit';
+-import { addCustomTab } from '@nuxt/devtools-kit';
+ import { resolvePath } from 'mlly';
+ import { relative } from 'node:path';
+ import { resolveModule } from 'local-pkg';
+@@ -662,15 +661,6 @@
+     });
+     registerServerBundle(ctx);
+     registerClientBundle(ctx);
+-    addCustomTab({
+-      name: "icones",
+-      title: "Ic\xF4nes",
+-      icon: "https://icones.js.org/favicon.svg",
+-      view: {
+-        type: "iframe",
+-        src: "https://icones.js.org"
+-      }
+-    });
+     options.serverKnownCssClasses ||= [];
+     const serverKnownCssClasses = options.serverKnownCssClasses || [];
+     nuxt.options.runtimeConfig.icon = {
