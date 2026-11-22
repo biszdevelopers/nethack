@@ -15,6 +15,7 @@ import {
 } from "./helpers";
 import { and, eq } from "drizzle-orm";
 import {
+    adminAuditEvents,
     notifications,
     seasons,
     teamInvites,
@@ -258,6 +259,31 @@ describe("POST /api/team-invites/:id/accept", () => {
         const remaining = ctx.drizzle.select().from(teamInvites).all();
         expect(remaining).toHaveLength(1);
         expect(remaining[0]!.team_id).toBe(other.id);
+    });
+
+    it("clears the local judge flag when a judge joins a competing team", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "judge@basischina.com", is_judge: 1 });
+        const created = invite(team.id, "judge@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).resolves.toEqual({
+            message: "You joined Team",
+        });
+
+        const updated = ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get();
+        expect(updated!.team_id).toBe(team.id);
+        expect(updated!.is_judge).toBe(0);
+        const audits = ctx.drizzle.select().from(adminAuditEvents).all();
+        expect(audits).toHaveLength(1);
+        expect(audits[0]).toMatchObject({
+            action: "user.judge",
+            entity_id: String(user.id),
+            before: { is_judge: true },
+            after: { is_judge: false },
+            reason: "Joined a competing team",
+        });
     });
 
     it("does not reveal invitations addressed to another email", async () => {

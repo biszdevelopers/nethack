@@ -65,6 +65,32 @@ describe("teams database helpers", () => {
             expect(owner.team_id).toBe(1);
         });
 
+        it("clears a judge flag when the account becomes a team owner", async () => {
+            seedSeason(event, "Season 1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, is_judge) VALUES('judge@example.test', 1)")
+                .run();
+
+            const team = await createTeam(event, "Judge Team", 1);
+
+            const owner = event.context.drizzle
+                .select({ is_judge: users.is_judge })
+                .from(users)
+                .where(eq(users.id, 1))
+                .get();
+            expect(owner!.is_judge).toBe(0);
+            const audits = event.context.drizzle.select().from(adminAuditEvents).all();
+            expect(audits).toHaveLength(1);
+            expect(audits[0]).toMatchObject({
+                action: "user.judge",
+                entity_id: String(1),
+                before: { is_judge: true },
+                after: { is_judge: false },
+                reason: "Joined a competing team",
+            });
+            expect(team.name).toBe("Judge Team");
+        });
+
         it("rejects an owner who already belongs to the active season", async () => {
             seedSeason(event, "Season 1", 1);
             event.context.drizzle

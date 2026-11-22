@@ -196,7 +196,7 @@ export async function createTeam(
 
         const [owner] = await lockForUpdateIfSupported(
             tx
-                .select({ id: users.id, team_id: users.team_id })
+                .select({ id: users.id, team_id: users.team_id, is_judge: users.is_judge })
                 .from(users)
                 .where(eq(users.id, ownerUserID))
                 .limit(1),
@@ -245,7 +245,22 @@ export async function createTeam(
                 .values({ name: teamName, season_id: seasonId, owner_user_id: ownerUserID })
                 .returning(),
         )) as Team;
-        await tx.update(users).set({ team_id: team.id }).where(eq(users.id, ownerUserID));
+        await tx
+            .update(users)
+            .set({ team_id: team.id, ...(owner.is_judge ? { is_judge: 0 } : {}) })
+            .where(eq(users.id, ownerUserID));
+        if (owner.is_judge) {
+            // A competitor cannot be a judge; drop the local grant when the
+            // account joins a team. An administrator can re-promote later.
+            await writeAuditEvent(tx, event, {
+                action: "user.judge",
+                entity_type: "user",
+                entity_id: ownerUserID,
+                before: { is_judge: true },
+                after: { is_judge: false },
+                reason: "Joined a competing team",
+            });
+        }
         if (owner.team_id !== null) {
             await tx
                 .insert(userPastTeams)

@@ -5,6 +5,7 @@ import { users, teams, userPastTeams, teamInvites, seasons } from "~~/server/dat
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
 import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
 import { getActiveSeason } from "./seasons";
+import { writeAuditEvent } from "~~/server/utils/audit";
 
 const DEFAULT_INVITE_TTL_DAYS = 7;
 
@@ -431,7 +432,20 @@ async function acceptInviteWithSelector(
                 .values({ user_id: user.id, team_id: lockedUser.team_id })
                 .onConflictDoNothing();
         }
-        await tx.update(users).set({ team_id: team.id }).where(eq(users.id, user.id));
+        await tx
+            .update(users)
+            .set({ team_id: team.id, ...(lockedUser.is_judge ? { is_judge: 0 } : {}) })
+            .where(eq(users.id, user.id));
+        if (lockedUser.is_judge) {
+            await writeAuditEvent(tx, event, {
+                action: "user.judge",
+                entity_type: "user",
+                entity_id: user.id,
+                before: { is_judge: true },
+                after: { is_judge: false },
+                reason: "Joined a competing team",
+            });
+        }
         // Accepting the invitation clears only this team's pending invitations
         // for the account. Invitations from other teams are left untouched.
         await tx
