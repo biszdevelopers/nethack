@@ -71,6 +71,14 @@ async function applyResultFreeze(
         });
     }
 
+    if (config.results_published === 0 && season.results_published === 1) {
+        return {
+            ...config,
+            results_published_at: null,
+            results_snapshot: null,
+        };
+    }
+
     if (config.results_published !== 1 || season.results_published === 1) return config;
 
     const standings = await calculateSeasonScoresWithDatabase(tx, season.id, false);

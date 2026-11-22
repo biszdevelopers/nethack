@@ -421,6 +421,23 @@ theme_description: null
         }
     });
 
+    it("clears the publication timestamp and snapshot when results are unpublished", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx, {
+            results_published: 1,
+            results_published_at: new Date(),
+            results_snapshot: { season_id: 1, standings: [] },
+        });
+        mockBody.value = { season_id: season.id, results_published: 0 };
+
+        await patchHandler(createEvent());
+
+        const row = ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get()!;
+        expect(row.results_published).toBe(0);
+        expect(row.results_published_at).toBeNull();
+        expect(row.results_snapshot).toBeNull();
+    });
+
     it("rejects an unknown season", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         mockBody.value = { season_id: 987, theme_name: "Nowhere" };

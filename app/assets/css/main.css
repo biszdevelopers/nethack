@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+@font-face {
+    font-family: "Monaspace Neon";
+    src:
+        url("/fonts/Monaspace-Neon.woff2") format("woff2"),
+        url("/fonts/Monaspace-Neon.woff") format("woff");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
 @theme {
     --font-mono: Monaspace Neon;
     --font-mono--font-variation-settings: "wdth" 100;

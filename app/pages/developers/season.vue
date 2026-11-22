@@ -375,6 +375,53 @@ const nextAction = computed(() => {
 
 const lifecycleBusy = ref(false);
 
+const resetItems = computed(() => {
+    const season = selectedSeason.value;
+    const status = season?.status ?? "not_started";
+    return [
+        {
+            label: "Reopen submissions",
+            icon: "i-lucide-undo-2",
+            disabled: !season || status === "not_started",
+            onSelect: () =>
+                void runLifecycle(
+                    "reopen-submissions",
+                    "Reopen submissions? The event returns to the in-progress stage. Teams, projects, and scores are kept.",
+                ),
+        },
+        {
+            label: "Reopen voting and judging",
+            icon: "i-lucide-rotate-ccw",
+            disabled: !season || (!["voting", "finished"].includes(status) && !published.value),
+            onSelect: () =>
+                void runLifecycle(
+                    "reopen-voting",
+                    "Reopen voting and judging? Published results become private and the event returns to the voting stage. Teams, projects, and scores are kept.",
+                ),
+        },
+        {
+            label: "Unpublish results",
+            icon: "i-lucide-eye-off",
+            disabled: !published.value,
+            onSelect: () =>
+                void runLifecycle(
+                    "unpublish",
+                    "Unpublish results? The public results, scores, and rankings become private. The stored snapshot is cleared when you publish again. Teams, projects, and scores are kept.",
+                ),
+        },
+        {
+            label: "Reset to setup",
+            icon: "i-lucide-refresh-ccw",
+            disabled: !season || (status === "not_started" && !published.value),
+            onSelect: () =>
+                void runLifecycle(
+                    "reset-setup",
+                    "Reset the event stage to setup? Submissions, voting, judging, and published results close. Teams, projects, and scores are kept.",
+                ),
+        },
+    ];
+});
+
 async function runLifecycle(action: string, confirmation: string) {
     const season = selectedSeason.value;
     if (!season || lifecycleBusy.value) return;
@@ -437,6 +484,33 @@ async function runLifecycle(action: string, confirmation: string) {
         payload.status = "paused";
         payload.voting_enabled = 0;
         payload.judging_open = 0;
+    } else if (action === "reopen-submissions") {
+        payload.status = "in_progress";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+    } else if (action === "reopen-voting") {
+        payload.status = "voting";
+        payload.voting_enabled = 1;
+        payload.judging_open = 1;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+    } else if (action === "unpublish") {
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+    } else if (action === "reset-setup") {
+        payload.status = "not_started";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
     } else {
         return;
     }
@@ -768,6 +842,9 @@ async function downloadDatabase(format: "json" | "csv") {
                             >
                                 {{ nextAction.label }}
                             </UButton>
+                            <UDropdownMenu :items="resetItems">
+                                <UButton variant="outline" class="min-h-11">Reset stage</UButton>
+                            </UDropdownMenu>
                             <UButton
                                 v-if="
                                     selectedSeasonIsActive &&
