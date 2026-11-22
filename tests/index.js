@@ -33,9 +33,9 @@ const res = await fetch("http://localhost:24598/api/oauth2/token", {
     },
     body: new URLSearchParams({
         grant_type: "authorization_code",
-        code: "MHC4It5pCTmGcns7TP9mC5ugV8WuRw5fK6LQLZTBdb83WVLzj3BbQBWBLim8B_JnOZODOy-1KfyXbZr2KQaTyreOPIMBuVCchnftkzin6KwN4tKFlUbZsku1l1gulsFhXINzQirF9ELNHycHq5OMBX_zbTeS1sL5Z-TgYOsxogE",
-        client_id: "97e435f4-17e8-42ef-9b12-9684fd656de9",
-        client_secret: "e88641a2d03d136793ae5c73aa8d18577913e6636f6b180714cfbc6af7e42a6f",
+        code: "test-authorization-code",
+        client_id: "00000000-0000-0000-0000-000000000000",
+        client_secret: "unused-test-fixture",
     }).toString(),
 });
 

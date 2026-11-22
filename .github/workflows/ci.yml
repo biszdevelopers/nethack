@@ -29,10 +29,15 @@ jobs:
               with:
                   fetch-depth: 0
 
+            - name: Install gitleaks
+              run: |
+                  curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz -o gitleaks.tar.gz
+                  echo "a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb  gitleaks.tar.gz" | sha256sum -c -
+                  tar -xzf gitleaks.tar.gz gitleaks
+                  sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+
             - name: Scan history for leaked secrets
-              uses: gitleaks/gitleaks-action@v2
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: gitleaks detect --source . --baseline-path .gitleaks-baseline.json --redact --verbose --exit-code 1
 
     build-and-test:
         name: Build, Test & Docs
