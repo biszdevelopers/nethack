@@ -1,7 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NethackPermissions, hasNethackPermission } from "~~/shared/permissions";
 import { AdminSeasonQuery } from "~~/shared/schemas";
-import { peerVotingScores, teams, users } from "~~/server/database/schema";
+import { peerVotingScores, teams } from "~~/server/database/schema";
 import { getActiveSeason, getSeasonById } from "~~/server/utils/database/seasons";
 import { getEventState, isPeopleChoiceEnabled } from "~~/server/utils/event-state";
 import { isVotingOpen, summarizePeerVoting } from "~~/server/utils/voting";
@@ -66,13 +66,10 @@ export default defineEventHandler(
             db
                 .select({
                     user_id: peerVotingScores.user_id,
-                    team_id: sql<
-                        number | null
-                    >`coalesce(${peerVotingScores.team_id}, ${users.team_id})`,
+                    team_id: peerVotingScores.team_id,
                     score: peerVotingScores.score,
                 })
                 .from(peerVotingScores)
-                .innerJoin(users, eq(peerVotingScores.user_id, users.id))
                 .where(eq(peerVotingScores.season_id, season.id)),
         ]);
 

@@ -41,12 +41,20 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
                     to: "/developers/docs",
                 },
                 { label: "Audit log", icon: "i-lucide-scroll-text", to: "/developers/audit" },
-                { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
-                {
-                    label: "DeepSeek",
-                    icon: "i-lucide-message-square",
-                    to: "/developers/deepseek",
-                },
+                ...(import.meta.dev
+                    ? [
+                          {
+                              label: "Files",
+                              icon: "i-lucide-files",
+                              to: "/developers/debug",
+                          },
+                          {
+                              label: "DeepSeek",
+                              icon: "i-lucide-message-square",
+                              to: "/developers/deepseek",
+                          },
+                      ]
+                    : []),
             ],
         },
     ],

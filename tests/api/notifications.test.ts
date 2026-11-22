@@ -242,12 +242,20 @@ describe("notification delivery helpers", () => {
     it("skips every write when notifications are disabled", async () => {
         vi.stubEnv("NOTIFICATIONS_ENABLED", "0");
         const user = seedUser(ctx, { email: "user@basischina.com" });
+        const team = seedTeam(ctx, { name: "Submitted", project_submitted: 1 });
+        seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
 
         try {
             await createNotification(ctx.drizzle as any, user.id, {
                 type: "system",
                 title: "Hello",
             });
+            await expect(
+                notifySeasonParticipants(createEvent(), 1, {
+                    type: "results_published",
+                    title: "Results",
+                }),
+            ).resolves.toBe(0);
         } finally {
             vi.unstubAllEnvs();
         }

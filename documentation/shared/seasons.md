@@ -5,7 +5,7 @@ description: Database-driven hackathon seasons, per-season configuration, and sc
 
 # Seasons
 
-Hackathon season records are stored in PostgreSQL. The active season's effective live settings come from `HACKATHON.yml`. Each season carries its own copy of every hackathon configuration field, so organizers can preview and tune a future season without touching the live event. Teams are linked to a season via the `season_id` foreign key.
+Hackathon season records are stored in PostgreSQL. The active season's editable live settings are stored in PostgreSQL too; `HACKATHON.yml` seeds and is compared against them, and the portal never writes the manifest. Each season carries its own copy of every hackathon configuration field, so organizers can preview and tune a future season without touching the live event. Teams are linked to a season via the `season_id` foreign key.
 
 ## Season Storage
 

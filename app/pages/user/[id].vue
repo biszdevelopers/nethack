@@ -1,5 +1,7 @@
 <script setup lang="ts">
-setPageLayout("fullwidth");
+definePageMeta({
+    layout: "fullwidth",
+});
 
 const route = useRoute();
 const userID = route.params.id as string;

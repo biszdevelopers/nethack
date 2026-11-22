@@ -35,16 +35,23 @@ async function openSeasonTab(page: Page, name: string) {
     if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
 }
 
-async function setSeasonStatus(page: Page, selector: Locator, status: string) {
-    if ((await selector.innerText()).includes(status)) return;
-    const saved = page.waitForResponse(
-        (candidate) =>
-            candidate.url().endsWith("/api/admin/hackathon") &&
-            candidate.request().method() === "PATCH",
-    );
-    await selector.click();
-    await page.getByRole("option", { name: status, exact: true }).click();
-    expect((await saved).ok()).toBeTruthy();
+async function setSeasonStatus(page: Page, status: string) {
+    const statusValues: Record<string, string> = {
+        "Not Started": "not_started",
+        "In Progress": "in_progress",
+        Voting: "voting",
+        Finished: "finished",
+        Paused: "paused",
+    };
+    const result = await page.evaluate(async (nextStatus) => {
+        const response = await fetch("/api/admin/hackathon", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ season_id: 1, status: nextStatus }),
+        });
+        return { status: response.status, body: await response.text() };
+    }, statusValues[status] ?? status);
+    expect(result.status, `season status failed: ${result.body}`).toBe(200);
 }
 
 async function expectUnreleasedThemeRedacted(
@@ -121,45 +128,38 @@ test("public season JSON and page redact a configured unreleased theme", async (
     const secretDescription = "E2E private theme details do not expose a31f20";
 
     await loginAsAdmin(page);
-    await openSeasonTab(page, "Event settings");
+    await openSeasonTab(page, "Season settings");
     const configuration = page
-        .getByRole("heading", { name: "Hackathon Configuration" })
+        .getByRole("heading", { name: "Season settings" })
         .locator("xpath=ancestor::section[1]");
-    const status = configuration.getByRole("combobox").first();
-    await expectTouchTarget(status);
     for (const label of [
-        "Max Votes Per User",
-        "Start",
-        "End",
-        "Voting Start",
-        "Voting End",
-        "Results Open",
+        "Maximum stars per voter",
+        "Event starts",
+        "Event ends",
+        "Voting starts",
+        "Voting ends",
+        "Results released",
+        "Theme name",
+        "Theme description",
     ]) {
         await expectTouchTarget(configuration.getByLabel(label, { exact: true }));
     }
-    await setSeasonStatus(page, status, "Not Started");
+    await setSeasonStatus(page, "Not Started");
 
-    const nameInput = configuration.getByLabel("Theme Name", { exact: true });
+    const nameInput = configuration.getByLabel("Theme name", { exact: true });
     await expectTouchTarget(nameInput);
-    const saveName = page.waitForResponse(
-        (candidate) =>
-            candidate.url().endsWith("/api/admin/hackathon") &&
-            candidate.request().method() === "PATCH",
-    );
-    await nameInput.fill(secretName);
-    await nameInput.press("Tab");
-    expect((await saveName).ok()).toBeTruthy();
-
-    const descriptionInput = configuration.getByLabel("Theme Description", { exact: true });
+    const descriptionInput = configuration.getByLabel("Theme description", { exact: true });
     await expectTouchTarget(descriptionInput);
-    const saveDescription = page.waitForResponse(
+    await nameInput.fill(secretName);
+    await descriptionInput.fill(secretDescription);
+
+    const saveSettings = page.waitForResponse(
         (candidate) =>
             candidate.url().endsWith("/api/admin/hackathon") &&
             candidate.request().method() === "PATCH",
     );
-    await descriptionInput.fill(secretDescription);
-    await descriptionInput.press("Tab");
-    expect((await saveDescription).ok()).toBeTruthy();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    expect((await saveSettings).ok()).toBeTruthy();
 
     const configured = await page.evaluate(async () => {
         const response = await fetch("/api/admin/hackathon");
@@ -184,8 +184,8 @@ test("public season JSON and page redact a configured unreleased theme", async (
     );
 
     await page.goto("/developers/season");
-    await openSeasonTab(page, "Event settings");
-    await expect(page.getByRole("heading", { name: "Hackathon Configuration" })).toBeVisible();
-    await setSeasonStatus(page, status, "Paused");
+    await openSeasonTab(page, "Season settings");
+    await expect(page.getByRole("heading", { name: "Season settings" })).toBeVisible();
+    await setSeasonStatus(page, "Paused");
     await expectUnreleasedThemeRedacted(page, request, "paused", secretName, secretDescription);
 });

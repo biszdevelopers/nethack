@@ -9,7 +9,7 @@ nethack uses a single peer voting system. Participants distribute stars across h
 
 ## Peer Voting
 
-Peer voting opens when the dev-portal `voting_enabled` toggle is on, the event is not `paused`, and the configured `voting_end_timestamp` has not passed while `ENFORCE_DEADLINES` is on. Only participants with a submitted project can vote, and they can only vote on eligible projects in the **same pathway** (`junior` or `senior`).
+Peer voting opens when the dev-portal `voting_enabled` toggle is on, the event is not `paused`, and the current time is inside the configured voting window (`voting_start_timestamp` through `voting_end_timestamp`) while `ENFORCE_DEADLINES` is on. Only participants with a submitted project can vote, and they can only vote on eligible projects in the **same pathway** (`junior` or `senior`).
 
 ### Eligibility Rules
 

@@ -390,7 +390,7 @@ Get the current user's ballot for peer voting.
 | Field | Details |
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
-| **Constraint** | `voting_enabled` must be `1`, the event must not be `paused`, and the voting deadline must not have passed while `ENFORCE_DEADLINES` is on |
+| **Constraint** | `voting_enabled` must be `1`, the event must not be `paused`, and the current time must be inside the configured voting window while `ENFORCE_DEADLINES` is on. A configured `voting_start_timestamp` in the future keeps the ballot closed even when the toggle is on |
 | **Response** | `GetBallotResponse` — `{ submitted, projects, scores, reasoning, max_votes_per_user }` |
 | **Eligibility** | Projects are filtered to the same pathway and exclude the voter's own team |
 | **Season scope** | Ballots are stored per season; a previous season's ballot never appears here |
@@ -403,13 +403,13 @@ Submit peer voting ballot.
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
 | **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }`; the number of scores must match eligible projects, and at most `max_votes_per_user` projects may receive a non-zero score (`0` means unlimited) |
-| **Constraint** | `voting_enabled` must be `1`, the event must not be `paused`, and the voting deadline must not have passed while `ENFORCE_DEADLINES` is on |
+| **Constraint** | `voting_enabled` must be `1`, the event must not be `paused`, and the current time must be inside the configured voting window while `ENFORCE_DEADLINES` is on. A configured `voting_start_timestamp` in the future keeps the ballot closed even when the toggle is on |
 | **Response** | `{ message: string }` |
 | **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores`; a participant may update their ballot until voting closes. Each season keeps its own ballot |
 
 ### GET `/api/ballot/results`
 
-Peer-vote aggregates for a season. Each voting team contributes one unit: its members' ballots are averaged, then the unit values are averaged across every team that voted.
+Peer-vote aggregates for a season. Each voting team contributes one unit: its members' ballots are averaged, then the unit values are averaged across every team that voted. Ballots with no recorded `team_id` provenance are excluded; the aggregation never reattributes a legacy ballot to the voter's current team.
 
 | Field | Details |
 | --- | --- |
@@ -471,7 +471,7 @@ Get the currently active season (public).
 | Field | Details |
 | --- | --- |
 | **Auth** | None |
-| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles, `announcement`, `max_team_members`, `is_submission_closed`, and `is_gallery_public`). `is_judging_open` and `is_voting_open` are the server-computed gates the judging and ballot APIs enforce: judging requires `judging_open`, is off while `paused`, and is frozen after publication in a `finished` season unless `JUDGING_AFTER_PUBLISH` is on; voting requires `voting_enabled`, is off while `paused`, and closes at `voting_end_timestamp` unless `ENFORCE_DEADLINES` is off. Theme is hidden when hackathon status is `not_started` or `paused` |
+| **Response** | Combined season and hackathon state (including `show_scores` / `show_ranking` toggles, `announcement`, `max_team_members`, `is_submission_closed`, and `is_gallery_public`). `is_judging_open` and `is_voting_open` are the server-computed gates the judging and ballot APIs enforce: judging requires `judging_open`, is off while `paused`, and is frozen after publication in a `finished` season unless `JUDGING_AFTER_PUBLISH` is on; voting requires `voting_enabled`, is off while `paused`, and stays inside `voting_start_timestamp`–`voting_end_timestamp` unless `ENFORCE_DEADLINES` is off. Theme is hidden when hackathon status is `not_started` or `paused` |
 
 ### PATCH `/api/seasons/active`
 
@@ -508,12 +508,13 @@ The `id` path value must be a positive safe integer. Missing, malformed, zero, n
 
 The active season uses YAML settings and this endpoint returns 409 for live edits in YAML mode.
 
-| Field          | Details                                             |
-| -------------- | --------------------------------------------------- |
-| **Auth**       | User with `portal.seasons.edit` permission or admin |
-| **Validation** | `UpdateSeasonTweaksRequest` (at least one field)    |
-| **Response**   | `{ message: string }`                               |
-| **Rate limit** | Yes                                                 |
+| Field | Details |
+| --- | --- |
+| **Auth** | User with `portal.seasons.edit` permission or admin |
+| **Validation** | `UpdateSeasonTweaksRequest` (at least one field) |
+| **Response** | `{ message: string }` |
+| **Audit** | Writes `season.tweaks` with the previous and new tweak values in the same transaction |
+| **Rate limit** | Yes |
 
 ---
 
@@ -585,7 +586,7 @@ Download season standings as CSV.
 | --- | --- |
 | **Auth** | `nethack.all` |
 | **Query** | Optional `season_id` |
-| **Response** | `text/csv` attachment with `team_id`, `team`, `pathway`, `status`, `score_exact`, `score`, `rank`, `awards`, `project_name`, `demo_url`, and `repo_url` |
+| **Response** | `text/csv` attachment with `team_id`, `team`, `pathway`, `status`, `score_exact`, `score`, `rank`, `awards`, `project_name`, `demo_url`, and `repo_url`. Cells that begin with a spreadsheet formula prefix are prefixed with an apostrophe so participant-controlled text cannot execute when the file is opened |
 
 #### GET `/api/admin/preflight`
 
@@ -625,7 +626,7 @@ Read the administrative audit log, newest first.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/api/admin/judging/assignments` | `nethack.all` | List assignments for a season; optional `season_id` and `id` |
-| `POST` | `/api/admin/judging/assignments` | `nethack.all` | Create `{ judge_user_id, season_id?, pathway?, team_id? }`; pathway and team are mutually exclusive |
+| `POST` | `/api/admin/judging/assignments` | `nethack.all` | Create `{ judge_user_id, season_id?, pathway?, team_id? }`; pathway and team are mutually exclusive. The judge must not belong to a team in the same season, and a pathway must name a track in the season rubric. Assigning a participant promotes them to judge |
 | `DELETE` | `/api/admin/judging/assignments?id=` | `nethack.all` | Remove an assignment |
 | `GET` | `/api/admin/judging/flags` | `nethack.all` | List flags; optional `season_id` and `resolved` |
 | `PATCH` | `/api/admin/judging/flags/:id` | `nethack.all` | Resolve an open flag |
@@ -737,7 +738,7 @@ Download an anonymized JSON snapshot or CSV export of the database.
 | --- | --- |
 | **Auth** | Admin |
 | **Query** | `format` — `json` (default) or `csv` |
-| **Response** | Streamed JSON snapshot or `text/csv` with per-table sections; judge identities and draft evaluations are excluded, and formula-like CSV values are neutralized. The export is generated lazily inside one read-only `REPEATABLE READ` transaction with backpressure, so it neither accumulates in memory nor repeats or omits rows under concurrent writes |
+| **Response** | Streamed JSON snapshot or `text/csv` with per-table sections; judge identities, resolution actors, and staff references inside audit payloads are removed, draft evaluations are excluded, and formula-like CSV values are neutralized. The export is generated lazily inside one read-only `REPEATABLE READ` transaction with backpressure, so it neither accumulates in memory nor repeats or omits rows under concurrent writes |
 
 ---
 

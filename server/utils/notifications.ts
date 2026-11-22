@@ -98,6 +98,7 @@ export async function notifySeasonParticipants(
     seasonId: number,
     input: NotificationInput,
 ): Promise<number> {
+    if (!isNotificationsEnabled()) return 0;
     const rows = await event.context.drizzle
         .select({ id: users.id })
         .from(users)
@@ -119,6 +120,9 @@ export async function notifySeasonParticipants(
             })),
         );
     }
+    // One announcement reaches many recipients; dispatch the webhook once
+    // instead of once per member.
+    if (ids.length > 0) notifyWebhook(input);
     return ids.length;
 }
 

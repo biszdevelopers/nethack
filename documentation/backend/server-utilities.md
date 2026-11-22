@@ -220,14 +220,14 @@ interface EventGates {
 
 ## audit.ts
 
-`writeAuditEvent(db, event, entry)` appends an `admin_audit_events` row inside the caller's transaction. It stores the validated actor ID, a stable action and entity, optional before/after JSON, an optional reason, and the request ID. Never include secrets in the payloads.
+`writeAuditEvent(db, event, entry)` appends an `admin_audit_events` row inside the caller's transaction. It stores the validated actor ID, a stable action and entity, optional before/after JSON, an optional reason, and the request ID. Payloads are bounded at this boundary: strings are truncated to 500 characters, collections and nesting are capped, and an oversized payload becomes `{ truncated: true, preview }`. Never include secrets in the payloads.
 
 ## notifications.ts
 
 - `createNotification(db, userId, input)`
 - `notifyUserByEmail(event, { email, ...input })` — silently skips an address without an account
 - `notifyTeamOwner(event, team, input)` — falls back to the earliest current member when ownership is unset
-- `notifySeasonParticipants(event, seasonId, input)` — batches current members of submitted teams in chunks of 250
+- `notifySeasonParticipants(event, seasonId, input)` — batches current members of submitted teams in chunks of 250, respects `NOTIFICATIONS_ENABLED`, and dispatches one webhook announcement for the batch
 - `deleteNotificationsForUsers(db, userIds)`
 
 ---

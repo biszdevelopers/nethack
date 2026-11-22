@@ -3,6 +3,7 @@ import type { DrizzleDatabase } from "~~/server/database";
 import { asc, sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import type { LiveOverrides } from "~~/shared/schemas";
+import { csvCell } from "./csv";
 import { hackathonUsesYaml, readHackathonConfig } from "./hackathon-config";
 
 const PAGE_SIZE = 250;
@@ -34,13 +35,18 @@ const exportTables = [
     ["sqlite_legacy_data", schema.sqliteLegacyData],
 ] as const;
 
-function csvCell(value: unknown): string {
-    if (value === null || value === undefined) return "";
-    const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
-    const hasFormulaPrefix = /^[\s\p{Cc}]*[=+\-@]/u.test(raw);
-    const startsWithSpreadsheetControl = /^[\t\r]/.test(raw);
-    const safe = hasFormulaPrefix || startsWithSpreadsheetControl ? `'${raw}` : raw;
-    return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
+const STAFF_REFERENCE_KEYS = new Set(["actor_user_id", "resolved_by", "judge_user_id"]);
+
+/** Remove staff account references from nested audit payloads. */
+function stripStaffReferences(value: unknown, depth = 0): unknown {
+    if (depth > 5 || value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map((item) => stripStaffReferences(item, depth + 1));
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+        if (STAFF_REFERENCE_KEYS.has(key)) continue;
+        result[key] = stripStaffReferences(item, depth + 1);
+    }
+    return result;
 }
 
 function anonymizeExportRow(name: string, row: Record<string, unknown>) {
@@ -67,6 +73,21 @@ function anonymizeExportRow(name: string, row: Record<string, unknown>) {
     if (name === "judge_flags") {
         const anonymousRow = { ...row };
         delete anonymousRow.judge_user_id;
+        delete anonymousRow.resolved_by;
+        return anonymousRow;
+    }
+
+    if (name === "admin_audit_events") {
+        const anonymousRow = { ...row };
+        delete anonymousRow.actor_user_id;
+        // A voided evaluation's entity id embeds the judge account id.
+        if (anonymousRow.entity_type === "team_score") delete anonymousRow.entity_id;
+        if (anonymousRow.before) {
+            anonymousRow.before = stripStaffReferences(anonymousRow.before);
+        }
+        if (anonymousRow.after) {
+            anonymousRow.after = stripStaffReferences(anonymousRow.after);
+        }
         return anonymousRow;
     }
 

@@ -29,4 +29,43 @@ describe("isVotingOpen", () => {
     it("closes without live state", () => {
         expect(isVotingOpen(null)).toBe(false);
     });
+
+    it("waits for a future voting start when deadlines are enforced", () => {
+        const now = Date.now();
+        expect(
+            isVotingOpen(state({ voting_start_timestamp: now + 60_000 }), {
+                now,
+                enforceDeadlines: true,
+            }),
+        ).toBe(false);
+        expect(
+            isVotingOpen(
+                state({
+                    voting_start_timestamp: now - 60_000,
+                    voting_end_timestamp: now + 60_000,
+                }),
+                { now, enforceDeadlines: true },
+            ),
+        ).toBe(true);
+    });
+
+    it("still closes after the voting end when deadlines are enforced", () => {
+        const now = Date.now();
+        expect(
+            isVotingOpen(state({ voting_end_timestamp: now - 1 }), {
+                now,
+                enforceDeadlines: true,
+            }),
+        ).toBe(false);
+    });
+
+    it("ignores the voting window when deadline enforcement is disabled", () => {
+        const now = Date.now();
+        expect(
+            isVotingOpen(state({ voting_start_timestamp: now + 60_000 }), {
+                now,
+                enforceDeadlines: false,
+            }),
+        ).toBe(true);
+    });
 });

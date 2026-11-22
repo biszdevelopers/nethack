@@ -155,11 +155,13 @@ describe("GET /api/ballot/results", () => {
                 {
                     user_id: voterOne.id,
                     season_id: season.id,
+                    team_id: voterTeam.id,
                     score: JSON.stringify({ [season.teamId]: 5 }),
                 },
                 {
                     user_id: voterTwo.id,
                     season_id: season.id,
+                    team_id: voterTeam.id,
                     score: JSON.stringify({ [season.teamId]: 3 }),
                 },
             ])
@@ -188,6 +190,45 @@ describe("GET /api/ballot/results", () => {
                 team_units: 1,
             },
         ]);
+    });
+
+    it("skips ballots without recorded team provenance", async () => {
+        const season = seedHackathonAndSeasonWithTeam();
+        const voterTeam = seedTeam(ctx, {
+            name: "Voting Team",
+            project_submitted: 0,
+            season_id: season.id,
+        });
+        const provenanced = seedUser(ctx, {
+            email: "provenanced@basischina.com",
+            team_id: voterTeam.id,
+        });
+        const legacy = seedUser(ctx, {
+            email: "legacy@basischina.com",
+            team_id: voterTeam.id,
+        });
+        ctx.drizzle
+            .insert(peerVotingScores)
+            .values([
+                {
+                    user_id: provenanced.id,
+                    season_id: season.id,
+                    team_id: voterTeam.id,
+                    score: JSON.stringify({ [season.teamId]: 4 }),
+                },
+                {
+                    user_id: legacy.id,
+                    season_id: season.id,
+                    score: JSON.stringify({ [season.teamId]: 5 }),
+                },
+            ])
+            .run();
+        mockQueryState.value = {};
+
+        const result = await resultsHandler(createEvent());
+
+        expect(result.turnout).toMatchObject({ voting_teams: 1, ballots: 2 });
+        expect(result.projects[0]!.average_stars).toBe(4);
     });
 
     it("reports zero turnout when no project was submitted", async () => {

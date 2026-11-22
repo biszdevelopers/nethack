@@ -241,7 +241,7 @@ describe("GET /api/team-invites", () => {
 });
 
 describe("POST /api/team-invites/:id/accept", () => {
-    it("joins the invited user and removes every invitation for that email", async () => {
+    it("joins the invited user and clears only that team's invitations for the email", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         const other = seedTeam(ctx, { name: "Other" });
         const user = seedUser(ctx, { email: "newbie@basischina.com" });
@@ -255,7 +255,9 @@ describe("POST /api/team-invites/:id/accept", () => {
         });
         const updated = ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get();
         expect(updated!.team_id).toBe(team.id);
-        expect(ctx.drizzle.select().from(teamInvites).all()).toHaveLength(0);
+        const remaining = ctx.drizzle.select().from(teamInvites).all();
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0]!.team_id).toBe(other.id);
     });
 
     it("does not reveal invitations addressed to another email", async () => {

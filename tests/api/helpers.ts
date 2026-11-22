@@ -337,7 +337,7 @@ export function seedHackathon(ctx: TestContext, overrides: Record<string, unknow
             judging_open: 0,
             start_timestamp: now,
             end_timestamp: now + 86400000,
-            voting_start_timestamp: now + 86400000,
+            voting_start_timestamp: now - 86400000,
             voting_end_timestamp: now + 172800000,
             results_open_timestamp: now + 259200000,
             theme_name: "Test Theme",

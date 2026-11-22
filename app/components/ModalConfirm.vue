@@ -2,6 +2,7 @@
     <UModal v-model:open="isOpen">
         <slot />
         <template #body>
+            <h2 v-if="props.title" class="text-lg font-semibold">{{ props.title }}</h2>
             <slot name="content" />
         </template>
 
@@ -31,11 +32,13 @@ const props = withDefaults(
     defineProps<{
         color?: ButtonColor;
         colorSecond?: ButtonColor;
+        title?: string;
         click?: () => void | Promise<void>;
     }>(),
     {
         color: "primary",
         colorSecond: "neutral",
+        title: "",
         click: () => {},
     },
 );

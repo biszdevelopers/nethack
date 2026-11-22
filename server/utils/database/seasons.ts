@@ -191,6 +191,14 @@ export async function updateSeasonTweaks(
             if (season.is_active === 1) {
                 await tx.update(hackathon).set(tweaks).where(eq(hackathon.id, 1));
             }
+
+            await writeAuditEvent(tx, event, {
+                action: "season.tweaks",
+                entity_type: "season",
+                entity_id: seasonId,
+                before: pickTweaks(season as unknown as Record<string, unknown>),
+                after: tweaks,
+            });
         }
 
         return (

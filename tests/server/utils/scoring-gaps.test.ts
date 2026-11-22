@@ -582,7 +582,7 @@ describe("scoring edge coverage", () => {
         }
     });
 
-    it("compares a ranking row whose stored score is lost between reads", async () => {
+    it("persists a legacy ranking row whose exact score is null", async () => {
         const score = JSON.stringify(
             Object.fromEntries(
                 DEFAULT_RUBRIC_DEFINITION.tracks.junior.criteria.map((criterion) => [
@@ -660,6 +660,5 @@ describe("scoring edge coverage", () => {
         );
 
         expect(updateWhere).toHaveBeenCalledOnce();
-        expect(scoreReads).toBeGreaterThan(1);
     });
 });

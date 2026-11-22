@@ -46,7 +46,6 @@ type AdminUser = Omit<User, "is_admin" | "is_judge"> & {
 };
 
 const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
-    server: false,
     lazy: true,
     default: () => [],
 });

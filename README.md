@@ -1,6 +1,6 @@
 # nethack
 
-The official website for the **BIBS-C Network Hackathon**. Full-stack Nuxt 4 application with basis-auth login, team management, project submission, peer voting, judge scoring, awards, results, and notifications. Event access is driven by the event status plus its timestamps: the active-season project gallery, team details, voting, judging, and results stay closed until their own gate opens. Historical seasons remain public, and an inactive `Next season` shell is ready for organizers to configure and obtain board approval. Every visitor-facing season message — including the home-page announcement — is editable from the admin portal rather than hardcoded.
+The official website for the **BIBS-C Network Hackathon**. Full-stack Nuxt 4 application with basis-auth login, team management, project submission, peer voting, judge scoring, awards, results, and notifications. The home page and header state the event phase plainly (upcoming, live, submissions closed, voting open, voting closed, paused, or ended), including the end date and the next useful action. Event access is driven by the event status plus its timestamps: the active-season project gallery, team details, voting, judging, and results stay closed until their own gate opens. Historical seasons remain public, and an inactive `Next season` shell is ready for organizers to configure and obtain board approval. Every visitor-facing season message — including the home-page announcement — is editable from the admin portal rather than hardcoded.
 
 ## Event Gates and Privacy
 
@@ -10,7 +10,7 @@ The official website for the **BIBS-C Network Hackathon**. Full-stack Nuxt 4 app
 | --- | --- |
 | Submissions | Status is `not_started` or `in_progress`, the event is not `paused`, and `now <= end_timestamp + SUBMISSION_GRACE_MS` (deadline checks are skipped when `ENFORCE_DEADLINES` is off) |
 | Team changes | Same submission gate; team creation, invitations, membership changes, ownership transfer, and disband all close with submissions |
-| Voting | `voting_enabled` is on, the event is not `paused`, and the voting deadline has not passed |
+| Voting | `voting_enabled` is on, the event is not `paused`, and the current time is inside the configured voting window (`voting_start_timestamp` through `voting_end_timestamp`; window checks are skipped when `ENFORCE_DEADLINES` is off) |
 | Judging | `judging_open` is on, the event is not `paused`, and results are not published for a `finished` season unless `JUDGING_AFTER_PUBLISH` is on |
 | Public gallery | Submissions have closed (`voting`, `finished`, or the event deadline passed) |
 | Results | `results_published` is on |
@@ -189,7 +189,7 @@ Invitations are sent by email and also produce a single-use link containing a 64
 
 ## Voting and Results
 
-Each participant's peer ballot is stored per user and season, so a returning participant votes again without overwriting the previous ballot. People's Choice aggregates **one unit per voting team**: each team's ballots are averaged, then those unit values are averaged across every team that voted. Turnout counts submitted projects, voting teams, and ballots. Peer results are available only after voting closes, and the People's Choice view additionally requires results to be published for the active season unless the caller has judging access.
+Each participant's peer ballot is stored per user and season, so a returning participant votes again without overwriting the previous ballot. Ballots also store the voting team that cast them; legacy ballots without that provenance are excluded from aggregation rather than reattributed to the voter's current team. People's Choice aggregates **one unit per voting team**: each team's ballots are averaged, then those unit values are averaged across every team that voted. Turnout counts submitted projects, voting teams, and ballots. Peer results are available only after voting closes, and the People's Choice view additionally requires results to be published for the active season unless the caller has judging access.
 
 The public `/results` page shows a locked state until `results_published`. The dashboard results page lists the participant's current and past teams, and each `ScoreCard` applies that team season's publication and visibility rules; the certificate page is separately gated on publication. The page shows standings and ranks, team awards, project cards, and the People's Choice summary. Printable certificates are available at `/certificate/:id` once the team's season has published results. The public rubric endpoint and the `/seasons/:id` page expose the active tracks and criteria. `/api/ballot/results` returns the peer aggregate with turnout, and `/calendar.ics` publishes the scheduled event milestones as an RFC 5545 calendar.
 

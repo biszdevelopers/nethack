@@ -21,7 +21,7 @@ The standard page layout used by most public pages.
 ├──────────────────────────────┤
 │ UMain                        │
 │   <div class="mx-auto        │
-│         max-w-7xl px-4 ..."> │
+│    max-w-[1600px] px-4 ..."> │
 │     <slot />                 │
 │                              │
 ├──────────────────────────────┤
@@ -29,8 +29,8 @@ The standard page layout used by most public pages.
 └──────────────────────────────┘
 ```
 
-- `RoleHeader` — sticky navigation header with role-based menu items
-- Content wrapper — centered `div` with `max-w-7xl` (1280px). Fills full viewport width on screens under 1280px; centered above that.
+- `RoleHeader` — sticky navigation header with role-based menu items. A compact event badge (`Upcoming`, `Live`, `Submissions closed`, `Voting open`, `Voting closed`, `Paused`, or `Ended`) sits beside the navigation on desktop and in the mobile menu, so the hackathon state stays visible away from the home page.
+- Content wrapper — centered `div` with `max-w-[1600px]`. Fills full viewport width on screens under 1600px; centered above that.
 - `Footer` — site-wide footer with links and copyright
 - A keyboard-visible **Skip to main content** link moves focus to the `UMain` landmark.
 
@@ -40,7 +40,7 @@ The standard page layout used by most public pages.
 
 **File:** `app/layouts/default-background.vue`
 
-Identical to `default` but with a **red background** (`bg-red-100`) on the `UMain` element, plus the same `mx-auto max-w-7xl` centered container. Used for debugging or visual testing.
+Identical to `default` but with a **red background** (`bg-red-100`) on the `UMain` element, plus the same `mx-auto max-w-[1600px]` centered container. Used for debugging or visual testing.
 
 ::: warning This layout is intended for development only and should not be used in production pages. :::
 

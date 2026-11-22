@@ -51,6 +51,7 @@ function vote(teamId: number, evaluatorEmail: string, scores: Record<string, num
         .values({
             user_id: evaluator.id,
             season_id: ctx.drizzle.select().from(seasons).where(eq(seasons.is_active, 1)).get()!.id,
+            team_id: teamId,
             score: JSON.stringify(scores),
             reasoning: "peer ballot",
         })

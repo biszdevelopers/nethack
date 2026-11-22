@@ -388,7 +388,13 @@ async function acceptInviteWithSelector(
                 .onConflictDoNothing();
         }
         await tx.update(users).set({ team_id: team.id }).where(eq(users.id, user.id));
-        await tx.delete(teamInvites).where(eq(teamInvites.email, invite.email));
+        // Accepting the invitation clears only this team's pending invitations
+        // for the account. Invitations from other teams are left untouched.
+        await tx
+            .delete(teamInvites)
+            .where(
+                and(eq(teamInvites.team_id, invite.team_id), eq(teamInvites.email, invite.email)),
+            );
 
         return team as Team;
     });

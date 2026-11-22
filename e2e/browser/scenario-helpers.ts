@@ -98,6 +98,7 @@ export async function submitProject(
                 description: `${projectName} is an E2E scenario fixture with a clear purpose.`,
                 demo_url: `https://example.invalid/${encodeURIComponent(projectName)}`,
                 repo_url: `https://github.com/e2e-fixtures/${encodeURIComponent(projectName)}`,
+                video_url: `https://example.invalid/${encodeURIComponent(projectName)}.mp4`,
                 sourcing: "Original work created for the scenario matrix.",
             },
         }),

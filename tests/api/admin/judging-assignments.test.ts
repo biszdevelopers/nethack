@@ -229,6 +229,52 @@ describe("POST /api/admin/judging/assignments", () => {
         await expect(createAssignment(createEvent())).rejects.toMatchObject({ statusCode: 404 });
     });
 
+    it("rejects a judge competing in the same season", async () => {
+        const team = seedTeam(ctx, { name: "Judge Team", season_id: 1 });
+        const judge = seedUser(ctx, {
+            email: "player-judge@basischina.com",
+            team_id: team.id,
+        });
+        mockBody.value = { judge_user_id: judge.id };
+
+        await expect(createAssignment(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "A participant competing in this season cannot judge it.",
+        });
+    });
+
+    it("allows a judge whose team belongs to another season", async () => {
+        const past = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const pastTeam = seedTeam(ctx, { name: "Past Team", season_id: past.id });
+        const judge = seedUser(ctx, {
+            email: "past-player@basischina.com",
+            team_id: pastTeam.id,
+        });
+        mockBody.value = { judge_user_id: judge.id };
+
+        await expect(createAssignment(createEvent())).resolves.toHaveProperty("assignment");
+    });
+
+    it("rejects a pathway that is not in the season rubric", async () => {
+        const { judge } = judgeAndTeam();
+        mockBody.value = { judge_user_id: judge.id, pathway: "not-a-track" };
+
+        await expect(createAssignment(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "The assignment pathway is not a track in this season's rubric.",
+        });
+    });
+
+    it("rejects inherited object keys as pathways", async () => {
+        const { judge } = judgeAndTeam();
+        mockBody.value = { judge_user_id: judge.id, pathway: "toString" };
+
+        await expect(createAssignment(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "The assignment pathway is not a track in this season's rubric.",
+        });
+    });
+
     it("reports a duplicate assignment as 409", async () => {
         const { judge } = judgeAndTeam();
         mockBody.value = { judge_user_id: judge.id };

@@ -3,6 +3,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { AdminTeamScoreParams } from "~~/shared/schemas";
 import { seasons, teamScores } from "~~/server/database/schema";
 import { getTeamById } from "~~/server/utils/database/teams";
+import { getAwardsForTeams } from "~~/server/utils/database/awards";
 import { calculateSeasonScoresWithDatabase } from "~~/server/utils/scoring";
 import { lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import { writeAuditEvent } from "~~/server/utils/audit";
@@ -15,7 +16,7 @@ export default defineEventHandler(
         const team = await getTeamById(event, id);
         if (!team) throw createError({ statusCode: 404, message: "Team not found." });
 
-        const standings = await event.context.drizzle.transaction(async (tx) => {
+        const ranked = await event.context.drizzle.transaction(async (tx) => {
             await lockForUpdateIfSupported(
                 tx
                     .select({ id: seasons.id })
@@ -36,7 +37,7 @@ export default defineEventHandler(
                 throw createError({ statusCode: 404, message: "Evaluation not found." });
             }
 
-            const ranked = await calculateSeasonScoresWithDatabase(tx, team.season_id, true);
+            const standings = await calculateSeasonScoresWithDatabase(tx, team.season_id, true);
             await writeAuditEvent(tx, event, {
                 action: "score.delete",
                 entity_type: "team_score",
@@ -44,20 +45,26 @@ export default defineEventHandler(
                 before: deleted[0],
                 reason: "administrator voided an evaluation",
             });
-            return ranked.map((row) => ({
-                team_id: row.id,
-                name: row.name,
-                pathway: row.pathway,
-                status: row.status,
-                score_exact: row.score_exact,
-                score: row.score,
-                rank: row.rank,
-                awards: [],
-                project_name: row.project_name,
-                project_demo_url: row.project_demo_url,
-                project_repo_url: row.project_repo_url,
-            })) satisfies AdminStandingRow[];
+            return standings;
         });
+
+        const awardsByTeam = await getAwardsForTeams(
+            event,
+            ranked.map((row) => row.id),
+        );
+        const standings = ranked.map((row) => ({
+            team_id: row.id,
+            name: row.name,
+            pathway: row.pathway,
+            status: row.status,
+            score_exact: row.score_exact,
+            score: row.score,
+            rank: row.rank,
+            awards: (awardsByTeam[row.id] ?? []).map((award) => award.name),
+            project_name: row.project_name,
+            project_demo_url: row.project_demo_url,
+            project_repo_url: row.project_repo_url,
+        })) satisfies AdminStandingRow[];
 
         return { season_id: team.season_id, standings };
     }, DEFAULT_RATE_LIMIT_CONFIG),

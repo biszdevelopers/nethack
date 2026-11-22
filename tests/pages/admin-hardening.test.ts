@@ -17,6 +17,14 @@ describe("admin season operations", () => {
         expect(season).toContain("Every field here belongs to");
     });
 
+    it("initializes the settings form before the immediate season watcher runs", () => {
+        const settingsIndex = season.indexOf("const settings = reactive");
+        const watchIndex = season.indexOf("watch(\n    selectedSeasonId");
+        expect(settingsIndex).toBeGreaterThan(-1);
+        expect(watchIndex).toBeGreaterThan(settingsIndex);
+        expect(season).toContain("{ immediate: true }");
+    });
+
     it("guards unsaved edits on route leave and browser unload", () => {
         expect(season).toContain('import { onBeforeRouteLeave } from "vue-router";');
         expect(season).toContain('window.addEventListener("beforeunload", warnBeforeUnload)');

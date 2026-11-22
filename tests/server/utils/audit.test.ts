@@ -11,6 +11,8 @@ vi.mock("h3", async (importOriginal) => {
 
 const { auditActorId, writeAuditEvent } = await import("~~/server/utils/audit");
 
+const NOW = 1_700_000_000_000;
+
 let ctx: TestContext;
 
 beforeEach(async () => {
@@ -135,5 +137,44 @@ describe("writeAuditEvent", () => {
             request_id: null,
             entity_id: null,
         });
+    });
+
+    it("bounds participant text and large payloads", async () => {
+        getRequestHeader.mockReturnValue(undefined);
+        const longText = "x".repeat(2_000);
+
+        await writeAuditEvent(ctx.drizzle as any, createEvent(), {
+            action: "season.update",
+            entity_type: "season",
+            entity_id: 1,
+            before: {
+                description: longText,
+                nested: {
+                    notes: longText,
+                    created_at: new Date(NOW),
+                    deeper: { a: { b: { c: "hidden" } } },
+                },
+                tags: [{ label: "one" }],
+                flag: BigInt(7),
+            },
+            after: Object.fromEntries(
+                Array.from({ length: 200 }, (_, index) => [`field_${index}`, longText]),
+            ),
+            reason: longText,
+        });
+
+        const row = ctx.drizzle.select().from(adminAuditEvents).all()[0]!;
+        const before = row.before as Record<string, any>;
+        expect(String(before.description).length).toBe(500);
+        expect(String(before.nested.notes).length).toBe(500);
+        expect(before.nested.created_at).toBe(new Date(NOW).toISOString());
+        expect(before.nested.deeper.a.b).toBe("[truncated]");
+        expect(before.flag).toBe("7");
+        expect(before.tags).toEqual([{ label: "one" }]);
+        expect(row.after).toMatchObject({ truncated: true });
+        expect(String((row.after as { preview: string }).preview).length).toBeLessThanOrEqual(
+            16_000,
+        );
+        expect(String(row.reason).length).toBe(500);
     });
 });

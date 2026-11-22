@@ -104,11 +104,11 @@ export function resolveEventGates(
     const submissionsOpen =
         !paused && OPEN_STATUSES.has(hackathon.status) && withinSubmissionDeadline;
 
-    const withinVotingDeadline =
+    const withinVotingWindow =
         !enforceDeadlines ||
-        hackathon.voting_end_timestamp <= 0 ||
-        now <= hackathon.voting_end_timestamp;
-    const votingOpen = !paused && Boolean(hackathon.voting_enabled) && withinVotingDeadline;
+        ((hackathon.voting_start_timestamp <= 0 || now >= hackathon.voting_start_timestamp) &&
+            (hackathon.voting_end_timestamp <= 0 || now <= hackathon.voting_end_timestamp));
+    const votingOpen = !paused && Boolean(hackathon.voting_enabled) && withinVotingWindow;
 
     const publishedWhileFinished =
         hackathon.status === "finished" &&

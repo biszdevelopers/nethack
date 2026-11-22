@@ -14,7 +14,14 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "../helpers";
-import { adminAuditEvents, hackathon, teamScores, teams } from "~~/server/database/schema";
+import {
+    adminAuditEvents,
+    awards,
+    hackathon,
+    teamAwards,
+    teamScores,
+    teams,
+} from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -109,6 +116,24 @@ describe("POST /api/admin/teams/:id/reopen", () => {
         });
     });
 
+    it("refuses to reopen a team that never submitted", async () => {
+        const team = seedTeam(ctx, {
+            name: "Draft Team",
+            season_id: 1,
+            project_submitted: 0,
+        });
+        mockParams.values = { id: team.id };
+        mockBody.value = {};
+
+        await expect(reopenHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This team has not submitted a project to reopen.",
+        });
+        expect(
+            ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get()!.project_submitted,
+        ).toBe(0);
+    });
+
     it("stores a null reason when none is supplied", async () => {
         const team = seedSubmittedTeam();
         mockParams.values = { id: team.id };
@@ -201,6 +226,20 @@ describe("PATCH /api/admin/teams/:id/status", () => {
 
     it("withdraws a team, clears its rank, and returns the recomputed standings", async () => {
         const team = seedSubmittedTeam();
+        ctx.drizzle
+            .insert(awards)
+            .values({
+                namespace: "gold",
+                name: "Gold",
+                description: "First place",
+                icon: "trophy",
+                color: "gold",
+            })
+            .run();
+        ctx.drizzle
+            .insert(teamAwards)
+            .values({ team_id: team.id, award: "gold", meta: "{}" })
+            .run();
         mockParams.values = { id: team.id };
         mockBody.value = { status: "withdrawn", reason: "No-show" };
 
@@ -216,7 +255,7 @@ describe("PATCH /api/admin/teams/:id/status", () => {
                 score: 0,
                 score_exact: 0,
                 rank: null,
-                awards: [],
+                awards: ["Gold"],
                 project_name: "",
                 project_demo_url: null,
                 project_repo_url: null,
@@ -263,6 +302,21 @@ describe("DELETE /api/admin/teams/:id/scores/:judgeId", () => {
 
     it("voids one evaluation and returns the recomputed standings", async () => {
         const team = seedSubmittedTeam();
+        const other = seedSubmittedTeam("Unawarded Team");
+        ctx.drizzle
+            .insert(awards)
+            .values({
+                namespace: "best-design",
+                name: "Best Design",
+                description: "Design",
+                icon: "sparkles",
+                color: "blue",
+            })
+            .run();
+        ctx.drizzle
+            .insert(teamAwards)
+            .values({ team_id: team.id, award: "best-design", meta: "{}" })
+            .run();
         const judge = seedUser(ctx, { email: "judge@basischina.com", role: "judge" });
         ctx.drizzle
             .insert(teamScores)
@@ -285,6 +339,10 @@ describe("DELETE /api/admin/teams/:id/scores/:judgeId", () => {
             score: 0,
             score_exact: 0,
             rank: 1,
+            awards: ["Best Design"],
+        });
+        expect(result.standings.find((row: any) => row.team_id === other.id)).toMatchObject({
+            awards: [],
         });
         expect(ctx.drizzle.select().from(teamScores).all()).toHaveLength(0);
         const audits = ctx.drizzle.select().from(adminAuditEvents).all();

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatDateTime } from "~/utils/datetime";
+
 type ActiveSeasonResponse = {
     id?: number;
     name?: string;
@@ -12,6 +14,8 @@ type ActiveSeasonResponse = {
     theme_description?: string | null;
     announcement?: string | null;
     is_gallery_public?: number | boolean | null;
+    is_voting_open?: boolean | null;
+    is_submission_closed?: boolean | null;
     results_published?: number | boolean | null;
 };
 
@@ -46,6 +50,113 @@ const hasVotingEnd = computed(() => hackathon.value.voting_end_timestamp > 0);
 const hasResultsOpen = computed(() => hackathon.value.results_open_timestamp > 0);
 const galleryPublic = computed(() => Boolean(hackathon.value.is_gallery_public));
 const resultsPublished = computed(() => Boolean(hackathon.value.results_published));
+const votingOpen = computed(() => Boolean(hackathon.value.is_voting_open));
+const submissionsClosed = computed(() => Boolean(hackathon.value.is_submission_closed));
+
+type EventPhase = {
+    label: string;
+    tone: "primary" | "neutral" | "warning" | "error" | "success";
+    detail: string;
+    cta: { label: string; to: string } | null;
+};
+
+/** One unambiguous sentence about whether the hackathon is over. */
+const eventPhase = computed<EventPhase>(() => {
+    const status = hackathon.value.status;
+    if (status === "paused") {
+        return {
+            label: "Paused",
+            tone: "warning",
+            detail: "The event is paused. Check back for the updated schedule.",
+            cta: null,
+        };
+    }
+    if (status === "finished") {
+        const ended =
+            hasEnd.value && endDate.value.getTime() <= Date.now()
+                ? ` The hackathon ended on ${formatDateTime(endDate.value)}.`
+                : "";
+        if (resultsPublished.value) {
+            return {
+                label: "Ended",
+                tone: "neutral",
+                detail: `The hackathon is over.${ended} Final results are published.`,
+                cta: { label: "View final results", to: "/results" },
+            };
+        }
+        return {
+            label: "Ended",
+            tone: "neutral",
+            detail: `The hackathon is over.${ended} Results have not been published yet.`,
+            cta: galleryPublic.value
+                ? { label: "Browse this season's projects", to: "/projects" }
+                : { label: "Browse past projects", to: "/showcase" },
+        };
+    }
+    if (status === "voting") {
+        if (votingOpen.value) {
+            const closes = hasVotingEnd.value
+                ? ` Peer voting closes ${formatDateTime(votingEndDate.value)}.`
+                : "";
+            return {
+                label: "Voting open",
+                tone: "primary",
+                detail: `The hackathon has ended and peer voting is open.${closes}`,
+                cta: { label: "Vote for People's Choice", to: "/voting" },
+            };
+        }
+        if (hasVotingStart.value && votingStartDate.value.getTime() > Date.now()) {
+            return {
+                label: "Voting soon",
+                tone: "primary",
+                detail: `The hackathon has ended. Peer voting opens ${formatDateTime(votingStartDate.value)}.`,
+                cta: galleryPublic.value
+                    ? { label: "Browse this season's projects", to: "/projects" }
+                    : null,
+            };
+        }
+        return {
+            label: "Voting closed",
+            tone: "neutral",
+            detail: resultsPublished.value
+                ? "The hackathon has ended. Peer voting is closed and final results are published."
+                : "The hackathon has ended. Peer voting is closed and results are being prepared.",
+            cta: resultsPublished.value
+                ? { label: "View final results", to: "/results" }
+                : galleryPublic.value
+                  ? { label: "Browse this season's projects", to: "/projects" }
+                  : null,
+        };
+    }
+    if (status === "in_progress") {
+        if (submissionsClosed.value) {
+            return {
+                label: "Submissions closed",
+                tone: "warning",
+                detail: "The hackathon submission window has closed. Judging and peer voting come next.",
+                cta: galleryPublic.value
+                    ? { label: "Browse this season's projects", to: "/projects" }
+                    : null,
+            };
+        }
+        const closes = hasEnd.value ? ` Submissions close ${formatDateTime(endDate.value)}.` : "";
+        return {
+            label: "Live now",
+            tone: "primary",
+            detail: `The hackathon is in progress.${closes}`,
+            cta: { label: "Open your dashboard", to: "/dashboard" },
+        };
+    }
+    const starts = hasStart.value
+        ? ` The hackathon starts ${formatDateTime(startDate.value)}.`
+        : " The schedule will be announced soon.";
+    return {
+        label: "Upcoming",
+        tone: "neutral",
+        detail: `The hackathon has not started yet.${starts}`,
+        cta: null,
+    };
+});
 
 const steps = [
     {
@@ -105,6 +216,47 @@ useHead(
 
 <template>
     <div class="space-y-12">
+        <section
+            aria-labelledby="event-status-heading"
+            class="border border-default bg-elevated/30 p-6 sm:p-8"
+        >
+            <div class="flex flex-wrap items-start justify-between gap-5">
+                <div class="min-w-0">
+                    <p class="text-sm text-muted">
+                        {{ hackathon.name || "BIBS-C Network Hackathon" }}
+                    </p>
+                    <h1
+                        id="event-status-heading"
+                        class="mt-2 break-words text-4xl font-bold text-primary glow sm:text-5xl"
+                    >
+                        {{ hackathon.theme_name || "BIBS-C Network Hackathon" }}
+                    </h1>
+                    <p class="mt-4 max-w-3xl text-base leading-7 text-muted">
+                        {{ eventPhase.detail }}
+                    </p>
+                </div>
+                <UBadge
+                    :color="eventPhase.tone"
+                    variant="subtle"
+                    size="lg"
+                    class="shrink-0 px-3 py-1.5 text-sm"
+                >
+                    {{ eventPhase.label }}
+                </UBadge>
+            </div>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <UButton
+                    v-if="eventPhase.cta"
+                    :to="eventPhase.cta.to"
+                    color="primary"
+                    class="min-h-11"
+                >
+                    {{ eventPhase.cta.label }}
+                </UButton>
+                <UButton to="/rules" variant="subtle" class="min-h-11">Read the rules</UButton>
+            </div>
+        </section>
+
         <section v-if="status !== 'finished'" aria-labelledby="schedule-heading">
             <div class="flex flex-wrap items-end justify-between gap-3">
                 <h2 id="schedule-heading" class="text-3xl font-bold">Schedule</h2>

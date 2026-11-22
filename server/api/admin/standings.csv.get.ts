@@ -4,11 +4,7 @@ import { getActiveSeason, getSeasonById } from "~~/server/utils/database/seasons
 import { getAwardsForTeams } from "~~/server/utils/database/awards";
 import { calculateSeasonScoresWithDatabase } from "~~/server/utils/scoring";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-
-function csvCell(value: unknown): string {
-    const text = value === null || value === undefined ? "" : String(value);
-    return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
+import { csvCell } from "~~/server/utils/csv";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {

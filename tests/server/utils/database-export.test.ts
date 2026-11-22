@@ -56,6 +56,34 @@ const rowsByTable: Record<string, Record<string, unknown>[]> = {
             name: "Export test",
         },
     ],
+    judge_flags: [
+        {
+            id: 6,
+            judge_user_id: leakedJudgeId,
+            resolved_by: leakedJudgeId,
+            reason: "Conflict",
+        },
+    ],
+    admin_audit_events: [
+        {
+            id: 7,
+            actor_user_id: leakedJudgeId,
+            action: "team.status",
+            before: {
+                judge_user_id: leakedJudgeId,
+                status: "active",
+                tags: [{ judge_user_id: leakedJudgeId, label: "x" }],
+            },
+            after: { resolved_by: leakedJudgeId, status: "withdrawn" },
+        },
+        {
+            id: 8,
+            actor_user_id: leakedJudgeId,
+            action: "score.delete",
+            entity_type: "team_score",
+            entity_id: `3:${leakedJudgeId}`,
+        },
+    ],
 };
 
 function mockDatabase() {
@@ -108,6 +136,12 @@ describe("admin database export judge privacy", () => {
         expect(parsed.tables.sqlite_legacy_data[0]!.payload).not.toHaveProperty("field3");
         expect(parsed.tables.sqlite_legacy_data[1]!.payload).not.toHaveProperty("role");
         expect(parsed.tables.oauth2_applications[0]).not.toHaveProperty("client_secret");
+        expect(parsed.tables.judge_flags[0]).not.toHaveProperty("judge_user_id");
+        expect(parsed.tables.judge_flags[0]).not.toHaveProperty("resolved_by");
+        expect(parsed.tables.admin_audit_events[0]).not.toHaveProperty("actor_user_id");
+        expect(parsed.tables.admin_audit_events[0]!.before).not.toHaveProperty("judge_user_id");
+        expect(parsed.tables.admin_audit_events[0]!.after).not.toHaveProperty("resolved_by");
+        expect(parsed.tables.admin_audit_events[1]).not.toHaveProperty("entity_id");
         expect(queriedTables).not.toContain("judging_drafts");
         expect(output).not.toContain(leakedJudgeId);
         expect(output).not.toContain(leakedRole);

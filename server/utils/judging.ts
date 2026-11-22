@@ -89,8 +89,9 @@ export function judgeScopeWhere(scope: JudgeScope): SQL | undefined {
         if (scope.pathways.length > 0) {
             scopeClauses.push(inArray(teams.pathway, scope.pathways));
         }
-        // An assignment with neither a team nor a pathway is filtered out by
-        // the validation layer; an empty scope matches nothing.
+        // An assignment with neither a team nor a pathway means all projects
+        // (`allProjects` handles that case); an empty scope here matches
+        // nothing rather than leaking the full queue.
         clauses.push(scopeClauses.length > 0 ? or(...scopeClauses)! : sql`false`);
     }
     if (scope.recusedTeamIds.length > 0) {

@@ -158,7 +158,12 @@ const displayCurve = computed(() => {
                         class="rounded-xl border border-default p-4"
                     >
                         <h3 class="text-lg font-semibold">{{ track.name }}</h3>
-                        <div class="mt-3 overflow-x-auto">
+                        <div
+                            class="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            role="region"
+                            :aria-label="`${track.name} rubric criteria`"
+                            tabindex="0"
+                        >
                             <table class="w-full text-left text-sm">
                                 <thead>
                                     <tr class="border-b border-default text-xs text-muted">

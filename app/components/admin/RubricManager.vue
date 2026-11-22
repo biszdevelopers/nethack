@@ -158,7 +158,7 @@ const canSave = computed(
     () => !loading.value && !savingVersion.value && !loadError.value && issues.value.length === 0,
 );
 
-async function loadRubric() {
+async function loadRubric(preserveTemplateFields = false) {
     loading.value = true;
     loadError.value = "";
     try {
@@ -167,8 +167,10 @@ async function loadRubric() {
         definition.value = copyDefinition(response.active?.definition ?? DEFAULT_RUBRIC_DEFINITION);
         versionName.value = response.active?.name ?? "Season rubric";
         selectedTemplateId.value = null;
-        templateName.value = "";
-        templateDescription.value = "";
+        if (!preserveTemplateFields) {
+            templateName.value = "";
+            templateDescription.value = "";
+        }
         copySeasonId.value = sourceSeasons.value[0]?.id ?? null;
     } catch (error) {
         loadError.value = getErrorMessage(error);
@@ -177,19 +179,21 @@ async function loadRubric() {
     }
 }
 
-watch(() => props.seasonId, loadRubric, { immediate: true });
+watch(
+    () => props.seasonId,
+    () => {
+        void loadRubric();
+    },
+    { immediate: true },
+);
 
 async function refreshRubric(keepEditor = false) {
     const previousDefinition = keepEditor ? copyDefinition(definition.value) : null;
     const previousTemplateId = keepEditor ? selectedTemplateId.value : null;
-    const previousTemplateName = keepEditor ? templateName.value : "";
-    const previousTemplateDescription = keepEditor ? templateDescription.value : "";
-    await loadRubric();
+    await loadRubric(keepEditor);
     if (previousDefinition) {
         definition.value = previousDefinition;
         selectedTemplateId.value = previousTemplateId;
-        templateName.value = previousTemplateName;
-        templateDescription.value = previousTemplateDescription;
     }
 }
 
@@ -403,7 +407,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
             variant="subtle"
             title="Rubric could not be loaded"
             :description="loadError"
-            :actions="[{ label: 'Try again', onClick: loadRubric }]"
+            :actions="[{ label: 'Try again', onClick: () => void loadRubric() }]"
         />
 
         <div

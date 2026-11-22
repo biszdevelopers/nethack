@@ -418,9 +418,11 @@ export async function recalculateTeamScoreAfterSubmission(
     const changed = candidates.filter((candidate) => {
         const previous = previousById.get(candidate.id);
         return (
-            candidate.score !== previous?.score ||
-            candidate.score_exact !== (previous?.score_exact ?? previous?.score ?? 0) ||
-            candidate.rank !== previous?.rank
+            previous === undefined ||
+            previous.score_exact === null ||
+            candidate.score !== previous.score ||
+            candidate.score_exact !== previous.score_exact ||
+            candidate.rank !== previous.rank
         );
     });
     await persistTeamResults(db, changed);

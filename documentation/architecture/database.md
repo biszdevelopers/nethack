@@ -19,7 +19,7 @@ The importer copies `project_description` when the source schema has that column
 
 ### `hackathon` (singleton)
 
-The legacy singleton (`id = 1`) is retained for export, import compatibility, and rollback. The app reads live event settings from the selected `HACKATHON.yml` by default.
+The legacy singleton (`id = 1`) is retained for export, import compatibility, and rollback. The active season's editable live settings are stored in PostgreSQL; `HACKATHON.yml` seeds new installations and supplies comparison values, but the portal never writes it.
 
 | Column | Type | Description |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ Retried deliveries keep the earliest `valid_after` per `jti`. Rows are deleted a
 | `results_published_at` | `TIMESTAMPTZ` | Set once when results are first published; a non-null value also freezes judging after publication |
 | `results_snapshot` | `JSONB` | Immutable standings snapshot written at publication |
 
-Each season stores a complete snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). With YAML enabled the app overlays the live configuration on the active season, saves that configuration to the outgoing season when switching or clearing the active season, and stores diverging values as live overrides. Activating a season also carries its announcement and schedule into the live overrides, so an upcoming season's message and dates appear as soon as it goes live. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
+Each season stores a complete snapshot of its event settings, mirroring the `hackathon` columns by name (status, visibility switches, timestamps, theme, announcement, rubric pointer). PostgreSQL is authoritative for the active season's live settings. When a YAML manifest is configured it seeds and is compared against those values, and diverging values are retained as live overrides; switching seasons snapshots the outgoing season's live settings. Activating a season also carries its announcement and schedule into the live overrides, so an upcoming season's message and dates appear as soon as it goes live. The nullable `rubric_version_id` points to an immutable rubric version and is set after the version exists.
 
 Creating a season copies only the schedule, theme, and rubric from the active season; operational switches, the vote cap, the announcement, and the score curve reset to their off/default values. Publishing results sets `results_published_at` and `results_snapshot`; the snapshot captures each team's ID, name, pathway, status, displayed and exact score, rank, and submission time. Publication also writes `results_published = 1` and turns off voting and judging unless those fields were explicitly supplied in the same request.
 

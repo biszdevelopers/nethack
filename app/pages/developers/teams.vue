@@ -54,7 +54,6 @@ type AdminTeamScores = Omit<TeamScoreFeedbackResponse, "feedback"> & {
 };
 
 const { data, status, error, refresh } = await useApiFetch<AdminTeam[]>("/api/admin/teams", {
-    server: false,
     lazy: true,
     default: () => [],
 });

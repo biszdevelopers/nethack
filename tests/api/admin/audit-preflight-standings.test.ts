@@ -513,4 +513,22 @@ describe("GET /api/admin/standings.csv", () => {
 
         expect(csv).toContain("Final Team");
     });
+
+    it("neutralizes spreadsheet formulas in participant-controlled cells", async () => {
+        seedHackathon(ctx, { status: "voting" });
+        const season = seedSeason(ctx);
+        seedTeam(ctx, {
+            name: '=HYPERLINK("https://evil.example.test","click")',
+            pathway: "junior",
+            season_id: season.id,
+            project_submitted: 1,
+            project_name: "+SUM(1,1)",
+        });
+        mockQueryState.value = {};
+
+        const csv = await standingsHandler(createEvent());
+
+        expect(csv).toContain("'=HYPERLINK");
+        expect(csv).toContain("'+SUM(1,1)");
+    });
 });

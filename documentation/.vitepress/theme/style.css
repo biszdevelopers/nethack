@@ -1624,6 +1624,27 @@ tr:hover td {
     }
 }
 
+/* The admin portal embeds these docs at roughly 980px. Hiding the top-level
+   page menu keeps the search and portal links inside the frame instead of
+   letting the right-most link overflow past the iframe edge. */
+@media (max-width: 1100px) {
+    .VPNavBarMenu.VPNavBarMenu {
+        display: none;
+    }
+    .vp-portal-return {
+        margin-left: auto;
+    }
+}
+
+/* Deterministic iframe rule: the embedded class is set from the frame check,
+   so it never depends on the iframe's reported viewport width. */
+.bh-embedded .VPNavBarMenu {
+    display: none;
+}
+.bh-embedded .vp-portal-return {
+    margin-left: auto;
+}
+
 .VPNavBar {
     backdrop-filter: blur(14px);
     background-color: color-mix(in srgb, var(--bh-bg) 88%, transparent) !important;

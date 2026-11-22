@@ -30,8 +30,6 @@ const {
     status: adminStatus,
 } = await useApiFetch("/api/admin/hackathon", {
     lazy: true,
-    server: false,
-    $fetch: globalThis.$fetch,
 });
 
 const seasons = computed<Season[]>(() => (adminData.value?.seasons ?? []) as Season[]);
@@ -70,11 +68,6 @@ watchEffect(() => {
     if (selectedSeasonId.value !== null || seasons.value.length === 0) return;
     const active = seasons.value.find((season) => season.is_active === 1);
     selectedSeasonId.value = active?.id ?? seasons.value.at(-1)?.id ?? null;
-});
-
-watch(selectedSeasonId, () => {
-    loadSettings();
-    void loadPreflight();
 });
 
 // ---------------------------------------------------------------------------
@@ -141,6 +134,22 @@ function applySettings() {
 function loadSettings() {
     applySettings();
 }
+
+watch(
+    selectedSeasonId,
+    () => {
+        loadSettings();
+    },
+    { immediate: true },
+);
+
+watch(selectedSeasonId, () => {
+    if (import.meta.client) void loadPreflight();
+});
+
+onMounted(() => {
+    if (selectedSeasonId.value !== null) void loadPreflight();
+});
 
 const settingsDirty = computed(
     () => settingsReady.value && JSON.stringify(settings) !== settingsSnapshot.value,
@@ -574,9 +583,13 @@ async function createSeason() {
 const seasonNameDraft = ref("");
 const renamingSeason = ref(false);
 
-watch(selectedSeason, (season) => {
-    seasonNameDraft.value = season?.name ?? "";
-});
+watch(
+    selectedSeason,
+    (season) => {
+        seasonNameDraft.value = season?.name ?? "";
+    },
+    { immediate: true },
+);
 
 async function renameSeason() {
     const season = selectedSeason.value;
@@ -628,9 +641,13 @@ async function deleteSeason() {
 
 const teamLimit = ref(6);
 
-watch(selectedSeason, (season) => {
-    teamLimit.value = Number(season?.max_team_members ?? 6);
-});
+watch(
+    selectedSeason,
+    (season) => {
+        teamLimit.value = Number(season?.max_team_members ?? 6);
+    },
+    { immediate: true },
+);
 
 async function saveTeamLimit() {
     const season = selectedSeason.value;
@@ -697,11 +714,15 @@ const scoreCurveItems = Object.entries(SCORE_CURVE_PRESETS).map(([value, preset]
     value,
 }));
 
-watch(selectedSeason, (season) => {
-    const preset = season?.score_curve_preset;
-    scoreCurvePreset.value =
-        preset && preset in SCORE_CURVE_PRESETS ? (preset as ScoreCurvePreset) : "original";
-});
+watch(
+    selectedSeason,
+    (season) => {
+        const preset = season?.score_curve_preset;
+        scoreCurvePreset.value =
+            preset && preset in SCORE_CURVE_PRESETS ? (preset as ScoreCurvePreset) : "original";
+    },
+    { immediate: true },
+);
 
 async function saveScoreCurvePreset(value: ScoreCurvePreset) {
     const season = selectedSeason.value;

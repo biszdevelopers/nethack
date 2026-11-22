@@ -7,8 +7,6 @@ type ActiveSeasonResponse = {
     results_published?: number | boolean | null;
 };
 
-type BallotStanding = { team_id: number; stars: number };
-
 const { data: season, error: seasonError } = await useApiFetch<ActiveSeasonResponse>(
     "/api/seasons/active",
     { $fetch: globalThis.$fetch },
@@ -29,50 +27,17 @@ watch(published, (open) => {
     if (open) void refresh();
 });
 
-const { data: ballotResults } = await useApiFetch<unknown>("/api/ballot/results", {
+const { data: ballotResults } = await useApiFetch<BallotResultsResponse>("/api/ballot/results", {
     immediate: published.value && import.meta.client,
     server: false,
 });
 
-function normalizeBallotResults(payload: unknown): BallotStanding[] {
-    if (!payload || typeof payload !== "object") return [];
-
-    const record = payload as Record<string, unknown>;
-    const rows = Array.isArray(payload)
-        ? payload
-        : ([
-              "results",
-              "standings",
-              "items",
-              "teams",
-              "projects",
-              "data",
-              "ranking",
-              "leaderboard",
-              "top",
-          ]
-              .map((key) => record[key])
-              .find(Array.isArray) ?? (record.winner ? [record.winner] : []));
-
-    return (rows as unknown[])
-        .flatMap((row) => {
-            if (!row || typeof row !== "object") return [];
-            const item = row as Record<string, unknown>;
-            const team = item.team as { id?: unknown } | undefined;
-            const teamId = Number(item.team_id ?? team?.id ?? item.id);
-            const stars = Number(
-                item.stars ?? item.average_stars ?? item.votes ?? item.score ?? item.count ?? 0,
-            );
-            return Number.isInteger(teamId) && teamId > 0 ? [{ team_id: teamId, stars }] : [];
-        })
-        .sort((a, b) => b.stars - a.stars);
-}
-
 const peopleChoice = computed(() => {
-    const [top] = normalizeBallotResults(ballotResults.value);
-    if (!top || top.stars <= 0) return null;
+    const projects = ballotResults.value?.projects ?? [];
+    const top = [...projects].sort((a, b) => (b.average_stars ?? 0) - (a.average_stars ?? 0))[0];
+    if (!top || !top.average_stars || top.average_stars <= 0) return null;
     const team = (teams.value ?? []).find((item) => item.id === top.team_id);
-    return team ? { team, stars: top.stars } : null;
+    return team ? { team, stars: top.average_stars } : null;
 });
 
 const pathwayLabel = (value: string) =>

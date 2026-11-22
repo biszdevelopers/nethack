@@ -15,6 +15,12 @@ export default defineEventHandler(
 
         const team = await getTeamById(event, id);
         if (!team) throw createError({ statusCode: 404, message: "Team not found." });
+        if (!team.project_submitted) {
+            throw createError({
+                statusCode: 409,
+                message: "This team has not submitted a project to reopen.",
+            });
+        }
 
         await event.context.drizzle.transaction(async (tx) => {
             const season = await firstRow(

@@ -11,7 +11,7 @@ import {
     type TestContext,
 } from "./helpers";
 import { eq } from "drizzle-orm";
-import { hackathon, seasons } from "~~/server/database/schema";
+import { adminAuditEvents, hackathon, seasons } from "~~/server/database/schema";
 
 let ctx: TestContext;
 let getTweaksHandler: any;
@@ -170,6 +170,15 @@ describe("PATCH /api/seasons/:id/tweaks", () => {
         expect(row!.show_ranking).toBe(0);
         expect(row!.status).toBe("in_progress");
         expect(row!.theme_name).toBe("Season Theme");
+        const audits = ctx.drizzle.select().from(adminAuditEvents).all();
+        expect(audits).toHaveLength(1);
+        expect(audits[0]).toMatchObject({
+            action: "season.tweaks",
+            entity_type: "season",
+            entity_id: String(season.id),
+            before: { show_scores: 0 },
+            after: { show_scores: 1 },
+        });
     });
 
     it("converts boolean toggles to 0/1 integers", async () => {

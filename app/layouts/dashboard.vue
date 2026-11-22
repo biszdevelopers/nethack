@@ -12,7 +12,7 @@ const statusLabels: Record<string, string> = {
     not_started: "upcoming",
     in_progress: "ongoing",
     voting: "voting",
-    finished: "completed",
+    finished: "ended",
     paused: "paused",
 };
 const statusLabel = computed(

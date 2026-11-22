@@ -51,7 +51,7 @@ describe("public results gate", () => {
     it("hides People's Choice when the ballot endpoint is unavailable", () => {
         expect(results).toContain("/api/ballot/results");
         expect(results).toContain('v-if="peopleChoice"');
-        expect(results).toContain("normalizeBallotResults");
+        expect(results).toContain("average_stars");
     });
 });
 
@@ -79,6 +79,16 @@ describe("landing page contract", () => {
         expect(home).not.toContain("The official event platform is");
         expect(home).not.toContain("primaryCta");
         expect(home).not.toContain("uppercase");
+    });
+
+    it("states clearly whether the hackathon has started or ended", () => {
+        expect(home).toContain('id="event-status-heading"');
+        expect(home).toContain("eventPhase");
+        expect(home).toContain("The hackathon is over.");
+        expect(home).toContain("The hackathon has not started yet.");
+        expect(home).toContain("The hackathon has ended and peer voting is open.");
+        expect(home).toContain('label: "Voting soon"');
+        expect(home).toContain("Peer voting opens");
     });
 
     it("links internally with to instead of href", () => {

@@ -15,7 +15,8 @@ The nethack frontend contains **37 page files** in `app/pages/`, mapped to route
 
 The home page. Fetches the active hackathon season from `/api/seasons/active` and renders, in order:
 
-- **Schedule** — the first section; `LargeCountdown` components follow the event status, and the admin-editable `announcement` appears inside this section. The table below lists the countdowns:
+- **Event status** — the page heading. States whether the hackathon is upcoming, live, between submissions and voting, voting, paused, or over, with the relevant end date and a primary action (open the dashboard, vote, view results, or read the rules). This is the only `h1` and it makes the event's current state unambiguous.
+- **Schedule** — countdowns follow the event status, and the admin-editable `announcement` appears inside this section. The table below lists the countdowns:
 
 | Status        | Countdowns shown                 |
 | ------------- | -------------------------------- |
@@ -31,7 +32,7 @@ The home page. Fetches the active hackathon season from `/api/seasons/active` an
 - **FAQ** — four short answers with a link to the full FAQ
 - **Support and archives** — FAQ, rules, contact, showcase, and gated catalog/results links
 
-The page does not render a separate marketing hero or a facts grid; the schedule is the top of the page. A current-season catalog link appears only after the event enters peer voting.
+The page does not render a separate marketing hero or a facts grid; the event-status heading is a compact state summary, and the schedule follows immediately. A current-season catalog link appears only after the event enters peer voting.
 
 **Layout:** `default`
 
@@ -192,12 +193,12 @@ Historical project archive for an inactive season that has started. The page loa
 
 **File:** `app/pages/voting.vue`
 
-Peer voting page. Protected by `auth` middleware. Available whenever the `voting_enabled` portal toggle is on and the event is not paused; the event phase does not veto the toggle.
+Peer voting page. Protected by `auth` middleware. Reads `/api/seasons/active` first and shows the form only while `is_voting_open` is true; the server enforces the `voting_enabled` toggle, the pause switch, and the configured voting start and end timestamps.
 
 **Flow:**
 
-1. Fetches ballot data from `/api/ballot`. When voting is closed, the server's `403` is shown as a closed notice with retry and home actions; the voting form is not rendered.
-2. Displays eligible `VotingProjectCard` components in a grid
+1. When voting is closed, renders a neutral notice that explains the current phase (not started, closed, paused, or ended) and links to results when they are published. It does not request a ballot, so a closed page produces no error toast or console failure.
+2. Otherwise fetches ballot data from `/api/ballot` and displays eligible `VotingProjectCard` components in a grid
 3. User distributes **10 stars** among eligible projects (0–5 per project), optionally capped to a maximum number of scored projects by `max_votes_per_user`
 4. Increment/decrement buttons with validation (total must equal 10)
 5. Reasoning textarea

@@ -3,6 +3,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { JudgeAssignmentRequest } from "~~/shared/schemas";
 import { judgeAssignments, teams, users } from "~~/server/database/schema";
 import { getActiveSeason, getSeasonById } from "~~/server/utils/database/seasons";
+import { getRubricVersionForSeason } from "~~/server/utils/database/rubrics";
 import { firstRow } from "~~/server/utils/database/query";
 import { writeAuditEvent } from "~~/server/utils/audit";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
@@ -18,12 +19,48 @@ export default defineEventHandler(
 
         const judge = await firstRow(
             event.context.drizzle
-                .select({ id: users.id, is_admin: users.is_admin, is_judge: users.is_judge })
+                .select({
+                    id: users.id,
+                    is_admin: users.is_admin,
+                    is_judge: users.is_judge,
+                    team_id: users.team_id,
+                })
                 .from(users)
                 .where(eq(users.id, body.judge_user_id))
                 .limit(1),
         );
         if (!judge) throw createError({ statusCode: 404, message: "Judge not found" });
+
+        // A competing participant cannot judge the same season. Admins who
+        // also compete are rejected by the same rule.
+        if (judge.team_id) {
+            const competingTeam = await firstRow(
+                event.context.drizzle
+                    .select({ season_id: teams.season_id })
+                    .from(teams)
+                    .where(eq(teams.id, judge.team_id))
+                    .limit(1),
+            );
+            if (competingTeam?.season_id === season.id) {
+                throw createError({
+                    statusCode: 409,
+                    message: "A participant competing in this season cannot judge it.",
+                });
+            }
+        }
+
+        // Assigning a participant is the promotion step, so judging permission
+        // is intentionally not required up front. Pathway scopes still have to
+        // name a track that exists in the season's rubric.
+        if (body.pathway) {
+            const rubric = await getRubricVersionForSeason(event, season.id);
+            if (!rubric || !Object.hasOwn(rubric.definition.tracks, body.pathway)) {
+                throw createError({
+                    statusCode: 400,
+                    message: "The assignment pathway is not a track in this season's rubric.",
+                });
+            }
+        }
 
         if (body.team_id !== undefined && body.team_id !== null) {
             const team = await firstRow(

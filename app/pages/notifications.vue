@@ -14,7 +14,7 @@ const working = ref<number | "all" | null>(null);
 
 const { data, pending, error, refresh } = await useApiFetch<GetNotificationsResponse>(
     "/api/notifications",
-    { server: false },
+    { lazy: true },
 );
 
 function normalizeNotifications(payload: unknown): NotificationResponse[] {

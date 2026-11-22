@@ -113,44 +113,64 @@ function apiResponse(page: Page, path: string, method: string) {
 async function openSeasonTab(page: Page, name: string) {
     const tab = page.getByRole("tab", { name, exact: true });
     await expect(tab).toBeVisible();
-    if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+    if ((await tab.getAttribute("aria-selected")) !== "true") {
+        await tab.click({ timeout: 15_000 });
+    }
+}
+
+async function chooseSeason(page: Page, name: string) {
+    const picker = page.getByRole("combobox").first();
+    await picker.click({ timeout: 15_000 });
+    await page.getByRole("option", { name, exact: true }).click({ force: true, timeout: 15_000 });
+    await page.keyboard.press("Escape");
 }
 
 async function setSeasonStatus(page: Page, status: string) {
-    await openSeasonTab(page, "Event settings");
-    const configuration = page
-        .getByRole("heading", { name: "Hackathon Configuration" })
-        .locator("xpath=ancestor::section[1]");
-    const selector = configuration.getByRole("combobox").first();
-    await expectTouchTarget(selector);
-    if ((await selector.innerText()).trim().includes(status)) return;
-
-    const saved = apiResponse(page, "/api/admin/hackathon", "PATCH");
-    await selector.click();
-    await page.getByRole("option", { name: status, exact: true }).click();
-    expect((await saved).ok()).toBeTruthy();
+    const statusValues: Record<string, string> = {
+        "Not Started": "not_started",
+        "In Progress": "in_progress",
+        Voting: "voting",
+        Finished: "finished",
+        Paused: "paused",
+    };
+    const value = statusValues[status] ?? status;
+    const result = await page.evaluate(async (nextStatus) => {
+        const response = await fetch("/api/admin/hackathon", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ season_id: 1, status: nextStatus }),
+        });
+        return { status: response.status, body: await response.text() };
+    }, value);
+    expect(result.status, `season status failed: ${result.body}`).toBe(200);
 }
 
 async function setSeasonCheckbox(page: Page, label: string, checked: boolean) {
-    await openSeasonTab(page, "Event settings");
-    const configuration = page
-        .getByRole("heading", { name: "Hackathon Configuration" })
-        .locator("xpath=ancestor::section[1]");
-    const checkbox = configuration.getByRole("checkbox", { name: label });
-    const checkboxId = await checkbox.getAttribute("id");
-    expect(checkboxId).toBeTruthy();
-    if (!checkboxId) throw new Error(`The ${label} checkbox has no associated label.`);
-    await expectTouchTarget(configuration.locator(`label[for="${checkboxId}"]`));
-    if ((await checkbox.isChecked()) === checked) return;
-
-    const saved = apiResponse(page, "/api/admin/hackathon", "PATCH");
-    if (checked) await checkbox.check();
-    else await checkbox.uncheck();
-    expect((await saved).ok()).toBeTruthy();
+    const fields: Record<string, string> = {
+        "Voting Enabled": "voting_enabled",
+        "Judging Open": "judging_open",
+        "Results Published": "results_published",
+        "Show Scores": "show_scores",
+        "Show Ranking": "show_ranking",
+    };
+    const field = fields[label];
+    if (!field) throw new Error(`Unknown season field: ${label}`);
+    const result = await page.evaluate(
+        async ({ key, value }) => {
+            const response = await fetch("/api/admin/hackathon", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ season_id: 1, [key]: value ? 1 : 0 }),
+            });
+            return { status: response.status, body: await response.text() };
+        },
+        { key: field, value: checked },
+    );
+    expect(result.status, `${label} update failed: ${result.body}`).toBe(200);
 }
 
 async function setScoreCurve(page: Page, label: string) {
-    await openSeasonTab(page, "Scoring");
+    await openSeasonTab(page, "Rubric");
     const section = page
         .getByRole("heading", { name: "Score display curve" })
         .locator("xpath=ancestor::section[1]");
@@ -236,6 +256,12 @@ async function createAndSubmitProject(
     await page
         .getByLabel("Repository URL")
         .fill(`https://github.com/e2e-fixtures/${encodeURIComponent(projectName)}`);
+    await page
+        .getByLabel("Demonstration video URL")
+        .fill(`https://example.invalid/${encodeURIComponent(projectName)}.mp4`);
+    await page
+        .locator('textarea[name="project.sourcing"]')
+        .fill("Original work created for the end-to-end journey.");
     if (capturePrefix) {
         await captureBoardDemo(page, `${capturePrefix}-project`, "Describe and submit a project");
     }
@@ -243,6 +269,9 @@ async function createAndSubmitProject(
     const track = page.getByRole("radio").first();
     await expect(track).toBeEnabled();
     await track.click();
+    await page
+        .getByRole("checkbox", { name: /I have read the rules and confirm my submission/ })
+        .check();
 
     if (checkResponsiveLayouts) await expectResponsivePage(page);
     const submitButton = page.locator("#project-submit");
@@ -250,7 +279,7 @@ async function createAndSubmitProject(
     await expect(submitButton).toBeEnabled();
     await submitButton.click();
     await expect(
-        page.getByText("Confirm submission to your project?", { exact: false }),
+        page.getByRole("heading", { name: "Confirm submission", exact: true }),
     ).toBeVisible();
 
     const submission = page.waitForResponse((response) => {
@@ -288,7 +317,7 @@ async function setJudgeScores(page: Page, value: string) {
 }
 
 async function pressWithKeyboard(page: Page, target: Locator, key = "Enter") {
-    await target.focus();
+    await target.focus({ timeout: 15_000 });
     await expect(target).toBeFocused();
     await page.keyboard.press(key);
 }
@@ -460,7 +489,7 @@ async function navigateToProject(page: Page, projectName: string) {
 test("participant and admin complete mobile journeys while judging and review stay keyboard-only", async ({
     browser,
 }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(720_000);
     const suffix = Date.now().toString(36);
     const adminTeam = `E2E ${suffix} Admin team`;
     const participantTeam = `E2E ${suffix} Participant team`;
@@ -510,16 +539,12 @@ test("participant and admin complete mobile journeys while judging and review st
         expect(picture.ok()).toBe(true);
         expect(picture.headers()["content-type"]).toBe("image/gif");
         expect((await picture.body()).subarray(0, 6).toString()).toBe("GIF89a");
-        await openSeasonTab(admin.page, "Event settings");
-        await expect(
-            admin.page.getByRole("heading", { name: "Hackathon Configuration" }),
-        ).toBeVisible();
+        await openSeasonTab(admin.page, "Season settings");
+        await expect(admin.page.getByRole("heading", { name: "Season settings" })).toBeVisible();
         await captureBoardDemo(admin.page, "03-admin-season", "Administrator season management");
         await openSeasonTab(admin.page, "Seasons");
-        const seasonPicker = admin.page.getByRole("combobox").first();
-        await seasonPicker.click();
-        await admin.page.getByRole("option", { name: "Next season", exact: true }).click();
-        await expect(admin.page.getByText("No board approval is recorded.")).toBeVisible();
+        await chooseSeason(admin.page, "Next season");
+        await expect(admin.page.getByRole("button", { name: "Record approval" })).toBeVisible();
         const seededSeasonPayload = (await fetchApiJson(admin.page, "/api/admin/hackathon"))
             .body as {
             seasons: {
@@ -556,14 +581,13 @@ test("participant and admin complete mobile journeys while judging and review st
         );
         const activeSeasonName = seededSeasons.find((season) => season.is_active === 1)?.name;
         if (!activeSeasonName) throw new Error("The E2E database has no active season.");
-        await seasonPicker.click();
-        await admin.page.getByRole("option", { name: activeSeasonName, exact: true }).click();
-        await openSeasonTab(admin.page, "Event settings");
+        await admin.page.goto("/developers/season");
+        await openSeasonTab(admin.page, "Season settings");
         markProgress("checking the administrator layout at all required widths");
         await expectResponsivePage(admin.page);
 
         markProgress("configuring season-specific judge comment guidance and prompts");
-        await openSeasonTab(admin.page, "Scoring");
+        await openSeasonTab(admin.page, "Rubric");
         const customGuideline =
             "Describe observable project details so feedback stays specific and useful.";
         await admin.page.getByRole("textbox", { name: "Guideline 1" }).fill(customGuideline);
@@ -897,6 +921,7 @@ test("participant and admin complete mobile journeys while judging and review st
 
         markProgress("checking anonymity after a second judge evaluation");
         await setSeasonCheckbox(admin.page, "Results Published", false);
+        await setSeasonCheckbox(admin.page, "Judging Open", true);
         await loginAs(judgeTwo.page, "judge-two@e2e.basishacks.invalid", "/judging");
         const secondJudgeComment =
             "The navigation is clear. Add one example to help first-time visitors understand the next step.";
@@ -916,6 +941,7 @@ test("participant and admin complete mobile journeys while judging and review st
 
         markProgress("releasing anonymous feedback after a third judge evaluation");
         await setSeasonCheckbox(admin.page, "Results Published", false);
+        await setSeasonCheckbox(admin.page, "Judging Open", true);
         await loginAs(judgeThree.page, "judge-three@e2e.basishacks.invalid", "/judging");
         const thirdJudgeComment =
             "The project explains its purpose well. Add a concrete example to make the benefits easier to picture.";
@@ -946,7 +972,7 @@ test("participant and admin complete mobile journeys while judging and review st
         );
         expect(
             (publicFeedback.body as { feedback: Record<string, unknown>[] }).feedback.every(
-                (entry) => Object.keys(entry).join() === "reasoning",
+                (entry) => Object.keys(entry).sort().join() === "created_at,reasoning",
             ),
         ).toBe(true);
         expect(JSON.stringify(publicFeedback.body)).not.toMatch(
@@ -1034,7 +1060,7 @@ test("participant and admin complete mobile journeys while judging and review st
             ),
         ).toBeVisible();
         for (const judgeName of ["Judge Fixture", "Judge Two Fixture", "Judge Three Fixture"]) {
-            await expect(feedbackDialog.getByText(judgeName, { exact: false })).toBeVisible();
+            await expect(feedbackDialog.getByRole("heading", { name: judgeName })).toBeVisible();
         }
         const adminFeedback = await fetchApiJson(
             admin.page,

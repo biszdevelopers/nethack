@@ -29,7 +29,7 @@
             :items="items"
             variant="link"
             class="w-full justify-center"
-            :ui="{ link: 'min-h-11' }"
+            :ui="{ link: 'min-h-11 min-w-7 px-1', list: 'flex-wrap justify-center gap-2' }"
         />
 
         <template #right>

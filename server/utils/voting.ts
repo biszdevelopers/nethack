@@ -1,13 +1,14 @@
 import { isDeadlineEnforcementEnabled } from "./event-state";
 
 /**
- * Peer voting is open whenever the portal `voting_enabled` toggle is on and the
- * event is not paused. A configured voting deadline still closes it unless
- * deadline enforcement is explicitly disabled.
+ * Peer voting is open whenever the portal `voting_enabled` toggle is on, the
+ * event is not paused, and the current time is inside the configured voting
+ * window. Deadline enforcement can be explicitly disabled for a rehearsal.
  */
 export function isVotingOpen(
     hackathon:
         | (Pick<Hackathon, "status" | "voting_enabled"> & {
+              voting_start_timestamp?: number | null;
               voting_end_timestamp?: number | null;
           })
         | null
@@ -17,9 +18,13 @@ export function isVotingOpen(
     if (!hackathon || hackathon.status === "paused") return false;
     if (!hackathon.voting_enabled) return false;
     const enforceDeadlines = options.enforceDeadlines ?? isDeadlineEnforcementEnabled();
+    if (!enforceDeadlines) return true;
+    const now = options.now ?? Date.now();
+    const votingStart = Number(hackathon.voting_start_timestamp ?? 0);
+    if (votingStart > 0 && now < votingStart) return false;
     const votingEnd = Number(hackathon.voting_end_timestamp ?? 0);
-    if (!enforceDeadlines || votingEnd <= 0) return true;
-    return (options.now ?? Date.now()) <= votingEnd;
+    if (votingEnd > 0 && now > votingEnd) return false;
+    return true;
 }
 
 export interface PeerBallotRow {

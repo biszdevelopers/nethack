@@ -75,6 +75,15 @@ describe("event gates", () => {
         expect(state.judgingOpen).toBe(true);
     });
 
+    it("keeps voting closed before the scheduled start", () => {
+        const state = resolveEventGates(
+            hackathon({ voting_enabled: 1, voting_start_timestamp: NOW + 60_000 }),
+            season(),
+            { now: NOW },
+        );
+        expect(state.votingOpen).toBe(false);
+    });
+
     it("closes judging after publication unless overridden", () => {
         const afterPublish = resolveEventGates(
             hackathon({ status: "finished", judging_open: 1, results_published: 1 }),

@@ -82,19 +82,21 @@ export async function resolveJudgeFlag(
     flagID: number,
     resolvedBy: number,
 ): Promise<void> {
-    const changed = await event.context.drizzle
-        .update(judgeFlags)
-        .set({ resolved_at: new Date(), resolved_by: resolvedBy })
-        .where(and(eq(judgeFlags.id, flagID), isNull(judgeFlags.resolved_at)))
-        .returning({ id: judgeFlags.id });
-    if (changed.length === 0) {
-        throw createError({ statusCode: 404, message: "Open flag not found" });
-    }
-    await writeAuditEvent(event.context.drizzle, event, {
-        action: "judging.flag_resolved",
-        entity_type: "judge_flag",
-        entity_id: flagID,
-        after: { resolved_by: resolvedBy },
+    await event.context.drizzle.transaction(async (tx) => {
+        const changed = await tx
+            .update(judgeFlags)
+            .set({ resolved_at: new Date(), resolved_by: resolvedBy })
+            .where(and(eq(judgeFlags.id, flagID), isNull(judgeFlags.resolved_at)))
+            .returning({ id: judgeFlags.id });
+        if (changed.length === 0) {
+            throw createError({ statusCode: 404, message: "Open flag not found" });
+        }
+        await writeAuditEvent(tx, event, {
+            action: "judging.flag_resolved",
+            entity_type: "judge_flag",
+            entity_id: flagID,
+            after: { resolved_by: resolvedBy },
+        });
     });
 }
 

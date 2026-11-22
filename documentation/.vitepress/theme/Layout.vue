@@ -11,11 +11,12 @@ const { Layout } = DefaultTheme;
 const embedded = ref(false);
 onMounted(() => {
     embedded.value = window.self !== window.top;
+    if (embedded.value) document.documentElement.classList.add("bh-embedded");
 });
 </script>
 
 <template>
-    <Layout>
+    <Layout :class="{ 'bh-embedded': embedded }">
         <template #nav-bar-content-after>
             <a
                 class="vp-portal-return"
