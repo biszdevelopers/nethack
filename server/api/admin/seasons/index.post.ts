@@ -30,7 +30,7 @@ export default defineEventHandler(
 
         const body = await readValidatedBody(event, CreateSeasonRequest.parse);
         const copyLiveSettings = body.copy_live_settings !== false;
-        const isActive = body.is_active ?? 0;
+        const isActive = body.is_active;
 
         if (isActive === 1 && !copyLiveSettings) {
             throw createError({
@@ -126,8 +126,12 @@ export default defineEventHandler(
             try {
                 await setActiveSeason(event, created.id);
             } catch (error) {
-                // Do not leave a stray season behind when activation fails.
+                // Do not leave a stray season behind when activation fails. Its
+                // copied rubric versions reference it with ON DELETE RESTRICT.
                 try {
+                    await event.context.drizzle
+                        .delete(rubricVersions)
+                        .where(eq(rubricVersions.season_id, created.id));
                     await event.context.drizzle.delete(seasons).where(eq(seasons.id, created.id));
                 } catch {
                     // Preserve the original activation failure.

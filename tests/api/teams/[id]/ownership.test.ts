@@ -121,9 +121,40 @@ describe("PATCH /api/teams/:id/owner", () => {
             message: "Cannot transfer ownership after the project is submitted",
         });
     });
+
+    it("rejects an outsider taking over an ownerless team", async () => {
+        const team = seedTeam(ctx, { name: "Ownerless Team", owner_user_id: null });
+        const member = seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
+        const outsider = seedUser(ctx, { email: "outsider@basischina.com" });
+
+        mockSession.value = { user: { id: outsider.id } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { user_id: member.id };
+
+        await expect(transferOwner(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Only a team member can transfer ownership",
+        });
+    });
 });
 
 describe("DELETE /api/teams/:id", () => {
+    it("rejects an outsider disbanding an ownerless team", async () => {
+        const team = seedTeam(ctx, { name: "Ownerless Team", owner_user_id: null });
+        seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
+        const outsider = seedUser(ctx, { email: "outsider@basischina.com" });
+
+        mockSession.value = { user: { id: outsider.id } };
+        mockParams.values["id"] = String(team.id);
+
+        await expect(disband(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Only the team owner can disband it",
+        });
+        const unchanged = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+        expect(unchanged!.status).toBe("active");
+    });
+
     it("withdraws the team, clears members, and keeps history", async () => {
         const { owner, team } = seedOwnedTeam("Disband Team");
         const member = seedUser(ctx, { email: "member@basischina.com", team_id: team.id });

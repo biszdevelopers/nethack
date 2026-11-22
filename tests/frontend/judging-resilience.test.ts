@@ -41,7 +41,8 @@ describe("judging workspace summary degradation", () => {
     });
 
     it("reloads server state for a 409 already-scored response", () => {
-        expect(queuePage).toContain('status === 409 || message.includes("already scored")');
+        expect(queuePage).toContain('message.includes("already scored")');
+        expect(queuePage).not.toContain("status === 409 ||");
         expect(queuePage).toContain("const foundNext = await recordFinalizedEvaluation(team);");
         expect(queuePage).toContain("await refreshQueuePage(currentPage.value)");
     });

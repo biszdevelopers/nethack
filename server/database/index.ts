@@ -108,6 +108,32 @@ export async function createDrizzleDatabase(): Promise<DrizzleDatabase> {
     return database;
 }
 
+/**
+ * Dedicated migrator connection. DDL batches must not inherit the request
+ * pool's interactive statement timeout, or a slow upgrade rolls back and the
+ * process exits on every restart. Two connections are required: one holds the
+ * advisory lock while Drizzle applies migrations on the other.
+ */
+export async function createMigrationDatabase(): Promise<{
+    database: DrizzleDatabase;
+    client: Sql;
+}> {
+    const migrationClient = postgres(getDatabaseUrl(), {
+        max: 2,
+        idle_timeout: 5,
+        connect_timeout: 10,
+        prepare: false,
+        connection: {
+            statement_timeout: 0,
+            idle_in_transaction_session_timeout: 0,
+        },
+    });
+    return {
+        database: drizzle(migrationClient, { schema }),
+        client: migrationClient,
+    };
+}
+
 export async function getDb(): Promise<DrizzleDatabase> {
     await databaseInitialization;
     return createDrizzleDatabase();

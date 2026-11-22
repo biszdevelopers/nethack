@@ -9,7 +9,7 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "../../helpers";
-import { users } from "~~/server/database/schema";
+import { users, adminAuditEvents } from "~~/server/database/schema";
 
 const mocks = vi.hoisted(() => ({ requireUser: vi.fn() }));
 
@@ -65,6 +65,13 @@ describe("PATCH /api/users/:id/admin", () => {
         expect(
             ctx.drizzle.select().from(users).where(eq(users.id, target.id)).get()!.is_admin,
         ).toBe(0);
+        expect(
+            ctx.drizzle
+                .select()
+                .from(adminAuditEvents)
+                .where(eq(adminAuditEvents.action, "user.admin"))
+                .all(),
+        ).toHaveLength(2);
     });
 
     it("allows another administrator to demote an initial administrator", async () => {

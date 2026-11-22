@@ -231,6 +231,52 @@ describe("GET /api/ballot/results", () => {
         expect(result.projects[0]!.average_stars).toBe(4);
     });
 
+    it("excludes ballots from a withdrawn voting team", async () => {
+        const season = seedHackathonAndSeasonWithTeam();
+        const activeVoterTeam = seedTeam(ctx, {
+            name: "Active Voter",
+            project_submitted: 0,
+            season_id: season.id,
+        });
+        const withdrawnVoterTeam = seedTeam(ctx, {
+            name: "Withdrawn Voter",
+            project_submitted: 0,
+            season_id: season.id,
+            status: "withdrawn",
+        });
+        const activeVoter = seedUser(ctx, {
+            email: "active-voter@basischina.com",
+            team_id: activeVoterTeam.id,
+        });
+        const withdrawnVoter = seedUser(ctx, {
+            email: "withdrawn-voter@basischina.com",
+            team_id: withdrawnVoterTeam.id,
+        });
+        ctx.drizzle
+            .insert(peerVotingScores)
+            .values([
+                {
+                    user_id: activeVoter.id,
+                    season_id: season.id,
+                    team_id: activeVoterTeam.id,
+                    score: JSON.stringify({ [season.teamId]: 4 }),
+                },
+                {
+                    user_id: withdrawnVoter.id,
+                    season_id: season.id,
+                    team_id: withdrawnVoterTeam.id,
+                    score: JSON.stringify({ [season.teamId]: 2 }),
+                },
+            ])
+            .run();
+        mockQueryState.value = {};
+
+        const result = await resultsHandler(createEvent());
+
+        expect(result.turnout).toMatchObject({ voting_teams: 1, ballots: 1 });
+        expect(result.projects[0]!.average_stars).toBe(4);
+    });
+
     it("reports zero turnout when no project was submitted", async () => {
         seedVoting();
         mockQueryState.value = {};
@@ -254,6 +300,39 @@ describe("GET /api/ballot/results", () => {
 
         expect(result.season_id).toBe(past.id);
         expect(result.results_visible).toBe(true);
+    });
+
+    it("reads past results while the active event is still voting", async () => {
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1, results_published: 1 });
+        seedSeason(ctx, { results_published: 1 });
+        const past = seedSeason(ctx, {
+            name: "Past season",
+            is_active: 0,
+            results_published: 1,
+        });
+        mockQueryState.value = { season_id: past.id };
+
+        const result = await resultsHandler(createEvent());
+
+        expect(result.season_id).toBe(past.id);
+        expect(result.voting_closed).toBe(true);
+        expect(result.results_visible).toBe(true);
+    });
+
+    it("keeps an unpublished past season hidden while the active event is voting", async () => {
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1, results_published: 1 });
+        seedSeason(ctx, { results_published: 1 });
+        const past = seedSeason(ctx, {
+            name: "Unpublished past season",
+            is_active: 0,
+            results_published: 0,
+        });
+        mockQueryState.value = { season_id: past.id };
+
+        await expect(resultsHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Peer-voting results are not published yet",
+        });
     });
 
     it("keeps a paused event's results hidden from participants", async () => {

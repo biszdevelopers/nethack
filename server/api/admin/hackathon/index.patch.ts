@@ -177,9 +177,11 @@ export default defineEventHandler(
                 // Every editable setting is a PostgreSQL live override. The
                 // manifest is a seed and comparison source only; the portal
                 // never writes it, so schedule and theme edits apply instantly.
+                // Use the frozen config so publication also closes judging and
+                // voting in the overrides the YAML read path actually applies.
                 const overrides = divergingOverrides(
                     manifest,
-                    configFields,
+                    seasonConfig,
                     previousLive.live_overrides ?? {},
                 );
                 const hackathonConfig = Object.fromEntries(
@@ -188,16 +190,32 @@ export default defineEventHandler(
                     ),
                 );
 
+                // The active season may have changed while the manifest was
+                // being read. Never write the old season's settings into the
+                // live overrides; an explicit inactive target only updates its
+                // own row.
+                const targetStillLive = previousSeason
+                    ? previousSeason.is_active === 1
+                    : season_id === undefined;
+                if (!targetStillLive && season_id === undefined) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "The active season changed. Reload and try again.",
+                    });
+                }
+
                 if (previousSeason) {
                     await tx
                         .update(seasons)
                         .set(seasonConfig)
                         .where(eq(seasons.id, previousSeason.id));
                 }
-                await tx
-                    .update(hackathon)
-                    .set({ ...hackathonConfig, live_overrides: overrides })
-                    .where(eq(hackathon.id, 1));
+                if (targetStillLive) {
+                    await tx
+                        .update(hackathon)
+                        .set({ ...hackathonConfig, live_overrides: overrides })
+                        .where(eq(hackathon.id, 1));
+                }
 
                 await writeAuditEvent(tx, event, {
                     action: "hackathon.update",

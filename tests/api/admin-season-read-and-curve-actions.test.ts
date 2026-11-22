@@ -109,6 +109,32 @@ describe("admin score curve update actions", () => {
         },
     );
 
+    it("refuses to change the curve of a published season", async () => {
+        mockParams.values.id = "5";
+        mockBody.value = { preset: "moderate" };
+        mocks.firstRow.mockResolvedValue({
+            id: 5,
+            results_published: 1,
+            score_curve_preset: "original",
+        });
+
+        await expect(patchCurve(event)).rejects.toMatchObject({
+            statusCode: 409,
+            message: "The score curve cannot change after results are published.",
+        });
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it("returns not found if a concurrent deletion removes the season before the write", async () => {
+        mockParams.values.id = "5";
+        mockBody.value = { preset: "moderate" };
+        mocks.firstRow
+            .mockResolvedValueOnce({ id: 5, results_published: 0, score_curve_preset: "original" })
+            .mockResolvedValueOnce(undefined);
+
+        await expect(patchCurve(event)).rejects.toMatchObject({ statusCode: 404 });
+    });
+
     it("returns not found if the season update matched no row", async () => {
         mockParams.values.id = "5";
         mockBody.value = { preset: "original" };

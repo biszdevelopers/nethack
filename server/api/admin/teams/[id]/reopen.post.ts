@@ -1,9 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
 import { AdminTeamReopenRequest, TeamIdParams } from "~~/shared/schemas";
-import { seasons, teamScores, teams } from "~~/server/database/schema";
+import { peerVotingScores, seasons, teamScores, teams } from "~~/server/database/schema";
 import { getTeamById } from "~~/server/utils/database/teams";
 import { firstRow, lockForUpdateIfSupported } from "~~/server/utils/database/query";
+import { calculateSeasonScoresWithDatabase } from "~~/server/utils/scoring";
 import { writeAuditEvent } from "~~/server/utils/audit";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -53,10 +54,27 @@ export default defineEventHandler(
                 });
             }
 
+            const ballot = await firstRow(
+                tx
+                    .select({ user_id: peerVotingScores.user_id })
+                    .from(peerVotingScores)
+                    .where(eq(peerVotingScores.season_id, team.season_id))
+                    .limit(1),
+            );
+            if (ballot) {
+                throw createError({
+                    statusCode: 409,
+                    message: "Delete the season's peer votes before reopening its submission.",
+                });
+            }
+
             await tx
                 .update(teams)
                 .set({ project_submitted: 0, rank: null })
                 .where(eq(teams.id, id));
+            // The reopened team leaves the standings; persisted ranks for every
+            // other team must match a fresh computation.
+            await calculateSeasonScoresWithDatabase(tx, team.season_id, true);
             await writeAuditEvent(tx, event, {
                 action: "team.reopen",
                 entity_type: "team",

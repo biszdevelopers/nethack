@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -287,10 +287,16 @@ async function main(argv = process.argv.slice(2), env = process.env) {
 // Or run: node scripts/backup-postgres.mjs \
 //   --restore-check <dump> --confirm-scratch-restore
 // with PG_RESTORE_SCRATCH_URL=postgresql://... (never point this at production).
-const isDirectExecution =
-    Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+export function isDirectExecution(moduleUrl, argvPath) {
+    if (!argvPath) return false;
+    try {
+        return realpathSync(resolve(argvPath)) === fileURLToPath(moduleUrl);
+    } catch {
+        return resolve(argvPath) === fileURLToPath(moduleUrl);
+    }
+}
 
-if (isDirectExecution) {
+if (isDirectExecution(import.meta.url, process.argv[1])) {
     main().catch((error) => {
         console.error(
             `[PostgreSQL snapshot] ${error instanceof Error ? error.message : String(error)}`,

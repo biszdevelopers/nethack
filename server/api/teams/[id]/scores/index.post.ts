@@ -7,7 +7,12 @@ import { and, eq } from "drizzle-orm";
 import { databaseErrorCodes, firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, VOTE_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { getEventState } from "~~/server/utils/event-state";
-import { getJudgeScope, isJudgingOpen, judgeCanEvaluate } from "~~/server/utils/judging";
+import {
+    getJudgeScope,
+    isJudgingOpen,
+    judgeCanEvaluate,
+    assertJudgeNotCompeting,
+} from "~~/server/utils/judging";
 import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import {
     commentContainsJudgeIdentity,
@@ -35,6 +40,7 @@ export default defineEventHandler(
                 message: "Scoring is not open",
             });
         }
+        await assertJudgeNotCompeting(event, judge, season.id);
 
         const team = await getTeam(event, teamID);
         if (!team) {
@@ -48,8 +54,14 @@ export default defineEventHandler(
         }
         if (!team.project_submitted) {
             throw createError({
-                status: 400,
+                statusCode: 400,
                 message: "Team has not submitted a project",
+            });
+        }
+        if (team.status !== "active") {
+            throw createError({
+                statusCode: 409,
+                message: "This project is no longer competing",
             });
         }
         const scope = await getJudgeScope(event.context.drizzle, season.id, judge.id);

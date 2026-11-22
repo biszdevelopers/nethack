@@ -31,6 +31,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
         const judge = await pageOf();
         const judgeTwo = await pageOf();
         const judgeThree = await pageOf();
+        const builder = await pageOf();
         const suffix = Date.now().toString(36);
 
         try {
@@ -46,6 +47,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 await login(judge, "judge@e2e.basishacks.invalid", "/judging");
                 await login(judgeTwo, "judge-two@e2e.basishacks.invalid", "/judging");
                 await login(judgeThree, "judge-three@e2e.basishacks.invalid", "/judging");
+                await login(builder, "builder@e2e.basishacks.invalid", "/dashboard");
             });
 
             await step("admin opens the season for submissions", async () => {
@@ -68,7 +70,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 // A second eligible project is required: each star score is 0-5
                 // and the total must be exactly 10.
                 await makeSubmittedTeam(
-                    judgeTwo,
+                    builder,
                     `Matrix-J-J-${suffix}`,
                     `Matrix J judge ${suffix}`,
                 );

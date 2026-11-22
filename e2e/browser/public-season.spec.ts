@@ -133,7 +133,7 @@ test("public season JSON and page redact a configured unreleased theme", async (
         .getByRole("heading", { name: "Season settings" })
         .locator("xpath=ancestor::section[1]");
     for (const label of [
-        "Maximum stars per voter",
+        "Maximum projects per voter",
         "Event starts",
         "Event ends",
         "Voting starts",

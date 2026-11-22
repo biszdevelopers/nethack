@@ -249,18 +249,22 @@ const links = [
         icon: "i-lucide-scroll-text",
         to: "/developers/audit",
     },
-    {
-        label: "Files",
-        description: "Inspect uploaded assets and their permalink references.",
-        icon: "i-lucide-files",
-        to: "/developers/debug",
-    },
-    {
-        label: "DeepSeek",
-        description: "Chat sessions for the organizer assistant.",
-        icon: "i-lucide-message-square",
-        to: "/developers/deepseek",
-    },
+    ...(import.meta.dev
+        ? [
+              {
+                  label: "Files",
+                  description: "Inspect uploaded assets and their permalink references.",
+                  icon: "i-lucide-files",
+                  to: "/developers/debug",
+              },
+              {
+                  label: "DeepSeek",
+                  description: "Chat sessions for the organizer assistant.",
+                  icon: "i-lucide-message-square",
+                  to: "/developers/deepseek",
+              },
+          ]
+        : []),
 ];
 
 function formatTimestamp(ts: unknown): string {

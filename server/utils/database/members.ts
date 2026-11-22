@@ -94,7 +94,7 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
     await event.context.drizzle.transaction(async (tx) => {
         // Serialize removals per team so two concurrent removals cannot both
         // observe the same count and leave the team with no members.
-        await lockForUpdateIfSupported(
+        const [team] = await lockForUpdateIfSupported(
             tx.select().from(teams).where(eq(teams.id, teamID)).limit(1),
         );
         const [memberCount] = await tx
@@ -126,6 +126,22 @@ export async function removeTeamMember(event: H3Event, teamID: number, userID: n
             .insert(userPastTeams)
             .values({ user_id: userID, team_id: teamID })
             .onConflictDoNothing();
+
+        // A departing owner must not leave the roster without a manager: the
+        // owner pointer would name a non-member, and no remaining member could
+        // invite, remove, or transfer the team.
+        if (team?.owner_user_id === userID) {
+            // The earliest remaining member takes over. The roster-count guard
+            // above guarantees at least one member remains.
+            await tx
+                .update(teams)
+                .set({
+                    owner_user_id: sql<
+                        number | null
+                    >`(SELECT MIN(id) FROM users WHERE team_id = ${teamID})`,
+                })
+                .where(eq(teams.id, teamID));
+        }
     });
 }
 
@@ -223,7 +239,8 @@ export async function getInvitesForEmail(
 /**
  * Create a pending invitation and return the raw bearer token exactly once.
  * Only its SHA-256 digest is persisted, so a database export cannot be used to
- * redeem outstanding invitations.
+ * redeem outstanding invitations. Capacity is re-checked under the team lock so
+ * concurrent invites cannot push a roster past the season limit.
  */
 export async function createTeamInvite(
     event: H3Event,
@@ -233,33 +250,57 @@ export async function createTeamInvite(
 ): Promise<{ id: number; token: string; expires_at: Date }> {
     const normalizedEmail = email.trim().toLowerCase();
     const now = new Date();
-    // Expired rows no longer block a fresh invitation for the same address.
-    await event.context.drizzle
-        .delete(teamInvites)
-        .where(and(eq(teamInvites.email, normalizedEmail), lte(teamInvites.expires_at, now)));
+    return event.context.drizzle.transaction(async (tx) => {
+        await lockForUpdateIfSupported(
+            tx.select({ id: teams.id }).from(teams).where(eq(teams.id, teamID)).limit(1),
+        );
+        const season = await firstRow(
+            tx.select().from(seasons).where(eq(seasons.is_active, 1)).limit(1),
+        );
+        const limit =
+            typeof season?.max_team_members === "number" && season.max_team_members >= 1
+                ? season.max_team_members
+                : MAX_TEAM_MEMBERS;
+        const [memberCount] = await tx
+            .select({ value: count() })
+            .from(users)
+            .where(eq(users.team_id, teamID));
+        const [inviteCount] = await tx
+            .select({ value: count() })
+            .from(teamInvites)
+            .where(and(eq(teamInvites.team_id, teamID), pendingInviteFilter()));
+        if (Number(memberCount!.value) + Number(inviteCount!.value) >= limit) {
+            throw createError({ statusCode: 409, message: "This team is full" });
+        }
 
-    const rawToken = randomBytes(32).toString("hex");
-    const expires_at = new Date(now.getTime() + getTeamInviteTtlDays() * 86_400_000);
-    const created = await event.context.drizzle
-        .insert(teamInvites)
-        .values({
-            team_id: teamID,
-            email: normalizedEmail,
-            invited_by: invitedBy,
-            token: hashInviteToken(rawToken),
-            expires_at,
-            created_at: now,
-        })
-        .onConflictDoNothing()
-        .returning({ id: teamInvites.id });
+        // Expired rows no longer block a fresh invitation for the same address.
+        await tx
+            .delete(teamInvites)
+            .where(and(eq(teamInvites.email, normalizedEmail), lte(teamInvites.expires_at, now)));
 
-    if (created.length === 0) {
-        throw createError({
-            statusCode: 409,
-            message: "That email already has an invitation for this team",
-        });
-    }
-    return { id: created[0]!.id, token: rawToken, expires_at };
+        const rawToken = randomBytes(32).toString("hex");
+        const expires_at = new Date(now.getTime() + getTeamInviteTtlDays() * 86_400_000);
+        const created = await tx
+            .insert(teamInvites)
+            .values({
+                team_id: teamID,
+                email: normalizedEmail,
+                invited_by: invitedBy,
+                token: hashInviteToken(rawToken),
+                expires_at,
+                created_at: now,
+            })
+            .onConflictDoNothing()
+            .returning({ id: teamInvites.id });
+
+        if (created.length === 0) {
+            throw createError({
+                statusCode: 409,
+                message: "That email already has an invitation for this team",
+            });
+        }
+        return { id: created[0]!.id, token: rawToken, expires_at };
+    });
 }
 
 export async function deleteTeamInvite(event: H3Event, teamID: number, inviteID: number) {
@@ -328,6 +369,9 @@ async function acceptInviteWithSelector(
         const lockedUser = await firstRow(
             lockForUpdateIfSupported(tx.select().from(users).where(eq(users.id, user.id)).limit(1)),
         );
+        if (!lockedUser) {
+            throw createError({ statusCode: 404, message: "Invitation not found" });
+        }
 
         const team = await firstRow(
             tx.select().from(teams).where(eq(teams.id, invite.team_id)).limit(1),

@@ -148,7 +148,8 @@ export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
     if (parsed.origin !== "https://nethack.invalid") return undefined;
     const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     // URL normalization can turn "/..//evil.com" into a protocol-relative URL.
-    return path.startsWith("//") ? undefined : path;
+    // A bounded path also keeps the sealed flow cookie below its size limit.
+    return path.startsWith("//") || path.length > 512 ? undefined : path;
 }
 
 const discoveredConfigurations = new Map<string, Promise<oidc.Configuration>>();
@@ -378,7 +379,9 @@ export async function getFreshBasisAuthUserSession(
 export async function revokeBasisAuthToken(refreshToken: string) {
     // Record the intent before the network call so an in-flight refresh cannot
     // re-seal the cookie after logout's deletion response reaches the browser.
+    const rotated = rotatedTokens.get(refreshToken)?.tokens.refreshToken;
     loggedOutTokens.set(refreshToken, Date.now());
+    if (rotated) loggedOutTokens.set(rotated, Date.now());
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
     await withOidcDeadline(
@@ -387,4 +390,18 @@ export async function revokeBasisAuthToken(refreshToken: string) {
         }),
         "token revocation",
     );
+    // A refresh that completed just before logout replaced the browser token.
+    // Revoke that descendant too, or the new cookie can keep the session alive.
+    if (rotated) {
+        try {
+            await withOidcDeadline(
+                oidc.tokenRevocation(oidcConfiguration, rotated, {
+                    token_type_hint: "refresh_token",
+                }),
+                "token revocation",
+            );
+        } catch {
+            // The original token is already revoked; logout still succeeds.
+        }
+    }
 }

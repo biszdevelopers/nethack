@@ -379,6 +379,80 @@ theme_description: null
         );
     });
 
+    it("closes judging and voting in live overrides on publication", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        writeFileSync(
+            manifestPath,
+            manifest
+                .replace("voting_enabled: 0", "voting_enabled: 1")
+                .replace("judging_open: 0", "judging_open: 1"),
+        );
+        seedSeason(ctx);
+        mockBody.value = { results_published: 1 };
+
+        const result = await patchHandler(createEvent());
+
+        expect(result.hackathon).toMatchObject({
+            results_published: 1,
+            voting_enabled: 0,
+            judging_open: 0,
+        });
+        expect(readFileSync(manifestPath, "utf8")).toContain("voting_enabled: 1");
+    });
+
+    it("applies an explicit inactive-season edit without touching the live event", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        mockBody.value = { season_id: season.id, theme_name: "Stored theme" };
+        const drizzle = new Proxy(ctx.drizzle, {
+            get(target, property) {
+                if (property === "transaction") {
+                    return async (callback: (tx: unknown) => unknown) => {
+                        ctx.sqlite
+                            .prepare("UPDATE seasons SET is_active = 0 WHERE id = ?")
+                            .run(season.id);
+                        return (target as any).transaction(callback);
+                    };
+                }
+                return Reflect.get(target, property);
+            },
+        });
+
+        await expect(
+            patchHandler({ context: { drizzle }, path: "/api/admin/hackathon", method: "PATCH" }),
+        ).resolves.toHaveProperty("hackathon");
+
+        const row = ctx.drizzle.select().from(seasons).where(eq(seasons.id, season.id)).get()!;
+        expect(row.theme_name).toBe("Stored theme");
+        expect(row.is_active).toBe(0);
+    });
+
+    it("aborts a live edit when the active season changes before the write", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        const season = seedSeason(ctx);
+        mockBody.value = { theme_name: "Late theme" };
+        const drizzle = new Proxy(ctx.drizzle, {
+            get(target, property) {
+                if (property === "transaction") {
+                    return async (callback: (tx: unknown) => unknown) => {
+                        ctx.sqlite
+                            .prepare("UPDATE seasons SET is_active = 0 WHERE id = ?")
+                            .run(season.id);
+                        return (target as any).transaction(callback);
+                    };
+                }
+                return Reflect.get(target, property);
+            },
+        });
+
+        await expect(
+            patchHandler({ context: { drizzle }, path: "/api/admin/hackathon", method: "PATCH" }),
+        ).rejects.toMatchObject({
+            statusCode: 409,
+            message: "The active season changed. Reload and try again.",
+        });
+    });
+
     it("accepts live edits when the manifest is remote", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         vi.stubEnv("YAML_SOURCE_HACKATHON", "https://assets.example.test/HACKATHON.yml");

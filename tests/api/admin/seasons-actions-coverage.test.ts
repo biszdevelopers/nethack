@@ -190,7 +190,7 @@ describe("POST /api/admin/seasons action edges", () => {
         event.context.drizzle.delete = vi.fn(() => ({ where: deleteWhere }));
 
         await expect(postHandler(event)).rejects.toThrow("not ready");
-        expect(deleteWhere).toHaveBeenCalledOnce();
+        expect(deleteWhere).toHaveBeenCalledTimes(2);
     });
 
     it("preserves the activation error when cleanup also fails", async () => {

@@ -76,6 +76,7 @@ export async function getSubmittedUnjudgedTeams(
             and(
                 eq(teams.season_id, seasonId),
                 eq(teams.project_submitted, 1),
+                eq(teams.status, "active"),
                 ne(teams.id, judgeTeamId ?? -1),
                 notExists(subquery),
                 extraWhere,
@@ -255,46 +256,6 @@ export async function createTeam(
     });
 }
 
-export async function updateTeam(
-    event: H3Event,
-    team: Team,
-    options: { requireUnsubmitted?: boolean } = {},
-) {
-    const where = options.requireUnsubmitted
-        ? and(eq(teams.id, team.id), eq(teams.project_submitted, 0))
-        : eq(teams.id, team.id);
-    const changed = await changedRows(
-        event.context.drizzle
-            .update(teams)
-            .set({
-                name: team.name,
-                pathway: team.pathway,
-                score: team.score,
-                rank: team.rank,
-                project_name: team.project_name,
-                project_description: team.project_description,
-                project_demo_url: team.project_demo_url,
-                project_repo_url: team.project_repo_url,
-                project_video_url: team.project_video_url,
-                project_submitted: team.project_submitted,
-                submitted_at: team.submitted_at,
-                status: team.status,
-                sourcing: team.sourcing,
-                season_id: team.season_id,
-                owner_user_id: team.owner_user_id,
-            })
-            .where(where)
-            .returning({ id: teams.id }),
-    );
-
-    if (changed === 0) {
-        throw createError({
-            status: 404,
-            message: "Team not found",
-        });
-    }
-}
-
 /**
  * Update only the supplied columns so two members editing different fields do
  * not clobber each other. Renames still enforce the per-season name rule.
@@ -304,13 +265,15 @@ export async function updateTeamPartial(
     teamID: number,
     seasonID: number,
     updates: Partial<typeof teams.$inferInsert>,
-    options: { requireUnsubmitted?: boolean } = {},
+    options: { requireUnsubmitted?: boolean; requireActive?: boolean } = {},
 ) {
     if (Object.keys(updates).length === 0) return;
 
-    const where = options.requireUnsubmitted
-        ? and(eq(teams.id, teamID), eq(teams.project_submitted, 0))
-        : eq(teams.id, teamID);
+    const where = and(
+        eq(teams.id, teamID),
+        options.requireUnsubmitted ? eq(teams.project_submitted, 0) : undefined,
+        options.requireActive ? eq(teams.status, "active") : undefined,
+    );
 
     if (updates.name === undefined) {
         // A single statement is already atomic; no season-wide lock is needed

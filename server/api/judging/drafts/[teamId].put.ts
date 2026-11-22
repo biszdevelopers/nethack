@@ -6,7 +6,12 @@ import { judgingDrafts, rubricVersions, teamScores } from "~~/server/database/sc
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { getTeam } from "~~/server/utils/database/teams";
 import { firstRow } from "~~/server/utils/database/query";
-import { getJudgeScope, isJudgingOpen, judgeCanEvaluate } from "~~/server/utils/judging";
+import {
+    getJudgeScope,
+    isJudgingOpen,
+    judgeCanEvaluate,
+    assertJudgeNotCompeting,
+} from "~~/server/utils/judging";
 import { getEventState } from "~~/server/utils/event-state";
 import { resolveLiveRubricVersionId } from "~~/server/utils/database/rubrics";
 import { applyRateLimit, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
@@ -30,10 +35,14 @@ export default defineEventHandler(
         if (!season || !isJudgingOpen(state.hackathon, season)) {
             throw createError({ statusCode: 409, message: "Judging is not open" });
         }
+        await assertJudgeNotCompeting(event, judge, season.id);
 
         const team = await getTeam(event, teamId);
         if (!team?.project_submitted || team.season_id !== season.id) {
             throw createError({ statusCode: 404, message: "Submitted project not found" });
+        }
+        if (team.status !== "active") {
+            throw createError({ statusCode: 409, message: "This project is no longer competing" });
         }
         const scope = await getJudgeScope(event.context.drizzle, season.id, judge.id);
         if (!judgeCanEvaluate(scope, team)) {

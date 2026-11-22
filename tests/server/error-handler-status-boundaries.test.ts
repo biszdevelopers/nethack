@@ -134,6 +134,13 @@ describe("canonical error handler status boundaries", () => {
         );
     });
 
+    it("falls back to a plain error page when the shared renderer cannot encode the message", () => {
+        const { body } = invoke({ cause: { status: 400, message: "测试失败" } }, "text/html");
+
+        expect(body).toContain("The request could not be completed.");
+        expect(body).not.toContain("测试失败");
+    });
+
     it("defaults to JSON when the request has no Accept header", () => {
         const event = { headers: {} };
         const body = JSON.parse(String(handler({ statusCode: 404 }, event)));

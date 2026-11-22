@@ -431,6 +431,11 @@ describe("basis-auth authorization-code flow", () => {
         expect(sanitizePostLoginRedirect(["/dashboard", "/profile"] as any)).toBeUndefined();
     });
 
+    it("drops an oversized post-login redirect instead of overflowing the flow cookie", () => {
+        expect(sanitizePostLoginRedirect(`/${"a".repeat(512)}`)).toBeUndefined();
+        expect(sanitizePostLoginRedirect(`/${"a".repeat(511)}`)).toBe(`/${"a".repeat(511)}`);
+    });
+
     it("omits a non-string display name from UserInfo", async () => {
         oidc.authorizationCodeGrant.mockResolvedValue({
             access_token: "access-token",
@@ -675,6 +680,30 @@ describe("basis-auth session refresh", () => {
         });
         expect(cookiesFor(current).has(BASIS_AUTH_TOKEN_COOKIE)).toBe(true);
         expect(oidc.refreshTokenGrant).toHaveBeenCalledWith("configuration", "refresh-token");
+    });
+
+    it("revokes the rotated descendant token when logout races a refresh", async () => {
+        const current = event();
+        establishBasisAuthUserSession(current, 17, {
+            accessToken: "expired-access-token",
+            accessTokenExpiresAt: Date.now(),
+            refreshToken: "logout-race-old",
+        });
+        oidc.refreshTokenGrant.mockResolvedValue({
+            access_token: "new-access-token",
+            refresh_token: "logout-race-new",
+            expires_in: 300,
+        });
+        await getFreshBasisAuthUserSession(current);
+
+        await revokeBasisAuthToken("logout-race-old");
+
+        expect(oidc.tokenRevocation).toHaveBeenCalledWith("configuration", "logout-race-old", {
+            token_type_hint: "refresh_token",
+        });
+        expect(oidc.tokenRevocation).toHaveBeenCalledWith("configuration", "logout-race-new", {
+            token_type_hint: "refresh_token",
+        });
     });
 
     it("shares one in-flight refresh between concurrent sessions with the same refresh token", async () => {

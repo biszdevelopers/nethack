@@ -7,7 +7,15 @@ const judgeId = "judge-identity-must-not-leak";
 const inviteSecret = "invite-token-hash-must-not-leak";
 
 const rowsByTable: Record<string, Record<string, unknown>[]> = {
-    admin_audit_events: [{ id: 1, action: "team.disband", entity_type: "team", entity_id: "4" }],
+    admin_audit_events: [
+        { id: 1, action: "team.disband", entity_type: "team", entity_id: "4" },
+        {
+            id: 6,
+            action: "user.judge",
+            entity_type: "user",
+            entity_id: "judge-target-id-must-not-leak",
+        },
+    ],
     notifications: [{ id: 2, user_id: 3, type: "judge_flag", title: "Conflict", body: "Reason" }],
     judge_assignments: [
         { id: 3, season_id: 1, judge_user_id: judgeId, pathway: "junior", team_id: null },
@@ -73,9 +81,11 @@ describe("database export operational readiness tables", () => {
         expect(parsed.tables.judge_recusals![0]).not.toHaveProperty("judge_user_id");
         expect(parsed.tables.judge_flags![0]).not.toHaveProperty("judge_user_id");
         expect(parsed.tables.team_invites![0]).not.toHaveProperty("token");
+        expect(parsed.tables.admin_audit_events![1]).not.toHaveProperty("entity_id");
 
         const serialized = JSON.stringify(parsed);
         expect(serialized).not.toContain(judgeId);
         expect(serialized).not.toContain(inviteSecret);
+        expect(serialized).not.toContain("judge-target-id-must-not-leak");
     });
 });

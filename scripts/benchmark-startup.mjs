@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawn as nodeSpawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { readFile as nodeReadFile, writeFile as nodeWriteFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import process from "node:process";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
@@ -329,7 +331,15 @@ export async function stopChild(child, runtime = defaultRuntime) {
 }
 
 export async function runIfDirect(moduleUrl, argvPath, args, runtime = defaultRuntime) {
-    if (!argvPath || moduleUrl !== pathToFileURL(argvPath).href) return null;
+    if (!argvPath) return null;
+    const resolved = resolve(argvPath);
+    let canonical = resolved;
+    try {
+        canonical = realpathSync(resolved);
+    } catch {
+        // Keep the resolved path so tests can probe non-existent files.
+    }
+    if (moduleUrl !== pathToFileURL(canonical).href) return null;
     const { exitCode } = await runBenchmark(args, runtime);
     runtime.setExitCode(exitCode);
     return exitCode;

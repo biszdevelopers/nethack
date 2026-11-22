@@ -5,10 +5,14 @@ import type { Sql } from "postgres";
 const mocks = vi.hoisted(() => ({
     migrate: vi.fn(),
     getPostgresClient: vi.fn(),
+    createMigrationDatabase: vi.fn(),
 }));
 
 vi.mock("drizzle-orm/postgres-js/migrator", () => ({ migrate: mocks.migrate }));
-vi.mock("~~/server/database/index", () => ({ getPostgresClient: mocks.getPostgresClient }));
+vi.mock("~~/server/database/index", () => ({
+    getPostgresClient: mocks.getPostgresClient,
+    createMigrationDatabase: mocks.createMigrationDatabase,
+}));
 
 import { createAndMigrateDatabase, migrateDatabase } from "~~/server/database/migrate";
 
@@ -37,6 +41,7 @@ describe("PostgreSQL migrations", () => {
         mocks.migrate.mockReset();
         mocks.migrate.mockResolvedValue(undefined);
         mocks.getPostgresClient.mockReset();
+        mocks.createMigrationDatabase.mockReset();
     });
 
     it("holds a PostgreSQL advisory transaction lock while Drizzle migrates", async () => {
@@ -86,6 +91,7 @@ describe("PostgreSQL migrations", () => {
                 events.push("begin-migration-transaction");
                 return callback(connection);
             }),
+            end: vi.fn(async () => undefined),
         } as unknown as Sql;
         mocks.getPostgresClient.mockReturnValue(client);
         mocks.migrate.mockImplementation(async () => {
@@ -140,6 +146,7 @@ describe("PostgreSQL migrations", () => {
                 return callback(transaction);
             },
         } as unknown as DrizzleDatabase;
+        mocks.createMigrationDatabase.mockResolvedValue({ database, client });
 
         await createAndMigrateDatabase(database);
 
@@ -153,6 +160,7 @@ describe("PostgreSQL migrations", () => {
             "seed:seeded",
             "seed:r1-season",
         ]);
-        expect(mocks.getPostgresClient).toHaveBeenCalledOnce();
+        expect(mocks.getPostgresClient).not.toHaveBeenCalled();
+        expect(mocks.createMigrationDatabase).toHaveBeenCalledOnce();
     });
 });

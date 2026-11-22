@@ -80,7 +80,9 @@ describe("ballot max-vote fallback when the live hackathon row is partial", () =
             votingOpen: true,
             hackathon: { status: "voting", voting_enabled: 1 },
         });
-        mockBody.value = { scores: [], reasoning: "" };
+        seedTeam(ctx, { name: "Peer A", project_submitted: 1, pathway: "junior" });
+        seedTeam(ctx, { name: "Peer B", project_submitted: 1, pathway: "junior" });
+        mockBody.value = { scores: [5, 5], reasoning: "" };
 
         await expect(submitHandler(createEvent())).resolves.toEqual({
             message: "Successfully submitted vote!",

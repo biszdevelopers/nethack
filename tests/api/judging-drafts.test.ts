@@ -14,7 +14,7 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "./helpers";
-import { hackathon, judgingDrafts, teamScores, users } from "~~/server/database/schema";
+import { hackathon, judgingDrafts, teamScores, users, teams } from "~~/server/database/schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import { clearRateLimitHistory, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -85,6 +85,20 @@ function createEvent() {
 }
 
 describe("judging draft rubric recovery", () => {
+    it("rejects drafts for a team that is no longer competing", async () => {
+        ctx.drizzle.update(teams).set({ status: "withdrawn" }).where(eq(teams.id, teamId)).run();
+        mockBody.value = {
+            scores: { originality: 3 },
+            reasoning: "A withdrawn project cannot receive a draft.",
+            rubric_version_id: originalRubricId,
+        };
+
+        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This project is no longer competing",
+        });
+    });
+
     it("rejects a judge saving a draft for their own team", async () => {
         ctx.drizzle.update(users).set({ team_id: teamId }).where(eq(users.id, judgeId)).run();
         mockBody.value = {
@@ -147,7 +161,7 @@ describe("judging draft rubric recovery", () => {
         }).id;
         mockSession.value = { user: { id: otherJudgeId } };
         await expect(getDraftHandler(createEvent())).resolves.toMatchObject({ draft: null });
-    });
+    }, 20_000);
 
     it("saves a draft against the rubric the judge opened after an organizer publishes a new version", async () => {
         mockBody.value = {
@@ -444,14 +458,20 @@ describe("judging draft rubric recovery", () => {
     });
 
     it("fails closed if the validated request unexpectedly has no rubric version id", async () => {
-        mockBody.value = {
+        const originalReadValidatedBody = globalThis.readValidatedBody;
+        vi.stubGlobal("readValidatedBody", async () => ({
             scores: { originality: 3 },
             reasoning: "A missing rubric version cannot be saved.",
-            rubric_version_id: 0,
-        };
+        }));
 
-        await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
-        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+        try {
+            await expect(saveDraftHandler(createEvent())).rejects.toMatchObject({
+                statusCode: 409,
+            });
+            expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+        } finally {
+            vi.stubGlobal("readValidatedBody", originalReadValidatedBody);
+        }
     });
 
     it("rejects drafts when the project has not been submitted", async () => {

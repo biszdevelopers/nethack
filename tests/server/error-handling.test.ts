@@ -188,7 +188,7 @@ describe("Failed request error responses", () => {
             "utf-8",
         );
         const throwCount = (source.match(/throw createError/g) || []).length;
-        expect(throwCount).toBe(3);
+        expect(throwCount).toBe(4);
         expect(source).not.toMatch(/return createError/);
     });
 

@@ -13,6 +13,9 @@ export default defineEventHandler(
         if (!team) {
             throw createError({ statusCode: 404, message: "Team not found" });
         }
+        if (user.team_id !== teamID && user.is_admin !== 1) {
+            throw createError({ statusCode: 403, message: "Only the team owner can disband it" });
+        }
         if (!canManageTeam(team, user)) {
             throw createError({ statusCode: 403, message: "Only the team owner can disband it" });
         }

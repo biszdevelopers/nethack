@@ -25,7 +25,7 @@ import {
     teamScores,
     teamInvites,
 } from "~~/server/database/schema";
-import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
+import { MAX_TEAM_MEMBERS, POSTGRES_INT_MAX } from "~~/shared/schemas";
 
 vi.mock("~~/server/utils/auth", () => ({
     requireUser: vi.fn((...args: any[]) => (globalThis as any).requireUser(...args)),
@@ -131,6 +131,12 @@ function closeSubmissions() {
 }
 
 describe("GET /api/teams", () => {
+    it("rejects an out-of-range pagination cursor", async () => {
+        mockQueryState.value = { after: String(POSTGRES_INT_MAX + 1) };
+
+        await expect(listHandler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
+    });
+
     it("hides active-season projects until submissions close", async () => {
         seedTeam(ctx, { name: "Private Draft", project_submitted: 1 });
 
@@ -316,6 +322,7 @@ describe("GET /api/teams", () => {
             email: "self-judge@basischina.com",
             role: "judge",
             team_id: ownTeam.id,
+            is_admin: 1,
         });
         ctx.drizzle
             .update(hackathon)
@@ -331,6 +338,29 @@ describe("GET /api/teams", () => {
         expect(result.total).toBe(1);
         expect(result.total_pages).toBe(1);
         expect(result.items.map((item: JudgeQueueItem) => item.team.id)).toEqual([otherTeam.id]);
+    });
+
+    it("rejects a competing judge from the queue", async () => {
+        const ownTeam = seedTeam(ctx, { name: "Competing Team", project_submitted: 1 });
+        seedTeam(ctx, { name: "Other Team", project_submitted: 1 });
+        const judge = seedUser(ctx, {
+            email: "competing-judge@basischina.com",
+            role: "judge",
+            team_id: ownTeam.id,
+        });
+        ctx.drizzle
+            .update(hackathon)
+            .set({ status: "voting", judging_open: 1 })
+            .where(eq(hackathon.id, 1))
+            .run();
+
+        mockSession.value = { user: { id: judge.id } };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 20 };
+
+        await expect(listHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Competing participants cannot judge this season",
+        });
     });
 
     it("keeps malformed, array, and nonnumeric historical evaluations visible without leaking payloads", async () => {
@@ -715,6 +745,7 @@ describe("GET /api/teams/:id", () => {
         });
         seedTeamEvaluations(ctx, team, 3);
         ctx.drizzle.update(teams).set({ rank: 1 }).where(eq(teams.id, team.id)).run();
+        closeSubmissions();
         mockQueryState.value = { season_id: String(season.id) };
 
         const result = await listHandler(createEvent());
@@ -745,6 +776,7 @@ describe("GET /api/teams/:id", () => {
         seedTeamEvaluations(ctx, liveTeam, 3);
         ctx.drizzle.update(teams).set({ rank: 1 }).where(eq(teams.id, liveTeam.id)).run();
         ctx.drizzle.update(teams).set({ rank: 2 }).where(eq(teams.id, oldTeam.id)).run();
+        closeSubmissions();
 
         mockQueryState.value = { season_id: String(liveSeason.id) };
         const liveResult = await listHandler(createEvent());
@@ -804,6 +836,20 @@ describe("PATCH /api/teams/:id", () => {
 
         await expect(patchHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
     });
+
+    it("returns 409 when the team is no longer competing", async () => {
+        const team = seedTeam(ctx, { name: "Withdrawn Team", status: "withdrawn" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { name: "New Name" };
+
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This team is no longer competing",
+        });
+    });
 });
 
 describe("POST /api/teams/:id/submit", () => {
@@ -820,6 +866,8 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "This is a really awesome project that we built over the weekend.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used.",
             },
         };
 
@@ -845,6 +893,8 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "This is a really awesome project that we built.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used.",
             },
         };
 
@@ -868,6 +918,8 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "This is a really awesome project that we built over the weekend.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used.",
             },
         };
 
@@ -883,7 +935,7 @@ describe("POST /api/teams/:id/submit", () => {
         const originalGetUser = globalThis.getUser;
         vi.stubGlobal(
             "getUser",
-            vi.fn().mockResolvedValue({ id: 1, team_id: 9999, role: "participant" }),
+            vi.fn().mockResolvedValueOnce({ id: 1, team_id: 9999, role: "participant" }),
         );
 
         mockSession.value = { user: { id: 1 } };
@@ -895,6 +947,8 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "This is a really awesome project that we built over the weekend.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used.",
             },
         };
 
@@ -924,6 +978,8 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "This is a really awesome project that we built over the weekend.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used.",
             },
         };
 

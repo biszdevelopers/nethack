@@ -3,9 +3,14 @@ import type { H3Event } from "h3";
 import { and, asc, count, eq, gt, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { NethackPermissions, hasNethackPermission } from "~~/shared/permissions";
-import { GetTeamsQuery } from "~~/shared/schemas";
+import { GetTeamsQuery, POSTGRES_INT_MAX } from "~~/shared/schemas";
 import { teamScores, teams as teamsTable } from "~~/server/database/schema";
-import { isJudgingOpen, getJudgeScope, judgeScopeWhere } from "~~/server/utils/judging";
+import {
+    isJudgingOpen,
+    getJudgeScope,
+    judgeScopeWhere,
+    assertJudgeNotCompeting,
+} from "~~/server/utils/judging";
 import { getEventState } from "~~/server/utils/event-state";
 import { getTeamEvaluationCounts } from "~~/server/utils/database/scores";
 import { MIN_PUBLIC_FEEDBACK_REVIEWERS } from "~~/server/utils/score-feedback";
@@ -31,7 +36,7 @@ const publicTeamColumns = {
 /** Optional keyset pagination; without `limit` the full array response is unchanged. */
 const ListingPagination = z.object({
     limit: z.coerce.number().int().min(1).max(50).optional(),
-    after: z.coerce.number().int().positive().optional(),
+    after: z.coerce.number().int().positive().max(POSTGRES_INT_MAX).optional(),
 });
 
 async function queryPublicTeams(event: H3Event, seasonId: number, limit?: number, after?: number) {
@@ -70,6 +75,9 @@ export default defineEventHandler(
                     statusCode: 403,
                     message: "Judging is not open",
                 });
+            }
+            if (state.season) {
+                await assertJudgeNotCompeting(event, judge, state.season.id);
             }
 
             if (query.page !== undefined || query.page_size !== undefined) {

@@ -44,6 +44,12 @@ export default defineEventHandler(
                 message: "Project is already submitted",
             });
         }
+        if (team.status !== "active") {
+            throw createError({
+                statusCode: 409,
+                message: "This team is no longer competing",
+            });
+        }
 
         if (payload.pathway !== undefined) {
             const rubric = await getRubricVersionForSeason(event, team.season_id);
@@ -85,6 +91,7 @@ export default defineEventHandler(
 
         await updateTeamPartial(event, id, team.season_id, updates, {
             requireUnsubmitted: true,
+            requireActive: true,
         });
 
         return { message: "Updated your team & project" };

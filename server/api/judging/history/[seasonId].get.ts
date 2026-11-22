@@ -1,7 +1,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
-import { JudgingHistoryParams } from "~~/shared/schemas";
+import { JudgingHistoryParams, POSTGRES_INT_MAX } from "~~/shared/schemas";
 import {
     calculateWeightedRubricScore,
     getRubricTrack,
@@ -33,7 +33,7 @@ const historyTeamColumns = {
 /** Optional keyset pagination; without it the full history is returned as before. */
 const HistoryPagination = z.object({
     limit: z.coerce.number().int().min(1).max(50).optional(),
-    after: z.coerce.number().int().positive().optional(),
+    after: z.coerce.number().int().positive().max(POSTGRES_INT_MAX).optional(),
 });
 
 function parseStoredScores(raw: string): Record<string, number> | null {

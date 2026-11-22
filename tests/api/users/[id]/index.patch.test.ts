@@ -277,7 +277,7 @@ describe("PATCH /api/users/:id", () => {
         mockSession.value = { user: { id: alice.id } };
         mockBody.value = { name: "Should Not Persist", profile_theme_image: "not-a-data-url" };
 
-        await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 400 });
+        await expect(handler(createEvent())).rejects.toMatchObject({ name: "ZodError" });
 
         const unchanged = ctx.drizzle.select().from(users).where(eq(users.id, alice.id)).get();
         expect(unchanged!.name).toBe("Alice");
@@ -390,8 +390,7 @@ describe("PATCH /api/users/:id", () => {
             mockBody.value = { profile_theme_image: "not-a-data-url" };
 
             await expect(handler(createEvent())).rejects.toMatchObject({
-                statusCode: 400,
-                message: "Invalid image data format. Expected a base64 data URL.",
+                name: "ZodError",
             });
         });
 

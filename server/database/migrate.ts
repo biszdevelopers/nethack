@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { asc, desc, eq } from "drizzle-orm";
 import type { Sql } from "postgres";
-import { getPostgresClient, type DrizzleDatabase } from "./index";
+import { createMigrationDatabase, type DrizzleDatabase } from "./index";
 import { hackathon, rubricTemplates, rubricVersions, seasons } from "./schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "../../shared/rubric";
 
@@ -13,18 +13,21 @@ const MIGRATION_LOCK_ID = BigInt("75110114284009");
 export async function migrateDatabase(
     database: DrizzleDatabase,
     migrationsFolder: string = MIGRATIONS_FOLDER,
-    client: Sql = getPostgresClient(),
+    client?: Sql,
 ): Promise<void> {
-    // Keep the advisory lock on a pinned connection while Drizzle applies its
-    // transactional migrations through the bounded pool. The pool must have at
-    // least two connections for the lock and migration sessions.
-    await client.begin(async (connection) => {
-        // Migrations are maintenance work: do not let the pool's interactive
-        // statement timeout abort a legitimate large DDL batch.
-        await connection`SET LOCAL statement_timeout = 0`;
-        await connection`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`;
-        await migrate(database, { migrationsFolder });
-    });
+    // Tests and callers may inject a database/client pair. Production opens a
+    // dedicated migrator pool whose connections have no statement timeout, so a
+    // large DDL batch cannot be cancelled by the request pool's 15 s limit.
+    const migration = client ? { database, client } : await createMigrationDatabase();
+    try {
+        await migration.client.begin(async (connection) => {
+            await connection`SET LOCAL statement_timeout = 0`;
+            await connection`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`;
+            await migrate(migration.database, { migrationsFolder });
+        });
+    } finally {
+        if (!client) await migration.client.end({ timeout: 5 });
+    }
 }
 
 /** Create the global event row on a fresh database without overwriting state. */
@@ -69,7 +72,7 @@ export async function seedNextSeason(database: DrizzleDatabase): Promise<void> {
             theme_description: null,
             rubric_version_id: null,
         })
-        .onConflictDoNothing({ target: seasons.name });
+        .onConflictDoNothing();
 }
 
 /** Seed a usable first season and attach immutable default rubric versions. */

@@ -67,7 +67,7 @@ All API endpoints are protected by an in-memory fixed-window rate limiter. Sensi
 | File upload | 100 requests / minute | Upload routes |
 | basis-auth backchannel | 600 requests / minute | `POST /api/auth/basis/backchannel` |
 
-- **Client identification:** Session user (`user:{id}`), then a SHA-256 prefix of an explicit bearer token (`bearer:{hash}`), then the resolved IP (`ip:{ip}`)
+- **Client identification:** Session user (`user:{id}`), otherwise the resolved IP (`ip:{ip}`). An unverified bearer token is never used as a key.
 - **Response:** 429 status with `Retry-After`
 - **Map bound:** at most 10,000 tracked keys; eviction trims to 9,000
 - **Configuration:** Override defaults via the `RATE_LIMIT_*` variables and `RATE_LIMIT_WINDOW_MS`

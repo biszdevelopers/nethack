@@ -1,4 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MINIMUM_BUN_MAJOR = 1;
@@ -72,7 +74,15 @@ export async function runStartSelector(dependencies = {}) {
 }
 
 export async function runIfDirect(moduleUrl, argvPath, dependencies = {}) {
-    if (!argvPath || moduleUrl !== pathToFileURL(argvPath).href) return null;
+    if (!argvPath) return null;
+    const resolved = resolve(argvPath);
+    let canonical = resolved;
+    try {
+        canonical = realpathSync(resolved);
+    } catch {
+        // Keep the resolved path so tests can probe non-existent files.
+    }
+    if (moduleUrl !== pathToFileURL(canonical).href) return null;
     return await runStartSelector(dependencies);
 }
 

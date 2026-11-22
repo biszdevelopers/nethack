@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, inArray } from "drizzle-orm";
 import { NethackPermissions } from "~~/shared/permissions";
-import { MAX_BULK_DELETE_IDS } from "~~/shared/schemas";
+import { MAX_BULK_DELETE_IDS, POSTGRES_INT_MAX } from "~~/shared/schemas";
 import { seasons, teamScores, users } from "~~/server/database/schema";
 import { calculateSeasonScoresWithDatabase } from "~~/server/utils/scoring";
 import { deleteUsersInTransaction } from "~~/server/utils/database/users";
@@ -9,7 +9,7 @@ import { lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import { writeAuditEvent } from "~~/server/utils/audit";
 
 const DeleteUsersRequest = z.object({
-    ids: z.array(z.number().int().positive()).max(MAX_BULK_DELETE_IDS),
+    ids: z.array(z.number().int().positive().max(POSTGRES_INT_MAX)).max(MAX_BULK_DELETE_IDS),
 });
 
 type AdminRow = { id: number; is_admin: number | boolean | null };

@@ -18,12 +18,18 @@ if (!can(NethackPermissions.Judging.assignmentsRead)) {
 }
 
 const isAdmin = computed(() => can(NethackPermissions.all));
-const { data: assignments, error: assignmentsError } =
-    await useApiFetch<GetJudgeAssignmentsResponse>("/api/admin/judging/assignments", {
-        lazy: true,
-        server: false,
-        immediate: isAdmin.value,
-    });
+const {
+    data: assignments,
+    error: assignmentsError,
+    status: assignmentsStatus,
+} = await useApiFetch<GetJudgeAssignmentsResponse>("/api/admin/judging/assignments", {
+    lazy: true,
+    server: false,
+    immediate: isAdmin.value,
+});
+const assignmentsLoading = computed(
+    () => assignmentsStatus.value === "idle" || assignmentsStatus.value === "pending",
+);
 const assignmentCount = computed(() => assignments.value?.assignments.length ?? 0);
 const assignedJudgeCount = computed(
     () => new Set((assignments.value?.assignments ?? []).map((row) => row.judge_user_id)).size,
@@ -93,6 +99,9 @@ async function openQueue() {
             <p v-if="assignmentsError" class="text-sm text-muted">
                 Judge assignment coverage is not available on this deployment, but you can still
                 manage assignments in the developer portal.
+            </p>
+            <p v-else-if="assignmentsLoading" class="text-sm text-muted" aria-live="polite">
+                Loading judge assignments…
             </p>
             <p v-else-if="assignmentCount === 0" class="text-sm text-muted">
                 No judge assignments are configured, so every judge sees the full queue.

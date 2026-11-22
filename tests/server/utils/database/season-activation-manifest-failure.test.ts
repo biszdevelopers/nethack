@@ -6,7 +6,7 @@ import {
     setActiveSeason,
 } from "~~/server/utils/database/seasons";
 
-const manifest = vi.hoisted(() => ({ reads: 0 }));
+const manifest = vi.hoisted(() => ({ reads: 0, failOn: 2 }));
 
 const remoteConfig = {
     id: 1,
@@ -35,7 +35,7 @@ vi.mock("~~/server/utils/hackathon-config", async (importOriginal) => {
         hackathonUsesYaml: () => true,
         readHackathonConfig: async () => {
             manifest.reads += 1;
-            if (manifest.reads === 2) throw new Error("remote manifest unavailable");
+            if (manifest.reads === manifest.failOn) throw new Error("remote manifest unavailable");
             return remoteConfig;
         },
         writeHackathonConfig: vi.fn(),
@@ -47,6 +47,7 @@ describe("setActiveSeason when the manifest cannot be read", () => {
 
     beforeEach(async () => {
         manifest.reads = 0;
+        manifest.failOn = 2;
         event = await createMockEvent();
         event.context.drizzle
             .prepare(
@@ -84,6 +85,16 @@ describe("setActiveSeason when the manifest cannot be read", () => {
             voting_enabled: 0,
             judging_open: 0,
         });
+        expect(manifest.reads).toBeGreaterThanOrEqual(2);
+    });
+
+    it("still activates when the manifest read fails before the lock", async () => {
+        manifest.failOn = 1;
+
+        await expect(setActiveSeason(event, 2)).resolves.toBeUndefined();
+
+        const active = await getActiveSeason(event);
+        expect(active).toMatchObject({ id: 2, name: "Next" });
         expect(manifest.reads).toBeGreaterThanOrEqual(2);
     });
 

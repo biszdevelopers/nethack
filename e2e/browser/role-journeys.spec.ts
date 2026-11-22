@@ -9,6 +9,7 @@ import {
     type Locator,
     type Page,
 } from "@playwright/test";
+import { resetScenarioState } from "./scenario-helpers";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL;
 if (!baseURL) throw new Error("Set PLAYWRIGHT_BASE_URL in .env for the browser tests.");
@@ -505,6 +506,7 @@ test("participant and admin complete mobile journeys while judging and review st
     const judge = await newMobilePage(browser);
     const judgeTwo = await newMobilePage(browser);
     const judgeThree = await newMobilePage(browser);
+    const builder = await newMobilePage(browser);
     let progress = "opening the administrator session";
     const markProgress = (stage: string) => {
         progress = stage;
@@ -512,6 +514,7 @@ test("participant and admin complete mobile journeys while judging and review st
     };
 
     try {
+        await resetScenarioState(browser);
         if (boardDemoEnabled) {
             await mkdir(boardDemoDir, { recursive: true });
             await writeFile(resolve(boardDemoDir, "manifest.json"), "[]\n");
@@ -664,8 +667,8 @@ test("participant and admin complete mobile journeys while judging and review st
         );
 
         markProgress("creating the judge project");
-        await loginAs(judgeTwo.page, "judge-two@e2e.basishacks.invalid", "/dashboard/teams");
-        await createAndSubmitProject(judgeTwo.page, judgeTeam, judgeProject);
+        await loginAs(builder.page, "builder@e2e.basishacks.invalid", "/dashboard/teams");
+        await createAndSubmitProject(builder.page, judgeTeam, judgeProject);
 
         const adminTeamId = await getTeamIdByProject(admin.page, adminProject);
         const participantTeamId = await getTeamIdByProject(admin.page, participantProject);
@@ -1083,6 +1086,7 @@ test("participant and admin complete mobile journeys while judging and review st
             judge.context.close(),
             judgeTwo.context.close(),
             judgeThree.context.close(),
+            builder.context.close(),
         ]);
     }
 });

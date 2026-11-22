@@ -19,9 +19,12 @@ export default defineEventHandler(
             : await getActiveSeason(event);
         if (!season) throw createError({ statusCode: 404, message: "Season not found" });
 
-        const votingClosed = !isVotingOpen(state.hackathon, {
-            enforceDeadlines: state.enforceDeadlines,
-        });
+        const isActiveSeason = season.is_active === 1;
+        // A historical season is closed by definition; the active season's
+        // voting window must not block its published results.
+        const votingClosed = isActiveSeason
+            ? !isVotingOpen(state.hackathon, { enforceDeadlines: state.enforceDeadlines })
+            : true;
         if (!votingClosed) {
             throw createError({ statusCode: 409, message: "Peer voting is still open" });
         }
@@ -33,17 +36,16 @@ export default defineEventHandler(
             event.context.oauth2?.permissions,
             NethackPermissions.Judging.assignmentsRead,
         );
-        if (!state.galleryPublic && !privileged) {
+        if (isActiveSeason && !state.galleryPublic && !privileged) {
             throw createError({
                 statusCode: 403,
                 message: "Peer-voting results are available after submissions close",
             });
         }
 
-        const isActiveSeason = season.is_active === 1;
-        const resultsVisible =
-            !state.paused &&
-            (isActiveSeason ? state.resultsVisible : season.results_published === 1);
+        const resultsVisible = isActiveSeason
+            ? !state.paused && state.resultsVisible
+            : season.results_published === 1;
         if (!resultsVisible && !privileged) {
             throw createError({
                 statusCode: 403,
@@ -74,13 +76,19 @@ export default defineEventHandler(
         ]);
 
         const submittedProjects = seasonTeams.filter((team) => team.project_submitted === 1);
+        // A withdrawn or disqualified team's ballots no longer count; turnout is
+        // measured only across teams still competing.
+        const activeTeamIds = new Set(seasonTeams.map((team) => team.id));
+        const eligibleBallots = ballots.filter(
+            (ballot) => ballot.team_id === null || activeTeamIds.has(ballot.team_id),
+        );
         const summary = summarizePeerVoting(
             submittedProjects.map((team) => ({
                 team_id: team.id,
                 name: team.name,
                 pathway: team.pathway,
             })),
-            ballots,
+            eligibleBallots,
         );
         const projectById = new Map(submittedProjects.map((team) => [team.id, team]));
         const projects = summary.projects.map((project) => {

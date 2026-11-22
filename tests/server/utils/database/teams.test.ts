@@ -15,7 +15,6 @@ import {
     getAllTeamsAllSeasons,
     getTeamsBySeason,
     transferTeamOwnership,
-    updateTeam,
     deleteTeams,
 } from "~~/server/utils/database/teams";
 
@@ -239,6 +238,24 @@ describe("teams database helpers", () => {
             expect(teams[0]!.name).toBe("Team B");
         });
 
+        it("excludes withdrawn teams from the queue", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO teams(name, season_id, project_submitted) VALUES('Active Team', 1, 1)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO teams(name, season_id, project_submitted, status) VALUES('Withdrawn Team', 1, 1, 'withdrawn')",
+                )
+                .run();
+
+            const teams = await getSubmittedUnjudgedTeams(event, 1);
+
+            expect(teams.map((team) => team.name)).toEqual(["Active Team"]);
+        });
+
         it("excludes the judge's own team from the queue", async () => {
             seedSeason(event, "S1", 1);
             event.context.drizzle
@@ -391,47 +408,6 @@ describe("teams database helpers", () => {
             const teams = await getTeamsBySeason(event, 1);
             expect(teams).toHaveLength(2);
             expect(teams.map((t) => t.name)).toEqual(["Team A", "Team B"]);
-        });
-    });
-
-    describe("updateTeam", () => {
-        it("updates a team successfully", async () => {
-            seedSeason(event, "S1", 1);
-
-            event.context.drizzle
-                .prepare("INSERT INTO teams(name, season_id) VALUES('Old Name', 1)")
-                .run();
-
-            await updateTeam(event, {
-                id: 1,
-                name: "New Name",
-                pathway: "senior",
-                score: 85,
-                rank: 1,
-                project_name: "Cool Project",
-                project_description: "A cool project",
-                project_demo_url: "https://demo.example.com",
-                project_repo_url: "https://repo.example.com",
-                project_submitted: 1,
-                sourcing: "github",
-                season_id: 1,
-            } as any);
-
-            const team = await getTeamById(event, 1);
-            expect(team!.name).toBe("New Name");
-            expect(team!.pathway).toBe("senior");
-            expect(team!.score).toBe(85);
-            expect(team!.rank).toBe(1);
-            expect(team!.project_name).toBe("Cool Project");
-            expect(team!.project_submitted).toBe(1);
-        });
-
-        it("throws a 404 error when the team does not exist", async () => {
-            seedSeason(event, "S1", 1);
-
-            await expect(updateTeam(event, { id: 999, name: "Ghost" } as any)).rejects.toThrow(
-                "Team not found",
-            );
         });
     });
 

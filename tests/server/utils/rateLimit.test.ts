@@ -1019,24 +1019,27 @@ describe("fixed-window rate limiter", () => {
         );
     });
 
-    it("keys cookie users by verified id, bearer tokens by hash, everyone else by IP", async () => {
+    it("keys cookie users by verified id and never by an unverified bearer value", async () => {
         readBasisAuthUserSessionMock.mockReturnValueOnce({ userId: 9001 });
         expect(await getClientIdentifier(makeMockEvent())).toBe("user:9001");
 
         readBasisAuthUserSessionMock.mockReturnValue(undefined);
+        const makeBearerEvent = (token: string) =>
+            makeMockEvent({
+                headers: { authorization: `Bearer ${token}` },
+            });
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "authorization") return "Bearer token-alpha";
             return undefined;
         });
-        const bearerId = await getClientIdentifier(makeMockEvent());
-        expect(bearerId).toMatch(/^bearer:[a-f0-9]{32}$/);
-        expect(await getClientIdentifier(makeMockEvent())).toBe(bearerId);
+        const firstId = await getClientIdentifier(makeBearerEvent("token-alpha"));
+        expect(firstId).toBe("ip:10.0.0.1");
 
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
             if (name === "authorization") return "Bearer token-beta";
             return undefined;
         });
-        expect(await getClientIdentifier(makeMockEvent())).not.toBe(bearerId);
+        expect(await getClientIdentifier(makeBearerEvent("token-beta"))).toBe(firstId);
 
         (globalThis as any).getHeader = vi.fn(() => undefined);
         expect(await getClientIdentifier(makeMockEvent())).toBe("ip:10.0.0.1");
@@ -1062,7 +1065,18 @@ describe("fixed-window rate limiter", () => {
         expect(await getClientIdentifier(event)).toBe("ip:10.0.0.1");
     });
 
-    it("gives distinct bearer tokens independent buckets without verifying them", async () => {
+    it("falls back to the socket peer when the header helper is unavailable", () => {
+        process.env.TRUSTED_PROXY_HOPS = "1";
+        delete (globalThis as any).getHeader;
+
+        try {
+            expect(getClientIp(makeMockEvent())).toBe("10.0.0.1");
+        } finally {
+            delete process.env.TRUSTED_PROXY_HOPS;
+        }
+    });
+
+    it("does not let a rotated bearer token reset the bucket", async () => {
         readBasisAuthUserSessionMock.mockReturnValue(undefined);
         let token = "first";
         (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
@@ -1080,8 +1094,8 @@ describe("fixed-window rate limiter", () => {
         await wrapped(event);
         await expect(wrapped(event)).rejects.toMatchObject({ status: 429 });
         token = "second";
-        await wrapped(event);
-        expect(handler).toHaveBeenCalledTimes(2);
+        await expect(wrapped(event)).rejects.toMatchObject({ status: 429 });
+        expect(handler).toHaveBeenCalledTimes(1);
     });
 
     it("resolves the client IP through the configured trusted hops", () => {

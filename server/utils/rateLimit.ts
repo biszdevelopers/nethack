@@ -1,5 +1,4 @@
 import type { H3Event } from "h3";
-import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 
 interface RateLimitConfig {
@@ -220,14 +219,10 @@ export async function getClientIdentifier(event: H3Event): Promise<string> {
     const userId = await loadSessionUserId(event);
     if (userId) return `user:${userId}`;
 
-    const authorization = readHeader(event, "authorization");
-    const bearer = authorization ? /^Bearer\s+(\S+)$/i.exec(authorization.trim()) : null;
-    if (bearer?.[1]) {
-        // Hash instead of verifying: stable per token, no crypto cost per request.
-        const digest = createHash("sha256").update(bearer[1]).digest("hex").slice(0, 32);
-        return `bearer:${digest}`;
-    }
-
+    // An Authorization header is caller-controlled until a route verifies it.
+    // Keying the limiter by an unverified token lets a caller rotate arbitrary
+    // values to reset its bucket, so unverified API clients share their IP
+    // bucket. Routes still identify the validated token for authorization.
     return `ip:${getClientIp(event)}`;
 }
 

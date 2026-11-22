@@ -12,7 +12,13 @@ import {
     seedTeam,
     type TestContext,
 } from "./helpers";
-import { adminAuditEvents, judgeFlags, notifications, seasons } from "~~/server/database/schema";
+import {
+    adminAuditEvents,
+    judgeFlags,
+    notifications,
+    seasons,
+    userPastTeams,
+} from "~~/server/database/schema";
 import { getJudgeFlags, resolveJudgeFlag } from "~~/server/utils/database/judge-flags";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -99,6 +105,20 @@ describe("POST /api/judging/flag", () => {
         mockBody.value = { team_id: team.id, reason: "Conflict with a past project." };
 
         await expect(flagHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("rejects flagging a team the judge previously belonged to", async () => {
+        const judge = seedUser(ctx, { email: "judge@basischina.com" });
+        const team = seedTeam(ctx, { name: "Former Team" });
+        ctx.drizzle.insert(userPastTeams).values({ user_id: judge.id, team_id: team.id }).run();
+
+        mockSession.value = { user: { id: judge.id } };
+        mockBody.value = { team_id: team.id, reason: "I was on this team before." };
+
+        await expect(flagHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "Judges cannot flag a team they belonged to",
+        });
     });
 
     it("rejects flagging the judge's own team", async () => {

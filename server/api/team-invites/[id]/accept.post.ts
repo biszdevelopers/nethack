@@ -24,7 +24,7 @@ export default defineEventHandler(
             type: "team_invite_accepted",
             title: `${user.name ?? user.email} joined ${team.name}`,
             body: "A member accepted your team invitation.",
-            link: `/dashboard/teams/${team.id}`,
+            link: "/dashboard/teams",
         });
 
         return { message: `You joined ${team.name}` };

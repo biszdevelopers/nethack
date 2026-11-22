@@ -35,10 +35,19 @@ const loading = computed(
 
 const isDirty = ref(false);
 
-const readOnlyReason = computed(() => {
-    if (hackathon.value?.status !== "in_progress") {
-        return "The submission period is not open. The form is read-only and nothing you type will be saved.";
+const phaseClosedReason = computed(() => {
+    if (!hackathon.value) return "";
+    if (hackathon.value.status === "paused") {
+        return "The event is paused. The form is read-only and nothing you type will be saved.";
     }
+    if (hackathon.value.is_submission_closed) {
+        return "Submissions are closed. The form is read-only and nothing you type will be saved.";
+    }
+    return "";
+});
+
+const readOnlyReason = computed(() => {
+    if (phaseClosedReason.value) return phaseClosedReason.value;
     if (data.value?.team?.project.submitted) {
         return "This project is submitted and locked. You can no longer edit it.";
     }
@@ -126,15 +135,22 @@ const links_noteam = ref<ButtonProps[]>([
 
         <p v-if="loading" class="text-muted" aria-live="polite">Loading your project…</p>
 
-        <div v-else-if="data?.team == null && hackathon?.status !== 'not_started'">
+        <div v-else-if="data?.team == null">
             <UPageCTA
+                v-if="!phaseClosedReason"
                 :links="links_noteam"
                 title="You don't have a team yet!"
                 description="You need a current-season team before you can edit a project. You can still create a solo team if you want to work alone :)"
             />
+            <UPageCTA
+                v-else
+                :links="links"
+                title="Submissions are not open"
+                :description="phaseClosedReason"
+            />
         </div>
 
-        <div v-else-if="hackathon?.status !== 'not_started'" class="">
+        <div v-else class="">
             <h2 class="mb-4 text-3xl bold">General</h2>
 
             <p v-if="data?.team?.project.submitted" class="mb-4 glow">
@@ -163,14 +179,6 @@ const links_noteam = ref<ButtonProps[]>([
                 :disabled="Boolean(readOnlyReason)"
                 @dirty="dateUpdated"
                 @refresh="refreshData"
-            />
-        </div>
-
-        <div v-else>
-            <UPageCTA
-                :links="links"
-                title="Hackathon not started yet!"
-                description="Stay tuned for news and check out the schedule!"
             />
         </div>
     </div>

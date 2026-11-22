@@ -18,9 +18,11 @@ import {
     adminAuditEvents,
     awards,
     hackathon,
+    peerVotingScores,
     teamAwards,
     teamScores,
     teams,
+    users,
 } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
@@ -114,6 +116,30 @@ describe("POST /api/admin/teams/:id/reopen", () => {
             after: { project_submitted: 0 },
             reason: "Late edit approved",
         });
+    });
+
+    it("refuses to reopen while the season has peer votes", async () => {
+        const team = seedSubmittedTeam();
+        const voter = seedUser(ctx, { email: "voter@basischina.com" });
+        ctx.drizzle
+            .insert(peerVotingScores)
+            .values({
+                user_id: voter.id,
+                season_id: team.season_id,
+                team_id: team.id,
+                score: JSON.stringify({ [team.id]: 5 }),
+            })
+            .run();
+        mockParams.values = { id: team.id };
+        mockBody.value = {};
+
+        await expect(reopenHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "Delete the season's peer votes before reopening its submission.",
+        });
+        expect(
+            ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get()!.project_submitted,
+        ).toBe(1);
     });
 
     it("refuses to reopen a team that never submitted", async () => {
@@ -391,6 +417,7 @@ describe("DELETE /api/teams/:id", () => {
     it("disbands a team the caller owns", async () => {
         const owner = seedUser(ctx, { email: "owner@basischina.com" });
         const team = seedTeam(ctx, { name: "Disbanded Team", owner_user_id: owner.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, owner.id)).run();
         ctx.drizzle.update(teams).set({ status: "active" }).where(eq(teams.id, team.id)).run();
         seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
         mockSession.value = { user: { id: owner.id } };
@@ -426,7 +453,8 @@ describe("DELETE /api/teams/:id", () => {
 
     it("rejects disbanding after submissions close or while paused", async () => {
         const user = seedUser(ctx, { email: "user@basischina.com" });
-        const team = seedTeam(ctx, { name: "Late Team" });
+        const team = seedTeam(ctx, { name: "Late Team", owner_user_id: user.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, user.id)).run();
         ctx.drizzle.update(teams).set({ status: "active" }).where(eq(teams.id, team.id)).run();
         mockSession.value = { user: { id: user.id } };
         mockParams.values = { id: team.id };

@@ -22,6 +22,8 @@ export const MAX_ELECTION_CANDIDATES = 50;
 export const MAX_ELECTION_TITLE_LENGTH = 128;
 export const MAX_ELECTION_CANDIDATE_ID_LENGTH = 64;
 export const MAX_BULK_DELETE_IDS = 100;
+/** Largest value a PostgreSQL `integer` column accepts. */
+export const POSTGRES_INT_MAX = 2_147_483_647;
 
 export const BasisEmail = z
     .email()
@@ -174,7 +176,7 @@ const DynamicRubricScores = z.record(
 export const SaveJudgingDraftRequest = z.object({
     scores: DynamicRubricScores,
     reasoning: z.string().max(MAX_REASONING_LENGTH).default(""),
-    rubric_version_id: z.number().int().positive(),
+    rubric_version_id: z.number().int().positive().max(POSTGRES_INT_MAX),
 });
 
 export const SubmitTeamScoresRequest = z.object({
@@ -190,15 +192,15 @@ export const SubmitTeamScoresRequest = z.object({
         .refine((value) => !hasUnfilledCommentTemplate(value), {
             message: "Replace the example text in the comment template before submitting.",
         }),
-    rubric_version_id: z.number().int().positive(),
+    rubric_version_id: z.number().int().positive().max(POSTGRES_INT_MAX),
 });
 
 export const CreateRubricVersionRequest = z
     .object({
         name: z.string().trim().min(1).max(100),
         definition: RubricDefinitionSchema.optional(),
-        copyFromSeasonId: z.coerce.number().int().positive().optional(),
-        sourceTemplateId: z.coerce.number().int().positive().optional(),
+        copyFromSeasonId: z.coerce.number().int().positive().max(POSTGRES_INT_MAX).optional(),
+        sourceTemplateId: z.coerce.number().int().positive().max(POSTGRES_INT_MAX).optional(),
     })
     .refine(
         (request) =>
@@ -216,7 +218,6 @@ export const CreateRubricTemplateRequest = z.object({
 });
 
 /** PostgreSQL `integer` upper bound; larger IDs would otherwise reach the driver and 500. */
-export const POSTGRES_INT_MAX = 2_147_483_647;
 export const PositiveIntParam = z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX);
 export const TeamIdParams = z.object({ id: PositiveIntParam });
 export const TeamUserParams = z.object({ id: PositiveIntParam, user: PositiveIntParam });
@@ -598,7 +599,7 @@ export const CreateSeasonRequest = z.object({
 export type CreateSeasonRequest = z.infer<typeof CreateSeasonRequest>;
 
 export const UpdateSeasonRequest = z.object({
-    id: z.number().int().positive(),
+    id: z.number().int().positive().max(POSTGRES_INT_MAX),
     name: z.string().trim().min(1).max(200).optional(),
     is_active: z.union([z.literal(0), z.literal(1)]).optional(),
     max_team_members: TeamMemberLimit.optional(),

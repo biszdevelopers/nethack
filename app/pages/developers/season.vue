@@ -135,6 +135,23 @@ function loadSettings() {
     applySettings();
 }
 
+function selectSeason(id: number): boolean {
+    if (selectedSeasonId.value === id) return true;
+    if (settingsDirty.value && !window.confirm("Discard the unsaved season settings?")) {
+        return false;
+    }
+    selectedSeasonId.value = id;
+    return true;
+}
+
+function makeSeasonLive(season: { id: number }) {
+    if (!selectSeason(season.id)) return;
+    runLifecycle(
+        "activate",
+        "Make this season the live season? The public site switches immediately.",
+    );
+}
+
 watch(
     selectedSeasonId,
     () => {
@@ -727,7 +744,10 @@ watch(
 async function saveScoreCurvePreset(value: ScoreCurvePreset) {
     const season = selectedSeason.value;
     if (!season || scoreCurveSaving.value) return;
-    const previous = scoreCurvePreset.value;
+    const previous =
+        season.score_curve_preset && season.score_curve_preset in SCORE_CURVE_PRESETS
+            ? (season.score_curve_preset as ScoreCurvePreset)
+            : "original";
     scoreCurveSaving.value = true;
     try {
         await apiFetch(`/api/admin/seasons/${season.id}/score-curve`, {
@@ -822,7 +842,7 @@ async function downloadDatabase(format: "json" | "csv") {
                     "
                     :ui="{ base: 'min-h-11' }"
                     class="w-full"
-                    @update:model-value="(value) => (selectedSeasonId = Number(value))"
+                    @update:model-value="(value) => selectSeason(Number(value))"
                 />
             </UFormField>
             <UBadge v-if="selectedSeasonIsActive" color="success" variant="subtle">Live</UBadge>
@@ -1120,7 +1140,7 @@ async function downloadDatabase(format: "json" | "csv") {
                                     class="w-full"
                                 />
                             </UFormField>
-                            <UFormField label="Maximum stars per voter">
+                            <UFormField label="Maximum projects per voter">
                                 <UInput
                                     v-model.number="settings.max_votes_per_user"
                                     type="number"
@@ -1130,8 +1150,8 @@ async function downloadDatabase(format: "json" | "csv") {
                                     class="w-full"
                                 />
                                 <p class="mt-1 text-xs text-muted">
-                                    Use 0 for no cap. Each ballot always distributes exactly 10
-                                    stars.
+                                    Use 0 for no cap. A voter can award stars to at most this many
+                                    projects. Each ballot always distributes exactly 10 stars.
                                 </p>
                             </UFormField>
                         </div>
@@ -1235,7 +1255,7 @@ async function downloadDatabase(format: "json" | "csv") {
                             <UButton
                                 variant="subtle"
                                 class="min-h-11"
-                                @click="selectedSeasonId = season.id"
+                                @click="selectSeason(season.id)"
                             >
                                 Open
                             </UButton>
@@ -1250,13 +1270,7 @@ async function downloadDatabase(format: "json" | "csv") {
                                     !season.rubric_version_id ||
                                     (season.is_blank_start === 1 && !season.board_approved_at)
                                 "
-                                @click="
-                                    selectedSeasonId = season.id;
-                                    runLifecycle(
-                                        'activate',
-                                        'Make this season the live season? The public site switches immediately.',
-                                    );
-                                "
+                                @click="makeSeasonLive(season)"
                             >
                                 Make live
                             </UButton>

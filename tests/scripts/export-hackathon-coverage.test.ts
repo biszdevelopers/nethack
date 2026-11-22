@@ -7,11 +7,15 @@ const state = vi.hoisted(() => ({
     queries: [] as string[],
 }));
 const writeFile = vi.hoisted(() => vi.fn());
+const rename = vi.hoisted(() => vi.fn());
+const unlink = vi.hoisted(() => vi.fn());
 const end = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs/promises", async (importOriginal) => ({
     ...(await importOriginal<typeof import("node:fs/promises")>()),
     writeFile,
+    rename,
+    unlink,
 }));
 vi.mock("postgres", () => ({
     default: () => {
@@ -62,6 +66,8 @@ beforeEach(() => {
     state.row = { ...hackathonRow };
     state.version = null;
     writeFile.mockReset().mockResolvedValue(undefined);
+    rename.mockReset().mockResolvedValue(undefined);
+    unlink.mockReset().mockResolvedValue(undefined);
     end.mockReset().mockResolvedValue(undefined);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
 });
@@ -96,7 +102,9 @@ describe("hackathon manifest export script", { timeout: 30_000 }, () => {
 
         expect(state.queries).toHaveLength(2);
         const [path, contents] = writeFile.mock.calls[0]!;
-        expect(path).toBe("exported.yml");
+        expect(path).toContain("exported.yml");
+        expect(path).toContain(".tmp");
+        expect(rename).toHaveBeenCalledWith(path, expect.stringContaining("exported.yml"));
         expect(contents).toContain("theme_name: Beneath The Surface");
         expect(contents).toContain("name: Imported rubric");
         expect(contents).toContain("start_timestamp: 1794667462000");
@@ -104,10 +112,23 @@ describe("hackathon manifest export script", { timeout: 30_000 }, () => {
         expect(end).toHaveBeenCalledOnce();
     });
 
+    it("removes the temporary manifest when the atomic replace fails", async () => {
+        rename.mockRejectedValueOnce(new Error("disk full"));
+        unlink.mockRejectedValueOnce(new Error("unlink failed"));
+
+        await expect(runScript("postgres://fixture@localhost/db", "exported.yml")).rejects.toThrow(
+            "disk full",
+        );
+
+        const temporary = writeFile.mock.calls[0]![0];
+        expect(unlink).toHaveBeenCalledWith(temporary);
+        expect(end).toHaveBeenCalledOnce();
+    });
+
     it("defaults the output path and omits the rubric when the season has none", async () => {
         await runScript("postgres://fixture@localhost/db");
 
-        expect(writeFile.mock.calls[0]![0]).toBe("HACKATHON.yml");
+        expect(writeFile.mock.calls[0]![0]).toContain("HACKATHON.yml");
         expect(writeFile.mock.calls[0]![1]).not.toContain("rubric:");
     });
 });

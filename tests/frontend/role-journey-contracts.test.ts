@@ -403,7 +403,9 @@ describe("judge results and admin controls", () => {
             "async function saveScoreCurvePreset",
             "const databaseExporting",
         );
-        expect(saveCurve).toContain("const previous = scoreCurvePreset.value");
+        expect(saveCurve).toContain(
+            "season.score_curve_preset && season.score_curve_preset in SCORE_CURVE_PRESETS",
+        );
         expect(saveCurve).toContain("/api/admin/seasons/${season.id}/score-curve");
         expect(saveCurve).toContain('method: "PATCH"');
         expect(saveCurve).toContain("scoreCurvePreset.value = previous");

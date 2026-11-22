@@ -16,6 +16,7 @@ type AdminTeamRow = {
     pathway: string | null;
     project_name: string;
     project_submitted: number | boolean;
+    season_id?: number;
 };
 
 type AdminUserRow = {
@@ -88,6 +89,10 @@ const {
     server: false,
     lazy: true,
 });
+const { data: activeRubric } = await useApiFetch<{ tracks: Record<string, unknown> }>(
+    "/api/judging/rubric",
+    { server: false, lazy: true },
+);
 
 const assignments = computed(() => {
     const payload = assignmentData.value as unknown;
@@ -115,15 +120,22 @@ const judgeItems = computed(() =>
         value: user.id,
     })),
 );
+const seasonTeams = computed(() => {
+    const seasonId = activeSeason.value?.id;
+    if (seasonId === undefined) return teams.value ?? [];
+    return (teams.value ?? []).filter((team) => team.season_id === seasonId);
+});
 const trackItems = computed(() => {
-    const tracks = new Set<string>();
-    for (const team of teams.value ?? []) {
-        if (team.pathway) tracks.add(team.pathway);
+    const tracks = new Set<string>(Object.keys(activeRubric.value?.tracks ?? {}));
+    if (tracks.size === 0) {
+        for (const team of seasonTeams.value) {
+            if (team.pathway) tracks.add(team.pathway);
+        }
     }
     return [...tracks].sort().map((track) => ({ label: track, value: track }));
 });
 const teamItems = computed(() =>
-    [...(teams.value ?? [])]
+    [...seasonTeams.value]
         .sort((a, b) => (a.project_name || a.name).localeCompare(b.project_name || b.name))
         .map((team) => ({
             label: `${team.project_name || team.name} · ${team.name}`,
@@ -131,7 +143,7 @@ const teamItems = computed(() =>
         })),
 );
 const submittedTeams = computed(() =>
-    (teams.value ?? []).filter((team) => Boolean(team.project_submitted)),
+    seasonTeams.value.filter((team) => Boolean(team.project_submitted)),
 );
 const judgeAssignmentsByUser = computed(() => {
     const map = new Map<number, number>();

@@ -87,8 +87,9 @@ Consumes one request without touching an H3 event. It returns `{ allowed, retryA
 The wrapper resolves the caller in this order:
 
 1. **Session user** — `user:{id}` when the session is already resolved or can be read.
-2. **Bearer token** — `bearer:{sha256-prefix}` for explicit `Authorization: Bearer` requests. The token is hashed, not verified, so this stays cheap and stable per token.
-3. **IP address** — `ip:{ip}` when neither identity is available.
+2. **IP address** — `ip:{ip}` for every other request.
+
+An explicit `Authorization: Bearer` header is not a limiter key. The token is unverified until a route checks it, so rotating arbitrary values would otherwise reset the bucket. API clients share their IP bucket until the token or cookie session is validated.
 
 An optional `keyPrefix` is prepended, so each tier keeps separate counters for the same caller.
 

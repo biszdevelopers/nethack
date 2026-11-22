@@ -13,15 +13,15 @@ describe("team invite links", () => {
         expect(source).toContain("inviteToken");
     });
 
-    it("accepts the token through the token endpoint with a body-token fallback", () => {
+    it("accepts the token through the token endpoint", () => {
         expect(source).toContain("`/api/team-invites/token/${encodeURIComponent(token)}/accept`");
-        expect(source).toContain('"/api/team-invites/accept"');
-        expect(source).toContain("body: { token }");
+        expect(source).toContain('method: "POST"');
+        expect(source).not.toContain('"/api/team-invites/accept"');
     });
 
-    it("explains unavailable endpoints and already-joined accounts", () => {
-        expect(source).toContain("isEndpointUnavailable");
-        expect(source).toContain("Invitation links are not enabled on this deployment");
+    it("surfaces the server error and already-joined accounts", () => {
+        expect(source).toContain("inviteError.value = getErrorMessage(e)");
+        expect(source).not.toContain("isEndpointUnavailable");
         expect(source).toContain("You are already in a team");
     });
 

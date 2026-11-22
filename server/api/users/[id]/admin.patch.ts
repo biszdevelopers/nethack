@@ -3,6 +3,7 @@ import { z } from "zod";
 import { users } from "~~/server/database/schema";
 import { lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import { requireUser } from "~~/server/utils/auth";
+import { writeAuditEvent } from "~~/server/utils/audit";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { UserIdParams } from "~~/shared/schemas";
 import { NethackPermissions } from "~~/shared/permissions";
@@ -60,6 +61,13 @@ export default defineEventHandler(
             if (!row) {
                 throw createError({ statusCode: 404, message: "User not found" });
             }
+            await writeAuditEvent(tx, event, {
+                action: "user.admin",
+                entity_type: "user",
+                entity_id: id,
+                before: { is_admin: isEffectiveAdmin(target) },
+                after: { is_admin: Boolean(row.is_admin) },
+            });
             return row;
         });
 

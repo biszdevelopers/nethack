@@ -181,6 +181,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
         const judgeTwo = await newPage();
         const judgeThree = await newPage();
         const outsider = await newPage();
+        const builder = await newPage();
 
         let participantTeamId = 0;
         let adminTeamId = 0;
@@ -224,6 +225,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
                 await login(judge, "judge@e2e.basishacks.invalid", "/judging");
                 await login(judgeTwo, "judge-two@e2e.basishacks.invalid", "/judging");
                 await login(judgeThree, "judge-three@e2e.basishacks.invalid", "/judging");
+                await login(builder, "builder@e2e.basishacks.invalid", "/dashboard");
                 expect(await sessionUser(judge)).toBeGreaterThan(0);
             });
 
@@ -301,7 +303,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
 
             await test.step("G15 — judge creates and submits a project", async () => {
                 judgeTeamId = await makeTeam(
-                    judgeTwo,
+                    builder,
                     `Matrix-J-team-${suffix}`,
                     `Matrix judge project ${suffix}`,
                 );

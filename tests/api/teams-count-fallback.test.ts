@@ -43,6 +43,7 @@ describe("GET /api/teams judging page with no aggregate rows", () => {
     it("falls back to zero totals when the database returns no count row", async () => {
         const chain: any = {
             where: () => chain,
+            innerJoin: () => chain,
             orderBy: () => chain,
             limit: () => chain,
             offset: () => chain,
@@ -54,7 +55,7 @@ describe("GET /api/teams judging page with no aggregate rows", () => {
             team_id: null,
         } as any);
         const { mockQueryState } = await import("./helpers");
-        mockQueryState.value = { judging: true, page: 1, page_size: 10 };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 10 };
 
         const result = await listTeams({
             context: { drizzle: fakeDrizzle },

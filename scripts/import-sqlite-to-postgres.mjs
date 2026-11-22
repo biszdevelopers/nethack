@@ -1137,4 +1137,12 @@ export async function runCli(options = {}) {
 }
 
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
-if (entryPath === fileURLToPath(import.meta.url)) await runCli();
+let canonicalEntryPath = entryPath;
+if (entryPath) {
+    try {
+        canonicalEntryPath = realpathSync(entryPath);
+    } catch {
+        // Fall back to the resolved path when the entry file is unavailable.
+    }
+}
+if (canonicalEntryPath === fileURLToPath(import.meta.url)) await runCli();

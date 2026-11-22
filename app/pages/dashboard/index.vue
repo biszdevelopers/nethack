@@ -40,7 +40,10 @@ const loading = computed(
     () => !data.value && (status.value === "idle" || status.value === "pending"),
 );
 const teamChangesOpen = computed(
-    () => hackathon.value?.status === "not_started" || hackathon.value?.status === "in_progress",
+    () =>
+        Boolean(hackathon.value) &&
+        hackathon.value!.status !== "paused" &&
+        !hackathon.value!.is_submission_closed,
 );
 
 const {

@@ -95,7 +95,7 @@ describe("GET /api/admin/judging/flags", () => {
     it("filters open flags for a season", async () => {
         const open = seedFlag();
         seedFlag({ resolved_at: new Date(), resolved_by: 1 });
-        mockQueryState.value = { season_id: 1, resolved: false };
+        mockQueryState.value = { season_id: 1, resolved: "false" };
 
         const result = await listFlags(createEvent());
 
@@ -105,7 +105,7 @@ describe("GET /api/admin/judging/flags", () => {
     it("filters resolved flags and serializes the resolution timestamp", async () => {
         seedFlag();
         const resolved = seedFlag({ resolved_at: new Date(), resolved_by: 1 });
-        mockQueryState.value = { resolved: true };
+        mockQueryState.value = { resolved: "true" };
 
         const result = await listFlags(createEvent());
 

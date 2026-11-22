@@ -164,8 +164,9 @@ export async function getClientIdentifier(event: H3Event): Promise<string>;
 Returns a unique identifier for the client:
 
 1. **Session user**: `user:{id}` — read from the basis-auth session when available.
-2. **Bearer token**: `bearer:{sha256-prefix}` — stable per token without verifying it on every request.
-3. **IP address**: `ip:{address}` — the socket peer by default. Set `TRUSTED_PROXY_HOPS` to the exact 0–10 proxy count to select the entry that many positions from the right of a valid `x-forwarded-for` chain.
+2. **IP address**: `ip:{address}` — the socket peer by default. Set `TRUSTED_PROXY_HOPS` to the exact 0–10 proxy count to select the entry that many positions from the right of a valid `x-forwarded-for` chain.
+
+An explicit `Authorization` header never keys the limiter: a route has not verified that token yet, so a caller could rotate arbitrary values to reset its bucket. API clients are limited by IP until their token or cookie session is validated.
 
 This ensures authenticated users are not rate-limited by other users' activity behind a shared NAT, while unauthenticated users are still protected at the IP level.
 
@@ -522,7 +523,7 @@ Per-table database helper modules in `server/utils/database/`.
 | `canManageTeam(team, user)` | Owner check; a legacy team without an owner remains manageable by its members |
 | `transferTeamOwnership(event, teamID, userID)` | Move roster controls to another current member |
 | `disbandTeam(event, teamID)` | Record member history, detach members, delete invitations, and set `status = 'withdrawn'` |
-| `updateTeam(event, team)` | Update all team fields; throws 404 if the team does not exist |
+| `updateTeamPartial(event, teamID, seasonID, updates, options?)` | Update only the supplied team columns; optional active/unsubmitted guards |
 | `deleteTeams(event, teamIDs)` | Delete teams and related records |
 
 ### scores.ts
@@ -585,7 +586,7 @@ Per-table database helper modules in `server/utils/database/`.
 
 ### judging.ts
 
-`getJudgeScope(db, seasonId, judgeUserId)` returns `{ assigned, allProjects, teamIds, pathways, recusedTeamIds }`. `judgeScopeWhere(scope)` turns it into a SQL predicate, and `judgeCanEvaluate(scope, team)` applies the same rule in memory. With no assignment rows, all submitted projects remain visible. An assignment with neither a pathway nor a team grants all projects; otherwise it narrows to the listed pathway or team. Recusals always remove a team. `isJudgingOpen(hackathon, season)` applies the paused, switch, and publication rules.
+`getJudgeScope(db, seasonId, judgeUserId)` returns `{ assigned, allProjects, teamIds, pathways, recusedTeamIds, conflictTeamIds }`. `judgeScopeWhere(scope)` turns it into a SQL predicate, and `judgeCanEvaluate(scope, team)` applies the same rule in memory. `conflictTeamIds` contains teams the judge belonged to earlier in the same season; they are never evaluated. With no assignment rows, all submitted projects remain visible. An assignment with neither a pathway nor a team grants all projects; otherwise it narrows to the listed pathway or team. Recusals always remove a team. `assertJudgeNotCompeting(event, user, seasonId)` rejects an action when the judge's current team belongs to that season; administrators are exempt. `isJudgingOpen(hackathon, season)` applies the paused, switch, and publication rules.
 
 ### judge-flags.ts
 

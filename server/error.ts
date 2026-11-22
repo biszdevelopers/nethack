@@ -64,10 +64,19 @@ export default defineNitroErrorHandler((input, event) => {
         // The shared renderer returns a fragment with a hardcoded 500px image.
         // Wrap it in a real document so the page has a language, a title, and a
         // responsive viewport, and constrain the image on narrow screens.
-        const fragment = renderErrorPage(apiError.toJSON()).replace(
-            "<img width=500 ",
-            '<img width="500" alt="Sad mascot" style="max-width:100%;height:auto" ',
-        );
+        let fragment: string;
+        try {
+            fragment = renderErrorPage(apiError.toJSON()).replace(
+                "<img width=500 ",
+                '<img width="500" alt="Sad mascot" style="max-width:100%;height:auto" ',
+            );
+        } catch {
+            // The renderer base64-encodes its payload with btoa, which throws on
+            // non-Latin-1 messages (for example a rubric key or team name). Never
+            // let the error page itself leave the request hanging.
+            fragment =
+                "<h1>The request could not be completed.</h1><p>Return to the previous page and try again.</p>";
+        }
         return send(
             event,
             `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{color-scheme:light dark;--bg:#fff;--fg:#0f172a;--muted:#475569;--link:#15803d}@media (prefers-color-scheme:dark){:root{--bg:#0b1120;--fg:#e2e8f0;--muted:#94a3b8;--link:#4ade80}}body{margin:0;padding:2rem 1.25rem;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.6}h1{max-width:60ch;font-size:1.15rem;font-weight:600}a{color:var(--link)}p{max-width:60ch;color:var(--muted)}img{display:block;max-width:100%;height:auto;margin:1.5rem 0;border-radius:12px}</style></head><body>${fragment}</body></html>`,

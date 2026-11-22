@@ -226,10 +226,11 @@ describe("GET /api/admin/preflight", () => {
 
         expect(result).toMatchObject({
             season_id: season.id,
-            submitted_teams: 5,
-            // Junior (4 evaluations) is fine; senior (1) and the three
-            // unevaluated projects fall below the three-reviewer threshold.
-            teams_below_minimum_evaluations: 4,
+            submitted_teams: 4,
+            // Junior (4 evaluations) is fine; senior (1) and the two other
+            // active, unevaluated projects fall below the three-reviewer
+            // threshold. The withdrawn project is not competing.
+            teams_below_minimum_evaluations: 3,
             evaluations_total: 5,
             judges_with_evaluations: 5,
             assigned_judges: 1,
@@ -305,11 +306,23 @@ describe("GET /api/admin/preflight", () => {
     it("reads a season selected by id and rejects unknown seasons", async () => {
         seedHackathon(ctx);
         const active = seedSeason(ctx);
-        const past = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const past = seedSeason(ctx, {
+            name: "Past",
+            is_active: 0,
+            status: "finished",
+            results_published: 1,
+        });
         mockQueryState.value = { season_id: past.id };
 
         const result = await preflightHandler(createEvent());
         expect(result.season_id).toBe(past.id);
+        expect(result.gates).toEqual({
+            submissions_open: false,
+            voting_open: false,
+            judging_open: false,
+            gallery_public: true,
+            results_visible: true,
+        });
 
         mockQueryState.value = { season_id: 404 };
         await expect(preflightHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
@@ -340,6 +353,7 @@ describe("GET /api/admin/preflight", () => {
                 from: (table: unknown) => {
                     const query: any = {
                         where: () => query,
+                        innerJoin: () => query,
                         groupBy: () => query,
                         orderBy: () => query,
                         limit: () => Promise.resolve(table === seasons ? [seasonRow] : []),

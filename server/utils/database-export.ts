@@ -82,6 +82,10 @@ function anonymizeExportRow(name: string, row: Record<string, unknown>) {
         delete anonymousRow.actor_user_id;
         // A voided evaluation's entity id embeds the judge account id.
         if (anonymousRow.entity_type === "team_score") delete anonymousRow.entity_id;
+        // Judge-role changes name the staff account in entity_id.
+        if (anonymousRow.entity_type === "user" && String(anonymousRow.action).includes("judge")) {
+            delete anonymousRow.entity_id;
+        }
         if (anonymousRow.before) {
             anonymousRow.before = stripStaffReferences(anonymousRow.before);
         }

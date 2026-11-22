@@ -12,6 +12,7 @@ import {
     type TestContext,
 } from "../helpers";
 import {
+    judgeAssignments,
     judgingDrafts,
     peerVotingScores,
     rubricVersions,
@@ -103,6 +104,23 @@ describe("DELETE /api/admin/seasons/[id]", () => {
         const result = await deleteHandler(createEvent());
 
         expect(result.seasons.find((season: any) => season.id === target.id)).toBeUndefined();
+    });
+
+    it("preserves a season with configured judge assignments", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        seedSeason(ctx, { name: "Current season", is_active: 1 });
+        const target = seedSeason(ctx, { name: "Assigned season", is_active: 0 });
+        const judge = seedUser(ctx, { email: "assigned@basischina.com", role: "judge" });
+        ctx.drizzle
+            .insert(judgeAssignments)
+            .values({ season_id: target.id, judge_user_id: judge.id })
+            .run();
+        mockParams.values.id = String(target.id);
+
+        await expect(deleteHandler(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+        expect(
+            ctx.drizzle.select().from(seasons).where(eq(seasons.id, target.id)).get(),
+        ).toBeDefined();
     });
 
     it.each(["score", "draft"] as const)(

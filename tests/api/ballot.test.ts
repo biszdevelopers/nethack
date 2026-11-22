@@ -193,6 +193,32 @@ describe("GET /api/ballot", () => {
         await expect(getBallotHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 
+    it("returns 403 when the user's team is no longer competing", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
+        const season = seedSeason(ctx);
+
+        const userTeam = seedTeam(ctx, {
+            name: "Withdrawn Team",
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+            status: "withdrawn",
+        });
+        seedUser(ctx, { email: "voter@basischina.com", team_id: userTeam.id });
+
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            team_id: userTeam.id,
+            role: "participant",
+        });
+
+        await expect(getBallotHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Only active participants can vote",
+        });
+    });
+
     it("falls back to zero scores when stored vote score is invalid JSON", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
@@ -380,6 +406,32 @@ describe("POST /api/ballot", () => {
         await expect(postBallotHandler(createEvent())).rejects.toMatchObject({ statusCode: 403 });
     });
 
+    it("returns 403 when the user's team is no longer competing", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
+        const season = seedSeason(ctx);
+
+        const userTeam = seedTeam(ctx, {
+            name: "Withdrawn Team",
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+            status: "withdrawn",
+        });
+        seedUser(ctx, { email: "voter@basischina.com", team_id: userTeam.id });
+
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            team_id: userTeam.id,
+            role: "participant",
+        });
+
+        await expect(postBallotHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Only active participants can vote",
+        });
+    });
+
     it("returns 400 when scores count does not match eligible projects", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "voting", voting_enabled: 1 });
@@ -433,6 +485,12 @@ describe("POST /api/ballot", () => {
             pathway: "junior",
             season_id: season.id,
         });
+        seedTeam(ctx, {
+            name: "Third Team",
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
 
         vi.mocked(globalThis.requireUser).mockResolvedValue({
             id: 1,
@@ -441,7 +499,7 @@ describe("POST /api/ballot", () => {
         });
 
         mockBody.value = {
-            scores: [10],
+            scores: [5, 5],
             reasoning: "Great project overall.",
         };
 
@@ -555,6 +613,12 @@ describe("POST /api/ballot", () => {
             pathway: "junior",
             season_id: season.id,
         });
+        seedTeam(ctx, {
+            name: "Third Team",
+            project_submitted: 1,
+            pathway: "junior",
+            season_id: season.id,
+        });
 
         // Pre-seed a vote
         ctx.drizzle
@@ -569,7 +633,7 @@ describe("POST /api/ballot", () => {
         });
 
         mockBody.value = {
-            scores: [10],
+            scores: [5, 5],
             reasoning: "Great project.",
         };
 

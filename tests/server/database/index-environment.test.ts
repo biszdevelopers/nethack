@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getDatabasePoolMax, getDatabaseUrl } from "~~/server/database";
+import { createMigrationDatabase, getDatabasePoolMax, getDatabaseUrl } from "~~/server/database";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
 const originalPoolMax = process.env.DATABASE_POOL_MAX;
@@ -45,5 +45,15 @@ describe("PostgreSQL environment validation", () => {
         expect(() => getDatabasePoolMax()).toThrow(
             "DATABASE_POOL_MAX must be an integer between 2 and 64.",
         );
+    });
+
+    it("creates a dedicated migrator client with no statement timeout", async () => {
+        process.env.DATABASE_URL = "postgres://localhost/app";
+
+        const { client, database } = await createMigrationDatabase();
+
+        expect(typeof client.end).toBe("function");
+        expect(typeof database.select).toBe("function");
+        await client.end({ timeout: 0 });
     });
 });

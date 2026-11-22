@@ -19,11 +19,17 @@ function finish(input: string) {
             total: result.numPassedTests ?? result.numTotalTests ?? 0,
             files: Array.isArray(result.testResults) ? result.testResults.length : 0,
             failed: result.numFailedTests ?? 0,
+            skipped: result.numPendingTests ?? 0,
             generatedAt: new Date().toISOString(),
         };
+        const failedSuites = result.numFailedTestSuites ?? 0;
         writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
-        if (meta.failed > 0) {
-            console.error(`Tests failed: ${meta.failed} failures`);
+        if (meta.failed > 0 || failedSuites > 0) {
+            console.error(
+                meta.failed > 0
+                    ? `Tests failed: ${meta.failed} failures`
+                    : `Test suites failed: ${failedSuites}`,
+            );
             for (const failure of failedTests) {
                 console.error(`Failed test: ${failure}`);
             }

@@ -75,7 +75,7 @@ describe("GET /api/teams judging queue without an active season", () => {
     });
 
     it("returns an empty paged queue", async () => {
-        mockQueryState.value = { judging: true, page: 1, page_size: 10 };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 10 };
 
         await expect(listTeams(createEvent())).resolves.toEqual({
             items: [],
@@ -87,7 +87,7 @@ describe("GET /api/teams judging queue without an active season", () => {
     });
 
     it("returns an empty unpaged queue", async () => {
-        mockQueryState.value = { judging: true };
+        mockQueryState.value = { judging: "true" };
 
         await expect(listTeams(createEvent())).resolves.toEqual([]);
     });
@@ -102,7 +102,7 @@ describe("GET /api/teams judging queue pagination defaults", () => {
 
     it("defaults the page number while honouring an explicit page size", async () => {
         seedTeam(ctx, { name: "Project", project_submitted: 1 });
-        mockQueryState.value = { judging: true, page_size: 1 };
+        mockQueryState.value = { judging: "true", page_size: 1 };
 
         const result = await listTeams(createEvent());
 
@@ -117,7 +117,7 @@ describe("GET /api/teams judging queue pagination defaults", () => {
 
     it("defaults the page size while honouring an explicit page", async () => {
         seedTeam(ctx, { name: "Project", project_submitted: 1 });
-        mockQueryState.value = { judging: true, page: 1 };
+        mockQueryState.value = { judging: "true", page: 1 };
 
         await expect(listTeams(createEvent())).resolves.toMatchObject({
             page: 1,
@@ -127,7 +127,7 @@ describe("GET /api/teams judging queue pagination defaults", () => {
 
     it("returns an empty page past the end of the queue", async () => {
         seedTeam(ctx, { name: "Project", project_submitted: 1 });
-        mockQueryState.value = { judging: true, page: 5, page_size: 10 };
+        mockQueryState.value = { judging: "true", page: 5, page_size: 10 };
 
         const result = await listTeams(createEvent());
 
@@ -135,7 +135,7 @@ describe("GET /api/teams judging queue pagination defaults", () => {
     });
 
     it("reports zero pages when the season has no submitted projects", async () => {
-        mockQueryState.value = { judging: true, page: 1, page_size: 10 };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 10 };
 
         await expect(listTeams(createEvent())).resolves.toMatchObject({
             items: [],
@@ -151,7 +151,7 @@ describe("GET /api/teams judging queue pagination defaults", () => {
         vi.mocked(globalThis.getActiveSeason).mockImplementationOnce(() =>
             Promise.resolve({ id: 1 } as unknown as Season),
         );
-        mockQueryState.value = { judging: true, page: 1, page_size: 10 };
+        mockQueryState.value = { judging: "true", page: 1, page_size: 10 };
 
         const result = await listTeams(createEvent());
 

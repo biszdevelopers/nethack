@@ -81,6 +81,15 @@ describe("POST /api/admin/seasons rubric copy", () => {
         });
     });
 
+    it("creates and activates a season when requested", async () => {
+        mockBody.value = { name: "Live Season", is_active: 1 };
+
+        const result = await createSeason(createEvent());
+
+        const created = result.seasons.find((season: any) => season.name === "Live Season");
+        expect(created).toMatchObject({ is_active: 1, is_blank_start: 0 });
+    });
+
     it("creates a blank season without copying the rubric or schedule", async () => {
         mockBody.value = { name: "Blank Season", copy_live_settings: false };
 

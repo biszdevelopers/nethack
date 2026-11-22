@@ -1,6 +1,8 @@
 import type { DrizzleDatabase } from "~~/server/database";
+import type { H3Event } from "h3";
 import { and, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
-import { judgeAssignments, judgeRecusals, teams } from "~~/server/database/schema";
+import { judgeAssignments, judgeRecusals, teams, userPastTeams } from "~~/server/database/schema";
+import { firstRow } from "./database/query";
 
 /**
  * Judging is open while the portal `judging_open` toggle is on and the event is
@@ -26,6 +28,8 @@ export interface JudgeScope {
     teamIds: number[];
     pathways: string[];
     recusedTeamIds: number[];
+    /** Teams this judge left this season; a former member cannot evaluate them. */
+    conflictTeamIds: number[];
 }
 
 type JudgeScopeDatabase = Pick<DrizzleDatabase, "select">;
@@ -36,7 +40,7 @@ export async function getJudgeScope(
     seasonId: number,
     judgeUserId: number,
 ): Promise<JudgeScope> {
-    const [assignments, recusals] = await Promise.all([
+    const [assignments, recusals, conflicts] = await Promise.all([
         db
             .select({
                 pathway: judgeAssignments.pathway,
@@ -58,6 +62,11 @@ export async function getJudgeScope(
                     eq(judgeRecusals.judge_user_id, judgeUserId),
                 ),
             ),
+        db
+            .select({ team_id: userPastTeams.team_id })
+            .from(userPastTeams)
+            .innerJoin(teams, eq(teams.id, userPastTeams.team_id))
+            .where(and(eq(userPastTeams.user_id, judgeUserId), eq(teams.season_id, seasonId))),
     ]);
 
     const teamIds = new Set<number>();
@@ -75,6 +84,7 @@ export async function getJudgeScope(
         teamIds: [...teamIds],
         pathways: [...pathways],
         recusedTeamIds: recusals.map((recusal) => recusal.team_id),
+        conflictTeamIds: conflicts.map((conflict) => conflict.team_id),
     };
 }
 
@@ -97,6 +107,9 @@ export function judgeScopeWhere(scope: JudgeScope): SQL | undefined {
     if (scope.recusedTeamIds.length > 0) {
         clauses.push(notInArray(teams.id, scope.recusedTeamIds));
     }
+    if (scope.conflictTeamIds.length > 0) {
+        clauses.push(notInArray(teams.id, scope.conflictTeamIds));
+    }
     if (clauses.length === 0) return undefined;
     return and(...clauses);
 }
@@ -104,7 +117,34 @@ export function judgeScopeWhere(scope: JudgeScope): SQL | undefined {
 /** A recused team is never available to that judge. */
 export function judgeCanEvaluate(scope: JudgeScope, team: Pick<Team, "id" | "pathway">): boolean {
     if (scope.recusedTeamIds.includes(team.id)) return false;
+    if (scope.conflictTeamIds.includes(team.id)) return false;
     if (!scope.assigned || scope.allProjects) return true;
     if (scope.teamIds.includes(team.id)) return true;
     return team.pathway !== null && scope.pathways.includes(team.pathway);
+}
+
+/**
+ * A participant competing in a season cannot judge that season. Administrators
+ * are exempt because they already hold the explicit staff grant. A stale team
+ * pointer from an earlier season does not count as competing.
+ */
+export async function assertJudgeNotCompeting(
+    event: H3Event,
+    user: Pick<User, "team_id" | "is_admin">,
+    seasonId: number,
+): Promise<void> {
+    if (user.is_admin === 1 || user.team_id === null) return;
+    const competing = await firstRow(
+        event.context.drizzle
+            .select({ id: teams.id })
+            .from(teams)
+            .where(and(eq(teams.id, user.team_id), eq(teams.season_id, seasonId)))
+            .limit(1),
+    );
+    if (competing) {
+        throw createError({
+            statusCode: 403,
+            message: "Competing participants cannot judge this season",
+        });
+    }
 }

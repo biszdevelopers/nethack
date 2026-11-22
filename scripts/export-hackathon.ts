@@ -1,4 +1,5 @@
-import { writeFile } from "node:fs/promises";
+import { rename, unlink, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import postgres from "postgres";
 import { stringify } from "yaml";
 import { parseHackathonConfig } from "../server/utils/hackathon-config";
@@ -34,7 +35,17 @@ try {
         ...(version ? { rubric: { ...version.definition, name: version.name } } : {}),
     });
     parseHackathonConfig(yaml);
-    await writeFile(output, yaml);
+    // Replace the manifest atomically so an interrupted export cannot leave a
+    // truncated file that makes every local-YAML read fail.
+    const target = resolve(output);
+    const temporary = `${target}.${process.pid}.tmp`;
+    try {
+        await writeFile(temporary, yaml);
+        await rename(temporary, target);
+    } catch (error) {
+        await unlink(temporary).catch(() => undefined);
+        throw error;
+    }
     console.info(`Exported the live hackathon configuration to ${output}.`);
 } finally {
     await sql.end();

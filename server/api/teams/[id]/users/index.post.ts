@@ -1,12 +1,7 @@
 import { NethackPermissions } from "~~/shared/permissions";
 import { AddTeamMemberRequest, TeamIdParams } from "~~/shared/schemas";
 import { isInitialAdminEmail } from "~~/server/utils/initial-admins";
-import {
-    getTeamMembers,
-    getTeamInvites,
-    createTeamInvite,
-    getTeamMemberLimit,
-} from "~~/server/utils/database/members";
+import { createTeamInvite } from "~~/server/utils/database/members";
 import { getUserByEmail } from "~~/server/utils/database/users";
 import { canManageTeam, getTeam } from "~~/server/utils/database/teams";
 import { getEventState } from "~~/server/utils/event-state";
@@ -83,15 +78,6 @@ export default defineEventHandler(
                 message:
                     "No account exists for that email yet. Confirm the address, or allow an unclaimed invitation.",
             });
-        }
-
-        const [members, invites, memberLimit] = await Promise.all([
-            getTeamMembers(event, teamID),
-            getTeamInvites(event, teamID),
-            getTeamMemberLimit(event),
-        ]);
-        if (members.length + invites.length >= memberLimit) {
-            throw createError({ statusCode: 409, message: "This team is full" });
         }
 
         const invite = await createTeamInvite(event, teamID, email, currentUser.id);

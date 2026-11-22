@@ -486,16 +486,18 @@ export const mockConfig = { value: {} as Record<string, unknown> };
 // Nitro auto-import mocks
 // ---------------------------------------------------------------------------
 
-async function readBodyMock(_event: any, _schema: any) {
-    return mockBody.value;
+async function readBodyMock(_event: any, schema: any) {
+    const validate = typeof schema === "function" ? schema : schema?.parse;
+    return validate ? validate(mockBody.value) : mockBody.value;
 }
 
 function readRawBodyMock(_event: any) {
     return Promise.resolve(mockBody.value);
 }
 
-async function readQueryMock(_event: any, _schema: any) {
-    return mockQueryState.value;
+async function readQueryMock(_event: any, schema: any) {
+    const validate = typeof schema === "function" ? schema : schema?.parse;
+    return validate ? validate(mockQueryState.value) : mockQueryState.value;
 }
 
 function cookieMock(_event: any, name: string) {

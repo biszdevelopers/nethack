@@ -17,19 +17,24 @@ export default defineEventHandler(
         if (!season) throw createError({ statusCode: 404, message: "Season not found" });
 
         const db = event.context.drizzle;
-        const submittedWhere = and(eq(teams.season_id, season.id), eq(teams.project_submitted, 1));
+        const submittedWhere = and(
+            eq(teams.season_id, season.id),
+            eq(teams.project_submitted, 1),
+            eq(teams.status, "active"),
+        );
         const [submittedRows, evaluationRows, pathRows, judgeRows, assignedRows, state] =
             await Promise.all([
                 db.select({ value: count() }).from(teams).where(submittedWhere),
                 db
                     .select({ team_id: teamScores.team_id, value: count() })
                     .from(teamScores)
-                    .where(eq(teamScores.season_id, season.id))
+                    .innerJoin(teams, eq(teams.id, teamScores.team_id))
+                    .where(and(eq(teamScores.season_id, season.id), eq(teams.status, "active")))
                     .groupBy(teamScores.team_id),
                 db
                     .select({ pathway: teams.pathway, value: count() })
                     .from(teams)
-                    .where(and(submittedWhere, eq(teams.status, "active")))
+                    .where(submittedWhere)
                     .groupBy(teams.pathway),
                 db
                     .select({ value: countDistinct(teamScores.judge_user_id) })
@@ -90,11 +95,25 @@ export default defineEventHandler(
                 feasible,
             },
             gates: {
-                submissions_open: state.submissionsOpen,
-                voting_open: state.votingOpen,
-                judging_open: state.judgingOpen,
-                gallery_public: state.galleryPublic,
-                results_visible: state.resultsVisible,
+                // Live gates describe the active event. A historical season is
+                // closed for entry and public only through its published archive,
+                // so reporting the active event's gates for it would mislead.
+                ...(season.is_active === 1
+                    ? {
+                          submissions_open: state.submissionsOpen,
+                          voting_open: state.votingOpen,
+                          judging_open: state.judgingOpen,
+                          gallery_public: state.galleryPublic,
+                          results_visible: state.resultsVisible,
+                      }
+                    : {
+                          submissions_open: false,
+                          voting_open: false,
+                          judging_open: false,
+                          gallery_public:
+                              season.status === "voting" || season.status === "finished",
+                          results_visible: season.results_published === 1,
+                      }),
             },
         } satisfies AdminPreflightResponse;
     }, DEFAULT_RATE_LIMIT_CONFIG),

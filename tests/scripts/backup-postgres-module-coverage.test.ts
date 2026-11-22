@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const scriptPath = fileURLToPath(new URL("../../scripts/backup-postgres.mjs", import.meta.url));
@@ -424,5 +424,18 @@ describe("PostgreSQL snapshot script", () => {
 
         expect(run.errorLog).toHaveBeenCalledWith("[PostgreSQL snapshot] spawn broke");
         expect(run.exitCode).toBe(1);
+    });
+});
+
+describe("backup entrypoint detection", () => {
+    it("recognizes a real entrypoint and tolerates a missing one", async () => {
+        vi.resetModules();
+        const module = await import("../../scripts/backup-postgres.mjs");
+
+        expect(module.isDirectExecution(pathToFileURL(scriptPath).href, scriptPath)).toBe(true);
+        expect(
+            module.isDirectExecution(pathToFileURL(scriptPath).href, "/missing/backup.mjs"),
+        ).toBe(false);
+        expect(module.isDirectExecution(pathToFileURL(scriptPath).href, undefined)).toBe(false);
     });
 });

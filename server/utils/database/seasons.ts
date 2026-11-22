@@ -243,9 +243,9 @@ export function setActiveSeason(event: H3Event, seasonId: number | null) {
 
 async function activateSeason(event: H3Event, seasonId: number | null) {
     // The manifest read can be slow (remote fetch) and must stay outside the
-    // transaction. Rollback snapshots are taken inside it, after the advisory
-    // lock, so a concurrent activation on another instance cannot be undone.
-    const currentLive = await getHackathon(event);
+    // transaction. The live settings are re-read inside it, after the advisory
+    // lock, so a concurrent activation on another instance cannot be snapshotted
+    // stale.
     let manifestSettings: Record<string, unknown> | null = null;
     if (hackathonUsesYaml()) {
         try {
@@ -255,6 +255,7 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
             manifestSettings = null;
         }
     }
+    let currentLive: Awaited<ReturnType<typeof getHackathon>> = null;
     let previousActive: { id: number } | undefined;
     let previousActiveSeason: typeof seasons.$inferSelect | undefined;
 
@@ -263,6 +264,13 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
         // advisory lock also serializes activations across app instances;
         // SQLite fixtures have no `FOR UPDATE`, so skip it there.
         await acquireActivationLock(tx);
+        try {
+            currentLive = await getHackathon(event);
+        } catch {
+            // A manifest read failure must not block activation; the target
+            // season's own row still supplies every live setting.
+            currentLive = null;
+        }
 
         [previousActiveSeason] = await tx
             .select()

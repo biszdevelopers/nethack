@@ -10,8 +10,9 @@ import {
     addTeamMember,
     createTeamInvite,
     getTeamMemberLimit,
+    acceptTeamInvite,
 } from "~~/server/utils/database/members";
-import { teamInvites } from "~~/server/database/schema";
+import { teams, teamInvites } from "~~/server/database/schema";
 import { invalidateRequestCaches } from "~~/server/utils/database/query";
 
 describe("members database helpers", () => {
@@ -248,6 +249,32 @@ describe("members database helpers", () => {
             expect(pastTeams[0]!.id).toBe(1);
         });
 
+        it("transfers ownership to the earliest remaining member when the owner leaves", async () => {
+            event.context.drizzle.prepare("UPDATE teams SET owner_user_id = 1 WHERE id = 1").run();
+
+            await removeTeamMember(event, 1, 1);
+
+            const team = event.context.drizzle
+                .select({ owner_user_id: teams.owner_user_id })
+                .from(teams)
+                .where(eq(teams.id, 1))
+                .get();
+            expect(team!.owner_user_id).toBe(2);
+        });
+
+        it("keeps the owner pointer when a non-owner leaves", async () => {
+            event.context.drizzle.prepare("UPDATE teams SET owner_user_id = 1 WHERE id = 1").run();
+
+            await removeTeamMember(event, 1, 2);
+
+            const team = event.context.drizzle
+                .select({ owner_user_id: teams.owner_user_id })
+                .from(teams)
+                .where(eq(teams.id, 1))
+                .get();
+            expect(team!.owner_user_id).toBe(1);
+        });
+
         it("throws a 404 error when the user is not in the team", async () => {
             await expect(removeTeamMember(event, 1, 3)).rejects.toThrow(
                 "User not found or not in team",
@@ -357,6 +384,41 @@ describe("members database helpers", () => {
     });
 
     describe("team limits and invite TTL", () => {
+        it("refuses an invitation when the accepting user row no longer exists", async () => {
+            const invite = await createTeamInvite(event, 1, "ghost@example.com", 1);
+
+            await expect(
+                acceptTeamInvite(event, invite.id, {
+                    id: 999,
+                    email: "ghost@example.com",
+                } as User),
+            ).rejects.toMatchObject({
+                statusCode: 404,
+                message: "Invitation not found",
+            });
+        });
+
+        it("refuses an invitation when members plus pending invites reach the limit", async () => {
+            event.context.drizzle
+                .prepare("UPDATE seasons SET max_team_members = 2 WHERE id = 1")
+                .run();
+            invalidateRequestCaches(event);
+
+            await expect(createTeamInvite(event, 1, "new@example.com", 1)).rejects.toMatchObject({
+                statusCode: 409,
+                message: "This team is full",
+            });
+        });
+
+        it("falls back to the default cap when no season is active", async () => {
+            event.context.drizzle.prepare("UPDATE seasons SET is_active = 0").run();
+            invalidateRequestCaches(event);
+
+            await expect(
+                createTeamInvite(event, 1, "fallback@example.com", 1),
+            ).resolves.toHaveProperty("token");
+        });
+
         it("uses the active season's member limit and falls back when no season is active", async () => {
             event.context.drizzle
                 .prepare("UPDATE seasons SET max_team_members = 4 WHERE id = 1")

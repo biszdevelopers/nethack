@@ -52,7 +52,10 @@ describe("admin season operations", () => {
     });
 
     it("labels the vote cap for what it actually limits", () => {
-        expect(season).toContain('label="Maximum stars per voter"');
+        expect(season).toContain('label="Maximum projects per voter"');
+        expect(season.replace(/\s+/g, " ")).toContain(
+            "A voter can award stars to at most this many projects.",
+        );
         expect(season.replace(/\s+/g, " ")).toContain(
             "Each ballot always distributes exactly 10 stars.",
         );

@@ -27,6 +27,12 @@ export default defineEventHandler(
                 message: "Only participants with submitted projects can vote",
             });
         }
+        if (userTeam.status !== "active") {
+            throw createError({
+                statusCode: 403,
+                message: "Only active participants can vote",
+            });
+        }
 
         const projects = await getSubmittedTeams(event);
         const eligibleProjects = projects.filter(

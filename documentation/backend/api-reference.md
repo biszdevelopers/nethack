@@ -183,7 +183,7 @@ Update team details (save draft).
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `UpdateTeamRequest` — `{ name?, pathway?, project: { name?, description?, demo_url?, repo_url?, video_url?, sourcing? } }` |
-| **Constraint** | Submissions must be open; the team must belong to the active season; project must not already be submitted (`409`); only the owner may rename; a rename must not duplicate another team's name in the season (`409`); `pathway` must exist in the season rubric |
+| **Constraint** | Submissions must be open; the team must belong to the active season and be `active` (`409` after withdrawal/disqualification); project must not already be submitted (`409`); only the owner may rename; a rename must not duplicate another team's name in the season (`409`); `pathway` must exist in the season rubric |
 | **Response** | `{ message: string }` |
 | **Side effects** | Writes only the supplied columns, preserving a teammate's concurrent edit of a different field |
 
@@ -195,9 +195,9 @@ Final project submission (irreversible).
 | --- | --- |
 | **Auth** | Team member |
 | **Validation** | `SubmitTeamRequest` — `{ pathway, project: { name, description, demo_url, repo_url, video_url, sourcing } }`. Demo, repository, demonstration-video, and AI-use disclosure fields are required |
-| **Constraint** | Submissions must be open; project must not already be submitted (`409`); `pathway` must exist in the season rubric |
+| **Constraint** | Submissions must be open; the team must be `active` and unsubmitted (`409` after withdrawal, disqualification, or a concurrent submission); `pathway` must exist in the season rubric |
 | **Response** | `{ message: string }` |
-| **Side effects** | Sets `project_submitted = 1` and `submitted_at` on the team. Submission is irreversible from the participant side; an administrator may reopen it before results are published after deleting its evaluations |
+| **Side effects** | Atomically sets only the submission columns (`project_submitted = 1`, `submitted_at`, project text, and track) while the team is still active and unsubmitted, so a concurrent disband or withdrawal is never reverted. Submission is irreversible from the participant side; an administrator may reopen it before results are published after deleting its evaluations |
 
 ### POST `/api/teams/:id/scores`
 
@@ -207,7 +207,7 @@ Finalize a judge's evaluation for an assigned project. New drafts and evaluation
 | --- | --- |
 | **Auth** | Judge with an assignment permission |
 | **Validation** | `SubmitTeamScoresRequest` — `{ scores: Record<string, integer>, reasoning: string, rubric_version_id: number }` |
-| **Constraint** | Judging must be open (not paused, `judging_open`, and not frozen by publication unless `JUDGING_AFTER_PUBLISH` is on); the team must be in the judge's assignment scope and not recused; one score per judge per team; every criterion must be an integer in its configured range |
+| **Constraint** | Judging must be open (not paused, `judging_open`, and not frozen by publication unless `JUDGING_AFTER_PUBLISH` is on); the team must be `active`, in the judge's assignment scope, and not recused; one score per judge per team; every criterion must be an integer in its configured range. A participant whose current team competes in the season cannot judge it, and a judge cannot evaluate a team they previously belonged to |
 | **Privacy check** | Rejects a comment containing the judge's exact email address or display name with `400 Bad Request`; this does not detect indirect identity clues |
 | **Response** | `{ message: string }` |
 
@@ -392,7 +392,7 @@ Get the current user's ballot for peer voting.
 | **Auth** | Current/past team member or all-permissions grant |
 | **Constraint** | `voting_enabled` must be `1`, the event must not be `paused`, and the current time must be inside the configured voting window while `ENFORCE_DEADLINES` is on. A configured `voting_start_timestamp` in the future keeps the ballot closed even when the toggle is on |
 | **Response** | `GetBallotResponse` — `{ submitted, projects, scores, reasoning, max_votes_per_user }` |
-| **Eligibility** | Projects are filtered to the same pathway and exclude the voter's own team |
+| **Eligibility** | The voter's team must have a submitted project and `status = 'active'`; a withdrawn or disqualified team can no longer vote. Projects are filtered to the same pathway and exclude the voter's own team |
 | **Season scope** | Ballots are stored per season; a previous season's ballot never appears here |
 
 ### POST `/api/ballot`
@@ -403,13 +403,14 @@ Submit peer voting ballot.
 | --- | --- |
 | **Auth** | Current/past team member or all-permissions grant |
 | **Validation** | `SubmitVoteRequest` — `{ scores: number[] (0-5 each, sum = 10), reasoning: string }`; the number of scores must match eligible projects, and at most `max_votes_per_user` projects may receive a non-zero score (`0` means unlimited) |
+| **Eligibility** | The voter's team must have a submitted project and `status = 'active'` |
 | **Constraint** | `voting_enabled` must be `1`, the event must not be `paused`, and the current time must be inside the configured voting window while `ENFORCE_DEADLINES` is on. A configured `voting_start_timestamp` in the future keeps the ballot closed even when the toggle is on |
 | **Response** | `{ message: string }` |
 | **Side effects** | Upserts the row for `(user_id, season_id)` in `peer_voting_scores`; a participant may update their ballot until voting closes. Each season keeps its own ballot |
 
 ### GET `/api/ballot/results`
 
-Peer-vote aggregates for a season. Each voting team contributes one unit: its members' ballots are averaged, then the unit values are averaged across every team that voted. Ballots with no recorded `team_id` provenance are excluded; the aggregation never reattributes a legacy ballot to the voter's current team.
+Peer-vote aggregates for a season. Each voting team contributes one unit: its members' ballots are averaged, then the unit values are averaged across every team that voted. Ballots with no recorded `team_id` provenance are excluded; the aggregation never reattributes a legacy ballot to the voter's current team. Ballots from teams that are now withdrawn, disqualified, or `no_show` are excluded from both the averages and turnout.
 
 | Field | Details |
 | --- | --- |
@@ -562,7 +563,7 @@ Reopen a submitted project so the team can edit and submit again.
 | --- | --- |
 | **Auth** | `nethack.all` |
 | **Body** | `{ reason?: string (max 500) }` |
-| **Constraint** | Returns `409` after results are published or while the team still has evaluations. Delete the evaluations first |
+| **Constraint** | Returns `409` after results are published, while the team still has evaluations, or once the season has any peer votes. Delete the evaluations and peer votes first. The reopened team's rank is cleared and every other team's stored rank is recomputed in the same transaction |
 | **Response** | `{ message, team_id }` |
 | **Audit** | `team.reopen` with the prior `submitted_at` |
 
@@ -596,7 +597,7 @@ Event-readiness checks for a season.
 | --- | --- |
 | **Auth** | `nethack.all` |
 | **Query** | Optional `season_id` |
-| **Response** | `AdminPreflightResponse` — submitted teams, teams below the three-evaluation feedback minimum, total evaluations, judges with evaluations, assigned judges, publication/date mismatches, vote-cap feasibility, and the current gate states |
+| **Response** | `AdminPreflightResponse` — submitted teams, teams below the three-evaluation feedback minimum, total evaluations, judges with evaluations, assigned judges, publication/date mismatches, vote-cap feasibility, and the current gate states. For an inactive season the live gates are reported as closed, except that an archived season remains publicly readable and exposes published results |
 
 ### Awards
 
@@ -664,7 +665,7 @@ When `HACKATHON.yml` defines the live rubric, the admin response includes `yamlM
 | --- | --- | --- |
 | GET | `/api/admin/seasons/:id/rubric` | Get the active rubric version, season history, and reusable templates |
 | POST | `/api/admin/seasons/:id/rubric` | Create and activate a version from a definition, prior season, or template |
-| PATCH | `/api/admin/seasons/:id/score-curve` | Set the season's presentation-only score curve preset |
+| PATCH | `/api/admin/seasons/:id/score-curve` | Set the season's presentation-only score curve preset; returns `409` once results are published |
 | GET/POST | `/api/admin/rubric-templates` | List reusable templates or create one |
 | PUT/DELETE | `/api/admin/rubric-templates/:id` | Update or delete a reusable template |
 

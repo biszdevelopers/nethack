@@ -37,19 +37,20 @@ export default defineEventHandler(
         }
 
         try {
-            // Activation runs first so a rejected switch cannot leave a
-            // renamed season behind after the caller sees an error.
-            if (is_active === 1) {
-                await setActiveSeason(event, id);
-            } else if (is_active === 0 && existing.is_active === 1) {
-                await setActiveSeason(event, null);
-            }
-
+            // Apply the field update first. A rejected rename must happen before
+            // deactivation, or a duplicate-name 409 would leave the event with
+            // no active season.
             if (Object.keys(updateFields).length > 0) {
                 await event.context.drizzle
                     .update(seasons)
                     .set(updateFields)
                     .where(eq(seasons.id, id));
+            }
+
+            if (is_active === 1) {
+                await setActiveSeason(event, id);
+            } else if (is_active === 0 && existing.is_active === 1) {
+                await setActiveSeason(event, null);
             }
         } catch (error) {
             if (isUniqueViolation(error)) {

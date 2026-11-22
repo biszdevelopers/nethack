@@ -15,6 +15,16 @@ export default defineEventHandler(
         await requireUser(event, NethackPermissions.Seasons.update);
         const { id } = await getValidatedRouterParams(event, ParamsSchema.parse);
         const { preset } = await readValidatedBody(event, BodySchema.parse);
+        const existing = await firstRow(
+            event.context.drizzle.select().from(seasons).where(eq(seasons.id, id)).limit(1),
+        );
+        if (!existing) throw createError({ statusCode: 404, message: "Season not found." });
+        if (existing.results_published === 1) {
+            throw createError({
+                statusCode: 409,
+                message: "The score curve cannot change after results are published.",
+            });
+        }
         const updated = await firstRow(
             event.context.drizzle
                 .update(seasons)

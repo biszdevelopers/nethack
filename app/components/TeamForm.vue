@@ -67,7 +67,9 @@ const invitesLoading = computed(
 );
 const memberCount = computed(() => users.value?.length ?? 0);
 const pendingInviteCount = computed(() => invites.value?.invites.length ?? 0);
-const atMemberLimit = computed(() => memberCount.value >= maxMembers.value);
+const atMemberLimit = computed(
+    () => memberCount.value + pendingInviteCount.value >= maxMembers.value,
+);
 
 // The public team response only includes the owner once the API exposes it.
 // When it is absent, fall back to permission checks so the page still works.
@@ -193,6 +195,7 @@ async function onNameSubmit(event: FormSubmitEvent<UpdateTeamRequest>, close: ()
 
 const state = reactive({
     email: "",
+    allowUnclaimed: false,
 });
 const inviteOpen = ref(false);
 const createdInvite = ref<CreatedInvite | null>(null);
@@ -226,17 +229,19 @@ async function onSubmit(event: FormSubmitEvent<AddTeamMemberRequest>) {
     const sent = await runExclusive("invite", "Failed to send invitation", async () => {
         const response = await apiFetch<InviteCreationResponse>(`/api/teams/${id}/users`, {
             method: "POST",
-            body: event.data,
+            body: {
+                ...event.data,
+                ...(state.allowUnclaimed ? { allowUnclaimed: true } : {}),
+            },
         });
         const token = typeof response?.token === "string" ? response.token : null;
-        const link =
+        const rawLink =
             response?.invite_url ??
-            (token
-                ? `${window.location.origin}/dashboard/teams?invite=${encodeURIComponent(token)}`
-                : null);
+            (token ? `/dashboard/teams?invite=${encodeURIComponent(token)}` : null);
+        const link = rawLink ? new URL(rawLink, window.location.origin).toString() : null;
         createdInvite.value = {
             email: response?.email ?? event.data.email,
-            link: link ?? null,
+            link,
             expires_at: response?.expires_at ?? null,
         };
         toast.add({
@@ -288,7 +293,7 @@ async function transferLeadership() {
 }
 
 async function disbandTeam() {
-    if (!canDisbandTeam.value) return;
+    if (!canDisbandTeam.value || disabled.value) return;
     await runExclusive("disband", "Failed to disband the team", async () => {
         await apiFetch(`/api/teams/${id}`, { method: "DELETE" });
         toast.add({ color: "success", title: "Your team was disbanded" });
@@ -365,7 +370,7 @@ async function disbandTeam() {
                                     Share this link with your teammate. They must sign in with the
                                     invited email address to join.
                                 </p>
-                                <p v-else>We sent the invitation to their email address.</p>
+                                <p v-else>The invitation appears in their in-app notifications.</p>
                             </template>
                         </UAlert>
 
@@ -402,8 +407,9 @@ async function disbandTeam() {
                             class="mb-4"
                         />
                         <p v-else class="mb-4 text-sm text-muted">
-                            We send an email invitation. The person joins after they accept it. You
-                            can also share the invitation link once it is created.
+                            The invitation appears in their in-app notifications when they already
+                            have an account. Share the invitation link with anyone who has not
+                            signed in yet.
                         </p>
 
                         <UForm
@@ -420,6 +426,12 @@ async function disbandTeam() {
                                     class="min-h-11 w-full"
                                 />
                             </UFormField>
+
+                            <UCheckbox
+                                v-model="state.allowUnclaimed"
+                                label="This person has not signed in yet"
+                                class="min-h-11"
+                            />
 
                             <UFormField>
                                 <UButton
@@ -515,7 +527,13 @@ async function disbandTeam() {
                     color="error"
                     :click="disbandTeam"
                 >
-                    <UButton color="error" variant="soft" icon="i-lucide-trash" class="min-h-11">
+                    <UButton
+                        color="error"
+                        variant="soft"
+                        icon="i-lucide-trash"
+                        class="min-h-11"
+                        :disabled="disabled || Boolean(busy)"
+                    >
                         Disband team
                     </UButton>
                     <template #content>

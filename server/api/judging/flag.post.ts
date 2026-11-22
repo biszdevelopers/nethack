@@ -4,6 +4,7 @@ import { JudgeFlagRequest } from "~~/shared/schemas";
 import { teams } from "~~/server/database/schema";
 import { getActiveSeason } from "~~/server/utils/database/seasons";
 import { upsertJudgeFlag } from "~~/server/utils/database/judge-flags";
+import { getJudgeScope, assertJudgeNotCompeting } from "~~/server/utils/judging";
 import { firstRow } from "~~/server/utils/database/query";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -29,6 +30,14 @@ export default defineEventHandler(
             throw createError({
                 statusCode: 409,
                 message: "Judges cannot flag their own team",
+            });
+        }
+        await assertJudgeNotCompeting(event, judge, season.id);
+        const scope = await getJudgeScope(event.context.drizzle, season.id, judge.id);
+        if (scope.conflictTeamIds.includes(team.id)) {
+            throw createError({
+                statusCode: 409,
+                message: "Judges cannot flag a team they belonged to",
             });
         }
 

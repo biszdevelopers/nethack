@@ -3,9 +3,10 @@ import {
     createTestContext,
     resetTestContext,
     seedSeason,
+    seedUser,
     type TestContext,
 } from "~~/tests/api/helpers";
-import { judgeAssignments, judgeRecusals, teams } from "~~/server/database/schema";
+import { judgeAssignments, judgeRecusals, teams, userPastTeams } from "~~/server/database/schema";
 import {
     getJudgeScope,
     isJudgingOpen,
@@ -40,6 +41,7 @@ function scope(overrides: Partial<JudgeScope> = {}): JudgeScope {
         teamIds: [],
         pathways: [],
         recusedTeamIds: [],
+        conflictTeamIds: [],
         ...overrides,
     };
 }
@@ -76,6 +78,23 @@ describe("getJudgeScope", () => {
         expect(result.pathways).toEqual(["senior"]);
         expect(result.recusedTeamIds).toEqual([second.id]);
         expect(result.teamIds).not.toContain(second.id);
+    });
+    it("collects teams the judge left this season as conflicts", async () => {
+        const former = seedTeam("Former", "junior");
+        const otherSeason = seedSeason(ctx, { name: "Season 0", is_active: 0 });
+        const oldTeam = seedTeam("Old", "junior", otherSeason.id);
+        const judge = seedUser(ctx, { email: "judge@basischina.com", role: "judge" });
+        ctx.drizzle
+            .insert(userPastTeams)
+            .values([
+                { user_id: judge.id, team_id: former.id },
+                { user_id: judge.id, team_id: oldTeam.id },
+            ])
+            .run();
+
+        const result = await getJudgeScope(ctx.drizzle as any, 1, judge.id);
+
+        expect(result.conflictTeamIds).toEqual([former.id]);
     });
 });
 
@@ -136,6 +155,18 @@ describe("judgeScopeWhere", () => {
 
         expect(rows.map((row) => row.id)).toEqual([kept.id]);
     });
+
+    it("excludes teams the judge previously belonged to", async () => {
+        const kept = seedTeam("Kept", "junior");
+        const former = seedTeam("Former", "junior");
+
+        const rows = await ctx.drizzle
+            .select()
+            .from(teams)
+            .where(judgeScopeWhere(scope({ conflictTeamIds: [former.id] }))!);
+
+        expect(rows.map((row) => row.id)).toEqual([kept.id]);
+    });
 });
 
 describe("isJudgingOpen after publication", () => {
@@ -156,6 +187,15 @@ describe("judgeCanEvaluate", () => {
     it("always rejects a recused team", () => {
         expect(
             judgeCanEvaluate(scope({ assigned: true, allProjects: true, recusedTeamIds: [1] }), {
+                id: 1,
+                pathway: "junior",
+            } as Team),
+        ).toBe(false);
+    });
+
+    it("rejects a team the judge previously belonged to", () => {
+        expect(
+            judgeCanEvaluate(scope({ conflictTeamIds: [1] }), {
                 id: 1,
                 pathway: "junior",
             } as Team),

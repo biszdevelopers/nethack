@@ -40,10 +40,14 @@ test("docs pages and assets require judge or administrator permission", async ({
     const judgeContext = await browser.newContext({ baseURL });
     const judge = await judgeContext.newPage();
     const browserErrors: string[] = [];
+    const docsFailures: string[] = [];
     judge.on("console", (message) => {
         if (message.type() === "error") browserErrors.push(`Console: ${message.text()}`);
     });
-    judge.on("pageerror", (error) => browserErrors.push(`Page: ${error.message}`));
+    judge.on("pageerror", (error) => {
+        browserErrors.push(`Page: ${error.message}`);
+        docsFailures.push(`Page: ${error.message}`);
+    });
     judge.on("requestfailed", (request) => {
         browserErrors.push(
             `Request: ${request.url()} — ${request.failure()?.errorText ?? "failed"}`,
@@ -51,9 +55,9 @@ test("docs pages and assets require judge or administrator permission", async ({
     });
     judge.on("response", (response) => {
         if (new URL(response.url()).pathname.startsWith("/docs/")) {
-            browserErrors.push(
-                `HTTP ${response.status()} [${response.headers()["content-type"] ?? "unknown"}]: ${response.url()}`,
-            );
+            const line = `HTTP ${response.status()} [${response.headers()["content-type"] ?? "unknown"}]: ${response.url()}`;
+            browserErrors.push(line);
+            if (response.status() >= 400) docsFailures.push(line);
         }
     });
     await loginAs(judge, "judge@e2e.basishacks.invalid", "/docs/");
@@ -63,6 +67,7 @@ test("docs pages and assets require judge or administrator permission", async ({
     ).toBeVisible();
     await judge.goto("/docs/guide/getting-started");
     await expect(judge.getByRole("heading", { name: "Getting Started" })).toBeVisible();
+    expect(docsFailures, docsFailures.join("\n")).toEqual([]);
     const scriptPath = await judge
         .locator('script[src^="/docs/assets/"]')
         .first()

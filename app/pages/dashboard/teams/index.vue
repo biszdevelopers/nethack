@@ -40,33 +40,9 @@ const inviteDismissed = ref(false);
 const inviteState = ref<"idle" | "accepting" | "success" | "error">("idle");
 const inviteError = ref<string | null>(null);
 
-function endpointStatus(e: unknown): number | undefined {
-    return (
-        (e as { status?: number } | undefined)?.status ??
-        (e as { statusCode?: number } | undefined)?.statusCode ??
-        (e as { response?: { status?: number } } | undefined)?.response?.status
-    );
-}
-
-/** Try the token route first, then the body-token fallback a backend may expose. */
-async function acceptInviteToken(token: string): Promise<{ message?: string }> {
-    try {
-        return await apiFetch(`/api/team-invites/token/${encodeURIComponent(token)}/accept`, {
-            method: "POST",
-        });
-    } catch (e) {
-        const status = endpointStatus(e);
-        if (status !== 404 && status !== 405) throw e;
-        return await apiFetch("/api/team-invites/accept", {
-            method: "POST",
-            body: { token },
-        });
-    }
-}
-
 async function handleInvite() {
     const token = inviteToken.value;
-    if (!token || inviteState.value === "accepting") return;
+    if (!token || inviteState.value === "accepting" || !teamChangesOpen.value) return;
     if (data.value?.team) {
         inviteState.value = "error";
         inviteError.value =
@@ -77,7 +53,12 @@ async function handleInvite() {
     inviteState.value = "accepting";
     inviteError.value = null;
     try {
-        const result = await withLoadingIndicator(() => acceptInviteToken(token));
+        const result = await withLoadingIndicator(() =>
+            apiFetch<{ message?: string }>(
+                `/api/team-invites/token/${encodeURIComponent(token)}/accept`,
+                { method: "POST" },
+            ),
+        );
         inviteState.value = "success";
         toast.add({
             color: "success",
@@ -87,9 +68,7 @@ async function handleInvite() {
         await navigateTo("/dashboard");
     } catch (e) {
         inviteState.value = "error";
-        inviteError.value = isEndpointUnavailable(e)
-            ? "Invitation links are not enabled on this deployment. Ask the team owner to invite your email address instead."
-            : getErrorMessage(e);
+        inviteError.value = getErrorMessage(e);
     }
 }
 
@@ -100,14 +79,13 @@ function dismissInvite() {
     void router.replace({ query });
 }
 
-onMounted(() => {
-    if (inviteToken.value) void handleInvite();
-});
-
 const submitting = ref(false);
 const canCreateTeam = computed(() => can(NethackPermissions.Teams.create));
 const teamChangesOpen = computed(
-    () => hackathon.value?.status === "not_started" || hackathon.value?.status === "in_progress",
+    () =>
+        Boolean(hackathon.value) &&
+        hackathon.value!.status !== "paused" &&
+        !hackathon.value!.is_submission_closed,
 );
 
 async function refreshData() {
@@ -165,6 +143,18 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
         >
             <template #actions>
                 <UButton class="min-h-11" @click="handleInvite">Try again</UButton>
+                <UButton class="min-h-11" variant="outline" @click="dismissInvite">Dismiss</UButton>
+            </template>
+        </UAlert>
+
+        <UAlert
+            v-else-if="!teamChangesOpen"
+            color="neutral"
+            variant="subtle"
+            title="Team changes are closed"
+            description="This invitation can no longer be accepted because team changes are closed for the event."
+        >
+            <template #actions>
                 <UButton class="min-h-11" variant="outline" @click="dismissInvite">Dismiss</UButton>
             </template>
         </UAlert>
@@ -234,10 +224,7 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
     <div v-else>
         <TeamForm
             :team="data.team"
-            :disabled="
-                (hackathon?.status !== 'in_progress' && hackathon?.status !== 'not_started') ||
-                data.team.project.submitted
-            "
+            :disabled="!teamChangesOpen || data.team.project.submitted"
             @refresh="refreshData"
         />
     </div>

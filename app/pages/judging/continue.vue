@@ -608,11 +608,10 @@ async function finalizeEvaluation() {
         }
     } catch (error) {
         const message = getErrorMessage(error);
-        const status =
-            (error as { statusCode?: number; status?: number } | null)?.statusCode ??
-            (error as { status?: number } | null)?.status;
-        // A committed submission whose response was lost returns 409 on retry.
-        if (status === 409 || message.includes("already scored")) {
+        // A committed submission whose response was lost returns "already
+        // scored" on retry. Other 409s (closed judging, wrong rubric) are real
+        // failures and must surface instead of being reported as success.
+        if (message.includes("already scored")) {
             const foundNext = await recordFinalizedEvaluation(team);
             toast.add({
                 color: "success",
