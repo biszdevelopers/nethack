@@ -127,6 +127,13 @@
             "when": 1795261161580,
             "tag": "0017_abandoned_wallow",
             "breakpoints": true
+        },
+        {
+            "idx": 18,
+            "version": "7",
+            "when": 1795304666073,
+            "tag": "0018_judge_role",
+            "breakpoints": true
         }
     ]
 }

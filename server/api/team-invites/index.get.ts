@@ -4,6 +4,7 @@ import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateL
 export default defineEventHandler(
     applyRateLimit(async (event) => {
         const user = await requireUser(event, NethackPermissions.Teams.membersAddOwn);
+        if (!user.email?.trim()) return { invites: [] } satisfies GetUserInvitesResponse;
 
         const invites = await getInvitesForEmail(event, user.email);
 

@@ -365,7 +365,7 @@ Mod portal landing page. Summarizes the live event — active season, status, th
 
 **File:** `app/pages/developers/users.vue`
 
-User management page.
+User management page. Administrators can promote or demote administrators and judges. A promoted judge receives judging permissions on the next session refresh; administrators are judges automatically. Participants are not judges unless promoted or assigned.
 
 **Layout:** `developers-dashboard`
 

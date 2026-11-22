@@ -100,8 +100,9 @@ Stores judge scores for each team. Each judge can score a team exactly once.
 | `auth_subject` | `TEXT` | Linked basis-auth subject |
 | `tokens_valid_after` | `BIGINT` | Backchannel logout barrier in Unix seconds; tokens with `iat` at or before it are rejected |
 | `is_admin` | `INTEGER NOT NULL DEFAULT 0` | Local administrator flag; `INITIAL_ADMIN_EMAILS` elevates a listed address at creation or sign-in |
+| `is_judge` | `INTEGER NOT NULL DEFAULT 0` | Local judge flag; grants assignment and assigned-score permissions. Administrators are judges through `nethack.all` |
 
-::: warning The legacy `role` column is retired. Authorization comes from the validated basis-auth `permissions` claim, the participant compatibility bundle, and the local administrator flag. :::
+::: warning The retired `role` column is not used. Authorization combines the validated basis-auth permission grants with the local `is_admin` and `is_judge` flags. :::
 
 ### `ballots`
 

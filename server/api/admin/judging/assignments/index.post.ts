@@ -18,7 +18,7 @@ export default defineEventHandler(
 
         const judge = await firstRow(
             event.context.drizzle
-                .select({ id: users.id })
+                .select({ id: users.id, is_admin: users.is_admin, is_judge: users.is_judge })
                 .from(users)
                 .where(eq(users.id, body.judge_user_id))
                 .limit(1),
@@ -52,6 +52,12 @@ export default defineEventHandler(
                 .returning();
             if (!inserted) {
                 throw createError({ statusCode: 409, message: "Assignment already exists" });
+            }
+            // Assigning a participant is the promotion step. It grants the
+            // judging permissions on the next session refresh; administrators
+            // already receive every permission and need no local flag.
+            if (!judge.is_admin && !judge.is_judge) {
+                await tx.update(users).set({ is_judge: 1 }).where(eq(users.id, judge.id));
             }
             await writeAuditEvent(tx, event, {
                 action: "judging.assignment.create",

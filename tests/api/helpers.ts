@@ -56,6 +56,7 @@ const migrationSQL = `
   ALTER TABLE users ADD COLUMN auth_issuer TEXT;
   ALTER TABLE users ADD COLUMN auth_subject TEXT;
   ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN is_judge INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE users ADD COLUMN tokens_valid_after INTEGER;
   CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
 
@@ -379,6 +380,7 @@ export function seedUser(
         name?: string | null;
         team_id?: number | null;
         is_admin?: number;
+        is_judge?: number;
     } = {},
 ) {
     return ctx.drizzle
@@ -389,6 +391,7 @@ export function seedUser(
             name: overrides.name ?? "Test User",
             team_id: overrides.team_id ?? null,
             is_admin: overrides.is_admin ?? 0,
+            is_judge: overrides.is_judge ?? 0,
         } as any)
         .returning()
         .get();

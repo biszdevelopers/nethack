@@ -13,7 +13,8 @@ import {
     setupNitroGlobals,
     type TestContext,
 } from "../helpers";
-import { adminAuditEvents, judgeAssignments } from "~~/server/database/schema";
+import { adminAuditEvents, judgeAssignments, users } from "~~/server/database/schema";
+import { eq } from "drizzle-orm";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
@@ -161,6 +162,19 @@ describe("POST /api/admin/judging/assignments", () => {
             entity_id: "1",
             after: { judge_user_id: judge.id, pathway: null, team_id: team.id },
         });
+        const promoted = ctx.drizzle.select().from(users).where(eq(users.id, judge.id)).get();
+        expect(promoted?.is_judge).toBe(1);
+    });
+
+    it("does not promote a judge who already has the local role", async () => {
+        const judge = seedUser(ctx, { email: "judge@basischina.com", is_judge: 1 });
+        const team = seedTeam(ctx, { season_id: 1 });
+        mockBody.value = { judge_user_id: judge.id, team_id: team.id };
+
+        await expect(createAssignment(createEvent())).resolves.toHaveProperty("assignment");
+        expect(ctx.drizzle.select().from(users).where(eq(users.id, judge.id)).get()?.is_judge).toBe(
+            1,
+        );
     });
 
     it("assigns a judge to a pathway without a team", async () => {

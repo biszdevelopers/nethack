@@ -113,6 +113,34 @@ describe("nethack permission helpers", () => {
         ).toContain(NethackPermissions.Profile.updateSelf);
     });
 
+    it("grants judging permissions to locally promoted judges", () => {
+        const promoted = effectiveNethackPermissions([], {
+            email: "judge@example.test",
+            is_judge: 1,
+        });
+        expect(promoted).toContain(NethackPermissions.Judging.assignmentsRead);
+        expect(promoted).toContain(NethackPermissions.Judging.scoresWriteAssigned);
+
+        const alreadyGranted = effectiveNethackPermissions(
+            [NethackPermissions.Judging.assignmentsRead],
+            { email: "judge@example.test", is_judge: 1 },
+        );
+        expect(
+            alreadyGranted.filter(
+                (permission) =>
+                    permission.toLocaleLowerCase("en-US") ===
+                    NethackPermissions.Judging.assignmentsRead.toLocaleLowerCase("en-US"),
+            ),
+        ).toHaveLength(1);
+
+        const participant = effectiveNethackPermissions([], {
+            email: "participant@example.test",
+            is_judge: 0,
+        });
+        expect(participant).not.toContain(NethackPermissions.Judging.assignmentsRead);
+        expect(participant).not.toContain(NethackPermissions.Judging.scoresWriteAssigned);
+    });
+
     it("does not duplicate an administrative grant that is already present", () => {
         const effective = effectiveNethackPermissions(["NETHACK.ALL"], {
             email: "admin@example.test",

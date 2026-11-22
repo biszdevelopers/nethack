@@ -182,6 +182,9 @@ export const users = pgTable(
         // Unix second are rejected even if the cookie or token is still intact.
         tokens_valid_after: bigint("tokens_valid_after", { mode: "number" }),
         is_admin: integer("is_admin").notNull().default(0),
+        // Locally granted judging role. Administrators already receive all
+        // permissions; this flag promotes an ordinary participant to judge.
+        is_judge: integer("is_judge").notNull().default(0),
     },
     (table) => [
         index("idx_users_email").on(table.email),
@@ -189,6 +192,7 @@ export const users = pgTable(
         uniqueIndex("idx_users_auth_identity").on(table.auth_issuer, table.auth_subject),
         index("idx_users_team_id").on(table.team_id),
         check("users_is_admin_check", sql`${table.is_admin} IN (0, 1)`),
+        check("users_is_judge_check", sql`${table.is_judge} IN (0, 1)`),
     ],
 );
 

@@ -9,6 +9,7 @@ import { isInitialAdminEmail } from "./initial-admins";
 export interface NethackPermissionUser {
     email?: string | null;
     is_admin?: boolean | number;
+    is_judge?: boolean | number;
 }
 
 /**
@@ -28,6 +29,17 @@ export function effectiveNethackPermissions(
     user?: NethackPermissionUser,
 ): string[] {
     const effective = expandLegacyNethackPermissions(permissions);
+    if (user?.is_judge) {
+        for (const permission of [
+            NethackPermissions.Judging.assignmentsRead,
+            NethackPermissions.Judging.scoresWriteAssigned,
+        ]) {
+            const key = permission.toLocaleLowerCase("en-US");
+            if (!effective.some((granted) => granted.toLocaleLowerCase("en-US") === key)) {
+                effective.push(permission);
+            }
+        }
+    }
     if (!hasAdministratorGrant(user)) return effective;
 
     const allKey = NethackPermissions.all.toLocaleLowerCase("en-US");

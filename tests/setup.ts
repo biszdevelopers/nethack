@@ -168,6 +168,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE users ADD COLUMN auth_issuer TEXT;
     ALTER TABLE users ADD COLUMN auth_subject TEXT;
     ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN is_judge INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN tokens_valid_after INTEGER;
     CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
 

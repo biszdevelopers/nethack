@@ -27,6 +27,7 @@ const table = useTemplateRef<any>("table");
 const modalOpen = ref(false);
 const deleting = ref(false);
 const pendingAdminIds = ref<number[]>([]);
+const pendingJudgeIds = ref<number[]>([]);
 
 const columnFilters = ref([
     {
@@ -37,9 +38,10 @@ const columnFilters = ref([
 const columnVisibility = ref();
 const rowSelection = ref<Record<string, boolean>>({});
 
-type AdminUser = Omit<User, "is_admin"> & {
+type AdminUser = Omit<User, "is_admin" | "is_judge"> & {
     past_team_ids: string | null;
     is_admin: boolean;
+    is_judge: boolean;
     is_initial_admin: boolean;
 };
 
@@ -114,6 +116,31 @@ async function toggleAdmin(user: AdminUser) {
         });
     } finally {
         pendingAdminIds.value = pendingAdminIds.value.filter((id) => id !== user.id);
+    }
+}
+
+async function toggleJudge(user: AdminUser) {
+    if (pendingJudgeIds.value.includes(user.id)) return;
+    pendingJudgeIds.value = [...pendingJudgeIds.value, user.id];
+    try {
+        await apiFetch(`/api/users/${user.id}/judge`, {
+            method: "PATCH",
+            body: { is_judge: !user.is_judge },
+        });
+        toast.add({
+            title: user.is_judge ? "Judge role removed" : "Judge role added",
+            description: user.email,
+            color: "success",
+        });
+        await refresh();
+    } catch (e: any) {
+        toast.add({
+            title: "Failed to update the judge role",
+            description: getErrorMessage(e),
+            color: "error",
+        });
+    } finally {
+        pendingJudgeIds.value = pendingJudgeIds.value.filter((id) => id !== user.id);
     }
 }
 
@@ -205,6 +232,20 @@ const columns: TableColumn<AdminUser>[] = [
                     row.original.id === currentUserId.value ||
                     pendingAdminIds.value.includes(row.original.id),
                 onClick: () => toggleAdmin(row.original),
+            }),
+    },
+    {
+        id: "is_judge",
+        header: "Judge",
+        cell: ({ row }) =>
+            h(UButton, {
+                size: "xs",
+                variant: "soft",
+                color: row.original.is_judge ? "warning" : "primary",
+                label: row.original.is_judge ? "Demote" : "Promote",
+                loading: pendingJudgeIds.value.includes(row.original.id),
+                disabled: pendingJudgeIds.value.includes(row.original.id),
+                onClick: () => toggleJudge(row.original),
             }),
     },
     {

@@ -349,20 +349,25 @@ const nextAction = computed(() => {
         };
     }
     if (season.status === "not_started") {
+        const ready = activationBlockers.value.length === 0;
         return {
             key: "submissions",
             label: "Open submissions",
-            description: "Start accepting teams and projects.",
-            enabled: true,
+            description: ready
+                ? "Start accepting teams and projects."
+                : `Finish setup first: ${activationBlockers.value.join(" ")}`,
+            enabled: ready,
             confirm: "Open submissions for this season?",
         };
     }
+    const readyForVoting = activationBlockers.value.length === 0;
     return {
         key: "voting",
         label: "Open peer voting and judging",
-        description:
-            "Close submissions, open the gallery, and let participants vote and judges score.",
-        enabled: true,
+        description: readyForVoting
+            ? "Close submissions, open the gallery, and let participants vote and judges score."
+            : `Finish setup first: ${activationBlockers.value.join(" ")}`,
+        enabled: readyForVoting,
         confirm:
             "Close submissions and open peer voting and judging? Teams can no longer edit their projects.",
     };
@@ -732,7 +737,12 @@ async function downloadDatabase(format: "json" | "csv") {
             </span>
         </div>
 
-        <UTabs v-model="activeTab" :items="tabItems" :content="false" />
+        <UTabs
+            v-model="activeTab"
+            :items="tabItems"
+            :content="false"
+            :ui="{ list: 'w-full overflow-x-auto' }"
+        />
 
         <!-- Run season -->
         <section v-show="activeTab === 'run'" class="space-y-6">

@@ -229,6 +229,15 @@ describe("GET /api/team-invites", () => {
             invites: [{ id: 1, team_id: first.id, team_name: "First team" }],
         });
     });
+
+    it("returns an empty list when the account has no email", async () => {
+        vi.mocked(globalThis.requireUser).mockResolvedValueOnce({
+            id: 1,
+            email: null,
+        } as any);
+
+        await expect(listMyInvites(createEvent())).resolves.toEqual({ invites: [] });
+    });
 });
 
 describe("POST /api/team-invites/:id/accept", () => {
