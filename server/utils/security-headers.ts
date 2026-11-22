@@ -8,7 +8,7 @@ import { setHeader } from "h3";
  */
 export function applySecurityHeaders(event: H3Event): void {
     const nonce = randomBytes(18).toString("base64");
-    event.context.cspNonce = nonce;
+    if (event.context) event.context.cspNonce = nonce;
 
     // API responses may contain caller-specific data. Prevent browsers and
     // shared intermediaries from retaining any API response, including errors.

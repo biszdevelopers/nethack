@@ -62,6 +62,15 @@ async function loadPreflight() {
 async function refreshAll() {
     await refreshAdmin();
     await loadPreflight();
+    syncVisibilityFlags();
+}
+
+/** Keep the two publish-owned switches in step with the server after a lifecycle action. */
+function syncVisibilityFlags() {
+    const season = selectedSeason.value;
+    if (!season) return;
+    settings.show_scores = Number(season.show_scores ?? 0) === 1;
+    settings.show_ranking = Number(season.show_ranking ?? 0) === 1;
 }
 
 watchEffect(() => {
@@ -302,6 +311,12 @@ const activationBlockers = computed(() => {
     if (!season) return ["Select a season."];
     const blockers: string[] = [];
     if (!season.start_timestamp || !season.end_timestamp) blockers.push("Set the event dates.");
+    if (
+        season.is_blank_start === 1 &&
+        (!season.voting_start_timestamp || !season.voting_end_timestamp)
+    ) {
+        blockers.push("Set the voting dates.");
+    }
     if (!season.theme_name) blockers.push("Set the theme.");
     if (!season.rubric_version_id) blockers.push("Publish a judging rubric.");
     if (season.is_blank_start === 1 && !season.board_approved_at) {
@@ -1268,7 +1283,10 @@ async function downloadDatabase(format: "json" | "csv") {
                                     !season.end_timestamp ||
                                     !season.theme_name ||
                                     !season.rubric_version_id ||
-                                    (season.is_blank_start === 1 && !season.board_approved_at)
+                                    (season.is_blank_start === 1 &&
+                                        (!season.voting_start_timestamp ||
+                                            !season.voting_end_timestamp ||
+                                            !season.board_approved_at))
                                 "
                                 @click="makeSeasonLive(season)"
                             >
@@ -1415,7 +1433,7 @@ async function downloadDatabase(format: "json" | "csv") {
                         <USelect
                             v-model="scoreCurvePreset"
                             :items="scoreCurveItems"
-                            :disabled="scoreCurveSaving"
+                            :disabled="scoreCurveSaving || selectedSeason?.results_published === 1"
                             :ui="{ base: 'min-h-11' }"
                             class="w-full"
                             @update:model-value="

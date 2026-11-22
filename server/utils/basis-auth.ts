@@ -274,6 +274,7 @@ export async function completeBasisAuthFlow(
             picture:
                 getBasisAuthPictureUrl(claims.picture, config.issuer) ??
                 getBasisAuthPictureUrl(userInfo.picture, config.issuer),
+            emailVerified: emailVerified === true,
         },
         tokens: normalizeTokenSet(tokens),
     };

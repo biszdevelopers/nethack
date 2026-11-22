@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("~~/server/utils/database/query", () => ({
     firstRow: mocks.firstRow,
+    invalidateRequestCaches: vi.fn(),
     isUniqueViolation: (error: unknown) =>
         (error as { code?: string })?.code === "23505" ||
         (error as { cause?: { code?: string } })?.cause?.code === "23505",
@@ -80,6 +81,16 @@ describe("PATCH /api/admin/seasons action edges", () => {
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
     });
 
+    it("rejects a duplicate rename before writing", async () => {
+        mocks.getSeasons.mockResolvedValueOnce([
+            { id: 1, name: "Renamed" },
+            { id: 2, name: "renamed" },
+        ]);
+
+        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 409 });
+        expect(mocks.updateSet).not.toHaveBeenCalled();
+    });
+
     it("activates a season through the activation flow", async () => {
         mockBody.value = { id: 1, is_active: 1 };
 
@@ -104,6 +115,21 @@ describe("PATCH /api/admin/seasons action edges", () => {
         await patchHandler(event);
 
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
+    });
+
+    it("updates fields after activation so the live snapshot cannot overwrite them", async () => {
+        mockBody.value = { id: 1, is_active: 0, name: "Renamed" };
+        const order: string[] = [];
+        mocks.setActiveSeason.mockImplementation(async () => {
+            order.push("activate");
+        });
+        mocks.updateWhere.mockImplementation(async () => {
+            order.push("update");
+        });
+
+        await patchHandler(event);
+
+        expect(order).toEqual(["activate", "update"]);
     });
 
     it("rejects an empty update and an unknown season", async () => {
@@ -190,6 +216,7 @@ describe("POST /api/admin/seasons action edges", () => {
         event.context.drizzle.delete = vi.fn(() => ({ where: deleteWhere }));
 
         await expect(postHandler(event)).rejects.toThrow("not ready");
+        expect(mocks.updateSet).toHaveBeenCalledWith({ rubric_version_id: null });
         expect(deleteWhere).toHaveBeenCalledTimes(2);
     });
 

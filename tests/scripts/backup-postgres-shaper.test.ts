@@ -59,6 +59,17 @@ describe("backup argument validation", () => {
         await expect(main(["--output"], { DATABASE_URL: databaseUrl })).rejects.toThrow(
             "Pass a path after --output.",
         );
+        await expect(
+            main(["--output", "--with-assets"], { DATABASE_URL: databaseUrl }),
+        ).rejects.toThrow("Pass a path after --output.");
+    });
+
+    it("requires a dump path after --restore-check", async () => {
+        await expect(
+            main(["--restore-check", "--confirm-scratch-restore"], {
+                DATABASE_URL: databaseUrl,
+            }),
+        ).rejects.toThrow("Pass a dump path after --restore-check.");
     });
 
     it("requires a whole retention day count", async () => {

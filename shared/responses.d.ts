@@ -146,6 +146,8 @@ interface PublicSeason {
     theme_description: string | null;
     is_submission_closed?: boolean;
     is_gallery_public?: boolean;
+    is_judging_open?: boolean;
+    is_voting_open?: boolean;
     max_team_members?: number;
 }
 

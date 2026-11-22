@@ -86,7 +86,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
     });
 
     it('returns "ip:unknown" when no IP source is present', async () => {
@@ -98,7 +98,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
     });
 
     it("returns the unknown client bucket when a synthetic event has no Node request", async () => {
@@ -122,7 +122,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
     });
 
     it("uses the rightmost forwarded address for one configured proxy hop", async () => {
@@ -232,7 +232,18 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
+    });
+
+    it("keys an unknown peer by connection instead of one global bucket", () => {
+        const socket = { remoteAddress: undefined };
+        const event = makeMockEvent({ node: { req: { socket } } });
+
+        const first = getClientIp(event);
+        const second = getClientIp(event);
+
+        expect(first).toMatch(/^socket:\d+$/);
+        expect(second).toBe(first);
     });
 
     it("uses the configured forwarded hop while retaining the socket as fallback", async () => {

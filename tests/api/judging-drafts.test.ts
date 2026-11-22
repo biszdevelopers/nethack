@@ -331,6 +331,37 @@ describe("judging draft rubric recovery", () => {
         expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
     });
 
+    it("rejects a draft that loses the finalization race after its pre-check", async () => {
+        mockBody.value = {
+            scores: { originality: 4 },
+            reasoning: "Racing draft.",
+            rubric_version_id: originalRubricId,
+        };
+        const originalTransaction = ctx.drizzle.transaction.bind(ctx.drizzle);
+        const event = createEvent() as any;
+        event.context.drizzle = new Proxy(ctx.drizzle, {
+            get(target, property) {
+                if (property === "transaction") {
+                    return async (callback: any) => {
+                        ctx.sqlite
+                            .prepare(
+                                "INSERT INTO team_scores(team_id, judge_user_id, season_id, rubric_version_id, scores, reasoning) VALUES(?, ?, 1, ?, '{}', 'Committed')",
+                            )
+                            .run(teamId, judgeId, originalRubricId);
+                        return originalTransaction(callback);
+                    };
+                }
+                const value = Reflect.get(target, property, target);
+                return typeof value === "function" ? value.bind(target) : value;
+            },
+        });
+        await expect(saveDraftHandler(event)).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This evaluation is finalized and can no longer be changed.",
+        });
+        expect(ctx.drizzle.select().from(judgingDrafts).get()).toBeUndefined();
+    });
+
     it("returns not found when no season is active or the project is not submitted", async () => {
         ctx.sqlite.prepare("UPDATE seasons SET is_active = 0 WHERE id = 1").run();
         await expect(getDraftHandler(createEvent())).rejects.toMatchObject({ statusCode: 404 });

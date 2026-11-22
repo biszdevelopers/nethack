@@ -161,6 +161,8 @@ async function publishResults() {
                 results_published: 1,
                 judging_open: 0,
                 voting_enabled: 0,
+                show_scores: 1,
+                show_ranking: 1,
             },
         });
         await refreshAdmin();

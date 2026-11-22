@@ -691,6 +691,30 @@ export function peerVotingSeasonOverrides(seasonId) {
     return () => ({ season_id: seasonId });
 }
 
+export function clampFlag(value) {
+    return Number(value) === 1 ? 1 : 0;
+}
+
+/**
+ * PostgreSQL enforces one case-insensitive team name per season, but the legacy
+ * SQLite schema did not. Suffix later duplicates with their immutable row id,
+ * matching migration 0015.
+ */
+export function dedupeTeamNames(teams, fallbackSeasonId) {
+    const seen = new Set();
+    return teams.map((team) => {
+        const seasonId = Number(team.season_id ?? fallbackSeasonId);
+        const key = `${seasonId}|${String(team.name ?? "")
+            .trim()
+            .toLowerCase()}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            return team;
+        }
+        return { ...team, name: `${team.name} (${team.id})` };
+    });
+}
+
 export async function insertRows(sql, tableName, rows, columnsByTable, overrides = () => ({})) {
     if (!rows.length) return 0;
     const targetColumns = columnsByTable.get(tableName);
@@ -884,7 +908,11 @@ export async function importToPostgres(
             await tx.unsafe(
                 `LOCK TABLE ${IMPORT_TABLES.map(quote).join(", ")} IN ACCESS EXCLUSIVE MODE`,
             );
-            const sourceUsers = rowsFromSource(source, "users");
+            const sourceUsers = rowsFromSource(source, "users").map((user) => ({
+                ...user,
+                is_admin: clampFlag(user.is_admin),
+                is_judge: clampFlag(user.is_judge),
+            }));
             const seedPlan = await ensureEmptyTarget(
                 tx,
                 columnsByTable,
@@ -896,22 +924,30 @@ export async function importToPostgres(
             const sourceSeasons = sourceInfo.seasons.map((season) => ({
                 ...season,
                 rubric_version_id: null,
+                voting_enabled: clampFlag(season.voting_enabled),
+                results_published: clampFlag(season.results_published),
+                judging_open: clampFlag(season.judging_open),
+                show_scores: clampFlag(season.show_scores),
+                show_ranking: clampFlag(season.show_ranking),
+                is_active: clampFlag(season.is_active),
+                is_blank_start: clampFlag(season.is_blank_start),
             }));
             await insertRows(tx, "seasons", sourceSeasons, columnsByTable, () => ({
                 rubric_version_id: null,
             }));
-            await insertRows(
-                tx,
-                "teams",
+            const sourceTeams = dedupeTeamNames(
                 rowsFromSource(source, "teams"),
-                columnsByTable,
-                (team) => ({
-                    ...(sourceInfo.seasonSchema === "single-hackathon"
-                        ? { season_id: LEGACY_SEASON_ID }
-                        : {}),
-                    sourcing: team.sourcing ?? "",
-                }),
-            );
+                LEGACY_SEASON_ID,
+            ).map((team) => ({
+                ...team,
+                project_submitted: clampFlag(team.project_submitted),
+            }));
+            await insertRows(tx, "teams", sourceTeams, columnsByTable, (team) => ({
+                ...(sourceInfo.seasonSchema === "single-hackathon"
+                    ? { season_id: LEGACY_SEASON_ID }
+                    : {}),
+                sourcing: team.sourcing ?? "",
+            }));
             const retainedUser = seedPlan.existingUser;
             if (retainedUser) await tx`DELETE FROM users WHERE id = ${retainedUser.targetId}`;
             await insertRows(tx, "users", sourceUsers, columnsByTable, ({ id }) => {
@@ -927,10 +963,7 @@ export async function importToPostgres(
                     sourceInfo.seasons[0]?.id,
             );
             const teams = new Map(
-                rowsFromSource(source, "teams").map((team) => [
-                    Number(team.id),
-                    Number(team.season_id ?? 1),
-                ]),
+                sourceTeams.map((team) => [Number(team.id), Number(team.season_id ?? 1)]),
             );
             const archivedScoreKeys = new Set(
                 sourceInfo.orphanedTeamScores.rows.map((row) => row.row_key),
@@ -955,7 +988,19 @@ export async function importToPostgres(
                 season_id: row.__seasonId,
                 rubric_version_id: row.__rubricVersionId,
             }));
-            await insertRows(tx, "hackathon", sourceInfo.hackathonRows, columnsByTable);
+            await insertRows(
+                tx,
+                "hackathon",
+                sourceInfo.hackathonRows.map((row) => ({
+                    ...row,
+                    voting_enabled: clampFlag(row.voting_enabled),
+                    results_published: clampFlag(row.results_published),
+                    show_scores: clampFlag(row.show_scores),
+                    show_ranking: clampFlag(row.show_ranking),
+                    judging_open: clampFlag(row.judging_open),
+                })),
+                columnsByTable,
+            );
 
             const tableOverrides = {
                 peer_voting_scores: peerVotingSeasonOverrides(activeSeasonId),
@@ -971,10 +1016,17 @@ export async function importToPostgres(
                 "sc_votes",
             ]) {
                 if (availableTables.has(tableName)) {
+                    const rows =
+                        tableName === "ballots"
+                            ? rowsFromSource(source, tableName).map((row) => ({
+                                  ...row,
+                                  submitted: clampFlag(row.submitted),
+                              }))
+                            : rowsFromSource(source, tableName);
                     await insertRows(
                         tx,
                         tableName,
-                        rowsFromSource(source, tableName),
+                        rows,
                         columnsByTable,
                         tableOverrides[tableName],
                     );

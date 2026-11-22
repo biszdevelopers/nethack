@@ -360,6 +360,23 @@ theme_description: null
         expect(readFileSync(manifestPath, "utf8")).toBe(manifest);
     });
 
+    it("validates schedule edits against the live manifest values", async () => {
+        gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
+        writeFileSync(
+            manifestPath,
+            manifest
+                .replace("start_timestamp: 0", "start_timestamp: 1000")
+                .replace("end_timestamp: 0", "end_timestamp: 2000"),
+        );
+        seedSeason(ctx);
+        mockBody.value = { end_timestamp: 500 };
+
+        await expect(patchHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "The event must end after it starts.",
+        });
+    });
+
     it("stores operational switches without rewriting the manifest", async () => {
         gRequireAdmin().mockResolvedValue({ id: 1, role: "admin" });
         seedSeason(ctx);

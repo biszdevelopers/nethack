@@ -169,6 +169,16 @@ async function restoreCheck(dumpPath, environment, confirmed) {
     const scratch = environment.PG_RESTORE_SCRATCH_URL;
     if (!scratch) throw new Error("Set PG_RESTORE_SCRATCH_URL to an expendable scratch database.");
     const { environment: scratchEnvironment } = databaseEnvironment(scratch);
+    // Never let a misconfigured scratch URL point at the production database:
+    // pg_restore --clean would drop every object before restoring the dump.
+    const primary = databaseEnvironment(environment.DATABASE_URL).environment;
+    if (
+        scratchEnvironment.PGHOST === primary.PGHOST &&
+        scratchEnvironment.PGPORT === primary.PGPORT &&
+        scratchEnvironment.PGDATABASE === primary.PGDATABASE
+    ) {
+        throw new Error("PG_RESTORE_SCRATCH_URL must not point at the DATABASE_URL database.");
+    }
     await run(
         environment.PG_RESTORE_BIN || "pg_restore",
         [
@@ -203,7 +213,12 @@ async function main(argv = process.argv.slice(2), env = process.env) {
         "--confirm-scratch-restore",
     ]);
     if (!env.DATABASE_URL) throw new Error("Set DATABASE_URL in .env before taking a snapshot.");
-    if (outputIndex >= 0 && !outputArgument) throw new Error("Pass a path after --output.");
+    if (outputIndex >= 0 && (!outputArgument || outputArgument.startsWith("--"))) {
+        throw new Error("Pass a path after --output.");
+    }
+    if (restoreIndex >= 0 && (!restorePath || restorePath.startsWith("--"))) {
+        throw new Error("Pass a dump path after --restore-check.");
+    }
     if (retentionIndex >= 0 && !/^\d+$/.test(retentionArgument ?? "")) {
         throw new Error("Pass a whole number of days after --retention-days.");
     }

@@ -77,6 +77,15 @@ describe("project autosave helpers", () => {
         expect(sameProjectForm(reconciled.form, reconciled.lastSaved)).toBe(false);
     });
 
+    it("restores a cleared URL as an empty field", () => {
+        const restored = applyProjectFormDraft(state(), {
+            project: { demo_url: null as never, repo_url: null as never },
+        });
+
+        expect(restored.project.demo_url).toBe("");
+        expect(restored.project.repo_url).toBe("");
+    });
+
     it("restores only valid draft fields", () => {
         const restored = applyProjectFormDraft(state(), {
             name: "Draft name",

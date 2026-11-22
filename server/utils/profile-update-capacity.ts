@@ -19,11 +19,15 @@ function updateDeadlineMs(): number {
         : PROFILE_UPDATE_DEADLINE_MS;
 }
 
+export interface ProfileUpdateToken {
+    aborted: boolean;
+}
+
 /** Reject excess profile updates before buffering their potentially large request bodies. */
 export async function withProfileUpdateCapacity<T>(
     event: Pick<H3Event, "node">,
     userID: number,
-    operation: () => Promise<T>,
+    operation: (token: ProfileUpdateToken) => Promise<T>,
 ): Promise<T> {
     const current = inFlightByUser.get(userID) ?? 0;
     if (
@@ -52,9 +56,11 @@ export async function withProfileUpdateCapacity<T>(
 
     let deadline: ReturnType<typeof setTimeout> | undefined;
     const timeoutMs = updateDeadlineMs();
+    const token: ProfileUpdateToken = { aborted: false };
     const expiry = new Promise<never>((_resolve, reject) => {
         if (timeoutMs <= 0) return;
         deadline = setTimeout(() => {
+            token.aborted = true;
             reject(
                 createError({
                     statusCode: 408,
@@ -68,7 +74,7 @@ export async function withProfileUpdateCapacity<T>(
 
     let guarded: Promise<T>;
     try {
-        guarded = operation().finally(release);
+        guarded = operation(token).finally(release);
     } catch (error) {
         release();
         throw error;

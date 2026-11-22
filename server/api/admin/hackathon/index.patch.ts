@@ -4,6 +4,7 @@ import { hackathon, seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 import {
     invalidateHackathonCache,
+    mergeLiveOverrides,
     pickDivergingLiveOverrides,
 } from "~~/server/utils/database/hackathon";
 import { firstRow, lockForUpdateIfSupported } from "~~/server/utils/database/query";
@@ -37,8 +38,9 @@ async function applyResultFreeze(
     tx: any,
     season: Season,
     config: Record<string, unknown>,
+    baseline: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-    const effective = { ...season, ...config };
+    const effective = { ...season, ...baseline, ...config };
     const scheduleKeys = [
         "start_timestamp",
         "end_timestamp",
@@ -163,7 +165,10 @@ export default defineEventHandler(
                 }
 
                 const seasonConfig = previousSeason
-                    ? await applyResultFreeze(tx, previousSeason, configFields)
+                    ? await applyResultFreeze(tx, previousSeason, configFields, {
+                          ...(manifest ?? {}),
+                          ...mergeLiveOverrides(previousLive.live_overrides ?? {}, {}),
+                      })
                     : configFields;
                 if (
                     previousSeason &&

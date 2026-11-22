@@ -50,7 +50,7 @@ function stable(value) {
     );
 }
 
-function comparable(value, dataType) {
+export function comparable(value, dataType) {
     if (value === null || value === undefined) return null;
     if ((dataType === "json" || dataType === "jsonb") && typeof value === "string") {
         try {
@@ -60,6 +60,8 @@ function comparable(value, dataType) {
         }
     }
     if (typeof value === "bigint") return value.toString();
+    // postgres.js returns int8 as text while SQLite returns a number.
+    if (dataType === "bigint") return String(value);
     return stable(value);
 }
 

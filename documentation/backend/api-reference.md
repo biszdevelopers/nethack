@@ -283,7 +283,7 @@ Invite a person to a team by email. The invitation is stored in `team_invites`; 
 | --- | --- |
 | **Auth** | Team owner |
 | **Validation** | `AddTeamMemberRequest` — `{ email: string, allowUnclaimed?: boolean }` (must be a `@basischina.com` address) |
-| **Constraint** | Submissions must be open; project must not already be submitted; the team must have fewer than the season's `max_team_members` members plus pending invitations; the target cannot be yourself, a staff administrator, or someone already in an active-season team. A missing account requires `allowUnclaimed: true` |
+| **Constraint** | Submissions must be open; the team must be `active`; project must not already be submitted; the team must have fewer than the season's `max_team_members` members plus pending invitations; the target cannot be yourself, a staff administrator, or someone already in a team. A missing account requires `allowUnclaimed: true` |
 | **Response** | `{ id, email, token, expires_at, invite_url, message }` — the raw token and link are returned once. Only its SHA-256 digest is stored |
 | **Lifetime** | `TEAM_INVITE_TTL_DAYS` days (default 7, maximum 365) |
 
@@ -316,7 +316,7 @@ List invitations addressed to the authenticated user's email.
 
 ### POST `/api/team-invites/:id/accept`
 
-Accept an invitation addressed to the authenticated user's email. Submissions must be open; the team must belong to the active season, be `active`, must not have submitted, and must not be full.
+Accept an invitation addressed to the authenticated user's email. Submissions must be open; the team must belong to the active season, be `active`, must not have submitted, and must not be full. A user who still belongs to any team in that season, including a withdrawn or disqualified team, must leave it first.
 
 | Field | Details |
 | --- | --- |
@@ -563,7 +563,7 @@ Reopen a submitted project so the team can edit and submit again.
 | --- | --- |
 | **Auth** | `nethack.all` |
 | **Body** | `{ reason?: string (max 500) }` |
-| **Constraint** | Returns `409` after results are published, while the team still has evaluations, or once the season has any peer votes. Delete the evaluations and peer votes first. The reopened team's rank is cleared and every other team's stored rank is recomputed in the same transaction |
+| **Constraint** | Returns `409` after results are published or while the team still has evaluations; delete the evaluations first. Reopening removes the team's project from every season peer ballot (deleting ballots cast by the reopened team), clears its score, exact score, and rank, and recomputes every other team's stored rank in the same transaction |
 | **Response** | `{ message, team_id }` |
 | **Audit** | `team.reopen` with the prior `submitted_at` |
 

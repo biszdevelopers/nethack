@@ -11,6 +11,8 @@ const { user, error, status, refresh } = await useApiUser({ lazy: true });
 const loading = computed(() => status.value === "idle" || status.value === "pending");
 const currentTeam = computed(() => user.value?.team ?? null);
 const pastTeams = computed(() => user.value?.past_teams ?? []);
+const hasCertificate = (team: { rank?: number | null; awards: unknown[] }) =>
+    (team.rank !== null && team.rank !== undefined) || team.awards.length > 0;
 </script>
 
 <template>
@@ -54,6 +56,7 @@ const pastTeams = computed(() => user.value?.past_teams ?? []);
             <div v-if="currentTeam" class="mt-4">
                 <ScoreCard :team="currentTeam" />
                 <ULink
+                    v-if="hasCertificate(currentTeam)"
                     :to="`/certificate/${currentTeam.id}`"
                     class="mt-2 inline-flex min-h-11 items-center gap-1 text-sm"
                 >
@@ -73,6 +76,7 @@ const pastTeams = computed(() => user.value?.past_teams ?? []);
                 <div v-for="team in pastTeams" :key="team.id">
                     <ScoreCard :team="team" />
                     <ULink
+                        v-if="hasCertificate(team)"
                         :to="`/certificate/${team.id}`"
                         class="mt-2 inline-flex min-h-11 items-center gap-1 text-sm"
                     >

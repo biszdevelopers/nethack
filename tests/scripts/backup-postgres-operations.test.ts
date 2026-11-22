@@ -308,6 +308,24 @@ describe("PostgreSQL restore-check execution", () => {
         );
     });
 
+    it("refuses to restore over the primary database", async () => {
+        const run = await harness({
+            env: {
+                DATABASE_URL: "postgres://localhost/scratch",
+                PG_RESTORE_SCRATCH_URL: "postgres://localhost/scratch",
+            },
+            outcomes: [{ code: 0 }],
+        });
+
+        await expect(
+            run.main(
+                ["--restore-check", "dump.dump", "--confirm-scratch-restore"],
+                run.environment,
+            ),
+        ).rejects.toThrow("must not point at the DATABASE_URL database");
+        expect(run.spawn).not.toHaveBeenCalled();
+    });
+
     it("restores into an expendable scratch database with a custom binary", async () => {
         const run = await harness({
             env: {

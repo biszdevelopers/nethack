@@ -327,6 +327,7 @@ describe("basis-auth authorization-code flow", () => {
                 email: "user@example.com",
                 name: "User",
                 picture: "https://auth.example.test/api/picture/subject-1",
+                emailVerified: false,
             },
             tokens: {
                 accessToken: "access-token",

@@ -2,10 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam, SaveJudgingDraftRequest } from "~~/shared/schemas";
-import { judgingDrafts, rubricVersions, teamScores } from "~~/server/database/schema";
+import { judgingDrafts, rubricVersions, seasons, teamScores } from "~~/server/database/schema";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
 import { getTeam } from "~~/server/utils/database/teams";
-import { firstRow } from "~~/server/utils/database/query";
+import { firstRow, lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import {
     getJudgeScope,
     isJudgingOpen,
@@ -114,28 +114,54 @@ export default defineEventHandler(
             throw createError({ statusCode: 400, message: issues[0] });
         }
 
-        const saved = await firstRow(
-            event.context.drizzle
-                .insert(judgingDrafts)
-                .values({
-                    team_id: teamId,
-                    judge_user_id: judge.id,
-                    rubric_version_id: version.id,
-                    scores: body.scores,
-                    reasoning: body.reasoning,
-                    updated_at: new Date(),
-                })
-                .onConflictDoUpdate({
-                    target: [judgingDrafts.team_id, judgingDrafts.judge_user_id],
-                    set: {
+        const saved = await event.context.drizzle.transaction(async (tx) => {
+            // Serialize with score finalization: it locks the season first and
+            // then deletes the draft, so this upsert cannot resurrect one.
+            await lockForUpdateIfSupported(
+                tx
+                    .select({ id: seasons.id })
+                    .from(seasons)
+                    .where(eq(seasons.id, season.id))
+                    .limit(1),
+            );
+            const committed = await firstRow(
+                tx
+                    .select({ team_id: teamScores.team_id })
+                    .from(teamScores)
+                    .where(
+                        and(eq(teamScores.team_id, teamId), eq(teamScores.judge_user_id, judge.id)),
+                    )
+                    .limit(1),
+            );
+            if (committed) {
+                throw createError({
+                    statusCode: 409,
+                    message: "This evaluation is finalized and can no longer be changed.",
+                });
+            }
+            return firstRow(
+                tx
+                    .insert(judgingDrafts)
+                    .values({
+                        team_id: teamId,
+                        judge_user_id: judge.id,
                         rubric_version_id: version.id,
                         scores: body.scores,
                         reasoning: body.reasoning,
                         updated_at: new Date(),
-                    },
-                })
-                .returning(),
-        );
+                    })
+                    .onConflictDoUpdate({
+                        target: [judgingDrafts.team_id, judgingDrafts.judge_user_id],
+                        set: {
+                            rubric_version_id: version.id,
+                            scores: body.scores,
+                            reasoning: body.reasoning,
+                            updated_at: new Date(),
+                        },
+                    })
+                    .returning(),
+            );
+        });
 
         return {
             saved: true,

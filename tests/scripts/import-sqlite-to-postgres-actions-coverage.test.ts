@@ -5,8 +5,10 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     checkSourceRelationships,
+    clampFlag,
     classifyOrphanedTeamScores,
     countSourceRows,
+    dedupeTeamNames,
     detectSeasonSchema,
     ensureEmptyTarget,
     getTargetColumns,
@@ -1166,6 +1168,20 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
         expect(importSeasonForScore({ team_id: 2 }, new Map(), 4)).toBe(4);
         expect(importSeasonForScore({}, new Map(), undefined)).toBe(1);
         expect(importSeasonForScore({ season_id: 7, team_id: 2 }, new Map([[2, 8]]), 4)).toBe(8);
+        expect(clampFlag(1)).toBe(1);
+        expect(clampFlag(2)).toBe(0);
+        expect(clampFlag(undefined)).toBe(0);
+        expect(
+            dedupeTeamNames(
+                [
+                    { id: 1, name: "Alpha", season_id: 1 },
+                    { id: 2, name: "alpha", season_id: 1 },
+                    { id: 3, name: "Alpha", season_id: 2 },
+                    { id: 4, name: "Beta" },
+                ],
+                1,
+            ).map((team) => team.name),
+        ).toEqual(["Alpha", "alpha (2)", "Alpha", "Beta"]);
         expect(normalizeEventStatus("voting")).toBe("voting");
         expect(() => normalizeEventStatus("archived", "season")).toThrow(
             'Unknown season status "archived"',
@@ -1204,6 +1220,10 @@ describe("SQLite importer PostgreSQL validation and writes", () => {
     it("imports the checked SQLite fixture transactionally with mocked PostgreSQL only", async () => {
         const source = createSource();
         source.exec("ALTER TABLE teams ADD COLUMN sourcing TEXT; UPDATE teams SET sourcing = NULL");
+        source.exec("INSERT INTO ballots (id, user_id, submitted) VALUES (1, 7, 2)");
+        source.exec(
+            "CREATE TABLE awards (namespace TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, icon TEXT, color TEXT); INSERT INTO awards (namespace, name) VALUES ('winner', 'Winner')",
+        );
         const available = sourceTables(source);
         const sourceInfo = validateSource(source, available);
         sourceInfo.sourcePath = "verified-fixture.sqlite";

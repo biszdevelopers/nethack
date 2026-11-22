@@ -108,6 +108,26 @@ describe("POST /api/teams/:id/users", () => {
         ).toBeNull();
     });
 
+    it("rejects invitations from a team that is no longer active", async () => {
+        const owner = seedUser(ctx, { email: "owner@basischina.com", name: "Owner" });
+        const team = seedTeam(ctx, {
+            name: "Withdrawn",
+            owner_user_id: owner.id,
+            status: "withdrawn",
+        });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, owner.id)).run();
+        seedUser(ctx, { email: "newbie@basischina.com", name: "Newbie", team_id: null });
+
+        mockSession.value = { user: { id: owner.id } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { email: "newbie@basischina.com" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            message: "This team is no longer accepting members",
+        });
+        expect(ctx.drizzle.select().from(teamInvites).all()).toHaveLength(0);
+    });
+
     it("returns 404 for a team from a previous season", async () => {
         const pastSeason = seedSeason(ctx, { name: "Past", is_active: 0 });
         const staleTeam = seedTeam(ctx, { name: "Old team", season_id: pastSeason.id });

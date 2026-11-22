@@ -328,6 +328,20 @@ describe("POST /api/team-invites/:id/accept", () => {
         await expect(acceptInvite(createEvent())).rejects.toMatchObject({ statusCode: 409 });
     });
 
+    it("rejects a member of a disqualified team in the same season", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const current = seedTeam(ctx, { name: "Current", status: "disqualified" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com", team_id: current.id });
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "You are already in a team",
+        });
+    });
+
     it("lets a user with a past-season team join the active season", async () => {
         const pastSeason = seedSeason(ctx, { name: "Past membership", is_active: 0 });
         const pastTeam = seedTeam(ctx, { name: "Past team", season_id: pastSeason.id });

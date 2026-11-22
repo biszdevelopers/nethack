@@ -125,7 +125,11 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
 </script>
 
 <template>
-    <UCard v-if="inviteToken && !inviteDismissed" variant="subtle" class="mb-6">
+    <UCard
+        v-if="inviteToken && !inviteDismissed && data?.team == null"
+        variant="subtle"
+        class="mb-6"
+    >
         <template #header>
             <h2 class="text-xl bold">Team invitation</h2>
         </template>

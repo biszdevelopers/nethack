@@ -1,6 +1,7 @@
 import { APIError } from "@basis/schema/api";
 import { renderErrorPage } from "@basis/schema/error-page";
 import { getRequestHeader, send, setResponseHeader, setResponseStatus } from "h3";
+import { applySecurityHeaders } from "~~/server/utils/security-headers";
 
 const errorNameForStatus = (status: number, statusMessage?: string) => {
     if (statusMessage === "invalid_token" || statusMessage === "insufficient_permission") {
@@ -21,6 +22,14 @@ function logLine(value: unknown, limit: number): string {
 }
 
 export default defineNitroErrorHandler((input, event) => {
+    // Early middleware can reject a request before the security-header
+    // middleware runs, so apply the baseline here as well. Header failures
+    // must never prevent the error response itself.
+    try {
+        applySecurityHeaders(event);
+    } catch {
+        // Ignore; the response still carries the status and content type.
+    }
     const original = (input.cause ?? input) as any;
     const status = original.status ?? original.statusCode ?? input.statusCode ?? 500;
     const isSafe = status < 500;

@@ -3,9 +3,11 @@ import { eq, asc, sql } from "drizzle-orm";
 import { hackathon, rubricVersions, seasons } from "~~/server/database/schema";
 import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { getHackathon, invalidateHackathonCache, pickDivergingLiveOverrides } from "./hackathon";
-import { firstRow, requestCache, supportsRowLocks } from "./query";
+import { firstRow, lockForUpdateIfSupported, requestCache, supportsRowLocks } from "./query";
 import { writeAuditEvent } from "../audit";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
+import { NethackPermissions } from "~~/shared/permissions";
+import { hasEffectiveNethackPermission } from "../effective-permissions";
 
 /**
  * Per-season tweakable settings. In PostgreSQL rollback mode these fields
@@ -175,16 +177,39 @@ export async function updateSeasonTweaks(
 
     const updated = await event.context.drizzle.transaction(async (tx) => {
         const season = await firstRow(
-            tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+            lockForUpdateIfSupported(
+                tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+            ),
         );
         if (!season) return null;
 
         if (Object.keys(tweaks).length > 0) {
-            if (season.is_active === 1 && hackathonUsesYaml()) {
-                throw createError({
-                    statusCode: 409,
-                    message: "Edit the configured HACKATHON.yml to change live settings.",
-                });
+            // Re-check the live grant after the lock. The route's permission
+            // check used an unlocked read and can race an activation.
+            if (season.is_active === 1) {
+                if (hackathonUsesYaml()) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "Edit the configured HACKATHON.yml to change live settings.",
+                    });
+                }
+                // The route already authenticated the caller; re-check its
+                // effective grants against the freshly locked season state.
+                const session = event.context.oauth2;
+                if (
+                    session &&
+                    !hasEffectiveNethackPermission(
+                        session.payload.permissions,
+                        NethackPermissions.Hackathon.update,
+                        session.user,
+                    )
+                ) {
+                    throw createError({
+                        statusCode: 403,
+                        statusMessage: "insufficient_permission",
+                        message: "The access token lacks a required permission",
+                    });
+                }
             }
             await tx.update(seasons).set(tweaks).where(eq(seasons.id, seasonId));
 
@@ -282,7 +307,9 @@ async function activateSeason(event: H3Event, seasonId: number | null) {
         let season: Season | undefined;
         if (seasonId !== null) {
             season = (await firstRow(
-                tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+                lockForUpdateIfSupported(
+                    tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1),
+                ),
             )) as Season | undefined;
 
             if (!season) {

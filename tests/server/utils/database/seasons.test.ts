@@ -464,6 +464,25 @@ describe("seasons database helpers", () => {
             expect(hackathon.show_ranking).toBe(1);
         });
 
+        it("rejects a live tweak without the live-event grant", async () => {
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp) VALUES(1, 'not_started', 0, 0, 0, 0, 0)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Live', 1)")
+                .run();
+            (event.context as any).oauth2 = {
+                payload: { permissions: [] },
+                user: { id: 1 },
+            };
+
+            await expect(updateSeasonTweaks(event, 1, { show_scores: 1 })).rejects.toMatchObject({
+                statusCode: 403,
+            });
+        });
+
         it("does not touch the hackathon row when the season is not live", async () => {
             event.context.drizzle
                 .prepare(

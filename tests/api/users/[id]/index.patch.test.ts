@@ -18,7 +18,23 @@ import { eq } from "drizzle-orm";
 
 const assetMocks = vi.hoisted(() => ({
     failProfileUpdate: false,
+    aborted: false,
 }));
+
+vi.mock("~~/server/utils/profile-update-capacity", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("~~/server/utils/profile-update-capacity")>();
+    return {
+        ...actual,
+        withProfileUpdateCapacity: async (
+            event: Parameters<typeof actual.withProfileUpdateCapacity>[0],
+            userID: number,
+            operation: (token: { aborted: boolean }) => Promise<unknown>,
+        ) =>
+            actual.withProfileUpdateCapacity(event, userID, (token) =>
+                operation({ aborted: token.aborted || assetMocks.aborted }),
+            ),
+    };
+});
 
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (fn: any) => fn,
@@ -102,6 +118,7 @@ beforeAll(async () => {
 beforeEach(async () => {
     resetMockState();
     assetMocks.failProfileUpdate = false;
+    assetMocks.aborted = false;
     createUserAssetContentAddressed?.mockClear();
     getUserAssetContentAddress?.mockClear();
     withAssetLifecycleLocks?.mockClear();
@@ -166,6 +183,22 @@ function tooLargeBase64(): string {
 }
 
 describe("PATCH /api/users/:id", () => {
+    it("does not commit a body that arrived after the update deadline", async () => {
+        const user = seedUser(ctx, { email: "late@basischina.com", name: "Before" });
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(user.id);
+        mockBody.value = { name: "After" };
+        assetMocks.aborted = true;
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 408,
+            statusMessage: "Request Timeout",
+        });
+        expect(ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get()!.name).toBe(
+            "Before",
+        );
+    });
+
     it("does not buffer an oversized profile body before authentication", async () => {
         seedUser(ctx, { email: "viewer@basischina.com" });
         mockParams.values["id"] = "1";

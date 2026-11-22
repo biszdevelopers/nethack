@@ -127,8 +127,14 @@ export default defineEventHandler(
                 await setActiveSeason(event, created.id);
             } catch (error) {
                 // Do not leave a stray season behind when activation fails. Its
-                // copied rubric versions reference it with ON DELETE RESTRICT.
+                // copied rubric versions reference it with ON DELETE RESTRICT,
+                // and the season's rubric pointer must be cleared before the
+                // versions can be removed.
                 try {
+                    await event.context.drizzle
+                        .update(seasons)
+                        .set({ rubric_version_id: null })
+                        .where(eq(seasons.id, created.id));
                     await event.context.drizzle
                         .delete(rubricVersions)
                         .where(eq(rubricVersions.season_id, created.id));

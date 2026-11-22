@@ -134,7 +134,7 @@ Resource access tokens are verified against basis-auth JWKS and are never signed
 
 ## Supply chain and release controls
 
-CI runs `gitleaks` over the repository history and publishes an SPDX SBOM artifact. The release workflow verifies that the tag is an ancestor of `main`, runs dependency audit, type check, lint, the full test suite, and the coverage gate before packaging. Release archives carry a SHA-256 checksum. `.github/dependabot.yml` opens grouped weekly npm updates and monthly documentation, GitHub Actions, and Docker updates. Workflow actions are currently referenced by major tag; pin each to a full commit SHA when bumping because tags are mutable. Production client source maps are disabled so original sources are not shipped.
+CI runs `gitleaks` over the repository history with a workflow-owned rule set and ignore path, so a pull request cannot add its own allowlist or ignore file; the baseline is taken from the base branch when available. It also publishes an SPDX SBOM artifact. The release workflow verifies that the tag is an ancestor of `main`, runs dependency audit, type check, lint, the full test suite, and the coverage gate before packaging. Release archives carry a SHA-256 checksum. `.github/dependabot.yml` opens grouped weekly npm updates and monthly documentation, GitHub Actions, and Docker updates. Workflow actions are pinned to full commit SHAs with the release tag in a comment because tags are mutable. Production client source maps are disabled so original sources are not shipped.
 
 ## Database Security
 

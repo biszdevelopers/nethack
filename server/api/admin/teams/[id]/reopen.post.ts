@@ -54,23 +54,51 @@ export default defineEventHandler(
                 });
             }
 
-            const ballot = await firstRow(
-                tx
-                    .select({ user_id: peerVotingScores.user_id })
-                    .from(peerVotingScores)
-                    .where(eq(peerVotingScores.season_id, team.season_id))
-                    .limit(1),
-            );
-            if (ballot) {
-                throw createError({
-                    statusCode: 409,
-                    message: "Delete the season's peer votes before reopening its submission.",
-                });
+            // Reopening removes the project from every peer ballot instead of
+            // requiring an impossible "delete all peer votes" reset. A ballot
+            // cast by the reopened team itself no longer counts.
+            const ballots = await tx
+                .select({
+                    user_id: peerVotingScores.user_id,
+                    team_id: peerVotingScores.team_id,
+                    score: peerVotingScores.score,
+                })
+                .from(peerVotingScores)
+                .where(eq(peerVotingScores.season_id, team.season_id));
+
+            for (const ballot of ballots) {
+                const ballotFilter = and(
+                    eq(peerVotingScores.user_id, ballot.user_id),
+                    eq(peerVotingScores.season_id, team.season_id),
+                );
+                if (ballot.team_id === id) {
+                    await tx.delete(peerVotingScores).where(ballotFilter);
+                    continue;
+                }
+                let parsed: Record<string, unknown>;
+                try {
+                    const value: unknown = JSON.parse(ballot.score);
+                    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+                    parsed = value as Record<string, unknown>;
+                } catch {
+                    continue;
+                }
+                const key = String(id);
+                if (!Object.hasOwn(parsed, key)) continue;
+                Reflect.deleteProperty(parsed, key);
+                if (Object.keys(parsed).length === 0) {
+                    await tx.delete(peerVotingScores).where(ballotFilter);
+                } else {
+                    await tx
+                        .update(peerVotingScores)
+                        .set({ score: JSON.stringify(parsed) })
+                        .where(ballotFilter);
+                }
             }
 
             await tx
                 .update(teams)
-                .set({ project_submitted: 0, rank: null })
+                .set({ project_submitted: 0, rank: null, score: null, score_exact: null })
                 .where(eq(teams.id, id));
             // The reopened team leaves the standings; persisted ranks for every
             // other team must match a fresh computation.

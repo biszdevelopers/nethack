@@ -109,7 +109,11 @@ export function applyProjectFormDraft(
     const project = draft.project ?? {};
     for (const field of PROJECT_FIELDS) {
         const value = project[field];
-        if (typeof value === "string") form.project[field] = value;
+        if (value === null) {
+            form.project[field] = "";
+        } else if (typeof value === "string") {
+            form.project[field] = value;
+        }
     }
     return form;
 }

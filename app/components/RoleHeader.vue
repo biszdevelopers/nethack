@@ -108,7 +108,8 @@ const galleryPublic = computed(() => Boolean(hackathon.value?.is_gallery_public)
 const canVote = computed(() => {
     if (!hackathon.value?.is_voting_open) return false;
     if (!can(NethackPermissions.Judging.assignmentsRead)) {
-        return Boolean(user.value?.team);
+        const team = user.value?.team;
+        return Boolean(team?.project.submitted && team.status === "active");
     }
     return false;
 });

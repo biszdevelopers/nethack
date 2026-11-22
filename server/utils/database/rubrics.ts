@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { withDefaultRubricCommentGuidance, type RubricDefinition } from "~~/shared/rubric";
 import { rubricTemplates, rubricVersions, seasons, teams } from "~~/server/database/schema";
 import { firstRow, lockForUpdateIfSupported } from "./query";
+import { writeAuditEvent } from "../audit";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type RubricSeason = Pick<Season, "id" | "is_active" | "rubric_version_id">;
@@ -214,6 +215,13 @@ export async function createRubricVersion(
             .update(seasons)
             .set({ rubric_version_id: version.id })
             .where(eq(seasons.id, seasonId));
+        await writeAuditEvent(tx, event, {
+            action: "season.rubric_create",
+            entity_type: "season",
+            entity_id: seasonId,
+            before: { rubric_version_id: season.rubric_version_id },
+            after: { rubric_version_id: version.id, name: version.name },
+        });
         return version;
     });
 }
@@ -226,19 +234,28 @@ export async function createRubricTemplate(
     event: H3Event,
     input: { name: string; description?: string; definition: RubricDefinition; createdBy: number },
 ) {
-    return firstRow(
-        event.context.drizzle
-            .insert(rubricTemplates)
-            .values({
-                name: input.name,
-                description: input.description ?? null,
-                definition: input.definition,
-                created_by: input.createdBy,
-                created_at: new Date(),
-                updated_at: new Date(),
-            })
-            .returning(),
-    );
+    return event.context.drizzle.transaction(async (tx) => {
+        const row = await firstRow(
+            tx
+                .insert(rubricTemplates)
+                .values({
+                    name: input.name,
+                    description: input.description ?? null,
+                    definition: input.definition,
+                    created_by: input.createdBy,
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                })
+                .returning(),
+        );
+        await writeAuditEvent(tx, event, {
+            action: "rubric_template.create",
+            entity_type: "rubric_template",
+            entity_id: row!.id,
+            after: { name: row!.name },
+        });
+        return row;
+    });
 }
 
 export async function updateRubricTemplate(
@@ -246,25 +263,54 @@ export async function updateRubricTemplate(
     templateId: number,
     input: { name: string; description?: string; definition: RubricDefinition },
 ) {
-    return firstRow(
-        event.context.drizzle
-            .update(rubricTemplates)
-            .set({
-                name: input.name,
-                description: input.description ?? null,
-                definition: input.definition,
-                updated_at: new Date(),
-            })
-            .where(eq(rubricTemplates.id, templateId))
-            .returning(),
-    );
+    return event.context.drizzle.transaction(async (tx) => {
+        const row = await firstRow(
+            tx
+                .update(rubricTemplates)
+                .set({
+                    name: input.name,
+                    description: input.description ?? null,
+                    definition: input.definition,
+                    updated_at: new Date(),
+                })
+                .where(eq(rubricTemplates.id, templateId))
+                .returning(),
+        );
+        if (row) {
+            await writeAuditEvent(tx, event, {
+                action: "rubric_template.update",
+                entity_type: "rubric_template",
+                entity_id: templateId,
+                after: { name: row.name },
+            });
+        }
+        return row;
+    });
 }
 
 export async function deleteRubricTemplate(event: H3Event, templateId: number) {
-    return firstRow(
-        event.context.drizzle
-            .delete(rubricTemplates)
-            .where(eq(rubricTemplates.id, templateId))
-            .returning({ id: rubricTemplates.id }),
-    );
+    return event.context.drizzle.transaction(async (tx) => {
+        const existing = await firstRow(
+            tx
+                .select({ id: rubricTemplates.id, name: rubricTemplates.name })
+                .from(rubricTemplates)
+                .where(eq(rubricTemplates.id, templateId))
+                .limit(1),
+        );
+        const row = await firstRow(
+            tx
+                .delete(rubricTemplates)
+                .where(eq(rubricTemplates.id, templateId))
+                .returning({ id: rubricTemplates.id }),
+        );
+        if (row) {
+            await writeAuditEvent(tx, event, {
+                action: "rubric_template.delete",
+                entity_type: "rubric_template",
+                entity_id: templateId,
+                before: { name: existing!.name },
+            });
+        }
+        return row;
+    });
 }

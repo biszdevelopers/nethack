@@ -413,7 +413,7 @@ async function acceptInviteWithSelector(
                     )
                     .limit(1),
             );
-            if (currentTeam && currentTeam.status === "active") {
+            if (currentTeam) {
                 throw createError({
                     statusCode: 409,
                     message: "You are already in a team",

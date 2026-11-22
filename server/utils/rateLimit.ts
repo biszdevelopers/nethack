@@ -154,11 +154,27 @@ export function getTrustedProxyHops(): number {
     return hops >= 0 && hops <= 10 ? hops : 0;
 }
 
+/** Per-connection identity for listeners without a peer address (Unix sockets). */
+const socketIdentities = new WeakMap<object, number>();
+let nextSocketIdentity = 1;
+
+function unknownSocketIdentity(socket: object | undefined): string {
+    if (!socket || typeof socket !== "object") return "unknown";
+    let identity = socketIdentities.get(socket);
+    if (identity === undefined) {
+        identity = nextSocketIdentity++;
+        socketIdentities.set(socket, identity);
+    }
+    return `socket:${identity}`;
+}
+
 /** Resolve the caller address, walking X-Forwarded-For only for trusted proxies. */
 export function getClientIp(event: H3Event): string {
     const request = event.node?.req;
     const socketAddress = request?.socket?.remoteAddress;
-    let ip = socketAddress || "unknown";
+    // Without a peer address every connection must not collapse into one
+    // global bucket (for example on a Unix-domain listener).
+    let ip = socketAddress || unknownSocketIdentity(request?.socket);
     const trustedProxyHops = getTrustedProxyHops();
 
     if (socketAddress && trustedProxyHops > 0) {

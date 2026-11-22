@@ -6,10 +6,11 @@ import {
     seasons,
     teamScores,
     teams,
+    users,
 } from "~~/server/database/schema";
 import { recalculateTeamScoreAfterSubmission } from "~~/server/utils/scoring";
 import { getRubricTrack, validateRubricScores } from "~~/shared/rubric";
-import { lockForUpdateIfSupported } from "./query";
+import { firstRow, lockForUpdateIfSupported } from "./query";
 
 type NewTeamScore = Pick<
     TeamScores,
@@ -29,9 +30,40 @@ export async function createTeamScores(event: H3Event, scores: NewTeamScore): Pr
             throw createError({ statusCode: 409, message: "Judging is not open for this season." });
         }
 
-        const [team] = await tx.select().from(teams).where(eq(teams.id, scores.team_id)).limit(1);
+        // Re-check the competing status inside the transaction. The route's
+        // checks can go stale when an administrator disqualifies the team or
+        // the judge joins a team between the pre-check and this lock.
+        const [team] = await tx
+            .select()
+            .from(teams)
+            .where(and(eq(teams.id, scores.team_id), eq(teams.status, "active")))
+            .limit(1);
         if (!team || team.season_id !== season.id || !team.project_submitted) {
             throw createError({ statusCode: 404, message: "Submitted project not found." });
+        }
+
+        const [judge] = await tx
+            .select({ is_admin: users.is_admin, team_id: users.team_id })
+            .from(users)
+            .where(eq(users.id, scores.judge_user_id))
+            .limit(1);
+        if (!judge) {
+            throw createError({ statusCode: 403, message: "Judge account not found." });
+        }
+        if (judge.is_admin !== 1 && judge.team_id) {
+            const competing = await firstRow(
+                tx
+                    .select({ id: teams.id })
+                    .from(teams)
+                    .where(and(eq(teams.id, judge.team_id), eq(teams.season_id, season.id)))
+                    .limit(1),
+            );
+            if (competing) {
+                throw createError({
+                    statusCode: 403,
+                    message: "Competing participants cannot judge this season",
+                });
+            }
         }
 
         const [version] = await tx

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -314,9 +315,16 @@ export async function runE2eServer(env = process.env) {
     }
 }
 
-const isMain =
-    process.argv[1] !== undefined &&
-    import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+function isMainModule() {
+    if (process.argv[1] === undefined) return false;
+    try {
+        return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+    } catch {
+        return import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+    }
+}
+
+const isMain = isMainModule();
 
 if (isMain) {
     runE2eServer().catch((error) => {

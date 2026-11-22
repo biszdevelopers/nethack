@@ -4,7 +4,7 @@ import { JudgeAssignmentRequest } from "~~/shared/schemas";
 import { judgeAssignments, teams, users } from "~~/server/database/schema";
 import { getActiveSeason, getSeasonById } from "~~/server/utils/database/seasons";
 import { getRubricVersionForSeason } from "~~/server/utils/database/rubrics";
-import { firstRow } from "~~/server/utils/database/query";
+import { firstRow, lockForUpdateIfSupported } from "~~/server/utils/database/query";
 import { writeAuditEvent } from "~~/server/utils/audit";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 
@@ -16,38 +16,6 @@ export default defineEventHandler(
             ? await getSeasonById(event, body.season_id)
             : await getActiveSeason(event);
         if (!season) throw createError({ statusCode: 404, message: "Season not found" });
-
-        const judge = await firstRow(
-            event.context.drizzle
-                .select({
-                    id: users.id,
-                    is_admin: users.is_admin,
-                    is_judge: users.is_judge,
-                    team_id: users.team_id,
-                })
-                .from(users)
-                .where(eq(users.id, body.judge_user_id))
-                .limit(1),
-        );
-        if (!judge) throw createError({ statusCode: 404, message: "Judge not found" });
-
-        // A competing participant cannot judge the same season. Admins who
-        // also compete are rejected by the same rule.
-        if (judge.team_id) {
-            const competingTeam = await firstRow(
-                event.context.drizzle
-                    .select({ season_id: teams.season_id })
-                    .from(teams)
-                    .where(eq(teams.id, judge.team_id))
-                    .limit(1),
-            );
-            if (competingTeam?.season_id === season.id) {
-                throw createError({
-                    statusCode: 409,
-                    message: "A participant competing in this season cannot judge it.",
-                });
-            }
-        }
 
         // Assigning a participant is the promotion step, so judging permission
         // is intentionally not required up front. Pathway scopes still have to
@@ -76,6 +44,39 @@ export default defineEventHandler(
         }
 
         const assignment = await event.context.drizzle.transaction(async (tx) => {
+            // Re-read and lock the account. A concurrent team join must not
+            // slip between the competing check and the promotion below.
+            const judge = await firstRow(
+                lockForUpdateIfSupported(
+                    tx
+                        .select({
+                            id: users.id,
+                            is_admin: users.is_admin,
+                            is_judge: users.is_judge,
+                            team_id: users.team_id,
+                        })
+                        .from(users)
+                        .where(eq(users.id, body.judge_user_id))
+                        .limit(1),
+                ),
+            );
+            if (!judge) throw createError({ statusCode: 404, message: "Judge not found" });
+            if (judge.team_id) {
+                const competingTeam = await firstRow(
+                    tx
+                        .select({ season_id: teams.season_id })
+                        .from(teams)
+                        .where(eq(teams.id, judge.team_id))
+                        .limit(1),
+                );
+                if (competingTeam?.season_id === season.id) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "A participant competing in this season cannot judge it.",
+                    });
+                }
+            }
+
             const [inserted] = await tx
                 .insert(judgeAssignments)
                 .values({

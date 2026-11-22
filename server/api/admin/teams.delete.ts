@@ -27,9 +27,8 @@ export default defineEventHandler(
                 .from(teams)
                 .where(inArray(teams.id, body.ids));
 
-            await deleteTeamsInTransaction(tx, body.ids);
-
-            // Deleting a submitted team leaves a gap in the published ranking.
+            // Lock seasons before touching team rows so this path matches the
+            // season -> team order used by status and score mutations.
             for (const { season_id } of affectedSeasons) {
                 await lockForUpdateIfSupported(
                     tx
@@ -38,6 +37,12 @@ export default defineEventHandler(
                         .where(eq(seasons.id, season_id))
                         .limit(1),
                 );
+            }
+
+            await deleteTeamsInTransaction(tx, body.ids);
+
+            // Deleting a submitted team leaves a gap in the published ranking.
+            for (const { season_id } of affectedSeasons) {
                 await calculateSeasonScoresWithDatabase(tx, season_id, true);
             }
 

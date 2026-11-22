@@ -37,6 +37,32 @@ const exportTables = [
 
 const STAFF_REFERENCE_KEYS = new Set(["actor_user_id", "resolved_by", "judge_user_id"]);
 
+/**
+ * Columns whose value is withheld for every row of a table. Removing them from
+ * the CSV header keeps later rows aligned even though anonymization deletes
+ * the key only from some rows (for example `admin_audit_events.entity_id`).
+ */
+const REDACTED_EXPORT_COLUMNS: Record<string, Set<string>> = {
+    oauth2_applications: new Set(["client_secret"]),
+    team_scores: new Set(["judge_user_id"]),
+    judge_assignments: new Set(["judge_user_id"]),
+    judge_recusals: new Set(["judge_user_id"]),
+    judge_flags: new Set(["judge_user_id", "resolved_by"]),
+    admin_audit_events: new Set(["actor_user_id", "entity_id"]),
+    team_invites: new Set(["token"]),
+};
+
+function csvColumns(name: string, rawRows: Record<string, unknown>[]): string[] {
+    const redacted = REDACTED_EXPORT_COLUMNS[name];
+    const columns = new Set<string>();
+    for (const row of rawRows) {
+        for (const key of Object.keys(row)) {
+            if (!redacted?.has(key)) columns.add(key);
+        }
+    }
+    return [...columns];
+}
+
 /** Remove staff account references from nested audit payloads. */
 function stripStaffReferences(value: unknown, depth = 0): unknown {
     if (depth > 5 || value === null || typeof value !== "object") return value;
@@ -152,21 +178,25 @@ export async function* snapshotDatabaseExport(
         let offset = 0;
         let firstRow = true;
         let headerWritten = false;
+        let headerColumns: string[] = [];
         while (true) {
-            const rawRows =
-                name === "hackathon" && hackathonUsesYaml()
-                    ? [{ ...(await readHackathonConfig()), ...liveOverrides }]
-                    : ((await db
-                          .select()
-                          .from(table as any)
-                          .orderBy(...exportOrder(table))
-                          .limit(PAGE_SIZE)
-                          .offset(offset)) as Record<string, unknown>[]);
+            const liveHackathon = name === "hackathon" && hackathonUsesYaml();
+            const rawRows = liveHackathon
+                ? [{ ...(await readHackathonConfig()), ...liveOverrides }]
+                : ((await db
+                      .select()
+                      .from(table as any)
+                      .orderBy(...exportOrder(table))
+                      .limit(PAGE_SIZE)
+                      .offset(offset)) as Record<string, unknown>[]);
             if (rawRows.length === 0) break;
 
             const rows = rawRows.map((row) => anonymizeExportRow(name, row));
             if (format === "csv" && !headerWritten) {
-                yield `${Object.keys(rows[0]!).map(csvCell).join(",")}\r\n`;
+                // Build the header from the unredacted row keys, then drop the
+                // columns withheld for this table so every row maps by name.
+                headerColumns = csvColumns(name, rawRows);
+                yield `${headerColumns.map(csvCell).join(",")}\r\n`;
                 headerWritten = true;
             }
 
@@ -174,7 +204,7 @@ export async function* snapshotDatabaseExport(
                 if (format === "json") {
                     yield `${firstRow ? "" : ","}${JSON.stringify(row)}`;
                 } else {
-                    yield `${Object.values(row).map(csvCell).join(",")}\r\n`;
+                    yield `${headerColumns.map((column) => csvCell(row[column])).join(",")}\r\n`;
                 }
                 firstRow = false;
             }

@@ -29,7 +29,13 @@ const season = computed(() => {
     return seasons.value?.find((item) => item.id === seasonID) ?? null;
 });
 const resultsPublished = computed(() => Boolean(season.value?.results_published));
-const certificateAvailable = computed(() => Boolean(team.value) && resultsPublished.value);
+const certificateAvailable = computed(
+    () =>
+        Boolean(team.value) &&
+        resultsPublished.value &&
+        ((team.value!.rank !== null && team.value!.rank !== undefined) ||
+            team.value!.awards.length > 0),
+);
 const loading = computed(() => teamStatus.value === "idle" || teamStatus.value === "pending");
 
 const certificateTitle = computed(() => {

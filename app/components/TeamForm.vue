@@ -139,7 +139,9 @@ const removeMemberMessage = (user: Pick<User, "id" | "name" | "email">) => {
     const isSelf = user.id === currentUser.value?.id;
     const ownerNote =
         ownerKnown.value && user.id === ownerUserId.value
-            ? " You are the team owner; transfer leadership first so another member can manage the team."
+            ? isSelf
+                ? " You are the team owner; leadership will transfer to the earliest remaining member when you leave."
+                : " This member owns the team; leadership will transfer to the earliest remaining member."
             : "";
     return `Are you sure you want to ${
         isSelf ? "leave" : `remove ${user.name || user.email} from`

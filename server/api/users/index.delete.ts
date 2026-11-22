@@ -35,6 +35,24 @@ export default defineEventHandler(
         // Delete and recompute in one transaction: a recompute failure must
         // not report an error after the destructive change already committed.
         await event.context.drizzle.transaction(async (tx) => {
+            // Acquire season locks before the account rows, matching the
+            // season -> team/user order used by scoring and team creation.
+            const affectedSeasons = await tx
+                .selectDistinct({ season_id: teamScores.season_id })
+                .from(teamScores)
+                .where(inArray(teamScores.judge_user_id, body.ids));
+            for (const { season_id } of affectedSeasons) {
+                if (season_id !== null) {
+                    await lockForUpdateIfSupported(
+                        tx
+                            .select({ id: seasons.id })
+                            .from(seasons)
+                            .where(eq(seasons.id, season_id))
+                            .limit(1),
+                    );
+                }
+            }
+
             // Lock every account so two concurrent deletions cannot both see
             // another administrator and leave the portal without one.
             const accounts: AdminRow[] = await lockForUpdateIfSupported(
@@ -54,23 +72,11 @@ export default defineEventHandler(
                 });
             }
 
-            const affectedSeasons = await tx
-                .selectDistinct({ season_id: teamScores.season_id })
-                .from(teamScores)
-                .where(inArray(teamScores.judge_user_id, body.ids));
-
             await deleteUsersInTransaction(tx, body.ids);
 
             // Removed evaluations must not keep contributing to published scores/ranks.
             for (const { season_id } of affectedSeasons) {
                 if (season_id !== null) {
-                    await lockForUpdateIfSupported(
-                        tx
-                            .select({ id: seasons.id })
-                            .from(seasons)
-                            .where(eq(seasons.id, season_id))
-                            .limit(1),
-                    );
                     await calculateSeasonScoresWithDatabase(tx, season_id, true);
                 }
             }

@@ -226,11 +226,26 @@ onUnmounted(() => {
                         The hackathon hasn't started yet - please check the timer on the home page!
                     </template>
                     <template v-else-if="hackathon?.status === 'in_progress'">
-                        The hackathon is in progress -
-                        <span class="glow">Hack away!</span>
+                        <template v-if="hackathon?.is_submission_closed">
+                            The hackathon is in progress, and submissions are closed.
+                        </template>
+                        <template v-else>
+                            The hackathon is in progress -
+                            <span class="glow">Hack away!</span>
+                        </template>
                     </template>
                     <template v-else-if="hackathon?.status === 'voting'">
-                        The hackathon is completed, and judging and peer voting are underway!
+                        The hackathon is completed,
+                        <template v-if="hackathon?.is_judging_open && hackathon?.is_voting_open">
+                            and judging and peer voting are underway!
+                        </template>
+                        <template v-else-if="hackathon?.is_judging_open">
+                            and judging is underway.
+                        </template>
+                        <template v-else-if="hackathon?.is_voting_open">
+                            and peer voting is underway.
+                        </template>
+                        <template v-else>and judging and peer voting are closed.</template>
                     </template>
                     <template v-else-if="hackathon?.status === 'finished'">
                         The hackathon is finished.

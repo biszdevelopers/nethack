@@ -54,6 +54,12 @@ export default defineEventHandler(
                 message: "Cannot invite members after the project is submitted",
             });
         }
+        if (team.status !== "active") {
+            throw createError({
+                status: 403,
+                message: "This team is no longer accepting members",
+            });
+        }
 
         const target = await getUserByEmail(event, email);
         if (target) {

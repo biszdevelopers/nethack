@@ -528,7 +528,7 @@ Apply pending migrations explicitly during release workflows with `bun run db:mi
 
 ## SQLite import
 
-SQLite is a source format for the one-time VPS cutover only. The importer is read-only against its SQLite backup, accepts an empty PostgreSQL target or the complete exact seed created by fresh migrations, and executes the import in one transaction. Partial or modified seed state and other target data are rejected. It preserves IDs and relationships, sets PostgreSQL identity sequences, checks row counts and foreign-key references, and writes the legacy-only columns and old score migration artifact to `sqlite_legacy_data`.
+SQLite is a source format for the one-time VPS cutover only. The importer is read-only against its SQLite backup, accepts an empty PostgreSQL target or the complete exact seed created by fresh migrations, and executes the import in one transaction. Partial or modified seed state and other target data are rejected. It preserves IDs and relationships, sets PostgreSQL identity sequences, checks row counts and foreign-key references, and writes the legacy-only columns and old score migration artifact to `sqlite_legacy_data`. Case-insensitive duplicate team names are suffixed with their source ID and legacy 0/1 flags are clamped, matching migration `0015`, so a source that predates those constraints still imports.
 
 JSON columns are normalized before binding: a SQLite TEXT value that already contains JSON is parsed so PostgreSQL stores an object, and a plain string stays a JSON string. Season status values are validated against the allowed set, and a score is assigned to its team's season even when a legacy `season_id` disagrees, so scoring and feedback always read the same rows.
 

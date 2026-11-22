@@ -118,28 +118,78 @@ describe("POST /api/admin/teams/:id/reopen", () => {
         });
     });
 
-    it("refuses to reopen while the season has peer votes", async () => {
+    it("removes the reopened team from peer ballots", async () => {
         const team = seedSubmittedTeam();
+        const otherTeam = seedTeam(ctx, { name: "Other Team", season_id: 1, status: "active" });
         const voter = seedUser(ctx, { email: "voter@basischina.com" });
+        const member = seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
         ctx.drizzle
             .insert(peerVotingScores)
             .values({
                 user_id: voter.id,
                 season_id: team.season_id,
+                team_id: otherTeam.id,
+                score: JSON.stringify({ [team.id]: 5, [otherTeam.id]: 5 }),
+            })
+            .run();
+        ctx.drizzle
+            .insert(peerVotingScores)
+            .values({
+                user_id: member.id,
+                season_id: team.season_id,
                 team_id: team.id,
-                score: JSON.stringify({ [team.id]: 5 }),
+                score: JSON.stringify({ [otherTeam.id]: 5 }),
             })
             .run();
         mockParams.values = { id: team.id };
         mockBody.value = {};
 
-        await expect(reopenHandler(createEvent())).rejects.toMatchObject({
-            statusCode: 409,
-            message: "Delete the season's peer votes before reopening its submission.",
-        });
-        expect(
-            ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get()!.project_submitted,
-        ).toBe(1);
+        await expect(reopenHandler(createEvent())).resolves.toMatchObject({ team_id: team.id });
+
+        const row = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get()!;
+        expect(row.project_submitted).toBe(0);
+        expect(row.score).toBeNull();
+        expect(row.score_exact).toBeNull();
+        const ballots = ctx.drizzle.select().from(peerVotingScores).all();
+        expect(ballots).toHaveLength(1);
+        expect(ballots[0]!.user_id).toBe(voter.id);
+        expect(JSON.parse(ballots[0]!.score)).toEqual({ [otherTeam.id]: 5 });
+    });
+
+    it("leaves malformed peer ballots untouched and deletes ballots that only scored the reopened team", async () => {
+        const team = seedSubmittedTeam();
+        const otherTeam = seedTeam(ctx, { name: "Other Team", season_id: 1, status: "active" });
+        const malformedVoter = seedUser(ctx, { email: "malformed@basischina.com" });
+        const onlyReopenedVoter = seedUser(ctx, { email: "only@basischina.com" });
+        const nullVoter = seedUser(ctx, { email: "null@basischina.com" });
+        const arrayVoter = seedUser(ctx, { email: "array@basischina.com" });
+        const unrelatedVoter = seedUser(ctx, { email: "unrelated@basischina.com" });
+        for (const [voter, score] of [
+            [malformedVoter, "{not json"],
+            [onlyReopenedVoter, JSON.stringify({ [team.id]: 5 })],
+            [nullVoter, "null"],
+            [arrayVoter, "[]"],
+            [unrelatedVoter, JSON.stringify({ 999: 5 })],
+        ] as const) {
+            ctx.drizzle
+                .insert(peerVotingScores)
+                .values({
+                    user_id: voter.id,
+                    season_id: team.season_id,
+                    team_id: otherTeam.id,
+                    score,
+                })
+                .run();
+        }
+        mockParams.values = { id: team.id };
+        mockBody.value = {};
+
+        await expect(reopenHandler(createEvent())).resolves.toMatchObject({ team_id: team.id });
+
+        const ballots = ctx.drizzle.select().from(peerVotingScores).all();
+        expect(ballots.map((ballot) => ballot.user_id).sort()).toEqual(
+            [malformedVoter.id, nullVoter.id, arrayVoter.id, unrelatedVoter.id].sort(),
+        );
     });
 
     it("refuses to reopen a team that never submitted", async () => {

@@ -283,6 +283,7 @@ describe("POST /api/admin/judging/assignments", () => {
                 if (property === "transaction") {
                     return async (callback: any) =>
                         callback({
+                            select: (...args: any[]) => (ctx.drizzle.select as any)(...args),
                             insert: () => ({
                                 values: () => ({
                                     onConflictDoNothing: () => ({
