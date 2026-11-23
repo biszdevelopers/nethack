@@ -172,7 +172,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
             const n10 = String(index).padStart(2, "0");
             await test.step(`P${n10} — protected admin API rejects guests`, async () => {
                 expect([401, 403]).toContain((await api(page, "/api/admin/hackathon")).status);
-                expect([401, 403]).toContain((await api(page, "/api/admin/seasons")).status);
+                expect([401, 403]).toContain((await api(page, "/api/admin/teams")).status);
             });
             index += 1;
 
