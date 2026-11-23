@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { formatDateTime, toValidDate, type DateInput } from "~/utils/datetime";
+import {
+    DISPLAY_TIME_ZONE_LABEL,
+    formatDateTime,
+    toValidDate,
+    type DateInput,
+} from "~/utils/datetime";
 
 const props = defineProps<{
     date: DateInput;
@@ -12,6 +17,7 @@ const dateTime = computed(() => normalizedDate.value?.toISOString());
 
 <template>
     <time :datetime="dateTime">
-        <ClientOnly>{{ text }}</ClientOnly>
+        {{ text }}
+        <span v-if="dateTime" class="text-muted">({{ DISPLAY_TIME_ZONE_LABEL }})</span>
     </time>
 </template>

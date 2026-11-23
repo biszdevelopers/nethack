@@ -23,10 +23,6 @@ const baseline = () => {
     vi.stubEnv("BASIS_AUTH_INTERNAL_URL", "http://127.0.0.1:3001");
     vi.stubEnv("CURRENT_URL_ORIGIN", "https://site.example.test");
     vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
-    vi.stubEnv("MICROSOFT_TENANT_ID", "");
-    vi.stubEnv("MICROSOFT_CLIENT_ID", "");
-    vi.stubEnv("MICROSOFT_CLIENT_SECRET", "");
-    vi.stubEnv("MICROSOFT_WEBHOOK_STATE", "");
 };
 
 describe("environment validation plugin", () => {
@@ -229,29 +225,33 @@ describe("environment validation plugin", () => {
         await expectExit();
     });
 
-    it("warns for partial Graph settings and short webhook state in development", async () => {
+    it("warns when production leaves the proxy hop count unset", async () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-        vi.stubEnv("MICROSOFT_TENANT_ID", "tenant");
-        vi.stubEnv("MICROSOFT_CLIENT_ID", "client");
-        vi.stubEnv("MICROSOFT_WEBHOOK_STATE", "short");
+        vi.stubEnv("NODE_ENV", "production");
+        delete process.env.TRUSTED_PROXY_HOPS;
 
         await runPlugin();
 
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining("Configured: 2/3"));
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining("at least 32 bytes"));
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("TRUSTED_PROXY_HOPS"));
     });
 
-    it("accepts complete Graph and valid webhook configuration, and rejects short production webhook state", async () => {
-        vi.stubEnv("MICROSOFT_TENANT_ID", "tenant");
-        vi.stubEnv("MICROSOFT_CLIENT_ID", "client");
-        vi.stubEnv("MICROSOFT_CLIENT_SECRET", "secret");
-        vi.stubEnv("MICROSOFT_WEBHOOK_STATE", "s".repeat(32));
+    it("warns when production leaves verified-email enforcement off", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.stubEnv("NODE_ENV", "production");
+
         await runPlugin();
 
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("REQUIRE_VERIFIED_EMAIL"));
+    });
+
+    it("keeps verified-email enforcement quiet when it is enabled", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
         vi.stubEnv("NODE_ENV", "production");
-        vi.stubEnv("MICROSOFT_WEBHOOK_STATE", "short");
-        vi.spyOn(console, "error").mockImplementation(() => {});
-        await expectExit();
+        vi.stubEnv("REQUIRE_VERIFIED_EMAIL", "1");
+
+        await runPlugin();
+
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("REQUIRE_VERIFIED_EMAIL"));
     });
 });
 

@@ -6,11 +6,18 @@
             <div class="w-full flex flex-col gap-2">
                 <p class="text-muted text-xs inline-flex items-baseline gap-1">
                     <UIcon name="i-lucide-copyright" />
-                    <ClientOnly>{{ new Date().getFullYear() }}</ClientOnly>
+                    {{ currentYear }}
                     BISZ Developers' Club, BINJ Hack Club
                 </p>
+                <p class="text-muted text-xs">All deadlines use Asia/Shanghai (UTC+8).</p>
                 <ULink class="text-xs inline-flex items-center" to="/contributing" target="_blank">
                     Contribute to nethack
+                </ULink>
+                <ULink
+                    class="text-xs inline-flex items-center"
+                    to="/rules#privacy-and-data-retention"
+                >
+                    Privacy and data retention
                 </ULink>
                 <ULink v-if="isAdmin" class="text-xs inline-flex items-center" to="/developers">
                     Mod Portal
@@ -22,7 +29,7 @@
             :items="items"
             variant="link"
             class="w-full justify-center"
-            :ui="{ link: 'min-h-11' }"
+            :ui="{ link: 'min-h-11 min-w-7 px-1', list: 'flex-wrap justify-center gap-2' }"
         />
 
         <template #right>
@@ -254,13 +261,43 @@ import { NethackPermissions } from "~~/shared/permissions";
 
 const { status } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
+const currentYear = new Date().getFullYear();
+
+type ActiveSeasonFooter = {
+    is_gallery_public?: number | boolean | null;
+    is_submission_closed?: number | boolean | null;
+};
+
+const { data: activeSeason } = useApiFetch<ActiveSeasonFooter>("/api/seasons/active", {
+    lazy: true,
+    $fetch: globalThis.$fetch,
+});
+
+const galleryPublic = computed(() => Boolean(activeSeason.value?.is_gallery_public));
 
 const isAdmin = computed(() => {
     if (status.value === "idle" || status.value === "pending") return false;
     return can(NethackPermissions.all);
 });
 
-const items: NavigationMenuItem[] = [
+const items = computed<NavigationMenuItem[]>(() => [
+    {
+        label: "Rules",
+        to: "/rules",
+    },
+    {
+        label: "FAQ",
+        to: "/faq",
+    },
+    {
+        label: "Contact",
+        to: "/contact",
+    },
+    {
+        label: "Showcase",
+        to: "/showcase",
+    },
+    ...(galleryPublic.value ? [{ label: "Projects", to: "/projects" }] : []),
     {
         label: "biszweb.club",
         to: "https://biszweb.club/clubs/developers_club",
@@ -271,5 +308,5 @@ const items: NavigationMenuItem[] = [
         to: "https://binj.dev",
         target: "_blank",
     },
-];
+]);
 </script>

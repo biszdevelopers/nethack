@@ -69,7 +69,7 @@ export default defineNuxtConfig({
         defaults: {
             preload: true,
         },
-        processCSSVariables: true,
+        processCSSVariables: false,
         families: [
             { name: "Unbounded", src: "/fonts/unbounded-800.woff2", weight: 800 },
             { name: "Orbitron", src: "/fonts/orbitron-700.woff2", weight: 700 },
@@ -116,7 +116,14 @@ export default defineNuxtConfig({
             // target, and both Node.js >= v24 and Bun support it without issue.
             target: "es2020",
             minify: "esbuild",
-            sourcemap: true,
+            // Client sourcemaps expose original sources in production; only
+            // development builds need them.
+            sourcemap: process.env.NODE_ENV !== "production",
+            // The timing summary is informational; turning it off keeps build
+            // output focused on actionable warnings.
+            rolldownOptions: {
+                checks: { bundlerTimings: false },
+            },
             rollupOptions: {
                 onwarn(warning, warn) {
                     if (warning.message.includes("Sourcemap is likely to be incorrect")) return;

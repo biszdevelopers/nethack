@@ -4,6 +4,7 @@ import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam } from "~~/shared/schemas";
 import { judgingDrafts } from "~~/server/database/schema";
 import { applyRateLimit, JUDGING_DRAFT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
+import { getEventState } from "~~/server/utils/event-state";
 import { isJudgingOpen } from "~~/server/utils/judging";
 
 const ParamsSchema = z.object({ teamId: PositiveIntParam });
@@ -12,7 +13,8 @@ export default defineEventHandler(
     applyRateLimit(async (event) => {
         const judge = await requireUser(event, NethackPermissions.Judging.scoresWriteAssigned);
         const { teamId } = await getValidatedRouterParams(event, ParamsSchema.parse);
-        if (!isJudgingOpen(await getHackathon(event))) {
+        const state = await getEventState(event);
+        if (!isJudgingOpen(state.hackathon, state.season)) {
             throw createError({ statusCode: 409, message: "Judging is not open" });
         }
         await event.context.drizzle

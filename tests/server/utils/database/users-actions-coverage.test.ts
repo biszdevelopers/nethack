@@ -14,6 +14,7 @@ describe("existing basis-auth link update actions", () => {
         email: "member@example.test",
         name: "Initial Member",
         picture: "https://auth.example.test/api/picture/linked-subject",
+        emailVerified: true,
     };
 
     beforeEach(async () => {

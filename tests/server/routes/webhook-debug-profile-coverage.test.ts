@@ -5,20 +5,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-    query: {} as Record<string, unknown>,
-    jsonBody: null as any,
-    webhookState: "webhook-secret",
-    stateValid: true,
     user: null as any,
     profileAsset: { stream: { profile: true }, size: 23 } as any,
     storedNames: vi.fn(async (collection: string, path?: string) => [
         `${collection}:${path ?? "root"}`,
     ]),
-    readLimitedJsonBody: vi.fn(async () => mocks.jsonBody),
-    hasValidMicrosoftWebhookState: vi.fn(() => mocks.stateValid),
-    getMicrosoftWebhookState: vi.fn(() => mocks.webhookState),
-    getChatbotWebhookId: vi.fn(() => "subscription-1"),
-    refreshChatbotWebhook: vi.fn(async () => undefined),
     requireUser: vi.fn(async () => ({ id: 9 })),
     assetContentType: vi.fn((path: string) =>
         path.endsWith(".png") ? "image/png" : "application/octet-stream",
@@ -28,17 +19,6 @@ const mocks = vi.hoisted(() => ({
     sendStream: vi.fn((_event: unknown, stream: unknown) => ({ streamed: stream })),
 }));
 
-vi.mock("~~/server/plugins/microsoft", () => ({
-    getChatbotWebhookId: mocks.getChatbotWebhookId,
-    getMicrosoftWebhookState: mocks.getMicrosoftWebhookState,
-    refreshChatbotWebhook: mocks.refreshChatbotWebhook,
-}));
-vi.mock("~~/server/utils/limited-json-body", () => ({
-    readLimitedJsonBody: mocks.readLimitedJsonBody,
-}));
-vi.mock("~~/server/utils/microsoft-webhook-security", () => ({
-    hasValidMicrosoftWebhookState: mocks.hasValidMicrosoftWebhookState,
-}));
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (handler: any) => handler,
     DEFAULT_RATE_LIMIT_CONFIG: {},
@@ -51,171 +31,6 @@ vi.mock("~~/server/utils/assets", () => ({
 }));
 vi.mock("h3", () => ({ sendStream: mocks.sendStream }));
 vi.mock("node-fetch", () => ({ default: mocks.fetch }));
-
-describe("Microsoft webhook route actions", () => {
-    let update: (event: any) => Promise<any>;
-    let lifecycle: (event: any) => Promise<any>;
-    let event: any;
-
-    beforeEach(async () => {
-        vi.stubGlobal("defineEventHandler", (handler: any) => handler);
-        vi.stubGlobal("getValidatedQuery", (_event: unknown, validate: (query: unknown) => any) => {
-            try {
-                return validate(mocks.query);
-            } catch (error) {
-                throw Object.assign(error as Error, { statusCode: 400 });
-            }
-        });
-        vi.stubGlobal("setResponseHeader", (target: any, name: string, value: string) => {
-            target.headers[name] = value;
-        });
-        vi.stubGlobal("setResponseStatus", (target: any, status: number) => {
-            target.status = status;
-        });
-        vi.stubGlobal("createError", (error: any) =>
-            Object.assign(new Error(error.message ?? error.statusMessage), {
-                ...error,
-                statusCode: error.statusCode ?? error.status,
-            }),
-        );
-        mocks.query = {};
-        mocks.jsonBody = null;
-        mocks.webhookState = "webhook-secret";
-        mocks.stateValid = true;
-        mocks.readLimitedJsonBody.mockClear();
-        mocks.hasValidMicrosoftWebhookState.mockClear();
-        mocks.getMicrosoftWebhookState.mockClear();
-        mocks.refreshChatbotWebhook.mockReset().mockResolvedValue(undefined);
-        event = { headers: {} };
-        update = (await import("~~/server/api/_webhooks/update.post")).default;
-        lifecycle = (await import("~~/server/api/_webhooks/lifecycle.post")).default;
-    });
-
-    afterEach(() => vi.unstubAllGlobals());
-
-    it.each([
-        ["missing", null],
-        ["object", { value: {} }],
-        ["empty array", { value: [] }],
-    ])("rejects %s update payloads", async (_label, body) => {
-        mocks.jsonBody = body;
-        await expect(update(event)).rejects.toMatchObject({ statusCode: 400 });
-    });
-
-    it("echoes Graph validation tokens as plain text without reading a body", async () => {
-        mocks.query = { validationToken: "verify-me" };
-
-        await expect(update(event)).resolves.toBe("verify-me");
-
-        expect(event.status).toBe(200);
-        expect(event.headers["Content-Type"]).toBe("text/plain; charset=utf-8");
-        expect(mocks.readLimitedJsonBody).not.toHaveBeenCalled();
-    });
-
-    it("rejects repeated or oversized validation tokens", async () => {
-        mocks.query = { validationToken: ["first", "second"] };
-        await expect(update(event)).rejects.toMatchObject({ statusCode: 400 });
-
-        mocks.query = { validationToken: "x".repeat(4097) };
-        await expect(lifecycle(event)).rejects.toMatchObject({ statusCode: 400 });
-        expect(mocks.readLimitedJsonBody).not.toHaveBeenCalled();
-    });
-
-    it.each([
-        ["missing client state", { value: [{ changeType: "updated" }] }],
-        ["non-string client state", { value: [{ clientState: ["invalid"] }] }],
-        ["invalid change type", { value: [{ clientState: "webhook-secret", changeType: 4 }] }],
-    ])("rejects malformed update notification fields: %s", async (_label, body) => {
-        mocks.jsonBody = body;
-        await expect(update(event)).rejects.toMatchObject({ statusCode: 400 });
-        expect(mocks.hasValidMicrosoftWebhookState).not.toHaveBeenCalled();
-    });
-
-    it("rejects update notifications with an invalid client state", async () => {
-        mocks.jsonBody = { value: [{ clientState: "wrong" }] };
-        mocks.stateValid = false;
-
-        await expect(update(event)).rejects.toMatchObject({ statusCode: 403 });
-        expect(mocks.hasValidMicrosoftWebhookState).toHaveBeenCalledWith(
-            mocks.jsonBody.value,
-            "webhook-secret",
-        );
-    });
-
-    it("accepts a validated update notification and reports the received change", async () => {
-        mocks.jsonBody = {
-            value: [{ clientState: "webhook-secret", changeType: "updated", resource: "users/1" }],
-        };
-
-        await expect(update(event)).resolves.toEqual({ message: "Received" });
-
-        expect(event.status).toBe(200);
-        expect(mocks.readLimitedJsonBody).toHaveBeenCalledWith(event, 64 * 1024);
-    });
-
-    it.each([
-        ["missing", null],
-        ["object", { value: {} }],
-        ["empty array", { value: [] }],
-    ])("rejects %s lifecycle payloads", async (_label, body) => {
-        mocks.jsonBody = body;
-        await expect(lifecycle(event)).rejects.toMatchObject({ statusCode: 400 });
-    });
-
-    it("echoes Graph validation tokens for lifecycle subscriptions", async () => {
-        mocks.query = { validationToken: "lifecycle-check" };
-
-        await expect(lifecycle(event)).resolves.toBe("lifecycle-check");
-
-        expect(event.status).toBe(200);
-        expect(event.headers["Content-Type"]).toBe("text/plain; charset=utf-8");
-    });
-
-    it("rejects lifecycle events with an invalid client state", async () => {
-        mocks.jsonBody = { value: [{ clientState: "wrong" }] };
-        mocks.stateValid = false;
-
-        await expect(lifecycle(event)).rejects.toMatchObject({ statusCode: 403 });
-    });
-
-    it("queues refresh for reauthorization requests and returns 202", async () => {
-        mocks.jsonBody = {
-            value: [{ clientState: "webhook-secret", lifecycleEvent: "reauthorizationRequired" }],
-        };
-
-        await expect(lifecycle(event)).resolves.toEqual({ message: "Received" });
-        await Promise.resolve();
-
-        expect(mocks.refreshChatbotWebhook).toHaveBeenCalledOnce();
-        expect(event.status).toBe(202);
-    });
-
-    it("logs a failed webhook refresh without failing the accepted lifecycle request", async () => {
-        const error = new Error("refresh unavailable");
-        const logError = vi.spyOn(console, "error").mockImplementation(() => {});
-        mocks.refreshChatbotWebhook.mockRejectedValue(error);
-        mocks.jsonBody = {
-            value: [{ clientState: "webhook-secret", lifecycleEvent: "reauthorizationRequired" }],
-        };
-
-        await expect(lifecycle(event)).resolves.toEqual({ message: "Received" });
-        await vi.waitFor(() =>
-            expect(logError).toHaveBeenCalledWith(
-                "[MS Graph] Failed to refresh chatbot webhook:",
-                error,
-            ),
-        );
-    });
-
-    it("accepts other valid lifecycle events without refreshing the subscription", async () => {
-        mocks.jsonBody = { value: [{ clientState: "webhook-secret", lifecycleEvent: "missed" }] };
-
-        await expect(lifecycle(event)).resolves.toEqual({ message: "Received" });
-
-        expect(mocks.refreshChatbotWebhook).not.toHaveBeenCalled();
-        expect(event.status).toBe(202);
-    });
-});
 
 describe("debug asset actions", () => {
     let upload: (event: any) => never;

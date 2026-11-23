@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMockEvent } from "./helpers";
+import { invalidateHackathonCache } from "~~/server/utils/database/hackathon";
 import {
     getSeasons,
     getSeasonById,
@@ -160,6 +161,47 @@ describe("seasons database helpers", () => {
             expect(season!.id).toBe(1);
             expect(season!.name).toBe("Full");
             expect(season!.is_active).toBe(1);
+        });
+    });
+
+    describe("request-scoped caching", () => {
+        it("reuses season reads within one request and refreshes after a write", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Season 1', 1)")
+                .run();
+
+            const first = await getSeasons(event);
+            event.context.drizzle.prepare("UPDATE seasons SET name = 'Renamed' WHERE id = 1").run();
+            expect(await getSeasons(event)).toBe(first);
+
+            invalidateHackathonCache(event);
+            const refreshed = await getSeasons(event);
+            expect(refreshed[0]!.name).toBe("Renamed");
+        });
+
+        it("collapses concurrent active-season reads into one shared row", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Active', 1)")
+                .run();
+
+            const [first, second] = await Promise.all([
+                getActiveSeason(event),
+                getActiveSeason(event),
+            ]);
+            expect(first).toBe(second);
+        });
+
+        it("keeps request caches isolated between events", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Original', 1)")
+                .run();
+            const other = await createMockEvent();
+
+            await getSeasons(event);
+            event.context.drizzle.prepare("UPDATE seasons SET name = 'Changed' WHERE id = 1").run();
+
+            const otherSeasons = await getSeasons(other);
+            expect(otherSeasons).toEqual([]);
         });
     });
 
@@ -420,6 +462,25 @@ describe("seasons database helpers", () => {
                 .first() as any;
             expect(hackathon.show_scores).toBe(1);
             expect(hackathon.show_ranking).toBe(1);
+        });
+
+        it("rejects a live tweak without the live-event grant", async () => {
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO hackathon(id, status, start_timestamp, end_timestamp, voting_start_timestamp, voting_end_timestamp, results_open_timestamp) VALUES(1, 'not_started', 0, 0, 0, 0, 0)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Live', 1)")
+                .run();
+            (event.context as any).oauth2 = {
+                payload: { permissions: [] },
+                user: { id: 1 },
+            };
+
+            await expect(updateSeasonTweaks(event, 1, { show_scores: 1 })).rejects.toMatchObject({
+                statusCode: 403,
+            });
         });
 
         it("does not touch the hackathon row when the season is not live", async () => {

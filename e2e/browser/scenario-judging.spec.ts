@@ -31,6 +31,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
         const judge = await pageOf();
         const judgeTwo = await pageOf();
         const judgeThree = await pageOf();
+        const builder = await pageOf();
         const suffix = Date.now().toString(36);
 
         try {
@@ -46,6 +47,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 await login(judge, "judge@e2e.basishacks.invalid", "/judging");
                 await login(judgeTwo, "judge-two@e2e.basishacks.invalid", "/judging");
                 await login(judgeThree, "judge-three@e2e.basishacks.invalid", "/judging");
+                await login(builder, "builder@e2e.basishacks.invalid", "/dashboard");
             });
 
             await step("admin opens the season for submissions", async () => {
@@ -68,7 +70,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 // A second eligible project is required: each star score is 0-5
                 // and the total must be exactly 10.
                 await makeSubmittedTeam(
-                    judgeTwo,
+                    builder,
                     `Matrix-J-J-${suffix}`,
                     `Matrix J judge ${suffix}`,
                 );
@@ -247,18 +249,28 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 expect([200, 409]).toContain(result.status);
             });
 
-            await step("published results do not veto the judging toggle", async () => {
-                // The judging_open toggle remains authoritative: publishing
-                // results does not silently close the queue.
-                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(true);
-                const queue = await api(judge, "/api/teams?judging=true");
-                expect(queue.status).toBe(200);
-                // Explicitly turning the toggle off closes judging.
-                await setSwitch(admin, "judging_open", 0);
-                expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(false);
-                expect((await api(judge, "/api/teams?judging=true")).status).toBe(403);
-                await setSwitch(admin, "judging_open", 1);
-            });
+            await step(
+                "published results freeze judging until the toggle is reopened",
+                async () => {
+                    // Publishing results freezes judging and voting by default.
+                    expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(
+                        false,
+                    );
+                    await setSwitch(admin, "judging_open", 1);
+                    expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(
+                        true,
+                    );
+                    const queue = await api(judge, "/api/teams?judging=true");
+                    expect(queue.status).toBe(200);
+                    // Explicitly turning the toggle off closes judging.
+                    await setSwitch(admin, "judging_open", 0);
+                    expect((await api(admin, "/api/seasons/active")).body.is_judging_open).toBe(
+                        false,
+                    );
+                    expect((await api(judge, "/api/teams?judging=true")).status).toBe(403);
+                    await setSwitch(admin, "judging_open", 1);
+                },
+            );
 
             await step("published participant feedback is anonymized", async () => {
                 const result = await api(participant, `/api/teams/${participantTeam}/scores`);
@@ -286,30 +298,6 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
             await step("ballot summary is readable by a judge", async () => {
                 const result = await api(judge, "/api/ballot/summary");
                 expect(result.status).toBe(200);
-            });
-
-            await step("judge cannot score their own team", async () => {
-                const rubric = await api(judgeTwo, "/api/judging/rubric");
-                const judgeTwoTeam = (
-                    await api(
-                        judgeTwo,
-                        `/api/users/${rubric && (await api(judgeTwo, "/api/auth/session")).body.user.id}`,
-                    )
-                ).body.team;
-                if (!judgeTwoTeam) return;
-                const scores: Record<string, number> = {};
-                for (const criterion of rubric.body.tracks.junior.criteria)
-                    scores[criterion.id] = 3;
-                const result = await api(judgeTwo, `/api/teams/${judgeTwoTeam.id}/scores`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        reasoning: "An evaluation of my own team that must be rejected.",
-                        scores,
-                        rubric_version_id: versionId,
-                    }),
-                });
-                expect([403, 404, 409]).toContain(result.status);
             });
 
             await step("score rubric is season-specific", async () => {
@@ -345,7 +333,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                         rubric_version_id: 999999,
                     }),
                 });
-                expect([400, 403, 409]).toContain(result.status);
+                expect(result.status, `wrong rubric: ${JSON.stringify(result.body)}`).toBe(409);
             });
 
             await step("final state is restored for the shared harness", async () => {

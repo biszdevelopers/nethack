@@ -259,6 +259,58 @@ describe("score submission action boundaries", () => {
         });
     });
 
+    it("rejects a score when the judge account no longer exists", async () => {
+        raw.prepare("DELETE FROM users WHERE id = 1").run();
+
+        await expect(submit()).rejects.toMatchObject({
+            statusCode: 403,
+            statusMessage: "Judge account not found.",
+        });
+        expectNoSavedScore();
+    });
+
+    it("rejects a score when the judge joined a team in the same season", async () => {
+        raw.prepare(
+            "INSERT INTO teams(id, name, season_id, project_submitted, pathway, status) VALUES(2, 'Judge team', 42, 1, 'junior', 'active')",
+        ).run();
+        raw.prepare("UPDATE users SET team_id = 2 WHERE id = 1").run();
+
+        await expect(submit()).rejects.toMatchObject({
+            statusCode: 403,
+            statusMessage: "Competing participants cannot judge this season",
+        });
+        expectNoSavedScore();
+    });
+
+    it("rejects a score when the team was disqualified after the route pre-check", async () => {
+        raw.prepare("UPDATE teams SET status = 'disqualified' WHERE id = 1").run();
+
+        await expect(submit()).rejects.toMatchObject({
+            statusCode: 404,
+            statusMessage: "Submitted project not found.",
+        });
+        expectNoSavedScore();
+    });
+
+    it("allows an administrator who competes to score another project", async () => {
+        raw.prepare(
+            "INSERT INTO teams(id, name, season_id, project_submitted, pathway, status) VALUES(2, 'Admin team', 42, 1, 'junior', 'active')",
+        ).run();
+        raw.prepare("UPDATE users SET team_id = 2, is_admin = 1 WHERE id = 1").run();
+
+        await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
+    });
+
+    it("allows a judge whose team belongs to another season", async () => {
+        raw.prepare("INSERT INTO seasons(id, name, is_active) VALUES(43, 'Past', 0)").run();
+        raw.prepare(
+            "INSERT INTO teams(id, name, season_id, project_submitted, pathway, status) VALUES(2, 'Past team', 43, 1, 'junior', 'active')",
+        ).run();
+        raw.prepare("UPDATE users SET team_id = 2 WHERE id = 1").run();
+
+        await expect(submit()).resolves.toMatchObject({ team_id: 1, season_id: 42 });
+    });
+
     it("requests a row lock on the judging-season read when the driver supports it", async () => {
         const database = event.context.drizzle;
         const originalSelect = database.select.bind(database);

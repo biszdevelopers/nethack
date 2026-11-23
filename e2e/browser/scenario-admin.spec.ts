@@ -272,7 +272,7 @@ test.describe.serial("scenario matrix — administrator situations", () => {
 
             await step("database export is available to admins", async () => {
                 const result = await api(admin, "/api/admin/database/export?format=json");
-                expect([200, 400]).toContain(result.status);
+                expect(result.status, `export: ${JSON.stringify(result.body)}`).toBe(200);
             });
 
             await step("admin scores summary is readable", async () => {

@@ -45,7 +45,10 @@ export default defineEventHandler(
             }
         }
 
-        const png = toPng(user.email.toString(), 200);
+        // Seed the fallback avatar with the numeric id, never the email: the
+        // endpoint is public and a deterministic email identicon would let a
+        // caller confirm which account owns a candidate address.
+        const png = toPng(String(user.id), 200);
         setResponseHeader(event, "Content-Type", "image/png");
         return Readable.from(png);
     }, DEFAULT_RATE_LIMIT_CONFIG),

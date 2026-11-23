@@ -80,6 +80,15 @@ async function sweep(page: Page, routes: readonly string[]) {
                     `${route} returned HTTP ${status}`,
                 ).toBe(true);
 
+                const finalPath = new URL(page.url()).pathname;
+                if (route === "/user") {
+                    expect(finalPath, "/user should resolve to a profile page").toMatch(
+                        /^\/user\/\d+$/,
+                    );
+                } else {
+                    expect(finalPath, `${route} should stay on its own page`).toBe(route);
+                }
+
                 if (route === "/developers/docs") {
                     await expect(
                         page.locator('iframe[title="nethack documentation"]'),

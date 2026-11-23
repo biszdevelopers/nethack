@@ -1,16 +1,19 @@
 import type { H3Event } from "h3";
-import { eq, and, inArray, notExists, asc, sql, ne } from "drizzle-orm";
+import { eq, and, inArray, notExists, asc, sql, ne, type SQL } from "drizzle-orm";
 import {
     teams,
     teamScores,
     ballotScores,
     teamAwards,
+    teamInvites,
     userPastTeams,
     users,
     seasons,
 } from "~~/server/database/schema";
 import type { DrizzleDatabase } from "~~/server/database";
 import { changedRows, firstRow, lockForUpdateIfSupported } from "./query";
+import { getActiveSeason } from "./seasons";
+import { writeAuditEvent } from "~~/server/utils/audit";
 
 // --- Active season filtered (default behavior) ---
 /**
@@ -56,6 +59,7 @@ export async function getSubmittedUnjudgedTeams(
     event: H3Event,
     judgeUserID: number,
     judgeTeamId: number | null = null,
+    extraWhere?: SQL,
 ): Promise<Team[]> {
     const activeSeason = await getActiveSeason(event);
     const seasonId = activeSeason?.id ?? -1;
@@ -72,8 +76,10 @@ export async function getSubmittedUnjudgedTeams(
             and(
                 eq(teams.season_id, seasonId),
                 eq(teams.project_submitted, 1),
+                eq(teams.status, "active"),
                 ne(teams.id, judgeTeamId ?? -1),
                 notExists(subquery),
+                extraWhere,
             ),
         )
         .then((rows) => rows as Team[]);
@@ -138,7 +144,13 @@ export async function getPublicTeams(event: H3Event, seasonId?: number): Promise
     return event.context.drizzle
         .select()
         .from(teams)
-        .where(and(eq(teams.season_id, targetSeasonId), eq(teams.project_submitted, 1)))
+        .where(
+            and(
+                eq(teams.season_id, targetSeasonId),
+                eq(teams.project_submitted, 1),
+                eq(teams.status, "active"),
+            ),
+        )
         .orderBy(asc(teams.id))
         .then((rows) => rows as Team[]);
 }
@@ -184,7 +196,7 @@ export async function createTeam(
 
         const [owner] = await lockForUpdateIfSupported(
             tx
-                .select({ id: users.id, team_id: users.team_id })
+                .select({ id: users.id, team_id: users.team_id, is_judge: users.is_judge })
                 .from(users)
                 .where(eq(users.id, ownerUserID))
                 .limit(1),
@@ -228,9 +240,27 @@ export async function createTeam(
         }
 
         const team = (await firstRow(
-            tx.insert(teams).values({ name: teamName, season_id: seasonId }).returning(),
+            tx
+                .insert(teams)
+                .values({ name: teamName, season_id: seasonId, owner_user_id: ownerUserID })
+                .returning(),
         )) as Team;
-        await tx.update(users).set({ team_id: team.id }).where(eq(users.id, ownerUserID));
+        await tx
+            .update(users)
+            .set({ team_id: team.id, ...(owner.is_judge ? { is_judge: 0 } : {}) })
+            .where(eq(users.id, ownerUserID));
+        if (owner.is_judge) {
+            // A competitor cannot be a judge; drop the local grant when the
+            // account joins a team. An administrator can re-promote later.
+            await writeAuditEvent(tx, event, {
+                action: "user.judge",
+                entity_type: "user",
+                entity_id: ownerUserID,
+                before: { is_judge: true },
+                after: { is_judge: false },
+                reason: "Joined a competing team",
+            });
+        }
         if (owner.team_id !== null) {
             await tx
                 .insert(userPastTeams)
@@ -241,40 +271,21 @@ export async function createTeam(
     });
 }
 
-export async function updateTeam(
-    event: H3Event,
-    team: Team,
-    options: { requireUnsubmitted?: boolean } = {},
+/**
+ * Explain a guarded team update that matched no row. A repeated submission or
+ * a concurrent withdrawal is a conflict, not a missing team.
+ */
+async function teamUpdateFailure(
+    db: Pick<DrizzleDatabase, "select">,
+    teamID: number,
+    options: { requireUnsubmitted?: boolean; requireActive?: boolean },
 ) {
-    const where = options.requireUnsubmitted
-        ? and(eq(teams.id, team.id), eq(teams.project_submitted, 0))
-        : eq(teams.id, team.id);
-    const changed = await changedRows(
-        event.context.drizzle
-            .update(teams)
-            .set({
-                name: team.name,
-                pathway: team.pathway,
-                score: team.score,
-                rank: team.rank,
-                project_name: team.project_name,
-                project_description: team.project_description,
-                project_demo_url: team.project_demo_url,
-                project_repo_url: team.project_repo_url,
-                project_submitted: team.project_submitted,
-                sourcing: team.sourcing,
-                season_id: team.season_id,
-            })
-            .where(where)
-            .returning({ id: teams.id }),
-    );
-
-    if (changed === 0) {
-        throw createError({
-            status: 404,
-            message: "Team not found",
-        });
+    const current = await firstRow(db.select().from(teams).where(eq(teams.id, teamID)).limit(1));
+    if (!current) return createError({ statusCode: 404, message: "Team not found" });
+    if (options.requireUnsubmitted && current.project_submitted) {
+        return createError({ statusCode: 409, message: "Project is already submitted" });
     }
+    return createError({ statusCode: 409, message: "This team is no longer competing" });
 }
 
 /**
@@ -286,13 +297,15 @@ export async function updateTeamPartial(
     teamID: number,
     seasonID: number,
     updates: Partial<typeof teams.$inferInsert>,
-    options: { requireUnsubmitted?: boolean } = {},
+    options: { requireUnsubmitted?: boolean; requireActive?: boolean } = {},
 ) {
     if (Object.keys(updates).length === 0) return;
 
-    const where = options.requireUnsubmitted
-        ? and(eq(teams.id, teamID), eq(teams.project_submitted, 0))
-        : eq(teams.id, teamID);
+    const where = and(
+        eq(teams.id, teamID),
+        options.requireUnsubmitted ? eq(teams.project_submitted, 0) : undefined,
+        options.requireActive ? eq(teams.status, "active") : undefined,
+    );
 
     if (updates.name === undefined) {
         // A single statement is already atomic; no season-wide lock is needed
@@ -305,7 +318,7 @@ export async function updateTeamPartial(
                 .returning({ id: teams.id }),
         );
         if (changed === 0) {
-            throw createError({ statusCode: 404, message: "Team not found" });
+            throw await teamUpdateFailure(event.context.drizzle, teamID, options);
         }
         return;
     }
@@ -342,11 +355,116 @@ export async function updateTeamPartial(
         );
 
         if (changed === 0) {
+            throw await teamUpdateFailure(tx, teamID, options);
+        }
+    });
+}
+
+/** The owner account controls roster changes; administrators can do anything. */
+export function canManageTeam(
+    team: Pick<Team, "owner_user_id">,
+    user: Pick<User, "id" | "is_admin">,
+): boolean {
+    if (user.is_admin === 1) return true;
+    // Teams created before ownership tracking have no owner; any current member
+    // (verified by the caller) keeps the historical roster capability.
+    if (team.owner_user_id === null) return true;
+    return team.owner_user_id === user.id;
+}
+
+/**
+ * Withdraw a team before it is judged. The row is archived with its roster
+ * history so past-season views keep showing the team; a re-clone of the same
+ * name remains impossible until an administrator renames it.
+ */
+export async function disbandTeam(event: H3Event, teamID: number): Promise<void> {
+    await event.context.drizzle.transaction(async (tx) => {
+        const [team] = await lockForUpdateIfSupported(
+            tx.select().from(teams).where(eq(teams.id, teamID)).limit(1),
+        );
+        if (!team) {
+            throw createError({ statusCode: 404, message: "Team not found" });
+        }
+        if (team.project_submitted) {
             throw createError({
-                statusCode: 404,
-                message: "Team not found",
+                statusCode: 409,
+                message: "Cannot disband a team after its project is submitted",
             });
         }
+        const judged = await firstRow(
+            tx
+                .select({ team_id: teamScores.team_id })
+                .from(teamScores)
+                .where(eq(teamScores.team_id, teamID))
+                .limit(1),
+        );
+        if (judged) {
+            throw createError({
+                statusCode: 409,
+                message: "Cannot disband a team that already has judge scores",
+            });
+        }
+
+        const members = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.team_id, teamID));
+        for (const member of members) {
+            await tx
+                .insert(userPastTeams)
+                .values({ user_id: member.id, team_id: teamID })
+                .onConflictDoNothing();
+        }
+        await tx.update(users).set({ team_id: null }).where(eq(users.team_id, teamID));
+        await tx.delete(teamInvites).where(eq(teamInvites.team_id, teamID));
+        await tx.update(teams).set({ status: "withdrawn" }).where(eq(teams.id, teamID));
+        await writeAuditEvent(tx, event, {
+            action: "team.disband",
+            entity_type: "team",
+            entity_id: teamID,
+            before: { name: team.name, status: team.status, members: members.length },
+            after: { status: "withdrawn" },
+        });
+    });
+}
+
+/** Hand the roster controls to another current member. */
+export async function transferTeamOwnership(
+    event: H3Event,
+    teamID: number,
+    newOwnerUserID: number,
+): Promise<void> {
+    await event.context.drizzle.transaction(async (tx) => {
+        const [team] = await lockForUpdateIfSupported(
+            tx.select().from(teams).where(eq(teams.id, teamID)).limit(1),
+        );
+        if (!team) {
+            throw createError({ statusCode: 404, message: "Team not found" });
+        }
+        if (team.owner_user_id === newOwnerUserID) {
+            throw createError({ statusCode: 409, message: "That member already owns this team" });
+        }
+        const target = await firstRow(
+            tx
+                .select({ id: users.id })
+                .from(users)
+                .where(and(eq(users.id, newOwnerUserID), eq(users.team_id, teamID)))
+                .limit(1),
+        );
+        if (!target) {
+            throw createError({
+                statusCode: 404,
+                message: "That user is not a current member of this team",
+            });
+        }
+        await tx.update(teams).set({ owner_user_id: newOwnerUserID }).where(eq(teams.id, teamID));
+        await writeAuditEvent(tx, event, {
+            action: "team.transfer_owner",
+            entity_type: "team",
+            entity_id: teamID,
+            before: { owner_user_id: team.owner_user_id },
+            after: { owner_user_id: newOwnerUserID },
+        });
     });
 }
 

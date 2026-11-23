@@ -22,6 +22,8 @@ export const MAX_ELECTION_CANDIDATES = 50;
 export const MAX_ELECTION_TITLE_LENGTH = 128;
 export const MAX_ELECTION_CANDIDATE_ID_LENGTH = 64;
 export const MAX_BULK_DELETE_IDS = 100;
+/** Largest value a PostgreSQL `integer` column accepts. */
+export const POSTGRES_INT_MAX = 2_147_483_647;
 
 export const BasisEmail = z
     .email()
@@ -174,7 +176,7 @@ const DynamicRubricScores = z.record(
 export const SaveJudgingDraftRequest = z.object({
     scores: DynamicRubricScores,
     reasoning: z.string().max(MAX_REASONING_LENGTH).default(""),
-    rubric_version_id: z.number().int().positive(),
+    rubric_version_id: z.number().int().positive().max(POSTGRES_INT_MAX),
 });
 
 export const SubmitTeamScoresRequest = z.object({
@@ -190,15 +192,15 @@ export const SubmitTeamScoresRequest = z.object({
         .refine((value) => !hasUnfilledCommentTemplate(value), {
             message: "Replace the example text in the comment template before submitting.",
         }),
-    rubric_version_id: z.number().int().positive(),
+    rubric_version_id: z.number().int().positive().max(POSTGRES_INT_MAX),
 });
 
 export const CreateRubricVersionRequest = z
     .object({
         name: z.string().trim().min(1).max(100),
         definition: RubricDefinitionSchema.optional(),
-        copyFromSeasonId: z.coerce.number().int().positive().optional(),
-        sourceTemplateId: z.coerce.number().int().positive().optional(),
+        copyFromSeasonId: z.coerce.number().int().positive().max(POSTGRES_INT_MAX).optional(),
+        sourceTemplateId: z.coerce.number().int().positive().max(POSTGRES_INT_MAX).optional(),
     })
     .refine(
         (request) =>
@@ -216,7 +218,6 @@ export const CreateRubricTemplateRequest = z.object({
 });
 
 /** PostgreSQL `integer` upper bound; larger IDs would otherwise reach the driver and 500. */
-export const POSTGRES_INT_MAX = 2_147_483_647;
 export const PositiveIntParam = z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX);
 export const TeamIdParams = z.object({ id: PositiveIntParam });
 export const TeamUserParams = z.object({ id: PositiveIntParam, user: PositiveIntParam });
@@ -251,6 +252,7 @@ export const UpdateTeamRequest = z.object({
             ),
             demo_url: ProjectUrl.nullish().transform((v) => (v === "" ? null : v)),
             repo_url: ProjectUrl.nullish().transform((v) => (v === "" ? null : v)),
+            video_url: ProjectUrl.nullish().transform((v) => (v === "" ? null : v)),
             sourcing: z.optional(
                 z.string().max(MAX_PROJECT_SOURCE_LENGTH, "Sourcing notes are too long"),
             ),
@@ -266,20 +268,50 @@ export const SubmitTeamRequest = z.object({
         description: ProjectDescription,
         demo_url: RequiredProjectUrl,
         repo_url: RequiredProjectUrl,
-        sourcing: z.optional(
-            z.string().max(MAX_PROJECT_SOURCE_LENGTH, "Sourcing notes are too long"),
-        ),
+        video_url: RequiredProjectUrl,
+        sourcing: z
+            .string()
+            .trim()
+            .min(1, "AI-use disclosure is required")
+            .max(MAX_PROJECT_SOURCE_LENGTH, "Sourcing notes are too long"),
     }),
 });
 export type SubmitTeamRequest = z.infer<typeof SubmitTeamRequest>;
 
 export const AddTeamMemberRequest = z.object({
     email: BasisEmail,
+    /** Allow an invitation to an email without an account yet. Defaults to false. */
+    allowUnclaimed: z.boolean().optional(),
 });
 export type AddTeamMemberRequest = z.infer<typeof AddTeamMemberRequest>;
 
 /** Teams are capped so a single project cannot absorb the whole event. */
 export const MAX_TEAM_MEMBERS = 6;
+export const MAX_TEAM_MEMBERS_LIMIT = 20;
+export const TeamMemberLimit = z.number().int().min(1).max(MAX_TEAM_MEMBERS_LIMIT);
+
+export const TransferTeamOwnerRequest = z.object({
+    user_id: PositiveIntParam,
+});
+export type TransferTeamOwnerRequest = z.infer<typeof TransferTeamOwnerRequest>;
+
+export const JudgeFlagRequest = z.object({
+    team_id: PositiveIntParam,
+    reason: z.string().trim().min(5, "Explain the conflict").max(1000),
+});
+export type JudgeFlagRequest = z.infer<typeof JudgeFlagRequest>;
+
+export const JudgeFlagIdParams = z.object({ id: PositiveIntParam });
+
+export const AdminJudgeFlagQuery = z.object({
+    season_id: z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX).optional(),
+    resolved: BooleanString.optional(),
+});
+export type AdminJudgeFlagQuery = z.infer<typeof AdminJudgeFlagQuery>;
+
+export const TeamInviteTokenParams = z.object({
+    token: z.string().regex(/^[a-f0-9]{64}$/, "Invalid invitation token"),
+});
 
 export const TeamInviteParams = z.object({
     id: PositiveIntParam,
@@ -510,7 +542,7 @@ export const AdminUpdateHackathonRequest = z.object({
 });
 export type AdminUpdateHackathonRequest = z.infer<typeof AdminUpdateHackathonRequest>;
 
-/** Live event switches the portal keeps in PostgreSQL on top of HACKATHON.yml. */
+/** Editable live settings the portal keeps in PostgreSQL on top of HACKATHON.yml. */
 export const LIVE_OVERRIDE_KEYS = [
     "status",
     "voting_enabled",
@@ -519,6 +551,15 @@ export const LIVE_OVERRIDE_KEYS = [
     "show_scores",
     "show_ranking",
     "max_votes_per_user",
+    "schedule_start",
+    "schedule_end",
+    "start_timestamp",
+    "end_timestamp",
+    "voting_start_timestamp",
+    "voting_end_timestamp",
+    "results_open_timestamp",
+    "theme_name",
+    "theme_description",
     "announcement",
 ] as const;
 
@@ -530,6 +571,15 @@ export const LiveOverrides = AdminUpdateHackathonRequest.pick({
     show_scores: true,
     show_ranking: true,
     max_votes_per_user: true,
+    schedule_start: true,
+    schedule_end: true,
+    start_timestamp: true,
+    end_timestamp: true,
+    voting_start_timestamp: true,
+    voting_end_timestamp: true,
+    results_open_timestamp: true,
+    theme_name: true,
+    theme_description: true,
     announcement: true,
 });
 export type LiveOverrides = z.infer<typeof LiveOverrides>;
@@ -549,11 +599,110 @@ export const CreateSeasonRequest = z.object({
 export type CreateSeasonRequest = z.infer<typeof CreateSeasonRequest>;
 
 export const UpdateSeasonRequest = z.object({
-    id: z.number().int().positive(),
+    id: z.number().int().positive().max(POSTGRES_INT_MAX),
     name: z.string().trim().min(1).max(200).optional(),
     is_active: z.union([z.literal(0), z.literal(1)]).optional(),
+    max_team_members: TeamMemberLimit.optional(),
 });
 export type UpdateSeasonRequest = z.infer<typeof UpdateSeasonRequest>;
 
 export const UpdateSeasonApprovalRequest = z.object({ approved: z.boolean() });
 export type UpdateSeasonApprovalRequest = z.infer<typeof UpdateSeasonApprovalRequest>;
+
+// ---------------------------------------------------------------------------
+// Operational admin and event-staff contracts
+// ---------------------------------------------------------------------------
+
+export const TeamStatusEnum = z.enum(["active", "withdrawn", "disqualified", "no_show"]);
+
+export const AdminTeamStatusRequest = z.object({
+    status: TeamStatusEnum,
+    reason: z.string().max(500).optional(),
+});
+export type AdminTeamStatusRequest = z.infer<typeof AdminTeamStatusRequest>;
+
+export const AdminTeamReopenRequest = z.object({
+    reason: z.string().max(500).optional(),
+});
+export type AdminTeamReopenRequest = z.infer<typeof AdminTeamReopenRequest>;
+
+export const AdminTeamScoreParams = z.object({
+    id: PositiveIntParam,
+    judgeId: PositiveIntParam,
+});
+export type AdminTeamScoreParams = z.infer<typeof AdminTeamScoreParams>;
+
+const AwardNamespace = z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(
+        /^[a-z0-9][a-z0-9_-]*$/,
+        "Award namespace must be lowercase letters, numbers, dashes, or underscores",
+    );
+
+export const CreateAwardRequest = z.object({
+    namespace: AwardNamespace,
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).default(""),
+    icon: z.string().trim().min(1).max(100),
+    color: z.string().trim().min(1).max(32).default("gold"),
+});
+export type CreateAwardRequest = z.infer<typeof CreateAwardRequest>;
+
+export const AwardNamespaceParams = z.object({ namespace: AwardNamespace });
+export type AwardNamespaceParams = z.infer<typeof AwardNamespaceParams>;
+
+export const CreateTeamAwardRequest = z.object({
+    award: AwardNamespace,
+    meta: z.record(z.string(), z.unknown()).optional(),
+});
+export type CreateTeamAwardRequest = z.infer<typeof CreateTeamAwardRequest>;
+
+export const TeamAwardParams = z.object({ id: PositiveIntParam, award: AwardNamespace });
+export type TeamAwardParams = z.infer<typeof TeamAwardParams>;
+
+export const JudgeAssignmentRequest = z
+    .object({
+        season_id: z.number().int().positive().max(POSTGRES_INT_MAX).optional(),
+        judge_user_id: PositiveIntParam,
+        pathway: z.string().trim().min(1).max(64).nullable().optional(),
+        team_id: PositiveIntParam.nullable().optional(),
+    })
+    .refine((value) => !(value.pathway && value.team_id), {
+        message: "Assign a judge to a pathway or a team, not both",
+    });
+export type JudgeAssignmentRequest = z.infer<typeof JudgeAssignmentRequest>;
+
+export const JudgeAssignmentQuery = z.object({
+    season_id: z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX).optional(),
+    id: PositiveIntParam.optional(),
+});
+export type JudgeAssignmentQuery = z.infer<typeof JudgeAssignmentQuery>;
+
+export const JudgeRecusalRequest = z.object({
+    season_id: z.number().int().positive().max(POSTGRES_INT_MAX).optional(),
+    team_id: PositiveIntParam,
+    reason: z.string().trim().max(500).optional(),
+});
+export type JudgeRecusalRequest = z.infer<typeof JudgeRecusalRequest>;
+
+export const AdminAuditQuery = z.object({
+    season_id: z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type AdminAuditQuery = z.infer<typeof AdminAuditQuery>;
+
+export const AdminSeasonQuery = z.object({
+    season_id: z.coerce.number().int().positive().finite().max(POSTGRES_INT_MAX).optional(),
+});
+export type AdminSeasonQuery = z.infer<typeof AdminSeasonQuery>;
+
+export const NotificationsQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type NotificationsQuery = z.infer<typeof NotificationsQuery>;
+
+export const NotificationIdParams = z.object({ id: PositiveIntParam });
+export type NotificationIdParams = z.infer<typeof NotificationIdParams>;

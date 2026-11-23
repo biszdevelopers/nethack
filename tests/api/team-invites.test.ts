@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import {
     createTestContext,
     resetTestContext,
@@ -13,7 +14,15 @@ import {
     type TestContext,
 } from "./helpers";
 import { and, eq } from "drizzle-orm";
-import { teamInvites, teams, userPastTeams, users } from "~~/server/database/schema";
+import {
+    adminAuditEvents,
+    notifications,
+    seasons,
+    teamInvites,
+    teams,
+    userPastTeams,
+    users,
+} from "~~/server/database/schema";
 import { MAX_TEAM_MEMBERS } from "~~/shared/schemas";
 
 vi.mock("~~/server/utils/rateLimit", () => ({
@@ -26,6 +35,7 @@ let listTeamInvites: any;
 let cancelTeamInvite: any;
 let listMyInvites: any;
 let acceptInvite: any;
+let acceptInviteByToken: any;
 let declineInvite: any;
 
 beforeAll(async () => {
@@ -37,8 +47,10 @@ beforeAll(async () => {
     vi.stubGlobal("createTeamInvite", membersDb.createTeamInvite);
     vi.stubGlobal("deleteTeamInvite", membersDb.deleteTeamInvite);
     vi.stubGlobal("acceptTeamInvite", membersDb.acceptTeamInvite);
+    vi.stubGlobal("acceptTeamInviteByToken", membersDb.acceptTeamInviteByToken);
     vi.stubGlobal("declineTeamInvite", membersDb.declineTeamInvite);
     vi.stubGlobal("getTeamMembers", membersDb.getTeamMembers);
+    vi.stubGlobal("getTeamMemberLimit", membersDb.getTeamMemberLimit);
 
     const teamsDb = await import("~~/server/utils/database/teams");
     vi.stubGlobal("getTeam", teamsDb.getTeam);
@@ -53,6 +65,8 @@ beforeAll(async () => {
     cancelTeamInvite = (await import("~~/server/api/teams/[id]/invites/[invite].delete")).default;
     listMyInvites = (await import("~~/server/api/team-invites/index.get")).default;
     acceptInvite = (await import("~~/server/api/team-invites/[id]/accept.post")).default;
+    acceptInviteByToken = (await import("~~/server/api/team-invites/token/[token]/accept.post"))
+        .default;
     declineInvite = (await import("~~/server/api/team-invites/[id]/index.delete")).default;
 });
 
@@ -74,13 +88,20 @@ function createEvent(overrides: Record<string, unknown> = {}) {
     };
 }
 
-function invite(teamID: number, email: string, invitedBy = 1) {
+function invite(
+    teamID: number,
+    email: string,
+    invitedBy = 1,
+    overrides: { token?: string | null; expires_at?: Date | null } = {},
+) {
     return ctx.drizzle
         .insert(teamInvites)
         .values({
             team_id: teamID,
             email: email.toLowerCase(),
             invited_by: invitedBy,
+            token: overrides.token ?? null,
+            expires_at: overrides.expires_at ?? null,
             created_at: new Date(),
         })
         .returning()
@@ -98,10 +119,32 @@ describe("GET /api/teams/:id/invites", () => {
 
         await expect(listTeamInvites(createEvent())).resolves.toEqual({
             invites: [
-                { id: 1, email: "one@basischina.com" },
-                { id: 2, email: "two@basischina.com" },
+                { id: 1, email: "one@basischina.com", expires_at: null },
+                { id: 2, email: "two@basischina.com", expires_at: null },
             ],
+            max_team_members: 6,
         });
+    });
+
+    it("never exposes a stored token hash and hides expired invitations", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+        invite(team.id, "expired@basischina.com", 1, {
+            token: "a".repeat(64),
+            expires_at: new Date(Date.now() - 1000),
+        });
+        invite(team.id, "pending@basischina.com", 1, {
+            token: "b".repeat(64),
+            expires_at: new Date(Date.now() + 60_000),
+        });
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+
+        const response = await listTeamInvites(createEvent());
+        expect(response.invites).toHaveLength(1);
+        expect(response.invites[0].email).toBe("pending@basischina.com");
+        expect(JSON.stringify(response)).not.toContain("b".repeat(64));
+        expect(response.invites[0]).not.toHaveProperty("token");
     });
 
     it("rejects non-members", async () => {
@@ -119,6 +162,7 @@ describe("DELETE /api/teams/:id/invites/:invite", () => {
     it("cancels a pending invitation", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+        ctx.drizzle.update(teams).set({ owner_user_id: 1 }).where(eq(teams.id, team.id)).run();
         const created = invite(team.id, "newbie@basischina.com");
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
@@ -149,11 +193,27 @@ describe("DELETE /api/teams/:id/invites/:invite", () => {
     it("returns 404 for an unknown invitation when the caller is a member", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+        ctx.drizzle.update(teams).set({ owner_user_id: 1 }).where(eq(teams.id, team.id)).run();
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
         mockParams.values["invite"] = "999";
 
         await expect(cancelTeamInvite(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("lets only the owner cancel invitations", async () => {
+        const team = seedTeam(ctx, { name: "Team", owner_user_id: 1 });
+        seedUser(ctx, { email: "owner@basischina.com", team_id: team.id });
+        seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: 2 } };
+        mockParams.values["id"] = String(team.id);
+        mockParams.values["invite"] = String(created.id);
+
+        await expect(cancelTeamInvite(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Only the team owner can cancel invitations",
+        });
     });
 });
 
@@ -170,10 +230,19 @@ describe("GET /api/team-invites", () => {
             invites: [{ id: 1, team_id: first.id, team_name: "First team" }],
         });
     });
+
+    it("returns an empty list when the account has no email", async () => {
+        vi.mocked(globalThis.requireUser).mockResolvedValueOnce({
+            id: 1,
+            email: null,
+        } as any);
+
+        await expect(listMyInvites(createEvent())).resolves.toEqual({ invites: [] });
+    });
 });
 
 describe("POST /api/team-invites/:id/accept", () => {
-    it("joins the invited user and removes every invitation for that email", async () => {
+    it("joins the invited user and clears only that team's invitations for the email", async () => {
         const team = seedTeam(ctx, { name: "Team" });
         const other = seedTeam(ctx, { name: "Other" });
         const user = seedUser(ctx, { email: "newbie@basischina.com" });
@@ -187,7 +256,34 @@ describe("POST /api/team-invites/:id/accept", () => {
         });
         const updated = ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get();
         expect(updated!.team_id).toBe(team.id);
-        expect(ctx.drizzle.select().from(teamInvites).all()).toHaveLength(0);
+        const remaining = ctx.drizzle.select().from(teamInvites).all();
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0]!.team_id).toBe(other.id);
+    });
+
+    it("clears the local judge flag when a judge joins a competing team", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "judge@basischina.com", is_judge: 1 });
+        const created = invite(team.id, "judge@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).resolves.toEqual({
+            message: "You joined Team",
+        });
+
+        const updated = ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get();
+        expect(updated!.team_id).toBe(team.id);
+        expect(updated!.is_judge).toBe(0);
+        const audits = ctx.drizzle.select().from(adminAuditEvents).all();
+        expect(audits).toHaveLength(1);
+        expect(audits[0]).toMatchObject({
+            action: "user.judge",
+            entity_id: String(user.id),
+            before: { is_judge: true },
+            after: { is_judge: false },
+            reason: "Joined a competing team",
+        });
     });
 
     it("does not reveal invitations addressed to another email", async () => {
@@ -230,6 +326,20 @@ describe("POST /api/team-invites/:id/accept", () => {
         mockParams.values["id"] = String(created.id);
 
         await expect(acceptInvite(createEvent())).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it("rejects a member of a disqualified team in the same season", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const current = seedTeam(ctx, { name: "Current", status: "disqualified" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com", team_id: current.id });
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "You are already in a team",
+        });
     });
 
     it("lets a user with a past-season team join the active season", async () => {
@@ -283,6 +393,95 @@ describe("POST /api/team-invites/:id/accept", () => {
         await expect(acceptInvite(createEvent())).rejects.toMatchObject({ statusCode: 409 });
     });
 
+    it("enforces the active season's maximum team size", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        ctx.drizzle.update(seasons).set({ max_team_members: 2 }).run();
+        seedUser(ctx, { email: `member0@basischina.com`, team_id: team.id });
+        seedUser(ctx, { email: `member1@basischina.com`, team_id: team.id });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This team is full",
+        });
+    });
+
+    it("rejects an expired invitation", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const created = invite(team.id, "newbie@basischina.com", 1, {
+            expires_at: new Date(Date.now() - 60_000),
+        });
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({
+            statusCode: 410,
+            message: "This invitation has expired",
+        });
+    });
+
+    it("rejects a replay once the invitation has been consumed", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await acceptInvite(createEvent());
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("rejects a revoked invitation", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const created = invite(team.id, "newbie@basischina.com");
+        ctx.drizzle.delete(teamInvites).where(eq(teamInvites.id, created.id)).run();
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("accepts a bearer token exactly once", async () => {
+        const team = seedTeam(ctx, { name: "Token Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const token = "c".repeat(64);
+        invite(team.id, "newbie@basischina.com", 1, {
+            token: createHash("sha256").update(token).digest("hex"),
+            expires_at: new Date(Date.now() + 60_000),
+        });
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["token"] = token;
+
+        await expect(acceptInviteByToken(createEvent())).resolves.toEqual({
+            message: "You joined Token Team",
+        });
+        const updated = ctx.drizzle.select().from(users).where(eq(users.id, user.id)).get();
+        expect(updated!.team_id).toBe(team.id);
+        expect(ctx.drizzle.select().from(teamInvites).all()).toHaveLength(0);
+
+        await expect(acceptInviteByToken(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("rejects a token addressed to another email", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const token = "d".repeat(64);
+        invite(team.id, "other@basischina.com", 1, {
+            token: createHash("sha256").update(token).digest("hex"),
+        });
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["token"] = token;
+
+        await expect(acceptInviteByToken(createEvent())).rejects.toMatchObject({
+            statusCode: 404,
+        });
+    });
+
     it("refuses to join once the hackathon has finished", async () => {
         resetTestContext(ctx);
         seedHackathon(ctx, { status: "finished" });
@@ -294,6 +493,40 @@ describe("POST /api/team-invites/:id/accept", () => {
         mockParams.values["id"] = String(created.id);
 
         await expect(acceptInvite(createEvent())).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    it("explains that the event is paused", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "paused" });
+        seedSeason(ctx);
+        const team = seedTeam(ctx, { name: "Paused Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com" });
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "The event is paused",
+        });
+    });
+
+    it("uses the new member email when their display name is missing", async () => {
+        const team = seedTeam(ctx, { name: "Team" });
+        const user = seedUser(ctx, { email: "newbie@basischina.com", name: null });
+        ctx.drizzle.update(users).set({ name: null }).where(eq(users.id, user.id)).run();
+        const created = invite(team.id, "newbie@basischina.com");
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(created.id);
+
+        await expect(acceptInvite(createEvent())).resolves.toEqual({
+            message: "You joined Team",
+        });
+        const notificationsRows = ctx.drizzle
+            .select({ title: notifications.title })
+            .from(notifications)
+            .all() as Array<{ title: string }>;
+        expect(notificationsRows[0]?.title).toBe("newbie@basischina.com joined Team");
     });
 
     it("returns 404 for an unknown invitation", async () => {

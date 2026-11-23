@@ -4,12 +4,6 @@ import { resolve } from "node:path";
 // Existing API fixtures exercise the retained PostgreSQL configuration mode.
 process.env.YAML_SOURCE_HACKATHON = "database";
 
-// Graph env vars used by server/plugins/microsoft.ts. These are read at module load time, so they
-// must be set before any test imports those modules. The values mirror the
-// previously hardcoded configuration so existing assertions still hold.
-process.env.MICROSOFT_TENANT_ID = "cbc6e1e2-a6bb-4002-bbdc-6da892a051a7";
-process.env.MICROSOFT_CLIENT_ID = "868b989e-6574-4795-bcfb-8db37bee1c37";
-
 // Runtime-agnostic sqlite statement wrapper.
 // Under Bun we use bun:sqlite; under Node.js we use better-sqlite3.
 // Both expose a near-identical prepare().run/all/get API.
@@ -118,6 +112,11 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
 
     // Enable foreign keys just like the real app does
     db.exec("PRAGMA foreign_keys = ON");
+    // PostgreSQL's `now()` appears in Drizzle column defaults. Provide the
+    // SQLite equivalent so fixtures exercise the same insert statements.
+    if (typeof (db as any).function === "function") {
+        (db as any).function("now", () => new Date().toISOString());
+    }
     // Run the schema to create all tables and indexes
     db.exec(schemaSQL);
 
@@ -169,6 +168,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE users ADD COLUMN auth_issuer TEXT;
     ALTER TABLE users ADD COLUMN auth_subject TEXT;
     ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN is_judge INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN tokens_valid_after INTEGER;
     CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
 
@@ -188,6 +188,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     CREATE TABLE IF NOT EXISTS peer_voting_scores (
       user_id INTEGER NOT NULL,
       season_id INTEGER NOT NULL,
+      team_id INTEGER,
       score TEXT NOT NULL,
       reasoning TEXT,
       PRIMARY KEY(user_id, season_id),
@@ -195,6 +196,7 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS peer_voting_scores_user_season_unique
       ON peer_voting_scores(user_id, season_id);
+    CREATE INDEX IF NOT EXISTS peer_voting_scores_team ON peer_voting_scores (team_id);
 
     CREATE TABLE IF NOT EXISTS team_invites (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -267,6 +269,85 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
     ALTER TABLE hackathon ADD COLUMN schedule_end TEXT;
     ALTER TABLE hackathon ADD COLUMN live_overrides TEXT NOT NULL DEFAULT '{}';
 
+    ALTER TABLE teams ADD COLUMN submitted_at TEXT;
+    ALTER TABLE teams ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+    ALTER TABLE teams ADD COLUMN score_exact REAL;
+    ALTER TABLE teams ADD COLUMN owner_user_id INTEGER;
+
+    ALTER TABLE team_scores ADD COLUMN created_at TEXT;
+
+    ALTER TABLE seasons ADD COLUMN results_published_at TEXT;
+    ALTER TABLE seasons ADD COLUMN results_snapshot TEXT;
+
+    CREATE INDEX IF NOT EXISTS user_past_teams_team ON user_past_teams (team_id);
+    CREATE INDEX IF NOT EXISTS peer_voting_scores_season ON peer_voting_scores (season_id);
+    CREATE INDEX IF NOT EXISTS team_scores_judge_season ON team_scores (judge_user_id, season_id);
+    CREATE INDEX IF NOT EXISTS team_scores_rubric_version ON team_scores (rubric_version_id);
+    CREATE INDEX IF NOT EXISTS teams_owner_user ON teams (owner_user_id);
+
+    CREATE TABLE IF NOT EXISTS admin_audit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_user_id INTEGER,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      before TEXT,
+      after TEXT,
+      reason TEXT,
+      request_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      link TEXT,
+      read_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS judge_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id INTEGER NOT NULL,
+      judge_user_id INTEGER NOT NULL,
+      pathway TEXT,
+      team_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS judge_recusals (
+      season_id INTEGER NOT NULL,
+      judge_user_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (season_id, judge_user_id, team_id)
+    );
+
+    ALTER TABLE seasons ADD COLUMN max_team_members INTEGER NOT NULL DEFAULT 6;
+    ALTER TABLE teams ADD COLUMN project_video_url TEXT;
+    ALTER TABLE team_invites ADD COLUMN token TEXT;
+    ALTER TABLE team_invites ADD COLUMN expires_at TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS team_invites_token_unique ON team_invites(token);
+
+    CREATE TABLE IF NOT EXISTS judge_flags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      judge_user_id INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      resolved_at TEXT,
+      resolved_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS judge_flags_season_judge_team
+      ON judge_flags(season_id, judge_user_id, team_id);
+    CREATE INDEX IF NOT EXISTS judge_flags_season_resolved
+      ON judge_flags(season_id, resolved_at);
+
   `);
 
     return new SQLiteDatabase(db);
@@ -279,6 +360,11 @@ export async function createTestDatabase(): Promise<SQLiteDatabase> {
 export function resetTestDatabase(wrapper: SQLiteDatabase): void {
     wrapper.exec(`
     DELETE FROM judging_drafts;
+    DELETE FROM judge_flags;
+    DELETE FROM judge_assignments;
+    DELETE FROM judge_recusals;
+    DELETE FROM admin_audit_events;
+    DELETE FROM notifications;
     DELETE FROM sc_votes;
     DELETE FROM ballot_scores;
     DELETE FROM ballots;

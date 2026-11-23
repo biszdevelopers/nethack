@@ -40,6 +40,12 @@ export const BASIS_AUTH_REQUESTED_SCOPES = [
     "offline_access",
 ] as const;
 
+/** Opt-in strict mode: an absent email_verified claim is rejected. */
+function requiresVerifiedEmail(): boolean {
+    const value = process.env.REQUIRE_VERIFIED_EMAIL?.trim().toLowerCase();
+    return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
 export interface BasisAuthConfig {
     issuer: string;
     clientId: string;
@@ -142,7 +148,8 @@ export function sanitizePostLoginRedirect(value?: unknown): string | undefined {
     if (parsed.origin !== "https://nethack.invalid") return undefined;
     const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     // URL normalization can turn "/..//evil.com" into a protocol-relative URL.
-    return path.startsWith("//") ? undefined : path;
+    // A bounded path also keeps the sealed flow cookie below its size limit.
+    return path.startsWith("//") || path.length > 512 ? undefined : path;
 }
 
 const discoveredConfigurations = new Map<string, Promise<oidc.Configuration>>();
@@ -251,9 +258,10 @@ export async function completeBasisAuthFlow(
         throw new Error("basis-auth did not return an email address");
     }
     // Email links local history and initial-admin elevation, so reject an
-    // explicitly unverified address. Providers that omit the claim are trusted
-    // as before.
-    if ((userInfo as { email_verified?: unknown }).email_verified === false) {
+    // explicitly unverified address. REQUIRE_VERIFIED_EMAIL also rejects an
+    // omitted claim; by default providers that omit it are trusted as before.
+    const emailVerified = (userInfo as { email_verified?: unknown }).email_verified;
+    if (emailVerified === false || (requiresVerifiedEmail() && emailVerified !== true)) {
         throw new Error("basis-auth did not verify the email address");
     }
 
@@ -266,6 +274,7 @@ export async function completeBasisAuthFlow(
             picture:
                 getBasisAuthPictureUrl(claims.picture, config.issuer) ??
                 getBasisAuthPictureUrl(userInfo.picture, config.issuer),
+            emailVerified: emailVerified === true,
         },
         tokens: normalizeTokenSet(tokens),
     };
@@ -371,7 +380,9 @@ export async function getFreshBasisAuthUserSession(
 export async function revokeBasisAuthToken(refreshToken: string) {
     // Record the intent before the network call so an in-flight refresh cannot
     // re-seal the cookie after logout's deletion response reaches the browser.
+    const rotated = rotatedTokens.get(refreshToken)?.tokens.refreshToken;
     loggedOutTokens.set(refreshToken, Date.now());
+    if (rotated) loggedOutTokens.set(rotated, Date.now());
     const config = getBasisAuthConfig();
     const oidcConfiguration = await getBasisAuthOidcConfiguration(config);
     await withOidcDeadline(
@@ -380,4 +391,18 @@ export async function revokeBasisAuthToken(refreshToken: string) {
         }),
         "token revocation",
     );
+    // A refresh that completed just before logout replaced the browser token.
+    // Revoke that descendant too, or the new cookie can keep the session alive.
+    if (rotated) {
+        try {
+            await withOidcDeadline(
+                oidc.tokenRevocation(oidcConfiguration, rotated, {
+                    token_type_hint: "refresh_token",
+                }),
+                "token revocation",
+            );
+        } catch {
+            // The original token is already revoked; logout still succeeds.
+        }
+    }
 }

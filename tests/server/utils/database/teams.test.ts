@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
-import { userPastTeams, users } from "~~/server/database/schema";
+import { adminAuditEvents, teamInvites, userPastTeams, users } from "~~/server/database/schema";
 import { createMockEvent } from "./helpers";
 import {
+    canManageTeam,
     createTeam,
+    disbandTeam,
     getTeam,
     getAllTeams,
     getSubmittedUnjudgedTeams,
@@ -12,7 +14,7 @@ import {
     getTeamBySeason,
     getAllTeamsAllSeasons,
     getTeamsBySeason,
-    updateTeam,
+    transferTeamOwnership,
     deleteTeams,
 } from "~~/server/utils/database/teams";
 
@@ -61,6 +63,32 @@ describe("teams database helpers", () => {
                 .where(eq(users.id, 1))
                 .get() as { team_id: number };
             expect(owner.team_id).toBe(1);
+        });
+
+        it("clears a judge flag when the account becomes a team owner", async () => {
+            seedSeason(event, "Season 1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, is_judge) VALUES('judge@example.test', 1)")
+                .run();
+
+            const team = await createTeam(event, "Judge Team", 1);
+
+            const owner = event.context.drizzle
+                .select({ is_judge: users.is_judge })
+                .from(users)
+                .where(eq(users.id, 1))
+                .get();
+            expect(owner!.is_judge).toBe(0);
+            const audits = event.context.drizzle.select().from(adminAuditEvents).all();
+            expect(audits).toHaveLength(1);
+            expect(audits[0]).toMatchObject({
+                action: "user.judge",
+                entity_id: String(1),
+                before: { is_judge: true },
+                after: { is_judge: false },
+                reason: "Joined a competing team",
+            });
+            expect(team.name).toBe("Judge Team");
         });
 
         it("rejects an owner who already belongs to the active season", async () => {
@@ -236,6 +264,24 @@ describe("teams database helpers", () => {
             expect(teams[0]!.name).toBe("Team B");
         });
 
+        it("excludes withdrawn teams from the queue", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO teams(name, season_id, project_submitted) VALUES('Active Team', 1, 1)",
+                )
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO teams(name, season_id, project_submitted, status) VALUES('Withdrawn Team', 1, 1, 'withdrawn')",
+                )
+                .run();
+
+            const teams = await getSubmittedUnjudgedTeams(event, 1);
+
+            expect(teams.map((team) => team.name)).toEqual(["Active Team"]);
+        });
+
         it("excludes the judge's own team from the queue", async () => {
             seedSeason(event, "S1", 1);
             event.context.drizzle
@@ -391,47 +437,6 @@ describe("teams database helpers", () => {
         });
     });
 
-    describe("updateTeam", () => {
-        it("updates a team successfully", async () => {
-            seedSeason(event, "S1", 1);
-
-            event.context.drizzle
-                .prepare("INSERT INTO teams(name, season_id) VALUES('Old Name', 1)")
-                .run();
-
-            await updateTeam(event, {
-                id: 1,
-                name: "New Name",
-                pathway: "senior",
-                score: 85,
-                rank: 1,
-                project_name: "Cool Project",
-                project_description: "A cool project",
-                project_demo_url: "https://demo.example.com",
-                project_repo_url: "https://repo.example.com",
-                project_submitted: 1,
-                sourcing: "github",
-                season_id: 1,
-            } as any);
-
-            const team = await getTeamById(event, 1);
-            expect(team!.name).toBe("New Name");
-            expect(team!.pathway).toBe("senior");
-            expect(team!.score).toBe(85);
-            expect(team!.rank).toBe(1);
-            expect(team!.project_name).toBe("Cool Project");
-            expect(team!.project_submitted).toBe(1);
-        });
-
-        it("throws a 404 error when the team does not exist", async () => {
-            seedSeason(event, "S1", 1);
-
-            await expect(updateTeam(event, { id: 999, name: "Ghost" } as any)).rejects.toThrow(
-                "Team not found",
-            );
-        });
-    });
-
     describe("deleteTeams", () => {
         it("deletes a single team", async () => {
             seedSeason(event, "S1", 1);
@@ -526,6 +531,104 @@ describe("teams database helpers", () => {
                 .prepare("SELECT * FROM user_past_teams WHERE team_id = 1")
                 .all() as { results: any[] };
             expect(pastTeams.results).toHaveLength(0);
+        });
+    });
+
+    describe("team ownership", () => {
+        it("recognizes only the owner and administrators as managers", () => {
+            expect(canManageTeam({ owner_user_id: 7 }, { id: 7, is_admin: 0 })).toBe(true);
+            expect(canManageTeam({ owner_user_id: 7 }, { id: 8, is_admin: 0 })).toBe(false);
+            expect(canManageTeam({ owner_user_id: 7 }, { id: 8, is_admin: 1 })).toBe(true);
+            expect(canManageTeam({ owner_user_id: null }, { id: 8, is_admin: 0 })).toBe(true);
+        });
+
+        it("transfers ownership to a current member and audits the change", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id, owner_user_id) VALUES('Team A', 1, 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, team_id) VALUES('owner@example.com', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, team_id) VALUES('member@example.com', 1)")
+                .run();
+
+            await transferTeamOwnership(event, 1, 2);
+
+            const team = await getTeamById(event, 1);
+            expect(team!.owner_user_id).toBe(2);
+            expect(event.context.drizzle.select().from(adminAuditEvents).all()).toHaveLength(1);
+        });
+
+        it("rejects transferring ownership to a non-member", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Team A', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email) VALUES('outsider@example.com')")
+                .run();
+
+            await expect(transferTeamOwnership(event, 1, 1)).rejects.toMatchObject({
+                statusCode: 404,
+            });
+        });
+
+        it("withdraws a team, records history, and removes pending invitations", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Team A', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, team_id) VALUES('owner@example.com', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email, team_id) VALUES('member@example.com', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO team_invites(team_id, email) VALUES(1, 'newbie@example.com')")
+                .run();
+
+            await disbandTeam(event, 1);
+
+            const team = await getTeamById(event, 1);
+            expect(team!.status).toBe("withdrawn");
+            expect(
+                event.context.drizzle.select().from(users).where(eq(users.team_id, 1)).all(),
+            ).toHaveLength(0);
+            expect(
+                event.context.drizzle
+                    .select()
+                    .from(userPastTeams)
+                    .all()
+                    .map((row) => row.user_id),
+            ).toEqual([1, 2]);
+            expect(event.context.drizzle.select().from(teamInvites).all()).toHaveLength(0);
+        });
+
+        it("rejects disbanding a submitted or judged team", async () => {
+            seedSeason(event, "S1", 1);
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Submitted', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Judged', 1)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO users(email) VALUES('judge@example.com')")
+                .run();
+            event.context.drizzle
+                .prepare("UPDATE teams SET project_submitted = 1 WHERE id = 1")
+                .run();
+            event.context.drizzle
+                .prepare(
+                    "INSERT INTO team_scores(team_id, judge_user_id, scores) VALUES(2, 1, '{}')",
+                )
+                .run();
+
+            await expect(disbandTeam(event, 1)).rejects.toMatchObject({ statusCode: 409 });
+            await expect(disbandTeam(event, 2)).rejects.toMatchObject({ statusCode: 409 });
         });
     });
 });

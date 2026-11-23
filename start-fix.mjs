@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -59,7 +60,15 @@ export async function startProduction(runtime) {
 }
 
 export function isDirectExecution(moduleUrl, argvPath) {
-    return Boolean(argvPath) && moduleUrl === pathToFileURL(resolve(argvPath)).href;
+    if (!argvPath) return false;
+    const resolved = resolve(argvPath);
+    let canonical = resolved;
+    try {
+        canonical = realpathSync(resolved);
+    } catch {
+        // Keep the resolved path so tests can probe non-existent files.
+    }
+    return moduleUrl === pathToFileURL(canonical).href;
 }
 
 export async function runIfDirect(moduleUrl, argvPath, runtime = createRuntime()) {

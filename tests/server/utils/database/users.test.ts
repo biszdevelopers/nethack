@@ -59,6 +59,7 @@ describe("users database helpers", () => {
             subject: "subject-1",
             email: "USER@EXAMPLE.COM",
             name: "Updated Name",
+            emailVerified: true,
         };
 
         it("links the first login by normalized email without changing local ownership", async () => {
@@ -83,6 +84,25 @@ describe("users database helpers", () => {
                 auth_issuer: identity.issuer,
                 auth_subject: identity.subject,
             });
+        });
+
+        it("refuses to link an existing local account without a verified email", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO users(id, email) VALUES(17, 'user@example.com')")
+                .run();
+
+            await expect(
+                findOrLinkBasisAuthUser(event, { ...identity, emailVerified: false }),
+            ).rejects.toMatchObject({
+                statusCode: 409,
+                message: "Verify your email address before linking this account",
+            });
+            expect(
+                event.context.drizzle
+                    .getRawDb()
+                    .prepare("SELECT auth_subject FROM users WHERE id = 17")
+                    .get(),
+            ).toEqual({ auth_subject: null });
         });
 
         it("uses issuer and subject on repeat login and permits an email update", async () => {

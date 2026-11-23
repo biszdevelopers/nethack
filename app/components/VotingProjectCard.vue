@@ -13,6 +13,11 @@ const emit = defineEmits<{
 
 const safeRepoUrl = computed(() => safeUrl(team.project.repo_url));
 const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
+const safeVideoUrl = computed(() =>
+    safeUrl((team.project as APITeam["project"] & { video_url?: string | null }).video_url),
+);
+
+const trackLabel = useTrackLabel();
 </script>
 
 <template>
@@ -25,7 +30,7 @@ const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
                 variant="outline"
                 :color="team.pathway == 'junior' ? 'primary' : 'warning'"
             >
-                {{ team.pathway == "junior" ? "Junior" : "Senior" }}
+                {{ trackLabel(team.pathway) }}
             </UBadge>
         </div>
         <SafeComark class="my-4 mx-[2ch] text-wrap">{{ team.project.description }}</SafeComark>
@@ -68,6 +73,18 @@ const safeDemoUrl = computed(() => safeUrl(team.project.demo_url));
                     Demo
                 </UButton>
             </UTooltip>
+            <UButton
+                v-if="safeVideoUrl"
+                variant="subtle"
+                icon="i-lucide-video"
+                :href="safeVideoUrl"
+                external
+                target="_blank"
+                rel="noopener noreferrer"
+                class="min-h-11"
+            >
+                Demonstration video
+            </UButton>
         </div>
 
         <hr class="text-neutral-500 my-4" />

@@ -21,7 +21,13 @@ if (!season || season.is_active || season.status === "not_started" || season.sta
     throw createError({ statusCode: 404, statusMessage: "Season archive not found", fatal: true });
 }
 
-useHead({ title: `${season.name} project archive | ${WEBSITE_NAME}` });
+useHead(
+    pageSeo({
+        title: `${season.name} project archive | ${WEBSITE_NAME}`,
+        description: `Project archive for ${season.name} at the BIBS-C Network Hackathon.`,
+        path: `/showcase/seasons/${season.id}`,
+    }),
+);
 </script>
 
 <template>
@@ -35,9 +41,7 @@ useHead({ title: `${season.name} project archive | ${WEBSITE_NAME}` });
                     <UIcon name="i-lucide-arrow-left" />
                     All showcases
                 </NuxtLink>
-                <p class="mt-10 font-mono text-xs tracking-[0.25em] text-primary uppercase">
-                    Season archive
-                </p>
+                <p class="mt-10 font-mono text-xs tracking-wide text-primary">Season archive</p>
                 <h1 class="mt-3 break-words text-4xl font-black tracking-tight sm:text-6xl">
                     {{ season.name }}
                 </h1>

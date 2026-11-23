@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import postgres from "postgres";
 import { startOidcTestProvider } from "./oidc-provider.mjs";
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -132,6 +134,20 @@ export async function runE2eServer(env = process.env) {
     const config = validateE2eConfiguration(env);
     await access(config.serverEntry);
 
+    // Every run has a fresh OIDC issuer; stale user links from a previous run
+    // would reject the new identity. The database is explicitly the isolated
+    // basishacks_e2e database, so start from an empty public schema.
+    const resetDatabase = postgres(config.databaseUrl, { max: 1, connect_timeout: 10 });
+    try {
+        // Drizzle keeps its migration journal in the `drizzle` schema; both must
+        // be dropped or the migrator thinks the fresh public schema is migrated.
+        await resetDatabase`DROP SCHEMA IF EXISTS drizzle CASCADE`;
+        await resetDatabase`DROP SCHEMA IF EXISTS public CASCADE`;
+        await resetDatabase`CREATE SCHEMA public`;
+    } finally {
+        await resetDatabase.end({ timeout: 5 });
+    }
+
     const clientId = `basishacks-e2e-${randomBytes(12).toString("base64url")}`;
     const clientSecret = randomBytes(32).toString("base64url");
     const cookieSecret = randomBytes(48).toString("base64url");
@@ -204,6 +220,12 @@ export async function runE2eServer(env = process.env) {
                     email: "judge-three@e2e.basishacks.invalid",
                     name: "Judge Three Fixture",
                     permissions: ["judge"],
+                },
+                {
+                    sub: "e2e-builder",
+                    email: "builder@e2e.basishacks.invalid",
+                    name: "Builder Fixture",
+                    permissions: ["participant"],
                 },
                 {
                     sub: "e2e-admin",
@@ -293,9 +315,16 @@ export async function runE2eServer(env = process.env) {
     }
 }
 
-const isMain =
-    process.argv[1] !== undefined &&
-    import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+function isMainModule() {
+    if (process.argv[1] === undefined) return false;
+    try {
+        return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+    } catch {
+        return import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+    }
+}
+
+const isMain = isMainModule();
 
 if (isMain) {
     runE2eServer().catch((error) => {

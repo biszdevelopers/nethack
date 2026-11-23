@@ -118,28 +118,32 @@ const activeFinalized = computed(() =>
 const displayScores = computed(() => activeFinalized.value?.scores ?? draft.state.scores);
 const displayReasoning = computed(() => activeFinalized.value?.reasoning ?? draft.state.reasoning);
 const submittedCount = computed(() => currentSummary.value?.submitted_count ?? 0);
+const summaryFailed = computed(() => !currentSummary.value && Boolean(summaryFetch.error.value));
 const queueError = computed(
-    () =>
-        navigationError.value ||
-        queueFetch.error.value ||
-        summaryFetch.error.value ||
-        rubricFetch.error.value,
+    () => navigationError.value || queueFetch.error.value || rubricFetch.error.value,
 );
 const isLoading = computed(
     () =>
         queueFetch.status.value === "idle" ||
         queueFetch.status.value === "pending" ||
-        summaryFetch.status.value === "idle" ||
-        summaryFetch.status.value === "pending" ||
         rubricFetch.status.value === "idle" ||
         rubricFetch.status.value === "pending",
 );
 const activeProjectNumber = computed(
     () => (currentPage.value - 1) * queuePageSize + activeIndex.value + 1,
 );
-const hasPendingProjects = computed(
-    () => submittedCount.value > 0 && scoredCount.value < submittedCount.value,
-);
+// The progress summary is optional; fall back to the loaded queue so a failed
+// summary never hides the Next unscored jump or blocks the workspace.
+const hasPendingProjects = computed(() => {
+    const current = currentSummary.value;
+    if (current)
+        return current.submitted_count > 0 && current.scored_count < current.submitted_count;
+    const pages = Object.values(queuePages.value);
+    if (pages.length >= totalPages.value) {
+        return pages.some((page) => page.some((item) => !item.evaluated));
+    }
+    return totalProjects.value > 0;
+});
 const navigatorPages = computed(() =>
     Array.from({ length: totalPages.value }, (_, index) => {
         const page = index + 1;
@@ -177,14 +181,15 @@ watch(
     },
     { immediate: true },
 );
-// The queue and the progress summary load independently. Wait for both before
-// deciding whether to auto-advance to the first unscored project.
+// The queue and the progress summary load independently. Wait for the queue and
+// let a failed summary degrade the hints instead of blocking the first project.
 watch(
     [() => queueFetch.status.value, () => summaryFetch.status.value],
     ([queueStatus, summaryStatus]) => {
         if (initialAutofocusDone) return;
-        if (queueStatus !== "success" || summaryStatus !== "success") return;
-        if (!queueFetch.data.value || !summaryFetch.data.value) return;
+        if (queueStatus !== "success") return;
+        if (summaryStatus !== "success" && summaryStatus !== "error") return;
+        if (!queueFetch.data.value) return;
         initialAutofocusDone = true;
         if (activeItem.value?.evaluated && hasPendingProjects.value) {
             void focusNextPending(1, 0);
@@ -436,6 +441,114 @@ function returnToScoring() {
     step.value = "score";
 }
 
+const reportOpen = ref(false);
+const reportKind = ref<"flag" | "recusal">("flag");
+const reportReason = ref("");
+const reportError = ref<string | null>(null);
+const reportBusy = ref(false);
+const reportTitle = computed(() =>
+    reportKind.value === "flag" ? "Flag for organizer" : "Recuse me",
+);
+
+function openReport(kind: "flag" | "recusal") {
+    reportKind.value = kind;
+    reportReason.value = "";
+    reportError.value = null;
+    reportOpen.value = true;
+}
+
+async function sendFlag(teamID: number, reason: string) {
+    try {
+        await apiFetch("/api/judging/flag", {
+            method: "POST",
+            body: { team_id: teamID, reason },
+        });
+    } catch (e) {
+        const status =
+            (e as { status?: number } | undefined)?.status ??
+            (e as { statusCode?: number } | undefined)?.statusCode;
+        if (status !== 404 && status !== 405) throw e;
+        await apiFetch("/api/judging/flags", {
+            method: "POST",
+            body: { team_id: teamID, reason },
+        });
+    }
+}
+
+async function dropRecusedProject(teamID: number) {
+    queuePages.value = Object.fromEntries(
+        Object.entries(queuePages.value).map(([page, items]) => [
+            Number(page),
+            items.filter((item) => item.team.id !== teamID),
+        ]),
+    );
+    totalProjects.value = Math.max(0, totalProjects.value - 1);
+    if (totalProjects.value === 0) {
+        currentPage.value = 1;
+        activeIndex.value = 0;
+        return;
+    }
+
+    try {
+        await refreshQueuePage(Math.min(currentPage.value, Math.max(1, totalPages.value)));
+        if (queue.value.length === 0 && currentPage.value > 1) {
+            await refreshQueuePage(currentPage.value - 1);
+            currentPage.value -= 1;
+        }
+    } catch {
+        // The recusal is already recorded; a failed queue refresh can be retried.
+    }
+    activeIndex.value = Math.min(activeIndex.value, Math.max(0, queue.value.length - 1));
+}
+
+async function submitReport() {
+    const team = activeTeam.value;
+    if (!team || reportBusy.value) return;
+    const reason = reportReason.value.trim();
+    if (reportKind.value === "flag" && !reason) {
+        reportError.value = "Describe what the organizer should review.";
+        return;
+    }
+
+    const kind = reportKind.value;
+    reportBusy.value = true;
+    reportError.value = null;
+    try {
+        if (kind === "flag") {
+            await sendFlag(team.id, reason);
+            toast.add({
+                color: "success",
+                title: "Flagged for the organizer",
+                description: "The organizers can review this project and your note.",
+            });
+        } else {
+            await apiFetch("/api/judging/recusals", {
+                method: "POST",
+                body: { team_id: team.id, reason: reason || undefined },
+            });
+            toast.add({
+                color: "success",
+                title: "Recusal recorded",
+                description: "This project was removed from your judging queue.",
+            });
+            await dropRecusedProject(team.id);
+            void summaryFetch.refresh();
+        }
+        reportOpen.value = false;
+    } catch (e) {
+        reportError.value = isEndpointUnavailable(e)
+            ? `${reportTitle.value} is not enabled on this deployment.`
+            : getErrorMessage(e);
+        toast.add({
+            color: "error",
+            title: kind === "flag" ? "Could not flag the project" : "Could not record the recusal",
+            description: reportError.value,
+        });
+    } finally {
+        reportBusy.value = false;
+    }
+}
+
 async function recordFinalizedEvaluation(team: { id: number }) {
     const scores = { ...draft.state.scores };
     const reasoning = draft.state.reasoning;
@@ -495,7 +608,9 @@ async function finalizeEvaluation() {
         }
     } catch (error) {
         const message = getErrorMessage(error);
-        // A committed submission whose response was lost returns 409 on retry.
+        // A committed submission whose response was lost returns "already
+        // scored" on retry. Other 409s (closed judging, wrong rubric) are real
+        // failures and must surface instead of being reported as success.
         if (message.includes("already scored")) {
             const foundNext = await recordFinalizedEvaluation(team);
             toast.add({
@@ -519,7 +634,7 @@ async function finalizeEvaluation() {
 
 function retryQueue() {
     navigationError.value = null;
-    void Promise.all([queueFetch.refresh(), summaryFetch.refresh(), rubricFetch.refresh()]);
+    void Promise.allSettled([queueFetch.refresh(), summaryFetch.refresh(), rubricFetch.refresh()]);
 }
 
 const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
@@ -587,12 +702,24 @@ onBeforeRouteLeave(async () => {
                         <p class="truncate text-sm text-muted">{{ activeTeam.name }}</p>
                         <p class="font-semibold">
                             Project {{ activeProjectNumber }} of {{ totalProjects }}
-                            <span class="ml-2 text-sm font-normal text-muted">
+                            <span v-if="summaryFailed" class="ml-2 text-sm font-normal text-muted">
+                                Progress summary unavailable
+                            </span>
+                            <span v-else class="ml-2 text-sm font-normal text-muted">
                                 {{ scoredCount }} evaluated
                             </span>
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
+                        <UButton
+                            v-if="summaryFailed"
+                            variant="ghost"
+                            icon="i-lucide-refresh-cw"
+                            class="min-h-11"
+                            @click="() => summaryFetch.refresh()"
+                        >
+                            Retry progress
+                        </UButton>
                         <UButton
                             v-if="hasPendingProjects"
                             variant="soft"
@@ -610,6 +737,25 @@ onBeforeRouteLeave(async () => {
                             @click="openNavigator"
                         >
                             All projects
+                        </UButton>
+                        <UButton
+                            variant="ghost"
+                            icon="i-lucide-flag"
+                            class="min-h-11"
+                            :disabled="navigating || submitting"
+                            @click="openReport('flag')"
+                        >
+                            Flag for organizer
+                        </UButton>
+                        <UButton
+                            v-if="!activeFinalized"
+                            variant="ghost"
+                            icon="i-lucide-user-x"
+                            class="min-h-11"
+                            :disabled="navigating || submitting"
+                            @click="openReport('recusal')"
+                        >
+                            Recuse me
                         </UButton>
                         <UButton
                             variant="outline"
@@ -636,7 +782,7 @@ onBeforeRouteLeave(async () => {
                 </div>
 
                 <UAlert
-                    v-if="!hasPendingProjects"
+                    v-if="!summaryFailed && !hasPendingProjects"
                     color="success"
                     variant="subtle"
                     icon="i-lucide-circle-check-big"
@@ -689,6 +835,60 @@ onBeforeRouteLeave(async () => {
                 @close-auto-focus="restoreReviewFocus"
                 @finalize="finalizeEvaluation"
             />
+
+            <UModal v-model:open="reportOpen" :title="reportTitle" :dismissible="!reportBusy">
+                <template #body>
+                    <p class="mb-4 text-sm text-muted">
+                        {{
+                            reportKind === "flag"
+                                ? `Tell the organizers what needs a closer look in ${activeTeam.project.name || activeTeam.name}. Your note is visible only to organizers.`
+                                : `Declare a conflict of interest so ${activeTeam.project.name || activeTeam.name} leaves your queue. A reason is optional and visible only to organizers.`
+                        }}
+                    </p>
+                    <UFormField
+                        label="Reason"
+                        :help="
+                            reportKind === 'flag'
+                                ? 'Required. Describe the issue the organizers should review.'
+                                : 'Optional. Explain the conflict if it is not obvious.'
+                        "
+                    >
+                        <UTextarea
+                            v-model="reportReason"
+                            :rows="4"
+                            maxlength="500"
+                            class="w-full"
+                            :disabled="reportBusy"
+                        />
+                    </UFormField>
+                    <UAlert
+                        v-if="reportError"
+                        color="error"
+                        variant="subtle"
+                        :title="reportError"
+                        class="mt-3"
+                    />
+                </template>
+                <template #footer>
+                    <UButton
+                        class="min-h-11"
+                        :color="reportKind === 'flag' ? 'warning' : 'error'"
+                        :loading="reportBusy"
+                        :disabled="reportBusy"
+                        @click="submitReport"
+                    >
+                        {{ reportKind === "flag" ? "Send flag" : "Record recusal" }}
+                    </UButton>
+                    <UButton
+                        variant="outline"
+                        class="min-h-11"
+                        :disabled="reportBusy"
+                        @click="reportOpen = false"
+                    >
+                        Cancel
+                    </UButton>
+                </template>
+            </UModal>
         </template>
 
         <div v-else class="p-4 sm:p-6">
@@ -704,7 +904,11 @@ onBeforeRouteLeave(async () => {
             :ui="{ content: 'sm:max-w-md' }"
         >
             <template #body>
-                <p class="mb-3 text-sm text-muted">
+                <p v-if="summaryFailed" class="mb-3 text-sm text-muted">
+                    Your progress summary could not be loaded. Scored projects are still marked from
+                    the queue.
+                </p>
+                <p v-else class="mb-3 text-sm text-muted">
                     {{ scoredCount }} of {{ submittedCount }} submitted projects evaluated.
                 </p>
                 <div class="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter projects">

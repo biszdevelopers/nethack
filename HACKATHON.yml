@@ -1,8 +1,6 @@
-# Some stupid stuff that can help u:
-#
-# remember set status = voting AND judging_open = 1 to enable judging. dont know why this retarded stuff exists
-#
-#
+# Live event manifest. Schedule, theme, and rubric are manifest-owned.
+# Status and visibility switches are stored as PostgreSQL overrides by the portal,
+# so organizers can change them without editing this file.
 
 id: 1
 status: voting

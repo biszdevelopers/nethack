@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { comparable } from "../../scripts/audit-sqlite-postgres.mjs";
 
 const scriptUrl = new URL("../../scripts/audit-sqlite-postgres.mjs", import.meta.url);
 const scriptPath = fileURLToPath(scriptUrl);
@@ -9,6 +10,14 @@ const modulePath = "../../scripts/audit-sqlite-postgres.mjs";
 const importModulePath = "../../scripts/import-sqlite-to-postgres.mjs";
 
 type Row = Record<string, any>;
+
+describe("audit value normalization", () => {
+    it("compares int8 values as strings regardless of driver representation", () => {
+        expect(comparable("0", "bigint")).toBe("0");
+        expect(comparable(0, "bigint")).toBe("0");
+        expect(comparable(42, "integer")).toBe(42);
+    });
+});
 
 const originalArgv = process.argv;
 const originalExitCode = process.exitCode;

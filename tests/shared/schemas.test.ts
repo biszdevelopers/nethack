@@ -157,9 +157,27 @@ describe("SubmitTeamRequest", () => {
                     description: "A".repeat(30),
                     demo_url: "https://example.com",
                     repo_url: "https://github.com/user/repo",
+                    video_url: "https://www.youtube.com/watch?v=example",
+                    sourcing: "No AI tools or models were used in this project.",
                 },
             }),
         ).not.toThrow();
+    });
+
+    it("requires an AI-use disclosure at submission", () => {
+        expect(() =>
+            SubmitTeamRequest.parse({
+                pathway: "junior",
+                project: {
+                    name: "Cool Project",
+                    description: "A".repeat(30),
+                    demo_url: "https://example.com",
+                    repo_url: "https://github.com/user/repo",
+                    video_url: "https://www.youtube.com/watch?v=example",
+                    sourcing: "   ",
+                },
+            }),
+        ).toThrow();
     });
 
     it("rejects a submission with missing project name", () => {
@@ -254,6 +272,8 @@ describe("SubmitTeamRequest", () => {
                     description: "A".repeat(5000),
                     demo_url: "https://example.com",
                     repo_url: "https://github.com/user/repo",
+                    video_url: "https://www.youtube.com/watch?v=example",
+                    sourcing: "No AI tools or models were used in this project.",
                 },
             }),
         ).not.toThrow();

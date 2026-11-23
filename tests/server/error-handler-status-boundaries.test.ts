@@ -47,7 +47,7 @@ describe("canonical error handler status boundaries", () => {
             status,
             code: status,
             error,
-            error_description: "safe failure",
+            error_description: status === 401 ? "Invalid access token" : "safe failure",
         });
         expect(h3.setResponseStatus).toHaveBeenCalledWith(event, status);
         expect(h3.setResponseHeader).toHaveBeenCalledWith(event, "cache-control", "no-store");
@@ -132,6 +132,13 @@ describe("canonical error handler status boundaries", () => {
             "content-type",
             "text/html; charset=utf-8",
         );
+    });
+
+    it("falls back to a plain error page when the shared renderer cannot encode the message", () => {
+        const { body } = invoke({ cause: { status: 400, message: "测试失败" } }, "text/html");
+
+        expect(body).toContain("The request could not be completed.");
+        expect(body).not.toContain("测试失败");
     });
 
     it("defaults to JSON when the request has no Accept header", () => {

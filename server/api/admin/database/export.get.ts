@@ -1,7 +1,6 @@
-import { Readable } from "node:stream";
 import { NethackPermissions } from "~~/shared/permissions";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { snapshotDatabaseExport } from "~~/server/utils/database-export";
+import { streamDatabaseExport } from "~~/server/utils/database-export-stream";
 import { sendStream } from "h3";
 import { z } from "zod";
 
@@ -25,18 +24,9 @@ export default defineEventHandler(
         );
 
         const overrides = await getLiveOverrides(event);
-        // Export one consistent snapshot: a page-by-page read without a
-        // transaction can omit or duplicate rows while the database changes.
-        const chunks: string[] = [];
-        await event.context.drizzle.transaction(
-            async (tx) => {
-                for await (const chunk of snapshotDatabaseExport(tx, query.format, overrides)) {
-                    chunks.push(chunk);
-                }
-            },
-            { isolationLevel: "repeatable read", accessMode: "read only" },
+        return sendStream(
+            event,
+            streamDatabaseExport(event.context.drizzle, query.format, overrides),
         );
-
-        return sendStream(event, Readable.from(chunks));
     }, DEFAULT_RATE_LIMIT_CONFIG),
 );

@@ -284,6 +284,8 @@ describe("POST /api/teams/:id/submit action edges", () => {
                 description: "A complete project description for validation.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/project",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used in this project.",
             },
         };
 

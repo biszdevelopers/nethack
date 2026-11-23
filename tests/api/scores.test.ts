@@ -13,7 +13,13 @@ import {
     type TestContext,
 } from "./helpers";
 import { eq, and } from "drizzle-orm";
-import { hackathon, judgingDrafts, seasons, teamScores } from "~~/server/database/schema";
+import {
+    hackathon,
+    judgingDrafts,
+    seasons,
+    teamScores,
+    userPastTeams,
+} from "~~/server/database/schema";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
 import { JUDGE_COMMENT_IDENTITY_ERROR } from "~~/shared/judge-comments";
 
@@ -145,6 +151,63 @@ describe("POST /api/teams/:id/scores", () => {
             .get();
         expect(score).toBeTruthy();
         expect(score!.reasoning).toBe("Well-built project with clear presentation.");
+    });
+
+    it("rejects a competing judge from scoring any team", async () => {
+        const ownTeam = seedTeam(ctx, {
+            name: "Own Team",
+            project_submitted: 1,
+            pathway: "junior",
+        });
+        const target = seedTeam(ctx, {
+            name: "Target Team",
+            project_submitted: 1,
+            pathway: "junior",
+        });
+        prepareScoringRequest(target.id);
+        vi.mocked(globalThis.requireUser).mockResolvedValue({
+            id: 1,
+            role: "judge",
+            team_id: ownTeam.id,
+        } as any);
+
+        await expect(scoresHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Competing participants cannot judge this season",
+        });
+        expect(createTeamScoresMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects scoring a team that is no longer competing", async () => {
+        const team = seedTeam(ctx, {
+            name: "Withdrawn Team",
+            project_submitted: 1,
+            pathway: "junior",
+            status: "withdrawn",
+        });
+        prepareScoringRequest(team.id);
+
+        await expect(scoresHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This project is no longer competing",
+        });
+        expect(createTeamScoresMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects scoring a team the judge previously belonged to", async () => {
+        const team = seedTeam(ctx, {
+            name: "Former Team",
+            project_submitted: 1,
+            pathway: "junior",
+        });
+        ctx.drizzle.insert(userPastTeams).values({ user_id: 1, team_id: team.id }).run();
+        prepareScoringRequest(team.id);
+
+        await expect(scoresHandler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "This project is outside your judging assignment",
+        });
+        expect(createTeamScoresMock).not.toHaveBeenCalled();
     });
 
     it.each([

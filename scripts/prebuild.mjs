@@ -1,10 +1,18 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+
+function sameFile(left, right) {
+    try {
+        return realpathSync(left) === realpathSync(right);
+    } catch {
+        return resolve(left) === resolve(right);
+    }
+}
 
 function runStep(spawn, command, args, label, { cwd, shell }) {
     const result = spawn(command, args, {
@@ -17,7 +25,7 @@ function runStep(spawn, command, args, label, { cwd, shell }) {
 }
 
 export function shouldRunPrebuild(argvEntry, moduleUrl) {
-    return typeof argvEntry === "string" && resolve(argvEntry) === fileURLToPath(moduleUrl);
+    return typeof argvEntry === "string" && sameFile(argvEntry, fileURLToPath(moduleUrl));
 }
 
 export function runPrebuildSteps({ root = projectRoot, spawn = spawnSync, skipDocs = false } = {}) {

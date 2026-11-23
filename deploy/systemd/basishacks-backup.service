@@ -1,0 +1,30 @@
+[Unit]
+Description=basishacks PostgreSQL snapshot and asset backup
+After=network-online.target postgresql.service
+Wants=network-online.target
+# OnFailure uses the same alert hook as the app units.
+OnFailure=basishacks-failure@%n.service
+
+[Service]
+Type=oneshot
+User=basishacks
+Group=basishacks
+WorkingDirectory=/opt/basishacks/current
+EnvironmentFile=/etc/basishacks/basishacks.env
+Environment=BACKUP_DIR=/srv/backups/basishacks
+Environment=BACKUP_RETENTION_DAYS=14
+# BACKUP_RSYNC_TARGET=user@offsite.example:/srv/backups/basishacks
+# ExecStart runs pg_dump, verifies the dump with pg_restore, writes a SHA-256
+# checksum, chmods the snapshot to 0600, tars the assets directory, and prunes
+# expired snapshots. Create /srv/backups/basishacks with ownership
+# basishacks:basishacks before enabling the timer; the mount namespace cannot
+# create its own ReadWritePaths.
+ExecStart=/usr/bin/node scripts/backup-postgres.mjs --with-assets
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/backups/basishacks /opt/basishacks/current/assets

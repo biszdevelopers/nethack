@@ -1,404 +1,720 @@
 <script setup lang="ts">
 import { apiFetch } from "~~/app/composables/useApiFetch";
+import { onBeforeRouteLeave } from "vue-router";
 import { NethackPermissions } from "~~/shared/permissions";
 import { SCORE_CURVE_PRESETS, type ScoreCurvePreset } from "~~/shared/score-curve";
-import { LIVE_OVERRIDE_KEYS } from "~~/shared/schemas";
 import { formatDateTime, fromDateTimeLocalString, toDateTimeLocalString } from "~/utils/datetime";
 import AdminRubricManager from "~/components/admin/RubricManager.vue";
+
 definePageMeta({
     layout: "developers-dashboard",
     middleware: ["auth"],
 });
 
-useHead({
-    title: `Hackathon Administration | ${WEBSITE_NAME}`,
-});
+useHead({ title: `Seasons | ${WEBSITE_NAME}` });
 
 const toast = useToast();
-const { data: user, status } = await useApiUser();
+const { data: user, status: authStatus } = await useApiUser();
 const { can } = useNethackPermissions();
 
-if (status.value !== "pending" && status.value !== "idle") {
+if (authStatus.value !== "pending" && authStatus.value !== "idle") {
     if (!user.value || !can(NethackPermissions.all)) {
-        throw createError({ statusCode: 403, statusMessage: "Access Denied" });
+        throw createError({ statusCode: 403, statusMessage: "Access denied" });
     }
 }
 
-// ---------------------------------------------------------------------------
-// Data
-// ---------------------------------------------------------------------------
 const {
     data: adminData,
     error: adminError,
     refresh: refreshAdmin,
+    status: adminStatus,
 } = await useApiFetch("/api/admin/hackathon", {
     lazy: true,
-    server: false,
-    $fetch: globalThis.$fetch,
 });
-const hackathon = computed(() => adminData.value?.hackathon ?? null);
-const seasons = computed(() => adminData.value?.seasons ?? []);
 
-/**
- * A remote manifest cannot be written from the portal, so its live settings
- * stay read-only. Other seasons keep editable stored settings.
- */
-const configReadOnly = computed(
-    () =>
-        adminData.value?.configSource === "remote" &&
-        (selectedSeasonId.value === null || selectedSeasonIsActive.value),
+const seasons = computed<Season[]>(() => (adminData.value?.seasons ?? []) as Season[]);
+const selectedSeasonId = ref<number | null>(null);
+const selectedSeason = computed(
+    () => seasons.value.find((season) => season.id === selectedSeasonId.value) ?? null,
 );
+const selectedSeasonIsActive = computed(() => selectedSeason.value?.is_active === 1);
 
-// ---------------------------------------------------------------------------
-// Helpers: ms epoch <-> datetime-local
-// ---------------------------------------------------------------------------
-function tsToDatetime(ts: unknown): string {
-    const num = Number(ts);
-    if (!Number.isFinite(num) || num <= 0) return "";
-    return toDateTimeLocalString(num);
-}
-function datetimeToTs(s: string): number {
-    return fromDateTimeLocalString(s);
-}
-function formatTimestamp(ts: unknown): string {
-    const num = Number(ts);
-    if (!Number.isFinite(num) || num <= 0) return "Not set";
-    return formatDateTime(num);
-}
-/** Format a datetime-local form value so the overview matches the editable fields. */
-function formatFormTimestamp(value: unknown): string {
-    return formatTimestamp(datetimeToTs(String(value ?? "")));
-}
+const preflight = ref<AdminPreflightResponse | null>(null);
+const preflightLoading = ref(false);
 
-const databaseExporting = ref(false);
-
-async function downloadDatabase(format: "json" | "csv") {
-    if (databaseExporting.value) return;
-    databaseExporting.value = true;
-    try {
-        const blob = await apiFetch<Blob>(`/api/admin/database/export?format=${format}`, {
-            responseType: "blob",
-        });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `nethack-export.${format}`;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-    } catch (error) {
-        toast.add({
-            title: "Could not export the database",
-            description: getErrorMessage(error),
-            color: "error",
-        });
-    } finally {
-        databaseExporting.value = false;
-    }
-}
-
-// All config fields — every field is per-season (saved with season_id)
-const allFieldKeys = [
-    "status",
-    "voting_enabled",
-    "judging_open",
-    "results_published",
-    "show_scores",
-    "show_ranking",
-    "max_votes_per_user",
-    "theme_name",
-    "theme_description",
-    "announcement",
-    "start_timestamp",
-    "end_timestamp",
-    "voting_start_timestamp",
-    "voting_end_timestamp",
-    "results_open_timestamp",
-] as const;
-
-const tsKeys: readonly string[] = [
-    "start_timestamp",
-    "end_timestamp",
-    "voting_start_timestamp",
-    "voting_end_timestamp",
-    "results_open_timestamp",
-];
-
-const boolKeys = new Set([
-    "voting_enabled",
-    "judging_open",
-    "results_published",
-    "show_scores",
-    "show_ranking",
-]);
-
-const toggleFields = [
-    { key: "voting_enabled", label: "Voting Enabled" },
-    { key: "judging_open", label: "Judging Open" },
-    { key: "results_published", label: "Results Published" },
-    { key: "show_scores", label: "Show Scores" },
-    { key: "show_ranking", label: "Show Ranking" },
-] as const;
-
-const statusLabels: Record<string, string> = {
-    not_started: "Not Started",
-    in_progress: "In Progress",
-    voting: "Voting",
-    finished: "Finished",
-    paused: "Paused",
-};
-
-// ---------------------------------------------------------------------------
-// Form state
-// ---------------------------------------------------------------------------
-const hackathonForm = reactive<Record<string, any>>({});
-const formInitialized = ref(false);
-const saving = ref(false);
-const scoreCurvePreset = ref<ScoreCurvePreset>("original");
-const scoreCurveSaving = ref(false);
-const scoreCurveItems = Object.entries(SCORE_CURVE_PRESETS).map(([value, preset]) => ({
-    label: preset.label,
-    value,
-}));
-
-/**
- * Fill the form from the selected season's own stored settings. The live row
- * is only a fallback when a field is absent, so two screens can never show
- * different values for the same season.
- */
-function applyConfig(seasonId: number | null) {
-    const h = hackathon.value;
-    if (!h) return;
-
-    const season =
-        seasonId === null ? null : (seasons.value?.find((row: any) => row.id === seasonId) ?? null);
-    const source = (season ?? h) as Record<string, unknown>;
-
-    for (const key of allFieldKeys) {
-        const value = source[key];
-        if (tsKeys.includes(key)) {
-            hackathonForm[key] = tsToDatetime(value);
-        } else if (boolKeys.has(key) || key === "max_votes_per_user") {
-            hackathonForm[key] = Number(value ?? 0);
-        } else {
-            hackathonForm[key] = value ?? "";
-        }
-    }
-
-    formInitialized.value = true;
-}
-
-/** Normalize a form value to its wire format (bool→0/1, timestamp→number, number-string→number). */
-function normalize(key: string, val: any): any {
-    if (typeof val === "boolean") return val ? 1 : 0;
-    if (tsKeys.includes(key)) return datetimeToTs(val as string);
-    if (key === "max_votes_per_user") return Number(val);
-    return val;
-}
-
-/** Compare a normalized value against the selected season, falling back to live settings. */
-function hasChanged(key: string, normalized: any): boolean {
-    const season = selectedSeason.value;
-    const rawBaseline = season
-        ? (season as unknown as Record<string, unknown>)[key]
-        : (hackathon.value as any)?.[key];
-    if (rawBaseline === undefined) return false;
-    // A stored season's NULL means "empty", not "inherit the live value".
-    const baseline =
-        rawBaseline === null
-            ? boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)
-                ? 0
-                : ""
-            : rawBaseline;
-    if (boolKeys.has(key) || key === "max_votes_per_user" || tsKeys.includes(key)) {
-        return Number(normalized) !== Number(baseline);
-    }
-    return normalized !== baseline;
-}
-
-/**
- * Save one field at a time. Sending only the field the organizer touched means
- * a stale form can never overwrite unrelated settings.
- *
- * Saves are serialized: a second quick edit waits for the first refresh, then
- * re-reads the form so neither the server nor the visible form is left stale.
- */
-let saveQueue: Promise<void> = Promise.resolve();
-
-function saveField(key: string) {
-    saveQueue = saveQueue.then(() => writeField(key)).catch(() => undefined);
-    return saveQueue;
-}
-
-/** Flush pending edits before the season picker replaces the form they were read from. */
-async function selectSeason(id: number | null) {
-    await saveQueue;
-    selectedSeasonId.value = id;
-}
-
-async function writeField(key: string) {
-    if (configReadOnly.value && !(LIVE_OVERRIDE_KEYS as readonly string[]).includes(key)) {
+async function loadPreflight() {
+    if (selectedSeasonId.value === null) {
+        preflight.value = null;
         return;
     }
-    const raw = hackathonForm[key];
-    if (raw === undefined || raw === null) return;
-    const value = normalize(key, raw);
-    if (typeof value === "number" && Number.isNaN(value)) return;
-    if (!hasChanged(key, value)) return;
-
-    const body: Record<string, unknown> = { [key]: value };
-    if (selectedSeasonId.value !== null) body.season_id = selectedSeasonId.value;
-
-    saving.value = true;
+    preflightLoading.value = true;
     try {
-        await apiFetch("/api/admin/hackathon", { method: "PATCH", body });
-        try {
-            await refreshAdmin();
-        } catch {
-            // The field is already saved; a later refresh will resync the view.
-        }
+        preflight.value = await apiFetch<AdminPreflightResponse>(
+            `/api/admin/preflight?season_id=${selectedSeasonId.value}`,
+        );
+    } catch {
+        preflight.value = null;
+    } finally {
+        preflightLoading.value = false;
+    }
+}
+
+async function refreshAll() {
+    await refreshAdmin();
+    await loadPreflight();
+    syncVisibilityFlags();
+}
+
+/** Keep the two publish-owned switches in step with the server after a lifecycle action. */
+function syncVisibilityFlags() {
+    const season = selectedSeason.value;
+    if (!season) return;
+    settings.show_scores = Number(season.show_scores ?? 0) === 1;
+    settings.show_ranking = Number(season.show_ranking ?? 0) === 1;
+}
+
+watchEffect(() => {
+    if (selectedSeasonId.value !== null || seasons.value.length === 0) return;
+    const active = seasons.value.find((season) => season.is_active === 1);
+    selectedSeasonId.value = active?.id ?? seasons.value.at(-1)?.id ?? null;
+});
+
+// ---------------------------------------------------------------------------
+// Season settings
+// ---------------------------------------------------------------------------
+type SettingsForm = {
+    start_timestamp: string;
+    end_timestamp: string;
+    voting_start_timestamp: string;
+    voting_end_timestamp: string;
+    results_open_timestamp: string;
+    theme_name: string;
+    theme_description: string;
+    announcement: string;
+    max_votes_per_user: number;
+    show_scores: boolean;
+    show_ranking: boolean;
+};
+
+const settings = reactive<SettingsForm>({
+    start_timestamp: "",
+    end_timestamp: "",
+    voting_start_timestamp: "",
+    voting_end_timestamp: "",
+    results_open_timestamp: "",
+    theme_name: "",
+    theme_description: "",
+    announcement: "",
+    max_votes_per_user: 0,
+    show_scores: false,
+    show_ranking: false,
+});
+const settingsSnapshot = ref("");
+const settingsSaving = ref(false);
+const settingsReady = ref(false);
+
+function timestampToInput(value: unknown): string {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? toDateTimeLocalString(number) : "";
+}
+
+function applySettings() {
+    const season = selectedSeason.value;
+    settingsReady.value = false;
+    if (!season) {
+        settingsSnapshot.value = "";
+        return;
+    }
+    settings.start_timestamp = timestampToInput(season.start_timestamp);
+    settings.end_timestamp = timestampToInput(season.end_timestamp);
+    settings.voting_start_timestamp = timestampToInput(season.voting_start_timestamp);
+    settings.voting_end_timestamp = timestampToInput(season.voting_end_timestamp);
+    settings.results_open_timestamp = timestampToInput(season.results_open_timestamp);
+    settings.theme_name = season.theme_name ?? "";
+    settings.theme_description = season.theme_description ?? "";
+    settings.announcement = season.announcement ?? "";
+    settings.max_votes_per_user = Number(season.max_votes_per_user ?? 0);
+    settings.show_scores = Number(season.show_scores ?? 0) === 1;
+    settings.show_ranking = Number(season.show_ranking ?? 0) === 1;
+    settingsSnapshot.value = JSON.stringify(settings);
+    settingsReady.value = true;
+}
+
+function loadSettings() {
+    applySettings();
+}
+
+function selectSeason(id: number): boolean {
+    if (selectedSeasonId.value === id) return true;
+    if (settingsDirty.value && !window.confirm("Discard the unsaved season settings?")) {
+        return false;
+    }
+    selectedSeasonId.value = id;
+    return true;
+}
+
+function makeSeasonLive(season: { id: number }) {
+    if (!selectSeason(season.id)) return;
+    runLifecycle(
+        "activate",
+        "Make this season the live season? The public site switches immediately.",
+    );
+}
+
+watch(
+    selectedSeasonId,
+    () => {
+        loadSettings();
+    },
+    { immediate: true },
+);
+
+watch(selectedSeasonId, () => {
+    if (import.meta.client) void loadPreflight();
+});
+
+onMounted(() => {
+    if (selectedSeasonId.value !== null) void loadPreflight();
+});
+
+const settingsDirty = computed(
+    () => settingsReady.value && JSON.stringify(settings) !== settingsSnapshot.value,
+);
+
+const settingsErrors = computed<Record<string, string>>(() => {
+    const errors: Record<string, string> = {};
+    const start = fromDateTimeLocalString(settings.start_timestamp);
+    const end = fromDateTimeLocalString(settings.end_timestamp);
+    const votingStart = fromDateTimeLocalString(settings.voting_start_timestamp);
+    const votingEnd = fromDateTimeLocalString(settings.voting_end_timestamp);
+    const resultsOpen = fromDateTimeLocalString(settings.results_open_timestamp);
+    if (start > 0 && end > 0 && end <= start) {
+        errors.end_timestamp = "The event must end after it starts.";
+    }
+    if (votingStart > 0 && votingEnd > 0 && votingEnd <= votingStart) {
+        errors.voting_end_timestamp = "Voting must end after voting starts.";
+    }
+    if (votingEnd > 0 && resultsOpen > 0 && resultsOpen < votingEnd) {
+        errors.results_open_timestamp = "Results must open after voting closes.";
+    }
+    return errors;
+});
+
+const settingsValid = computed(() => Object.keys(settingsErrors.value).length === 0);
+
+async function saveSettings() {
+    const season = selectedSeason.value;
+    if (!season || !settingsDirty.value || settingsSaving.value) return;
+    if (!settingsValid.value) {
+        toast.add({
+            title: "Check the schedule order",
+            description: Object.values(settingsErrors.value)[0],
+            color: "warning",
+        });
+        return;
+    }
+
+    settingsSaving.value = true;
+    try {
+        await apiFetch("/api/admin/hackathon", {
+            method: "PATCH",
+            body: {
+                season_id: season.id,
+                start_timestamp: fromDateTimeLocalString(settings.start_timestamp),
+                end_timestamp: fromDateTimeLocalString(settings.end_timestamp),
+                voting_start_timestamp: fromDateTimeLocalString(settings.voting_start_timestamp),
+                voting_end_timestamp: fromDateTimeLocalString(settings.voting_end_timestamp),
+                results_open_timestamp: fromDateTimeLocalString(settings.results_open_timestamp),
+                theme_name: settings.theme_name || null,
+                theme_description: settings.theme_description || null,
+                announcement: settings.announcement || null,
+                max_votes_per_user: Math.max(0, Number(settings.max_votes_per_user) || 0),
+                show_scores: settings.show_scores ? 1 : 0,
+                show_ranking: settings.show_ranking ? 1 : 0,
+            },
+        });
+        await refreshAll();
+        settingsSnapshot.value = JSON.stringify(settings);
+        toast.add({ title: "Season settings saved.", color: "success" });
     } catch (error) {
         toast.add({
             title: "Could not save season settings",
             description: getErrorMessage(error),
             color: "error",
         });
-        // Revert only the failed field so other pending edits are not wiped.
-        const source = (selectedSeason.value ?? hackathon.value) as Record<string, unknown> | null;
-        const value = source?.[key];
-        if (tsKeys.includes(key)) hackathonForm[key] = tsToDatetime(value);
-        else if (boolKeys.has(key) || key === "max_votes_per_user") {
-            hackathonForm[key] = Number(value ?? 0);
-        } else hackathonForm[key] = value ?? "";
     } finally {
-        saving.value = false;
+        settingsSaving.value = false;
     }
 }
 
-// ---------------------------------------------------------------------------
-// Selected season
-// ---------------------------------------------------------------------------
-const selectedSeasonId = ref<number | null>(null);
-const activeTab = ref("overview");
+function discardSettings() {
+    applySettings();
+}
 
-const tabItems = [
-    { label: "Overview", value: "overview", icon: "i-lucide-layout-dashboard" },
-    { label: "Seasons", value: "seasons", icon: "i-lucide-calendar-range" },
-    { label: "Event settings", value: "event", icon: "i-lucide-sliders-horizontal" },
-    { label: "Scoring", value: "scoring", icon: "i-lucide-trophy" },
-    { label: "Data", value: "data", icon: "i-lucide-database" },
-];
+const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (!settingsDirty.value) return;
+    event.preventDefault();
+    event.returnValue = "";
+};
 
-// One-time initialization: wait for the live configuration, then select the
-// active season so edits always target what visitors see. Stored seasons remain
-// reachable through the season picker.
-watchEffect(() => {
-    const h = hackathon.value;
-    if (!h || formInitialized.value) return;
-    const active = seasons.value.find((season: Season) => season.is_active === 1);
-    const fallback = seasons.value[seasons.value.length - 1];
-    selectedSeasonId.value = active?.id ?? fallback?.id ?? null;
-    applyConfig(selectedSeasonId.value);
+onMounted(() => window.addEventListener("beforeunload", warnBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", warnBeforeUnload));
+onBeforeRouteLeave(() => {
+    if (!settingsDirty.value) return true;
+    return window.confirm("Discard the unsaved season settings?");
 });
 
-const selectedSeason = computed(
-    () => seasons.value.find((season: Season) => season.id === selectedSeasonId.value) ?? null,
-);
-const selectedSeasonIsActive = computed(() => selectedSeason.value?.is_active === 1);
-const statusLabel = computed(
-    () => statusLabels[hackathonForm.status] ?? statusLabels.not_started ?? "",
-);
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+const stageLabels: Record<string, string> = {
+    not_started: "Setup",
+    in_progress: "Submissions open",
+    voting: "Voting and judging",
+    finished: "Finished",
+    paused: "Paused",
+};
 
-const seasonItems = computed(() => [
-    { label: "None", value: null },
-    ...(seasons.value?.map((s: { id: number; name: string }) => ({ label: s.name, value: s.id })) ||
-        []),
+const stageSteps = computed(() => [
+    {
+        label: "Setup",
+        description: "Dates, theme, and rubric",
+        done: ["in_progress", "voting", "finished"].includes(
+            selectedSeason.value?.status ?? "not_started",
+        ),
+        current: (selectedSeason.value?.status ?? "not_started") === "not_started",
+    },
+    {
+        label: "Submissions",
+        description: "Teams build and submit projects",
+        done: ["voting", "finished"].includes(selectedSeason.value?.status ?? ""),
+        current: selectedSeason.value?.status === "in_progress",
+    },
+    {
+        label: "Voting and judging",
+        description: "Peer voting and judge scoring",
+        done: selectedSeason.value?.status === "finished",
+        current: selectedSeason.value?.status === "voting",
+    },
+    {
+        label: "Results",
+        description: "Publish standings and awards",
+        done: Number(selectedSeason.value?.results_published ?? 0) === 1,
+        current:
+            selectedSeason.value?.status === "finished" &&
+            Number(selectedSeason.value?.results_published ?? 0) !== 1,
+    },
 ]);
 
-// ---------------------------------------------------------------------------
-// Season name, score curve, activation, creation, deletion
-// ---------------------------------------------------------------------------
-const seasonNameForm = ref("");
+const activationBlockers = computed(() => {
+    const season = selectedSeason.value;
+    if (!season) return ["Select a season."];
+    const blockers: string[] = [];
+    if (!season.start_timestamp || !season.end_timestamp) blockers.push("Set the event dates.");
+    if (
+        season.is_blank_start === 1 &&
+        (!season.voting_start_timestamp || !season.voting_end_timestamp)
+    ) {
+        blockers.push("Set the voting dates.");
+    }
+    if (!season.theme_name) blockers.push("Set the theme.");
+    if (!season.rubric_version_id) blockers.push("Publish a judging rubric.");
+    if (season.is_blank_start === 1 && !season.board_approved_at) {
+        blockers.push("Record board approval.");
+    }
+    return blockers;
+});
 
-watch(
-    selectedSeasonId,
-    (id) => {
-        // Update season name
-        seasonNameForm.value = seasons.value?.find((s: any) => s.id === id)?.name ?? "";
-        scoreCurvePreset.value =
-            (seasons.value?.find((s: any) => s.id === id)?.score_curve_preset as
-                | ScoreCurvePreset
-                | undefined) ?? "original";
-        // Re-apply the full config (global + season overrides). When id is null,
-        // applyConfig skips the overlay, showing only the global hackathon values.
-        applyConfig(id);
-    },
-    { immediate: true },
+const canActivate = computed(
+    () =>
+        Boolean(selectedSeason.value) &&
+        !selectedSeasonIsActive.value &&
+        activationBlockers.value.length === 0,
 );
 
-async function saveScoreCurvePreset(value: ScoreCurvePreset) {
-    const seasonId = selectedSeasonId.value;
-    if (seasonId === null) return;
-    scoreCurveSaving.value = true;
+const published = computed(() => Number(selectedSeason.value?.results_published ?? 0) === 1);
+const paused = computed(() => selectedSeason.value?.status === "paused");
+
+const nextAction = computed(() => {
+    const season = selectedSeason.value;
+    if (!season) return null;
+    if (!selectedSeasonIsActive.value) {
+        return {
+            key: "activate",
+            label: "Make this season live",
+            description: canActivate.value
+                ? "Switch the public site to this season. Its settings apply immediately."
+                : `Finish the setup checklist first: ${activationBlockers.value.join(" ")}`,
+            enabled: canActivate.value,
+            confirm: "Make this season the live season? The public site switches immediately.",
+        };
+    }
+    if (paused.value) {
+        return {
+            key: "resume",
+            label: "Resume the event",
+            description: "Restore submissions, voting, or judging based on the saved dates.",
+            enabled: true,
+            confirm: "Resume the event?",
+        };
+    }
+    if (season.status === "finished") {
+        return published.value
+            ? null
+            : {
+                  key: "publish",
+                  label: "Publish results",
+                  description: "Close judging and voting, then publish the standings and awards.",
+                  enabled: true,
+                  confirm:
+                      "Publish results? This closes judging and voting and makes the standings public.",
+              };
+    }
+    if (published.value) {
+        return {
+            key: "finish",
+            label: "Finish the event",
+            description: "Mark the season finished. Results stay public.",
+            enabled: true,
+            confirm: "Finish the event? Results stay public.",
+        };
+    }
+    if (season.status === "voting") {
+        return {
+            key: "publish",
+            label: "Publish results",
+            description: "Close judging and voting, then publish the standings and awards.",
+            enabled: true,
+            confirm:
+                "Publish results? This closes judging and voting and makes the standings public.",
+        };
+    }
+    if (season.status === "not_started") {
+        const ready = activationBlockers.value.length === 0;
+        return {
+            key: "submissions",
+            label: "Open submissions",
+            description: ready
+                ? "Start accepting teams and projects."
+                : `Finish setup first: ${activationBlockers.value.join(" ")}`,
+            enabled: ready,
+            confirm: "Open submissions for this season?",
+        };
+    }
+    const readyForVoting = activationBlockers.value.length === 0;
+    return {
+        key: "voting",
+        label: "Open peer voting and judging",
+        description: readyForVoting
+            ? "Close submissions, open the gallery, and let participants vote and judges score."
+            : `Finish setup first: ${activationBlockers.value.join(" ")}`,
+        enabled: readyForVoting,
+        confirm:
+            "Close submissions and open peer voting and judging? Teams can no longer edit their projects.",
+    };
+});
+
+const lifecycleBusy = ref(false);
+
+const resetItems = computed(() => {
+    const season = selectedSeason.value;
+    const status = season?.status ?? "not_started";
+    return [
+        {
+            label: "Reopen submissions",
+            icon: "i-lucide-undo-2",
+            disabled: !season || status === "not_started",
+            onSelect: () =>
+                void runLifecycle(
+                    "reopen-submissions",
+                    "Reopen submissions? The event returns to the in-progress stage. Teams, projects, and scores are kept.",
+                ),
+        },
+        {
+            label: "Reopen voting and judging",
+            icon: "i-lucide-rotate-ccw",
+            disabled: !season || (!["voting", "finished"].includes(status) && !published.value),
+            onSelect: () =>
+                void runLifecycle(
+                    "reopen-voting",
+                    "Reopen voting and judging? Published results become private and the event returns to the voting stage. Teams, projects, and scores are kept.",
+                ),
+        },
+        {
+            label: "Unpublish results",
+            icon: "i-lucide-eye-off",
+            disabled: !published.value,
+            onSelect: () =>
+                void runLifecycle(
+                    "unpublish",
+                    "Unpublish results? The public results, scores, and rankings become private. The stored snapshot is cleared when you publish again. Teams, projects, and scores are kept.",
+                ),
+        },
+        {
+            label: "Reset to setup",
+            icon: "i-lucide-refresh-ccw",
+            disabled: !season || (status === "not_started" && !published.value),
+            onSelect: () =>
+                void runLifecycle(
+                    "reset-setup",
+                    "Reset the event stage to setup? Submissions, voting, judging, and published results close. Teams, projects, and scores are kept.",
+                ),
+        },
+    ];
+});
+
+async function runLifecycle(action: string, confirmation: string) {
+    const season = selectedSeason.value;
+    if (!season || lifecycleBusy.value) return;
+    if (!window.confirm(confirmation)) return;
+
+    if (action === "activate") {
+        lifecycleBusy.value = true;
+        try {
+            await apiFetch("/api/seasons/active", {
+                method: "PATCH",
+                body: { season_id: season.id },
+            });
+            await refreshAll();
+            toast.add({ title: "This season is now live.", color: "success" });
+        } catch (error) {
+            toast.add({
+                title: "Could not activate the season",
+                description: getErrorMessage(error),
+                color: "error",
+            });
+        } finally {
+            lifecycleBusy.value = false;
+        }
+        return;
+    }
+
+    const payload: Record<string, unknown> = { season_id: season.id };
+    if (action === "resume") {
+        const now = Date.now();
+        payload.status =
+            now >= Number(season.voting_start_timestamp) &&
+            Number(season.voting_start_timestamp) > 0
+                ? "voting"
+                : "in_progress";
+        payload.voting_enabled = payload.status === "voting" ? 1 : 0;
+        payload.judging_open = payload.status === "voting" ? 1 : 0;
+    } else if (action === "submissions") {
+        payload.status = "in_progress";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+    } else if (action === "voting") {
+        payload.status = "voting";
+        payload.voting_enabled = 1;
+        payload.judging_open = 1;
+        payload.results_published = 0;
+    } else if (action === "publish") {
+        payload.results_published = 1;
+        payload.show_scores = 1;
+        payload.show_ranking = 1;
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+    } else if (action === "finish") {
+        payload.status = "finished";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+    } else if (action === "pause") {
+        payload.status = "paused";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+    } else if (action === "reopen-submissions") {
+        payload.status = "in_progress";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+    } else if (action === "reopen-voting") {
+        payload.status = "voting";
+        payload.voting_enabled = 1;
+        payload.judging_open = 1;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+    } else if (action === "unpublish") {
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+    } else if (action === "reset-setup") {
+        payload.status = "not_started";
+        payload.voting_enabled = 0;
+        payload.judging_open = 0;
+        payload.results_published = 0;
+        payload.show_scores = 0;
+        payload.show_ranking = 0;
+    } else {
+        return;
+    }
+
+    lifecycleBusy.value = true;
     try {
-        await apiFetch(`/api/admin/seasons/${seasonId}/score-curve`, {
-            method: "PATCH",
-            body: { preset: value },
-        });
-        await refreshAdmin();
-        toast.add({ title: "Score display curve updated.", color: "success" });
+        await apiFetch("/api/admin/hackathon", { method: "PATCH", body: payload });
+        await refreshAll();
+        toast.add({ title: "Season updated.", color: "success" });
     } catch (error) {
-        scoreCurvePreset.value =
-            (seasons.value?.find((season: any) => season.id === seasonId)?.score_curve_preset as
-                | ScoreCurvePreset
-                | undefined) ?? "original";
         toast.add({
-            title: "Could not update score curve",
+            title: "Could not update the season",
             description: getErrorMessage(error),
             color: "error",
         });
     } finally {
-        scoreCurveSaving.value = false;
+        lifecycleBusy.value = false;
     }
 }
 
-const seasonNameSaving = ref(false);
+// ---------------------------------------------------------------------------
+// Season management
+// ---------------------------------------------------------------------------
+const activeTab = ref("run");
+const tabItems = [
+    { label: "Run season", value: "run", icon: "i-lucide-play" },
+    { label: "Season settings", value: "settings", icon: "i-lucide-sliders-horizontal" },
+    { label: "Seasons", value: "seasons", icon: "i-lucide-calendar-range" },
+    { label: "Rubric", value: "rubric", icon: "i-lucide-trophy" },
+    { label: "Site and data", value: "site", icon: "i-lucide-building-2" },
+];
+
+const newSeasonName = ref("");
+const copySettings = ref(true);
+const creatingSeason = ref(false);
+
+async function createSeason() {
+    const name = newSeasonName.value.trim();
+    if (!name || creatingSeason.value) return;
+    creatingSeason.value = true;
+    try {
+        const result = await apiFetch<{ seasons: Season[] }>("/api/admin/seasons", {
+            method: "POST",
+            body: { name, copy_live_settings: copySettings.value },
+        });
+        await refreshAdmin();
+        selectedSeasonId.value = result.seasons.find((season) => season.name === name)?.id ?? null;
+        newSeasonName.value = "";
+        toast.add({ title: `Season “${name}” created.`, color: "success" });
+    } catch (error) {
+        toast.add({
+            title: "Could not create the season",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        creatingSeason.value = false;
+    }
+}
+
+const seasonNameDraft = ref("");
+const renamingSeason = ref(false);
+
+watch(
+    selectedSeason,
+    (season) => {
+        seasonNameDraft.value = season?.name ?? "";
+    },
+    { immediate: true },
+);
 
 async function renameSeason() {
-    if (selectedSeasonId.value === null || !seasonNameForm.value.trim()) return;
-    seasonNameSaving.value = true;
+    const season = selectedSeason.value;
+    const name = seasonNameDraft.value.trim();
+    if (!season || !name || name === season.name || renamingSeason.value) return;
+    renamingSeason.value = true;
     try {
         await apiFetch("/api/admin/seasons", {
             method: "PATCH",
-            body: { id: selectedSeasonId.value, name: seasonNameForm.value.trim() },
+            body: { id: season.id, name },
         });
         await refreshAdmin();
         toast.add({ title: "Season renamed.", color: "success" });
-    } catch (e: any) {
-        toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
+    } catch (error) {
+        toast.add({
+            title: "Could not rename the season",
+            description: getErrorMessage(error),
+            color: "error",
+        });
     } finally {
-        seasonNameSaving.value = false;
+        renamingSeason.value = false;
     }
 }
 
-const boardApprovalSaving = ref(false);
-const boardApprovalRecorded = computed(() =>
-    Boolean(selectedSeason.value?.board_approved_at && selectedSeason.value?.board_approved_by),
+const deletingSeason = ref(false);
+
+async function deleteSeason() {
+    const season = selectedSeason.value;
+    if (!season || season.is_active === 1 || deletingSeason.value) return;
+    if (!window.confirm(`Delete “${season.name}”? This cannot be undone.`)) return;
+    deletingSeason.value = true;
+    try {
+        const result = await apiFetch<{ seasons: Season[] }>(`/api/admin/seasons/${season.id}`, {
+            method: "DELETE",
+        });
+        await refreshAdmin();
+        selectedSeasonId.value = result.seasons.at(-1)?.id ?? null;
+        toast.add({ title: "Season deleted.", color: "success" });
+    } catch (error) {
+        toast.add({
+            title: "Could not delete the season",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        deletingSeason.value = false;
+    }
+}
+
+const teamLimit = ref(6);
+
+watch(
+    selectedSeason,
+    (season) => {
+        teamLimit.value = Number(season?.max_team_members ?? 6);
+    },
+    { immediate: true },
 );
 
-async function updateBoardApproval(approved: boolean) {
+async function saveTeamLimit() {
     const season = selectedSeason.value;
-    if (!season || season.is_blank_start !== 1) return;
+    if (!season) return;
+    try {
+        await apiFetch("/api/admin/seasons", {
+            method: "PATCH",
+            body: { id: season.id, max_team_members: Math.max(1, Number(teamLimit.value) || 6) },
+        });
+        await refreshAdmin();
+        toast.add({ title: "Team limit saved.", color: "success" });
+    } catch (error) {
+        toast.add({
+            title: "Could not save the team limit",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    }
+}
+
+const approvalSaving = ref(false);
+
+async function setBoardApproval(approved: boolean) {
+    const season = selectedSeason.value;
+    if (!season || season.is_blank_start !== 1 || approvalSaving.value) return;
     if (
-        !confirm(
+        !window.confirm(
             approved
-                ? `Confirm that the board approved ${season.name}? This will be recorded with your administrator account and the current time.`
-                : `Revoke the recorded board approval for ${season.name}?`,
+                ? `Record board approval for “${season.name}”? Your account and the current time are saved.`
+                : `Revoke board approval for “${season.name}”?`,
         )
     ) {
         return;
     }
-
-    boardApprovalSaving.value = true;
+    approvalSaving.value = true;
     try {
         await apiFetch(`/api/admin/seasons/${season.id}/approval`, {
             method: "PATCH",
@@ -416,632 +732,755 @@ async function updateBoardApproval(approved: boolean) {
             color: "error",
         });
     } finally {
-        boardApprovalSaving.value = false;
+        approvalSaving.value = false;
     }
 }
 
-const activating = ref(false);
+// ---------------------------------------------------------------------------
+// Rubric, score curve, and export
+// ---------------------------------------------------------------------------
+const scoreCurvePreset = ref<ScoreCurvePreset>("original");
+const scoreCurveSaving = ref(false);
+const scoreCurveItems = Object.entries(SCORE_CURVE_PRESETS).map(([value, preset]) => ({
+    label: preset.label,
+    value,
+}));
 
-async function setActiveSeason() {
-    const seasonId = selectedSeasonId.value;
-    if (seasonId === null) return;
-    if (
-        !confirm(
-            "Make this the active season? The public site, voting, and judging switch immediately.",
-        )
-    ) {
-        return;
-    }
-    activating.value = true;
-    try {
-        await apiFetch("/api/seasons/active", {
-            method: "PATCH",
-            body: { season_id: seasonId },
-        });
-        await refreshAdmin();
-        toast.add({ title: "Active season updated.", color: "success" });
-    } catch (e: any) {
-        toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
-    } finally {
-        activating.value = false;
-    }
-}
+watch(
+    selectedSeason,
+    (season) => {
+        const preset = season?.score_curve_preset;
+        scoreCurvePreset.value =
+            preset && preset in SCORE_CURVE_PRESETS ? (preset as ScoreCurvePreset) : "original";
+    },
+    { immediate: true },
+);
 
-const creatingSeason = ref(false);
-
-async function createSeason(copyLiveSettings = true) {
-    const name = prompt("New season name:");
-    if (!name || !name.trim()) return;
-    creatingSeason.value = true;
-    try {
-        const result = await apiFetch<{ seasons: Season[] }>("/api/admin/seasons", {
-            method: "POST",
-            body: { name: name.trim(), copy_live_settings: copyLiveSettings },
-        });
-        await refreshAdmin();
-        selectedSeasonId.value =
-            result.seasons.find((season) => season.name === name.trim())?.id ?? null;
-        toast.add({ title: `Season "${name.trim()}" created.`, color: "success" });
-    } catch (e: any) {
-        toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
-    } finally {
-        creatingSeason.value = false;
-    }
-}
-
-const deletingSeason = ref(false);
-
-async function deleteSeason() {
+async function saveScoreCurvePreset(value: ScoreCurvePreset) {
     const season = selectedSeason.value;
-    if (!season || season.is_active === 1) return;
-    if (!confirm(`Delete "${season.name}"? This cannot be undone.`)) return;
-    deletingSeason.value = true;
+    if (!season || scoreCurveSaving.value) return;
+    const previous =
+        season.score_curve_preset && season.score_curve_preset in SCORE_CURVE_PRESETS
+            ? (season.score_curve_preset as ScoreCurvePreset)
+            : "original";
+    scoreCurveSaving.value = true;
     try {
-        const result = await apiFetch<{ seasons: Season[] }>(`/api/admin/seasons/${season.id}`, {
-            method: "DELETE",
+        await apiFetch(`/api/admin/seasons/${season.id}/score-curve`, {
+            method: "PATCH",
+            body: { preset: value },
         });
         await refreshAdmin();
-        selectedSeasonId.value = result.seasons[result.seasons.length - 1]?.id ?? null;
-        toast.add({ title: "Season deleted.", color: "success" });
-    } catch (e: any) {
-        toast.add({ title: "Error", description: getErrorMessage(e), color: "error" });
+        toast.add({ title: "Score curve saved.", color: "success" });
+    } catch (error) {
+        scoreCurvePreset.value = previous;
+        toast.add({
+            title: "Could not save the score curve",
+            description: getErrorMessage(error),
+            color: "error",
+        });
     } finally {
-        deletingSeason.value = false;
+        scoreCurveSaving.value = false;
+    }
+}
+
+const databaseExporting = ref(false);
+
+async function downloadDatabase(format: "json" | "csv") {
+    if (databaseExporting.value) return;
+    databaseExporting.value = true;
+    try {
+        const response = await fetch(`/api/admin/database/export?format=${format}`);
+        if (!response.ok) throw new Error("Export failed.");
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `nethack-export.${format}`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+        toast.add({
+            title: "Could not export the database",
+            description: getErrorMessage(error),
+            color: "error",
+        });
+    } finally {
+        databaseExporting.value = false;
     }
 }
 </script>
 
 <template>
-    <UDashboardPanel id="hackathon-admin">
-        <template #header>
-            <UDashboardNavbar title="Hackathon Administration" :as="{ title: 'span' }">
-                <template #leading>
-                    <UDashboardSidebarCollapse />
-                </template>
-            </UDashboardNavbar>
-        </template>
-
-        <template #body>
-            <div class="p-4 sm:p-6 space-y-4">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div class="space-y-1">
-                        <h1 class="text-2xl font-semibold">Hackathon administration</h1>
-                        <p class="text-sm text-ui-text-muted">
-                            <template v-if="selectedSeason">
-                                Managing
-                                <span class="bold">{{ selectedSeason.name }}</span>
-                                <UBadge
-                                    v-if="selectedSeasonIsActive"
-                                    color="success"
-                                    variant="subtle"
-                                    class="ms-2"
-                                >
-                                    Active
-                                </UBadge>
-                            </template>
-                            <template v-else>No season selected.</template>
-                        </p>
-                    </div>
-                    <UBadge color="neutral" variant="subtle" class="min-h-8">
-                        {{ statusLabel }}
-                    </UBadge>
-                </div>
-
-                <UAlert
-                    v-if="adminError"
-                    color="error"
-                    variant="subtle"
-                    title="Season settings could not be loaded"
-                    :description="getErrorMessage(adminError)"
+    <div class="space-y-8">
+        <header class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <p class="text-sm text-muted">Hackathon operations</p>
+                <h1 class="mt-1 text-3xl font-bold">Seasons</h1>
+                <p class="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                    A season owns its dates, theme, status, voting and judging switches, results,
+                    and rubric. Only the live season is visible to visitors. Site-wide settings such
+                    as the award catalog are managed separately.
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <UButton to="/" target="_blank" variant="subtle" class="min-h-11">
+                    View public site
+                </UButton>
+                <UButton
+                    variant="outline"
+                    class="min-h-11"
+                    :loading="adminStatus === 'pending'"
+                    @click="refreshAll"
                 >
-                    <template #actions>
-                        <UButton variant="outline" class="min-h-11" @click="() => refreshAdmin()">
-                            Try again
-                        </UButton>
-                    </template>
-                </UAlert>
+                    Refresh
+                </UButton>
+            </div>
+        </header>
 
-                <UAlert
-                    v-if="selectedSeason && !selectedSeasonIsActive"
-                    color="warning"
-                    variant="subtle"
-                    icon="i-lucide-triangle-alert"
-                    title="You are editing a stored season, not the live event"
-                    :description="
-                        adminData?.configSource === 'remote'
-                            ? `Changes here save to ${selectedSeason.name}. Activating it applies its status and visibility switches immediately; schedule and theme stay under the remote manifest.`
-                            : `Changes here save to ${selectedSeason.name} and do not affect the public site until you make it the active season.`
+        <UAlert
+            v-if="adminError"
+            color="error"
+            variant="subtle"
+            title="Could not load the admin data"
+            :description="getErrorMessage(adminError)"
+        />
+
+        <div class="flex flex-wrap items-center gap-3">
+            <UFormField label="Season" class="min-w-64">
+                <USelect
+                    :model-value="selectedSeasonId ?? undefined"
+                    :items="
+                        seasons.map((season) => ({
+                            label: `${season.name}${season.is_active === 1 ? ' (live)' : ''}`,
+                            value: season.id,
+                        }))
                     "
-                >
-                    <template #actions>
-                        <UButton class="min-h-11" :loading="activating" @click="setActiveSeason">
-                            Make {{ selectedSeason.name }} live
-                        </UButton>
-                    </template>
-                </UAlert>
-
-                <UAlert
-                    v-else-if="selectedSeason"
-                    color="success"
-                    variant="subtle"
-                    icon="i-lucide-radio"
-                    title="These settings control the live site"
-                    :description="
-                        adminData?.configSource === 'remote'
-                            ? `Status, voting, judging, and visibility switches for ${selectedSeason.name} save to PostgreSQL and apply immediately. Schedule and theme come from the remote manifest.`
-                            : `Status, voting, judging, visibility switches, and the schedule below apply immediately to ${selectedSeason.name}.`
-                    "
-                />
-
-                <UTabs
-                    v-model="activeTab"
-                    :items="tabItems"
-                    :content="false"
-                    :ui="{
-                        list: 'w-full overflow-x-auto',
-                        trigger: 'whitespace-nowrap data-[state=active]:bg-primary',
-                    }"
+                    :ui="{ base: 'min-h-11' }"
                     class="w-full"
+                    @update:model-value="(value) => selectSeason(Number(value))"
                 />
+            </UFormField>
+            <UBadge v-if="selectedSeasonIsActive" color="success" variant="subtle">Live</UBadge>
+            <UBadge v-else-if="selectedSeason" color="neutral" variant="subtle">Stored</UBadge>
+            <span v-if="selectedSeason" class="text-sm text-muted">
+                {{ stageLabels[selectedSeason.status] ?? selectedSeason.status }}
+            </span>
+        </div>
 
-                <!-- Overview -->
-                <section v-show="activeTab === 'overview'" class="space-y-4">
-                    <div class="grid gap-4 md:grid-cols-2">
-                        <UCard>
-                            <template #header>
-                                <h2 class="font-semibold">Theme</h2>
-                            </template>
-                            <p class="text-lg">{{ hackathonForm.theme_name || "No theme set" }}</p>
-                            <p class="text-sm text-ui-text-muted mt-1">
-                                {{ hackathonForm.theme_description || "No description yet." }}
+        <UTabs
+            v-model="activeTab"
+            :items="tabItems"
+            :content="false"
+            :ui="{ list: 'w-full overflow-x-auto' }"
+        />
+
+        <!-- Run season -->
+        <section v-show="activeTab === 'run'" class="space-y-6">
+            <UCard v-if="selectedSeason">
+                <template #header>
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h2 class="text-xl font-semibold">{{ selectedSeason.name }}</h2>
+                            <p class="text-sm text-muted">
+                                {{ stageLabels[selectedSeason.status] ?? selectedSeason.status }}
+                                <template v-if="selectedSeason.start_timestamp">
+                                    · {{ formatDateTime(selectedSeason.start_timestamp) }}
+                                </template>
                             </p>
-                        </UCard>
-
-                        <UCard>
-                            <template #header>
-                                <h2 class="font-semibold">Schedule</h2>
-                            </template>
-                            <dl class="space-y-1 text-sm">
-                                <div class="flex justify-between gap-3">
-                                    <dt class="text-ui-text-muted">Event</dt>
-                                    <dd>
-                                        {{ formatFormTimestamp(hackathonForm.start_timestamp) }} —
-                                        {{ formatFormTimestamp(hackathonForm.end_timestamp) }}
-                                    </dd>
-                                </div>
-                                <div class="flex justify-between gap-3">
-                                    <dt class="text-ui-text-muted">Voting</dt>
-                                    <dd>
-                                        {{
-                                            formatFormTimestamp(
-                                                hackathonForm.voting_start_timestamp,
-                                            )
-                                        }}
-                                        —
-                                        {{
-                                            formatFormTimestamp(hackathonForm.voting_end_timestamp)
-                                        }}
-                                    </dd>
-                                </div>
-                                <div class="flex justify-between gap-3">
-                                    <dt class="text-ui-text-muted">Results open</dt>
-                                    <dd>
-                                        {{
-                                            formatFormTimestamp(
-                                                hackathonForm.results_open_timestamp,
-                                            )
-                                        }}
-                                    </dd>
-                                </div>
-                            </dl>
-                        </UCard>
-                    </div>
-
-                    <UCard>
-                        <template #header>
-                            <h2 class="font-semibold">What visitors can do</h2>
-                        </template>
-                        <ul class="grid gap-2 sm:grid-cols-2">
-                            <li
-                                v-for="toggle in toggleFields"
-                                :key="toggle.key"
-                                class="flex items-center justify-between gap-3"
-                            >
-                                <span>{{ toggle.label }}</span>
-                                <UBadge
-                                    :color="hackathonForm[toggle.key] ? 'success' : 'neutral'"
-                                    variant="subtle"
-                                >
-                                    {{ hackathonForm[toggle.key] ? "On" : "Off" }}
-                                </UBadge>
-                            </li>
-                        </ul>
-                        <div class="flex flex-wrap gap-3 mt-4">
-                            <UButton class="min-h-11" @click="activeTab = 'event'">
-                                Edit event settings
-                            </UButton>
-                            <UButton class="min-h-11" variant="soft" @click="activeTab = 'scoring'">
-                                Scoring and rubric
-                            </UButton>
                         </div>
-                    </UCard>
-                </section>
-
-                <!-- Seasons -->
-                <section v-show="activeTab === 'seasons'" class="space-y-4">
-                    <UCard>
-                        <template #header>
-                            <h2 class="font-semibold">Selected season</h2>
-                        </template>
-                        <div class="flex flex-wrap items-end gap-3">
-                            <UFormField label="Season" class="w-full sm:w-auto sm:max-w-xs">
-                                <USelect
-                                    :model-value="selectedSeasonId"
-                                    :items="seasonItems"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @update:model-value="selectSeason"
-                                />
-                            </UFormField>
+                        <div class="flex flex-wrap gap-2">
                             <UButton
+                                v-if="nextAction"
                                 class="min-h-11"
-                                :loading="activating"
-                                :disabled="selectedSeasonId === null || selectedSeasonIsActive"
-                                @click="setActiveSeason"
+                                :disabled="!nextAction.enabled || lifecycleBusy"
+                                :loading="lifecycleBusy"
+                                @click="runLifecycle(nextAction.key, nextAction.confirm)"
                             >
-                                {{ selectedSeasonIsActive ? "Active season" : "Set active" }}
+                                {{ nextAction.label }}
                             </UButton>
+                            <UDropdownMenu :items="resetItems">
+                                <UButton variant="outline" class="min-h-11">Reset stage</UButton>
+                            </UDropdownMenu>
                             <UButton
-                                class="min-h-11"
-                                variant="outline"
-                                :loading="creatingSeason"
-                                @click="createSeason(true)"
-                            >
-                                New season
-                            </UButton>
-                            <UButton
-                                class="min-h-11"
-                                variant="outline"
-                                :loading="creatingSeason"
-                                @click="createSeason(false)"
-                            >
-                                Blank season
-                            </UButton>
-                            <UButton
-                                v-if="selectedSeason && !selectedSeasonIsActive"
-                                class="min-h-11"
-                                color="error"
-                                variant="soft"
-                                :loading="deletingSeason"
-                                @click="deleteSeason"
-                            >
-                                Delete season
-                            </UButton>
-                        </div>
-                        <p class="text-sm text-ui-text-muted mt-3">
-                            New season copies the current live settings; Blank season starts with
-                            event switches off and no theme, schedule, or rubric. A season must have
-                            event dates, voting dates, a theme, a rubric, and recorded board
-                            approval before activation. Activation switches the public site, voting,
-                            and judging immediately.
-                        </p>
-                    </UCard>
-
-                    <UCard v-if="selectedSeason?.is_blank_start === 1">
-                        <template #header>
-                            <h2 class="font-semibold">Board approval</h2>
-                        </template>
-                        <div class="flex flex-wrap items-center justify-between gap-4">
-                            <div class="max-w-2xl text-sm text-ui-text-muted">
-                                <p>
-                                    Blank-season activation requires the board's approval in
-                                    addition to its theme, dates, and rubric. Record this only after
-                                    approval has been granted.
-                                </p>
-                                <p v-if="boardApprovalRecorded" class="mt-2">
-                                    Approval recorded by administrator #{{
-                                        selectedSeason.board_approved_by
-                                    }}
-                                    on
-                                    {{ formatDateTime(selectedSeason.board_approved_at!) }}.
-                                </p>
-                                <p v-else class="mt-2">No board approval is recorded.</p>
-                            </div>
-                            <UButton
-                                class="min-h-11"
-                                :color="boardApprovalRecorded ? 'neutral' : 'primary'"
-                                :variant="boardApprovalRecorded ? 'outline' : 'solid'"
-                                :loading="boardApprovalSaving"
-                                :disabled="selectedSeasonIsActive"
-                                @click="updateBoardApproval(!boardApprovalRecorded)"
-                            >
-                                {{
-                                    boardApprovalRecorded
-                                        ? "Revoke board approval"
-                                        : "Record board approval"
-                                }}
-                            </UButton>
-                        </div>
-                    </UCard>
-
-                    <UCard v-if="selectedSeason">
-                        <template #header>
-                            <h2 class="font-semibold">Rename</h2>
-                        </template>
-                        <div class="flex flex-wrap items-end gap-3">
-                            <UFormField label="Season name" class="min-w-0 flex-1">
-                                <UInput
-                                    v-model="seasonNameForm"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                />
-                            </UFormField>
-                            <UButton
-                                class="min-h-11"
-                                :loading="seasonNameSaving"
-                                @click="renameSeason"
-                            >
-                                Rename
-                            </UButton>
-                        </div>
-                    </UCard>
-                </section>
-
-                <!-- Event settings -->
-                <section v-show="activeTab === 'event'" class="space-y-4">
-                    <section v-if="hackathon && formInitialized" class="bg-ui-bg p-6 space-y-4">
-                        <h2 class="text-xl font-semibold">
-                            Hackathon Configuration
-                            <span v-if="saving" class="text-sm text-primary font-normal ms-2">
-                                Saving...
-                            </span>
-                        </h2>
-                        <p class="text-sm text-ui-text-muted">
-                            <template
                                 v-if="
-                                    selectedSeasonIsActive && adminData?.configSource === 'remote'
+                                    selectedSeasonIsActive &&
+                                    !paused &&
+                                    selectedSeason.status !== 'finished'
+                                "
+                                variant="subtle"
+                                class="min-h-11"
+                                @click="
+                                    runLifecycle(
+                                        'pause',
+                                        'Pause the event? Submissions, voting, and judging stop.',
+                                    )
                                 "
                             >
-                                Status and visibility changes save to PostgreSQL and apply
-                                immediately. Schedule and theme come from the remote HACKATHON.yml.
-                            </template>
-                            <template v-else-if="selectedSeasonIsActive">
-                                Status and visibility save to PostgreSQL; schedule and theme write
-                                to HACKATHON.yml and the selected season.
-                            </template>
-                            <template v-else>
-                                Changes save to the selected season as you go.
-                            </template>
+                                Pause
+                            </UButton>
+                        </div>
+                    </div>
+                </template>
+                <p v-if="nextAction" class="text-sm leading-6 text-muted">
+                    {{ nextAction.description }}
+                </p>
+                <p v-else class="text-sm leading-6 text-muted">
+                    The event is complete. Results and awards remain available in the public
+                    archive.
+                </p>
+            </UCard>
+
+            <UAlert
+                v-if="selectedSeason && !selectedSeasonIsActive"
+                color="warning"
+                variant="subtle"
+                title="This season is not live"
+                :description="
+                    canActivate
+                        ? 'Use “Make this season live” to switch the public site to these settings.'
+                        : `Before activation: ${activationBlockers.join(' ')}`
+                "
+            />
+
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                <div
+                    v-for="(step, index) in stageSteps"
+                    :key="step.label"
+                    class="border p-4"
+                    :class="
+                        step.current
+                            ? 'border-primary bg-primary/5'
+                            : step.done
+                              ? 'border-default bg-elevated/40'
+                              : 'border-default'
+                    "
+                >
+                    <p class="text-xs text-muted">Step {{ index + 1 }}</p>
+                    <p class="mt-1 font-semibold">{{ step.label }}</p>
+                    <p class="mt-1 text-sm text-muted">{{ step.description }}</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <UCard>
+                    <template #header>
+                        <h2 class="text-lg font-semibold">Readiness</h2>
+                    </template>
+                    <ul class="space-y-3 text-sm">
+                        <li class="flex items-start justify-between gap-3">
+                            <span>Event dates</span>
+                            <span
+                                :class="
+                                    selectedSeason?.start_timestamp &&
+                                    selectedSeason?.end_timestamp &&
+                                    selectedSeason.end_timestamp > selectedSeason.start_timestamp
+                                        ? 'text-success'
+                                        : 'text-muted'
+                                "
+                            >
+                                {{
+                                    selectedSeason?.start_timestamp &&
+                                    selectedSeason?.end_timestamp &&
+                                    selectedSeason.end_timestamp > selectedSeason.start_timestamp
+                                        ? "Ready"
+                                        : "Missing"
+                                }}
+                            </span>
+                        </li>
+                        <li class="flex items-start justify-between gap-3">
+                            <span>Theme</span>
+                            <span
+                                :class="selectedSeason?.theme_name ? 'text-success' : 'text-muted'"
+                            >
+                                {{ selectedSeason?.theme_name ? "Ready" : "Missing" }}
+                            </span>
+                        </li>
+                        <li class="flex items-start justify-between gap-3">
+                            <span>Judging rubric</span>
+                            <span
+                                :class="
+                                    selectedSeason?.rubric_version_id
+                                        ? 'text-success'
+                                        : 'text-muted'
+                                "
+                            >
+                                {{ selectedSeason?.rubric_version_id ? "Ready" : "Missing" }}
+                            </span>
+                        </li>
+                        <li
+                            v-if="selectedSeason?.is_blank_start === 1"
+                            class="flex items-start justify-between gap-3"
+                        >
+                            <span>Board approval</span>
+                            <span
+                                :class="
+                                    selectedSeason?.board_approved_at
+                                        ? 'text-success'
+                                        : 'text-muted'
+                                "
+                            >
+                                {{ selectedSeason?.board_approved_at ? "Recorded" : "Missing" }}
+                            </span>
+                        </li>
+                    </ul>
+                </UCard>
+
+                <UCard>
+                    <template #header>
+                        <div class="flex items-center justify-between gap-3">
+                            <h2 class="text-lg font-semibold">Event status</h2>
+                            <span v-if="preflightLoading" class="text-xs text-muted">Loading…</span>
+                        </div>
+                    </template>
+                    <dl v-if="preflight" class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <dt class="text-muted">Submitted teams</dt>
+                            <dd class="mt-1 text-2xl font-semibold">
+                                {{ preflight.submitted_teams }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-muted">Evaluations</dt>
+                            <dd class="mt-1 text-2xl font-semibold">
+                                {{ preflight.evaluations_total }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-muted">Judges with scores</dt>
+                            <dd class="mt-1 text-2xl font-semibold">
+                                {{ preflight.judges_with_evaluations }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-muted">Assigned judges</dt>
+                            <dd class="mt-1 text-2xl font-semibold">
+                                {{ preflight.assigned_judges }}
+                            </dd>
+                        </div>
+                    </dl>
+                    <p v-else class="text-sm text-muted">No status data for this season yet.</p>
+                </UCard>
+            </div>
+        </section>
+
+        <!-- Season settings -->
+        <section v-show="activeTab === 'settings'" class="space-y-6">
+            <UCard v-if="selectedSeason">
+                <template #header>
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h2 class="text-xl font-semibold">Season settings</h2>
+                            <p class="mt-1 text-sm text-muted">
+                                Every field here belongs to {{ selectedSeason.name }}. Saving
+                                applies the changes immediately when this season is live.
+                            </p>
+                        </div>
+                        <div class="flex gap-2">
+                            <UButton
+                                class="min-h-11"
+                                :disabled="!settingsDirty || settingsSaving"
+                                :loading="settingsSaving"
+                                @click="saveSettings"
+                            >
+                                Save changes
+                            </UButton>
+                            <UButton
+                                variant="subtle"
+                                class="min-h-11"
+                                :disabled="!settingsDirty || settingsSaving"
+                                @click="discardSettings"
+                            >
+                                Discard
+                            </UButton>
+                        </div>
+                    </div>
+                </template>
+
+                <div class="space-y-8">
+                    <section>
+                        <h3 class="text-lg font-semibold">Schedule</h3>
+                        <p class="mt-1 text-sm text-muted">
+                            Times are shown in Asia/Shanghai (UTC+8).
                         </p>
-
-                        <fieldset class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <UFormField label="Status" name="status" class="w-full">
-                                <USelect
-                                    v-model="hackathonForm.status"
-                                    :items="[
-                                        { label: 'Not Started', value: 'not_started' },
-                                        { label: 'In Progress', value: 'in_progress' },
-                                        { label: 'Voting', value: 'voting' },
-                                        { label: 'Finished', value: 'finished' },
-                                        { label: 'Paused', value: 'paused' },
-                                    ]"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @update:model-value="saveField('status')"
-                                />
-                            </UFormField>
-
+                        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                             <UFormField
-                                label="Max Votes Per User"
-                                name="max_votes_per_user"
-                                class="w-full"
+                                label="Event starts"
+                                :error="settingsErrors.start_timestamp"
                             >
                                 <UInput
-                                    v-model="hackathonForm.max_votes_per_user"
+                                    v-model="settings.start_timestamp"
+                                    type="datetime-local"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UFormField label="Event ends" :error="settingsErrors.end_timestamp">
+                                <UInput
+                                    v-model="settings.end_timestamp"
+                                    type="datetime-local"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UFormField
+                                label="Voting starts"
+                                :error="settingsErrors.voting_start_timestamp"
+                            >
+                                <UInput
+                                    v-model="settings.voting_start_timestamp"
+                                    type="datetime-local"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UFormField
+                                label="Voting ends"
+                                :error="settingsErrors.voting_end_timestamp"
+                            >
+                                <UInput
+                                    v-model="settings.voting_end_timestamp"
+                                    type="datetime-local"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UFormField
+                                label="Results released"
+                                :error="settingsErrors.results_open_timestamp"
+                            >
+                                <UInput
+                                    v-model="settings.results_open_timestamp"
+                                    type="datetime-local"
+                                    :ui="{ base: 'min-h-11' }"
+                                    class="w-full"
+                                />
+                            </UFormField>
+                            <UFormField label="Maximum projects per voter">
+                                <UInput
+                                    v-model.number="settings.max_votes_per_user"
                                     type="number"
-                                    name="max_votes_per_user"
                                     min="0"
                                     max="100"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('max_votes_per_user')"
                                 />
+                                <p class="mt-1 text-xs text-muted">
+                                    Use 0 for no cap. A voter can award stars to at most this many
+                                    projects. Each ballot always distributes exactly 10 stars.
+                                </p>
                             </UFormField>
+                        </div>
+                    </section>
 
-                            <div
-                                v-for="toggle in toggleFields"
-                                :key="toggle.key"
-                                class="flex items-center gap-3"
-                            >
-                                <UCheckbox
-                                    v-model="hackathonForm[toggle.key]"
-                                    :label="toggle.label"
-                                    :ui="{ label: 'min-h-11 cursor-pointer py-3' }"
-                                    :true-value="1"
-                                    :false-value="0"
-                                    @update:model-value="saveField(toggle.key)"
-                                />
-                            </div>
-
-                            <p class="text-xs text-ui-text-muted md:col-span-2">
-                                Voting and judging are off while the event is paused. Scores and
-                                rankings also require Results Published and at least three judge
-                                evaluations.
-                            </p>
-
-                            <UFormField label="Theme Name" name="theme_name" class="w-full">
+                    <section>
+                        <h3 class="text-lg font-semibold">Theme and announcement</h3>
+                        <div class="mt-4 space-y-4">
+                            <UFormField label="Theme name">
                                 <UInput
-                                    v-model="hackathonForm.theme_name"
-                                    name="theme_name"
-                                    :disabled="configReadOnly"
+                                    v-model="settings.theme_name"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('theme_name')"
                                 />
                             </UFormField>
-
-                            <UFormField
-                                label="Theme Description"
-                                name="theme_description"
-                                class="w-full md:col-span-2"
-                            >
+                            <UFormField label="Theme description">
                                 <UTextarea
-                                    v-model="hackathonForm.theme_description"
-                                    name="theme_description"
-                                    :rows="2"
-                                    :disabled="configReadOnly"
+                                    v-model="settings.theme_description"
+                                    :rows="3"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('theme_description')"
                                 />
                             </UFormField>
-
                             <UFormField
-                                label="Visitor announcement"
-                                name="announcement"
-                                class="w-full md:col-span-2"
-                                help="Shown above the schedule on the home page. Leave empty to hide it. This saves to PostgreSQL and works with a remote HACKATHON.yml."
+                                label="Announcement"
+                                help="Shown in the schedule section on the home page. Leave empty to hide it."
                             >
                                 <UTextarea
-                                    v-model="hackathonForm.announcement"
-                                    name="announcement"
+                                    v-model="settings.announcement"
                                     :rows="3"
                                     :maxlength="2000"
                                     :ui="{ base: 'min-h-11' }"
                                     class="w-full"
-                                    @change="saveField('announcement')"
                                 />
                             </UFormField>
-                        </fieldset>
-
-                        <h3 class="text-lg font-semibold pt-2">Schedule</h3>
-                        <p class="text-sm text-ui-text-muted">
-                            Times are shown in Asia/Shanghai (UTC+8).
-                        </p>
-                        <p v-if="configReadOnly" class="text-sm text-ui-text-muted">
-                            Schedule is read-only from the remote manifest.
-                        </p>
-                        <fieldset
-                            :disabled="configReadOnly"
-                            class="grid grid-cols-1 md:grid-cols-2 gap-4"
-                        >
-                            <UFormField label="Start" name="start_timestamp" class="w-full">
-                                <UInput
-                                    v-model="hackathonForm.start_timestamp"
-                                    type="datetime-local"
-                                    name="start_timestamp"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @change="saveField('start_timestamp')"
-                                />
-                            </UFormField>
-
-                            <UFormField label="End" name="end_timestamp" class="w-full">
-                                <UInput
-                                    v-model="hackathonForm.end_timestamp"
-                                    type="datetime-local"
-                                    name="end_timestamp"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @change="saveField('end_timestamp')"
-                                />
-                            </UFormField>
-
-                            <UFormField
-                                label="Voting Start"
-                                name="voting_start_timestamp"
-                                class="w-full"
-                            >
-                                <UInput
-                                    v-model="hackathonForm.voting_start_timestamp"
-                                    type="datetime-local"
-                                    name="voting_start_timestamp"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @change="saveField('voting_start_timestamp')"
-                                />
-                            </UFormField>
-
-                            <UFormField
-                                label="Voting End"
-                                name="voting_end_timestamp"
-                                class="w-full"
-                            >
-                                <UInput
-                                    v-model="hackathonForm.voting_end_timestamp"
-                                    type="datetime-local"
-                                    name="voting_end_timestamp"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @change="saveField('voting_end_timestamp')"
-                                />
-                            </UFormField>
-
-                            <UFormField
-                                label="Results Open"
-                                name="results_open_timestamp"
-                                class="w-full"
-                            >
-                                <UInput
-                                    v-model="hackathonForm.results_open_timestamp"
-                                    type="datetime-local"
-                                    name="results_open_timestamp"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @change="saveField('results_open_timestamp')"
-                                />
-                            </UFormField>
-                        </fieldset>
-                    </section>
-                </section>
-
-                <!-- Scoring -->
-                <section v-show="activeTab === 'scoring'" class="space-y-4">
-                    <section v-if="selectedSeasonId !== null" class="bg-ui-bg p-6 space-y-3">
-                        <h2 class="text-xl font-semibold">Score display curve</h2>
-                        <p class="max-w-3xl text-sm text-ui-text-muted">
-                            This changes the displayed score only. The original judge average stays
-                            saved, and published ranking always uses that original score.
-                        </p>
-                        <div class="flex flex-wrap items-center gap-3">
-                            <UFormField label="Display curve" class="w-full max-w-xs">
-                                <USelect
-                                    v-model="scoreCurvePreset"
-                                    :items="scoreCurveItems"
-                                    :disabled="scoreCurveSaving"
-                                    :ui="{ base: 'min-h-11' }"
-                                    class="w-full"
-                                    @update:model-value="
-                                        (value) => saveScoreCurvePreset(value as ScoreCurvePreset)
-                                    "
-                                />
-                            </UFormField>
-                            <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
                         </div>
                     </section>
 
-                    <AdminRubricManager
-                        v-if="selectedSeasonId !== null"
-                        :key="selectedSeasonId"
-                        :season-id="selectedSeasonId"
-                        :seasons="seasons"
-                    />
-                    <p v-else class="text-sm text-ui-text-muted">
-                        Select a season to manage its judging rubric.
-                    </p>
-                </section>
+                    <section>
+                        <h3 class="text-lg font-semibold">Results visibility</h3>
+                        <p class="mt-1 text-sm text-muted">
+                            Scores and rankings stay hidden until results are published and at least
+                            three judges have evaluated a team.
+                        </p>
+                        <div class="mt-4 space-y-3">
+                            <UCheckbox
+                                v-model="settings.show_scores"
+                                label="Show scores to participants"
+                            />
+                            <UCheckbox
+                                v-model="settings.show_ranking"
+                                label="Show rankings publicly"
+                            />
+                        </div>
+                    </section>
+                </div>
+            </UCard>
+        </section>
 
-                <!-- Data -->
-                <section v-show="activeTab === 'data'" class="bg-ui-bg p-6 space-y-3">
-                    <h2 class="text-xl font-semibold">Database Export</h2>
-                    <p class="text-sm text-ui-text-muted">
-                        Download a full snapshot of the database.
-                    </p>
-                    <div class="flex flex-wrap items-center gap-3">
+        <!-- Seasons -->
+        <section v-show="activeTab === 'seasons'" class="space-y-6">
+            <UCard>
+                <template #header>
+                    <h2 class="text-xl font-semibold">All seasons</h2>
+                </template>
+                <div class="divide-y divide-default">
+                    <div
+                        v-for="season in seasons"
+                        :key="season.id"
+                        class="flex flex-wrap items-center justify-between gap-3 py-4"
+                    >
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <p class="truncate font-semibold">{{ season.name }}</p>
+                                <UBadge
+                                    v-if="season.is_active === 1"
+                                    color="success"
+                                    variant="subtle"
+                                >
+                                    Live
+                                </UBadge>
+                                <UBadge color="neutral" variant="subtle">
+                                    {{ stageLabels[season.status] ?? season.status }}
+                                </UBadge>
+                            </div>
+                            <p class="mt-1 text-sm text-muted">
+                                {{
+                                    season.start_timestamp
+                                        ? formatDateTime(season.start_timestamp)
+                                        : "No start"
+                                }}
+                                –
+                                {{
+                                    season.end_timestamp
+                                        ? formatDateTime(season.end_timestamp)
+                                        : "No end"
+                                }}
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <UButton
+                                variant="subtle"
+                                class="min-h-11"
+                                @click="selectSeason(season.id)"
+                            >
+                                Open
+                            </UButton>
+                            <UButton
+                                v-if="season.is_active !== 1"
+                                variant="outline"
+                                class="min-h-11"
+                                :disabled="
+                                    !season.start_timestamp ||
+                                    !season.end_timestamp ||
+                                    !season.theme_name ||
+                                    !season.rubric_version_id ||
+                                    (season.is_blank_start === 1 &&
+                                        (!season.voting_start_timestamp ||
+                                            !season.voting_end_timestamp ||
+                                            !season.board_approved_at))
+                                "
+                                @click="makeSeasonLive(season)"
+                            >
+                                Make live
+                            </UButton>
+                        </div>
+                    </div>
+                </div>
+            </UCard>
+
+            <UCard>
+                <template #header>
+                    <h2 class="text-xl font-semibold">Create a season</h2>
+                </template>
+                <form class="flex flex-wrap items-end gap-3" @submit.prevent="createSeason">
+                    <UFormField label="Season name" class="min-w-64 flex-1">
+                        <UInput
+                            v-model="newSeasonName"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                            placeholder="For example, Season 2"
+                        />
+                    </UFormField>
+                    <UCheckbox
+                        v-model="copySettings"
+                        label="Copy the live schedule, theme, and rubric"
+                    />
+                    <UButton
+                        type="submit"
+                        class="min-h-11"
+                        :loading="creatingSeason"
+                        :disabled="!newSeasonName.trim()"
+                    >
+                        Create season
+                    </UButton>
+                </form>
+            </UCard>
+
+            <UCard v-if="selectedSeason">
+                <template #header>
+                    <h2 class="text-xl font-semibold">{{ selectedSeason.name }} details</h2>
+                </template>
+                <div class="space-y-6">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <UFormField label="Season name" class="min-w-64 flex-1">
+                            <UInput
+                                v-model="seasonNameDraft"
+                                :ui="{ base: 'min-h-11' }"
+                                class="w-full"
+                            />
+                        </UFormField>
                         <UButton
                             class="min-h-11"
-                            color="primary"
-                            variant="solid"
+                            :loading="renamingSeason"
+                            :disabled="
+                                !seasonNameDraft.trim() ||
+                                seasonNameDraft.trim() === selectedSeason.name
+                            "
+                            @click="renameSeason"
+                        >
+                            Rename
+                        </UButton>
+                    </div>
+
+                    <div>
+                        <h3 class="font-semibold">Team limit</h3>
+                        <p class="mt-1 text-sm text-muted">
+                            Maximum roster size for teams in this season.
+                        </p>
+                        <div class="mt-3 flex flex-wrap items-end gap-3">
+                            <UInput
+                                v-model.number="teamLimit"
+                                type="number"
+                                min="1"
+                                max="20"
+                                :ui="{ base: 'min-h-11' }"
+                                class="w-32"
+                            />
+                            <UButton class="min-h-11" @click="saveTeamLimit">Save limit</UButton>
+                        </div>
+                    </div>
+
+                    <div v-if="selectedSeason.is_blank_start === 1">
+                        <h3 class="font-semibold">Board approval</h3>
+                        <p class="mt-1 text-sm text-muted">
+                            A blank-start season needs recorded board approval before it can go
+                            live.
+                        </p>
+                        <div class="mt-3 flex flex-wrap items-center gap-3">
+                            <UButton
+                                v-if="!selectedSeason.board_approved_at"
+                                class="min-h-11"
+                                :loading="approvalSaving"
+                                @click="setBoardApproval(true)"
+                            >
+                                Record approval
+                            </UButton>
+                            <UButton
+                                v-else
+                                variant="outline"
+                                class="min-h-11"
+                                :loading="approvalSaving"
+                                :disabled="selectedSeasonIsActive"
+                                @click="setBoardApproval(false)"
+                            >
+                                Revoke approval
+                            </UButton>
+                            <span
+                                v-if="selectedSeason.board_approved_at"
+                                class="text-sm text-muted"
+                            >
+                                Recorded {{ formatDateTime(selectedSeason.board_approved_at) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div v-if="selectedSeason.is_active !== 1" class="border-t border-default pt-4">
+                        <UButton
+                            color="error"
+                            variant="subtle"
+                            class="min-h-11"
+                            :loading="deletingSeason"
+                            @click="deleteSeason"
+                        >
+                            Delete season
+                        </UButton>
+                    </div>
+                </div>
+            </UCard>
+        </section>
+
+        <!-- Rubric -->
+        <section v-show="activeTab === 'rubric'" class="space-y-6">
+            <UCard v-if="selectedSeasonId !== null">
+                <template #header>
+                    <h2 class="text-xl font-semibold">Score display curve</h2>
+                </template>
+                <p class="max-w-3xl text-sm text-muted">
+                    This changes the displayed score only. The original judge average stays saved,
+                    and published ranking always uses that original score.
+                </p>
+                <div class="mt-4 flex flex-wrap items-center gap-3">
+                    <UFormField label="Display curve" class="w-full max-w-xs">
+                        <USelect
+                            v-model="scoreCurvePreset"
+                            :items="scoreCurveItems"
+                            :disabled="scoreCurveSaving || selectedSeason?.results_published === 1"
+                            :ui="{ base: 'min-h-11' }"
+                            class="w-full"
+                            @update:model-value="
+                                (value) => saveScoreCurvePreset(value as ScoreCurvePreset)
+                            "
+                        />
+                    </UFormField>
+                    <span v-if="scoreCurveSaving" class="text-sm text-muted">Saving…</span>
+                </div>
+            </UCard>
+
+            <AdminRubricManager
+                v-if="selectedSeasonId !== null"
+                :key="selectedSeasonId"
+                :season-id="selectedSeasonId"
+                :seasons="seasons"
+            />
+        </section>
+
+        <!-- Site and data -->
+        <section v-show="activeTab === 'site'" class="space-y-6">
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <UCard>
+                    <template #header>
+                        <h2 class="text-xl font-semibold">Site-wide awards</h2>
+                    </template>
+                    <p class="text-sm leading-6 text-muted">
+                        The award catalog is independent of seasons. Names, icons, and colors
+                        defined here are available to every season, while the award assignments
+                        themselves belong to a team.
+                    </p>
+                    <UButton to="/developers/awards" class="mt-4 min-h-11">
+                        Manage award catalog
+                    </UButton>
+                </UCard>
+
+                <UCard>
+                    <template #header>
+                        <h2 class="text-xl font-semibold">Database export</h2>
+                    </template>
+                    <p class="text-sm leading-6 text-muted">
+                        Download a full snapshot of the database. Judge identities, invitation
+                        tokens, and OAuth client secrets are withheld.
+                    </p>
+                    <div class="mt-4 flex flex-wrap gap-3">
+                        <UButton
+                            class="min-h-11"
                             :loading="databaseExporting"
                             :disabled="databaseExporting"
                             @click="downloadDatabase('json')"
@@ -1049,9 +1488,8 @@ async function deleteSeason() {
                             Download JSON
                         </UButton>
                         <UButton
-                            class="min-h-11"
-                            color="neutral"
                             variant="outline"
+                            class="min-h-11"
                             :loading="databaseExporting"
                             :disabled="databaseExporting"
                             @click="downloadDatabase('csv')"
@@ -1059,8 +1497,8 @@ async function deleteSeason() {
                             Download CSV
                         </UButton>
                     </div>
-                </section>
+                </UCard>
             </div>
-        </template>
-    </UDashboardPanel>
+        </section>
+    </div>
 </template>

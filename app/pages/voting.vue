@@ -1,26 +1,55 @@
 <script setup lang="ts">
 import { apiFetch } from "~~/app/composables/useApiFetch";
 import { WEBSITE_NAME } from "~/utils/consts";
+import { formatDateTime } from "~/utils/datetime";
+import { NethackPermissions } from "~~/shared/permissions";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { SubmitVoteRequest, MAX_REASONING_LENGTH } from "~~/shared/schemas";
+
+type VotingSeason = {
+    status?: string;
+    is_voting_open?: boolean;
+    voting_start_timestamp?: number;
+    voting_end_timestamp?: number;
+    results_published?: number | boolean | null;
+};
 
 definePageMeta({
     middleware: ["auth"],
 });
 
 const toast = useToast();
+const { can } = useNethackPermissions();
 useHead({ title: `Peer voting | ${WEBSITE_NAME}` });
 
-const {
-    data,
-    error,
-    pending: loading,
-    refresh,
-} = await useApiFetch<GetBallotResponse>("/api/ballot", {
-    server: false,
+const { data: season } = await useApiFetch<VotingSeason>("/api/seasons/active");
+const votingAvailable = computed(() => Boolean(season.value?.is_voting_open));
+
+const { data, error, status, refresh } = await useApiFetch<GetBallotResponse>("/api/ballot", {
+    immediate: votingAvailable.value,
 });
 
+const loading = computed(
+    () => votingAvailable.value && (status.value === "pending" || status.value === "idle"),
+);
+const canSubmitVotes = computed(() => can(NethackPermissions.Voting.submitOwn));
+
 const fetchError = computed(() => (error.value ? getErrorMessage(error.value) : null));
+
+const closedMessage = computed(() => {
+    const current = season.value?.status;
+    const start = Number(season.value?.voting_start_timestamp ?? 0);
+    if (current === "finished") return "The hackathon has ended. Peer voting is closed.";
+    if (current === "voting") {
+        if (start > 0 && start > Date.now()) {
+            return `Peer voting has not opened yet. It starts ${formatDateTime(start)}.`;
+        }
+        return "Peer voting for this season has closed.";
+    }
+    if (current === "paused")
+        return "The event is paused. Peer voting will return with the schedule.";
+    return "Peer voting has not opened yet. Check the schedule for the start time.";
+});
 
 const projects = computed(() => data.value?.projects ?? []);
 const submitted = computed(() => data.value?.submitted ?? false);
@@ -63,7 +92,7 @@ function increment(index: number) {
 }
 
 async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
-    if (submitting.value) return;
+    if (submitting.value || !canSubmitVotes.value) return;
     const prompt = submitted.value
         ? "Replace your previous ballot with these scores?"
         : "Submit this ballot? You can update it until voting closes.";
@@ -99,7 +128,29 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
         <h1 class="text-4xl text-primary bold glow mb-4">Peer voting</h1>
 
         <UAlert
-            v-if="fetchError"
+            v-if="!votingAvailable"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-info"
+            title="Peer voting is closed"
+            :description="closedMessage"
+            class="mb-4"
+        >
+            <template #actions>
+                <UButton
+                    v-if="season?.results_published"
+                    to="/results"
+                    variant="outline"
+                    class="min-h-11"
+                >
+                    View results
+                </UButton>
+                <UButton to="/" variant="ghost" class="min-h-11">Back to home</UButton>
+            </template>
+        </UAlert>
+
+        <UAlert
+            v-else-if="fetchError"
             color="error"
             variant="subtle"
             icon="i-material-symbols-error-rounded"
@@ -127,6 +178,7 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
             <p>Look through all the projects below.</p>
 
             <p>
+                Your ballot lists submitted projects from your own pathway, excluding your own team.
                 You have a total of 10 stars to distribute, with a maximum of 5 stars per project.
                 Therefore your stars are RARE so vote wisely!
             </p>
@@ -142,11 +194,12 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                         :team="team"
                         :score="state.scores[index] ?? 0"
                         :can-increment="
+                            !submitting &&
                             (state.scores[index] ?? 0) < 5 &&
                             totalStars < 10 &&
                             ((state.scores[index] ?? 0) > 0 || !atScoredProjectLimit)
                         "
-                        :can-decrement="(state.scores[index] ?? 0) > 0"
+                        :can-decrement="!submitting && (state.scores[index] ?? 0) > 0"
                         @increment="increment(index)"
                         @decrement="decrement(index)"
                     />
@@ -166,12 +219,23 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                 class="my-4"
             />
 
+            <UAlert
+                v-if="!canSubmitVotes"
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-lock"
+                title="Your ballot is read-only"
+                description="Your account does not have the Voting.submitOwn permission, so you can review the projects but cannot submit a ballot."
+                class="my-4"
+            />
+
             <h2 class="text-2xl mb-4 bold">Summary</h2>
 
             <UForm
                 v-if="projects.length >= 2"
                 :state="state"
                 :schema="SubmitVoteRequest"
+                :disabled="submitting"
                 @submit="onSubmit"
             >
                 <UCard variant="subtle">
@@ -190,10 +254,10 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                     </p>
 
                     <p v-if="maxScoredProjects > 0" class="mb-4 text-sm text-muted">
-                        You can award stars to at most {{ maxScoredProjects }} projects ({{
+                        Max projects you can score: {{ maxScoredProjects }} ({{
                             scoredProjectCount
                         }}
-                        so far).
+                        scored so far). Your cap does not change the total-10-star rule.
                     </p>
                     <UAlert
                         v-if="capBlocksFullBallot"
@@ -201,7 +265,7 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                         variant="subtle"
                         class="mb-4"
                         title="Voting cannot be completed"
-                        description="The organizer's vote cap is too low for a ballot to reach 10 stars."
+                        description="The organizer's cap blocks a full ballot: with this many projects you cannot distribute all 10 stars. Ask an organizer to raise the cap."
                     />
                     <UAlert
                         v-if="overScoredProjectLimit"
@@ -242,12 +306,14 @@ async function onSubmit(event: FormSubmitEvent<SubmitVoteRequest>) {
                     <UFormField>
                         <UButton
                             :disabled="
+                                !canSubmitVotes ||
                                 totalStars !== 10 ||
                                 projects.length === 0 ||
                                 submitting ||
                                 capBlocksFullBallot ||
                                 overScoredProjectLimit
                             "
+                            :loading="submitting"
                             class="min-h-11"
                             type="submit"
                         >

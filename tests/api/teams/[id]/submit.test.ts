@@ -77,6 +77,8 @@ function validPayload(overrides: Record<string, unknown> = {}) {
             description: "This is a really awesome project built over the weekend.",
             demo_url: "https://demo.example.com",
             repo_url: "https://github.com/example/repo",
+            video_url: "https://www.youtube.com/watch?v=example",
+            sourcing: "No AI tools or models were used.",
         },
         ...overrides,
     };
@@ -101,6 +103,7 @@ describe("POST /api/teams/:id/submit", () => {
         expect(updated!.pathway).toBe("junior");
         expect(updated!.project_demo_url).toBe("https://demo.example.com");
         expect(updated!.project_repo_url).toBe("https://github.com/example/repo");
+        expect(updated!.project_video_url).toBe("https://www.youtube.com/watch?v=example");
     });
 
     it("includes sourcing notes when provided", async () => {
@@ -112,9 +115,10 @@ describe("POST /api/teams/:id/submit", () => {
         mockBody.value = validPayload({
             project: {
                 name: "Sourced Project",
-                description: "Uses external assets.",
+                description: "Uses external assets and documents every source in the README.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
                 sourcing: "Used icons from FontAwesome",
             },
         });
@@ -125,7 +129,7 @@ describe("POST /api/teams/:id/submit", () => {
         expect(updated!.sourcing).toBe("Used icons from FontAwesome");
     });
 
-    it("defaults sourcing to empty string when omitted", async () => {
+    it("requires the AI-use disclosure", async () => {
         const team = seedTeam(ctx, { name: "No Sourcing Team" });
         seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
 
@@ -134,16 +138,17 @@ describe("POST /api/teams/:id/submit", () => {
         mockBody.value = validPayload({
             project: {
                 name: "No Sourcing",
-                description: "No external assets used.",
+                description: "No external assets were used anywhere in this project.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
             },
         });
 
-        await handler(createEvent());
+        await expect(handler(createEvent())).rejects.toThrow();
 
         const updated = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
-        expect(updated!.sourcing).toBe("");
+        expect(updated!.project_submitted).toBe(0);
     });
 
     it("returns 403 when user is not a team member", async () => {
@@ -196,11 +201,61 @@ describe("POST /api/teams/:id/submit", () => {
         });
     });
 
+    it("returns 403 with the paused message while the event is paused", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "paused" });
+        seedSeason(ctx);
+
+        const team = seedTeam(ctx, { name: "Paused Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "The event is paused",
+        });
+    });
+
+    it("returns 403 with the closed message once the deadline has passed", async () => {
+        resetTestContext(ctx);
+        seedHackathon(ctx, { status: "in_progress", end_timestamp: Date.now() - 60_000 });
+        seedSeason(ctx);
+
+        const team = seedTeam(ctx, { name: "Late Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Cannot submit project after submissions close",
+        });
+    });
+
+    it("returns 400 for a track that is not in the season rubric", async () => {
+        const team = seedTeam(ctx, { name: "Off-track Team" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload({ pathway: "unlisted" });
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 400,
+            message: "Choose a track that is available for this season.",
+        });
+    });
+
     it("returns 404 when team is not found", async () => {
         const originalGetUser = globalThis.getUser;
         vi.stubGlobal(
             "getUser",
-            vi.fn().mockResolvedValue({ id: 1, team_id: 9999, role: "participant" }),
+            vi.fn().mockResolvedValueOnce({ id: 1, team_id: 9999, role: "participant" }),
         );
 
         mockSession.value = { user: { id: 1 } };
@@ -233,6 +288,20 @@ describe("POST /api/teams/:id/submit", () => {
         });
     });
 
+    it("returns 409 when the team is no longer competing", async () => {
+        const team = seedTeam(ctx, { name: "Withdrawn Team", status: "withdrawn" });
+        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+
+        mockSession.value = { user: { id: 1 } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = validPayload();
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This team is no longer competing",
+        });
+    });
+
     it("does not overwrite a project submitted between the guard and the write", async () => {
         const team = seedTeam(ctx, { name: "Race Team" });
         seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
@@ -251,7 +320,10 @@ describe("POST /api/teams/:id/submit", () => {
         mockBody.value = validPayload();
 
         try {
-            await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+            await expect(handler(createEvent())).rejects.toMatchObject({
+                statusCode: 409,
+                message: "Project is already submitted",
+            });
             const after = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
             expect(after!.project_name).toBe("Locked");
         } finally {
@@ -260,12 +332,6 @@ describe("POST /api/teams/:id/submit", () => {
     });
 
     it("validates request body through SubmitTeamRequest schema", async () => {
-        const originalReadValidatedBody = globalThis.readValidatedBody;
-        vi.stubGlobal("readValidatedBody", async (_event: any, schema: any) => {
-            const validate = typeof schema === "function" ? schema : schema.parse;
-            return validate(mockBody.value);
-        });
-
         const team = seedTeam(ctx, { name: "Validation Team" });
         seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
 
@@ -277,12 +343,12 @@ describe("POST /api/teams/:id/submit", () => {
                 description: "Missing pathway field.",
                 demo_url: "https://demo.example.com",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://www.youtube.com/watch?v=example",
+                sourcing: "No AI tools or models were used.",
             },
         };
 
         await expect(handler(createEvent())).rejects.toThrow();
-
-        vi.stubGlobal("readValidatedBody", originalReadValidatedBody);
     });
 
     it("allows submission when hackathon status is not_started", async () => {

@@ -9,7 +9,7 @@ nethack uses a single peer voting system. Participants distribute stars across h
 
 ## Peer Voting
 
-Peer voting opens whenever the dev-portal `voting_enabled` toggle is on and the event is not `paused`. The event phase does not veto the toggle. Only participants with a submitted project can vote, and they can only vote on eligible projects in the **same pathway** (`junior` or `senior`).
+Peer voting opens when the dev-portal `voting_enabled` toggle is on, the event is not `paused`, and the current time is inside the configured voting window (`voting_start_timestamp` through `voting_end_timestamp`) while `ENFORCE_DEADLINES` is on. Only participants with a submitted project can vote, and they can only vote on eligible projects in the **same pathway** (`junior` or `senior`).
 
 ### Eligibility Rules
 
@@ -46,7 +46,17 @@ If `max_votes_per_user` is greater than `0`, at most that many projects may rece
 1. The frontend fetches the ballot from `GET /api/ballot`.
 2. The server returns eligible projects, any previously saved scores, and optional reasoning.
 3. The user adjusts scores with increment/decrement buttons.
-4. On submit, `POST /api/ballot` validates the request and upserts a row in `peer_voting_scores` via `server/utils/database/peer-voting.ts`. A participant may replace their ballot until voting closes; the page keeps the controls editable and labels the action **Update vote**.
+4. On submit, `POST /api/ballot` validates the request and upserts a row in `peer_voting_scores` via `server/utils/database/peer-voting.ts`. A participant may replace their ballot until voting closes; the page keeps the controls editable and labels the action **Update vote**. The row is keyed by `(user_id, season_id)`, so a returning participant's earlier ballot is preserved.
+
+### People's Choice
+
+After voting closes, `GET /api/ballot/results` aggregates the ballots:
+
+1. Each voting team's ballots are averaged into one unit per project.
+2. Those unit values are averaged across every team that voted.
+3. `team_units` counts the teams that gave the project a non-zero score.
+
+This prevents one large team from multiplying its influence by having every member vote. The response also reports turnout as submitted projects, voting teams, ballots, and a turnout ratio. Public callers need the gallery gate open and results published for the active season; judging staff may read before publication. The `/results` page shows the top project as People's Choice.
 
 ### Ballot Response
 

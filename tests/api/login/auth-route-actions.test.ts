@@ -73,6 +73,7 @@ beforeAll(async () => {
 beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     createErrorMock.mockImplementation((options) => {
         const error = new Error(
             String(options.message ?? options.statusMessage ?? "Error"),
@@ -199,10 +200,7 @@ describe("authentication route action patterns", () => {
         });
         expect(mocks.establishSession).not.toHaveBeenCalled();
         expect(sendRedirect).not.toHaveBeenCalled();
-        expect(console.error).toHaveBeenCalledWith(
-            "basis-auth callback failed:",
-            "database detail should not escape",
-        );
+        expect(console.warn).toHaveBeenCalledWith("basis-auth callback failed");
     });
 
     it("normalizes non-Error callback failures without exposing their value", async () => {
@@ -218,7 +216,7 @@ describe("authentication route action patterns", () => {
             statusMessage: "Authentication failed",
             message: "Unable to complete login. Please try again.",
         });
-        expect(console.error).toHaveBeenCalledWith("basis-auth callback failed:", "unknown error");
+        expect(console.warn).toHaveBeenCalledWith("basis-auth callback failed");
         expect(mocks.establishSession).not.toHaveBeenCalled();
     });
 

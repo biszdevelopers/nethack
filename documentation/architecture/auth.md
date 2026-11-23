@@ -45,7 +45,7 @@ The callback stores the basis-auth picture URL from the validated ID token or su
 
 ## Roles and sessions
 
-The designated initial administrators are matched by email case-insensitively, are seeded on startup, and cannot be demoted. Existing administrators can promote or demote other users with `PATCH /api/users/:id/admin`; attempts to demote an initial administrator or self-demote are rejected. A token without any granular `nethack.*` grant receives the participant bundle, so an identity-only basis-auth client still works, while judge and administrator routes continue to require explicit grants or local administrator status.
+The `INITIAL_ADMIN_EMAILS` allowlist is matched case-insensitively and applied when an account is created or signs in. A stored `is_admin = 0` remains authoritative for permission checks, but a listed address is elevated again at sign-in, so remove it from the allowlist before demoting that account. Existing administrators can promote or demote other users with `PATCH /api/users/:id/admin`; self-demotion and any demotion or deletion that would leave no administrator are rejected. A token without any granular `nethack.*` grant receives the participant bundle, so an identity-only basis-auth client still works, while judge and administrator routes continue to require explicit grants or local administrator status.
 
 The encrypted `basis-auth-tokens` cookie carries the basis-auth access token and refresh token; the browser cannot read it. Protected routes verify the access token from that cookie or an explicit bearer header before applying local authorization:
 
@@ -66,4 +66,4 @@ Backchannel revocations are recorded with an insert-first, guarded-update sequen
 
 ## Retired provider surface
 
-nethack no longer exposes its native authorization, token, UserInfo, authorization-session, or application-management routes and pages. The legacy `oauth2_applications` table and existing rows remain untouched for audit and rollback. Graph integration is separate and cannot authenticate a nethack session.
+nethack no longer exposes its native authorization, token, UserInfo, authorization-session, or application-management routes and pages. The legacy `oauth2_applications` table and existing rows remain untouched for audit and rollback. Microsoft Graph integration and its ROPC credentials were removed, and neither can authenticate a nethack session.

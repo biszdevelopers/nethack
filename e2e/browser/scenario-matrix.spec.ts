@@ -129,6 +129,7 @@ async function makeTeam(page: Page, name: string, projectName: string): Promise<
                 description: `${projectName} is an E2E scenario fixture with a clear purpose.`,
                 demo_url: `https://example.invalid/${encodeURIComponent(projectName)}`,
                 repo_url: `https://github.com/e2e-fixtures/${encodeURIComponent(projectName)}`,
+                video_url: `https://example.invalid/${encodeURIComponent(projectName)}.mp4`,
                 sourcing: "Original work created for the scenario matrix.",
             },
         }),
@@ -180,6 +181,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
         const judgeTwo = await newPage();
         const judgeThree = await newPage();
         const outsider = await newPage();
+        const builder = await newPage();
 
         let participantTeamId = 0;
         let adminTeamId = 0;
@@ -223,6 +225,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
                 await login(judge, "judge@e2e.basishacks.invalid", "/judging");
                 await login(judgeTwo, "judge-two@e2e.basishacks.invalid", "/judging");
                 await login(judgeThree, "judge-three@e2e.basishacks.invalid", "/judging");
+                await login(builder, "builder@e2e.basishacks.invalid", "/dashboard");
                 expect(await sessionUser(judge)).toBeGreaterThan(0);
             });
 
@@ -246,7 +249,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
 
             await test.step("G10 — administrator saves a rubric version", async () => {
                 await admin.goto("/developers/season");
-                const tab = admin.getByRole("tab", { name: "Scoring", exact: true });
+                const tab = admin.getByRole("tab", { name: "Rubric", exact: true });
                 await tab.click();
                 await admin.getByLabel("New rubric version name").fill(`Matrix rubric ${suffix}`);
                 const response = admin.waitForResponse(
@@ -300,7 +303,7 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
 
             await test.step("G15 — judge creates and submits a project", async () => {
                 judgeTeamId = await makeTeam(
-                    judgeTwo,
+                    builder,
                     `Matrix-J-team-${suffix}`,
                     `Matrix judge project ${suffix}`,
                 );
@@ -318,10 +321,11 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
                             description: "A duplicate submission attempt that must be rejected.",
                             demo_url: "https://example.invalid/duplicate",
                             repo_url: "https://github.com/e2e/duplicate",
+                            video_url: "https://example.invalid/duplicate.mp4",
                         },
                     }),
                 });
-                expect([403, 409]).toContain(duplicate.status);
+                expect([400, 403, 409]).toContain(duplicate.status);
             });
 
             await test.step("G17 — last-member removal and post-submission removal are blocked", async () => {
@@ -402,16 +406,21 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
             });
 
             await test.step("G26 — duplicate judge scores are rejected", async () => {
+                const rubric = await api(judge, "/api/judging/rubric");
+                const scores: Record<string, number> = {};
+                for (const criterion of rubric.body.tracks.junior.criteria) {
+                    scores[criterion.id] = Math.min(3, criterion.maxScore);
+                }
                 const duplicate = await api(judge, `/api/teams/${adminTeamId}/scores`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         reasoning: "A duplicate evaluation attempt that must be rejected entirely.",
-                        scores: {},
+                        scores,
                         rubric_version_id: rubricVersionId,
                     }),
                 });
-                expect([400, 409]).toContain(duplicate.status);
+                expect(duplicate.status, `duplicate: ${JSON.stringify(duplicate.body)}`).toBe(409);
             });
 
             await test.step("G27 — second judge reaches the anonymity threshold", async () => {

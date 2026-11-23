@@ -131,7 +131,7 @@ export default defineEventHandler(
             throw createError({ status: 403, message: "Cannot update other users" });
         }
 
-        return await withProfileUpdateCapacity(event, userID, async () => {
+        return await withProfileUpdateCapacity(event, userID, async (update) => {
             event._requestBody = (await readLimitedRequestBody(
                 event,
                 MAX_PROFILE_UPDATE_BODY_BYTES,
@@ -140,6 +140,15 @@ export default defineEventHandler(
                 event,
                 UpdateUserRequest.parse,
             );
+            // The request already timed out; do not let the late body commit
+            // over a retry that the client may have sent in the meantime.
+            if (update.aborted) {
+                throw createError({
+                    statusCode: 408,
+                    statusMessage: "Request Timeout",
+                    message: "The profile update body was not received in time.",
+                });
+            }
             const user = await getUser(event, id);
             if (!user) {
                 clearBasisAuthUserSession(event);

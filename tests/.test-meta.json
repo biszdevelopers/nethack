@@ -1,6 +1,7 @@
 {
-  "total": 3381,
-  "files": 232,
+  "total": 4130,
+  "files": 312,
   "failed": 0,
-  "generatedAt": "2026-11-19T05:35:46.083Z"
+  "skipped": 5,
+  "generatedAt": "2026-11-23T08:10:05.916Z"
 }

@@ -6,6 +6,8 @@ defineProps<{
 const emit = defineEmits<{
     click: [];
 }>();
+
+const trackLabel = useTrackLabel();
 </script>
 
 <template>
@@ -30,7 +32,7 @@ const emit = defineEmits<{
                     </span>
                     <span v-else class="text-lg">Unranked</span>
                 </div>
-                <div class="flex flex-row gap-2">
+                <div class="flex flex-row gap-2" @click.stop>
                     <div
                         v-for="award in team.awards"
                         :key="award.namespace"
@@ -46,7 +48,7 @@ const emit = defineEmits<{
                 size="sm"
                 :color="team.pathway === 'junior' ? 'primary' : 'warning'"
             >
-                {{ team.pathway === "junior" ? "Junior" : "Senior" }}
+                {{ trackLabel(team.pathway) }}
             </UBadge>
         </div>
         <h4 class="text-xl font-bold truncate">

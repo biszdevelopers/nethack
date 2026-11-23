@@ -5,6 +5,7 @@ import {
     calculateSeasonScores,
     calculateSeasonScoresWithDatabase,
     computeScores,
+    getRubricVersionsByIds,
     recalculateTeamScoreAfterSubmission,
 } from "~~/server/utils/scoring";
 import { DEFAULT_RUBRIC_DEFINITION } from "~~/shared/rubric";
@@ -224,12 +225,50 @@ describe("judge score aggregation and ranking", () => {
 
         expect(raw.prepare("SELECT score, rank FROM teams WHERE id = ?").get(targetId)).toEqual({
             score: 0,
-            rank: 2,
+            rank: 1,
         });
         expect(raw.prepare("SELECT score, rank FROM teams WHERE id = ?").get(unscoredId)).toEqual({
             score: 0,
-            rank: 2,
+            rank: 1,
         });
+    });
+
+    it("ranks a large field in one pass without per-team scans", async () => {
+        const teamCount = 1200;
+        raw.exec("BEGIN");
+        const insert = raw.prepare(
+            "INSERT INTO teams(name, pathway, season_id, project_submitted) VALUES(?, 'junior', ?, 1)",
+        );
+        for (let index = 0; index < teamCount; index += 1) {
+            insert.run(`Bulk ${index}`, seasonId);
+        }
+        raw.exec("COMMIT");
+        raw.prepare(
+            "INSERT INTO team_scores(team_id, judge_user_id, scores, reasoning, season_id, rubric_version_id) SELECT id, 1, ?, '', ?, ? FROM teams WHERE season_id = ?",
+        ).run(scoreObject(3), seasonId, rubricVersionId, seasonId);
+
+        const started = performance.now();
+        const ranked = await calculateSeasonScores(event, seasonId, true);
+        const elapsed = performance.now() - started;
+
+        expect(ranked).toHaveLength(teamCount);
+        expect(ranked.every((team) => team.rank === 1)).toBe(true);
+        expect(ranked.every((team) => team.score === 60)).toBe(true);
+        // A quadratic ranking path takes far longer than this at 1200 teams.
+        expect(elapsed).toBeLessThan(5000);
+    });
+
+    it("serves immutable rubric versions from a bounded per-database cache", async () => {
+        const first = await getRubricVersionsByIds(event.context.drizzle, [rubricVersionId]);
+        expect(first.get(rubricVersionId)?.name).toBe("Scoring Rubric");
+
+        raw.prepare("DELETE FROM rubric_versions WHERE id = ?").run(rubricVersionId);
+        const second = await getRubricVersionsByIds(event.context.drizzle, [rubricVersionId]);
+        expect(second.get(rubricVersionId)?.name).toBe("Scoring Rubric");
+
+        const otherEvent = await createMockEvent();
+        const other = await getRubricVersionsByIds(otherEvent.context.drizzle, [rubricVersionId]);
+        expect(other.size).toBe(0);
     });
 
     function addTeam(

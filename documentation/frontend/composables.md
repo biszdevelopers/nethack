@@ -79,7 +79,7 @@ const { user, sessionUser, refresh, clear } = await useApiUser({ lazy: true });
 </template>
 ```
 
-::: tip The browser session summary contains only the user ID, permissions, and expiry. Tokens remain inside the encrypted HTTP-only cookie. `useApiUser()` combines that summary with the full user fetch, giving pages and components access to role, team, and profile data. Pass `{ lazy: true }` to avoid blocking navigation. :::
+::: tip The browser session summary contains only the user ID, permissions, and expiry. Tokens remain inside the encrypted HTTP-only cookie. `useApiUser()` combines that summary with the full user fetch, giving pages and components access to permissions, team, and profile data. Pass `{ lazy: true }` to avoid blocking navigation. :::
 
 ## Route Middleware
 
@@ -219,6 +219,25 @@ await withLoadingIndicator(async () => {
     toast.add({ color: "success", title: res.message });
 });
 ```
+
+### session-draft.ts
+
+**File:** `app/utils/session-draft.ts`
+
+Preserves unsaved page state when authentication expires:
+
+- `registerSessionDraft(path, source)` registers a getter and returns an unregister function.
+- `persistSessionDraft(path)` writes the getter's value to `sessionStorage` under `nethack:form-draft:<path>`.
+- `readSessionDraft<T>(path)` reads and removes the entry.
+- Drafts are capped at 64 KB and the newest five per tab are retained. Storage failures are ignored so losing a draft never blocks login.
+
+The API client persists the current page draft before redirecting to login. After the callback returns, the page can restore it.
+
+### project-autosave.ts
+
+**File:** `app/utils/project-autosave.ts`
+
+Pure helpers for the project editor: snapshot/reconcile the form, build a changed-fields-only PATCH payload (URL fields may be `null`), and reapply a stored draft. Reconcile keeps locally changed fields dirty when a server response arrives, so a teammate's concurrent edit cannot overwrite the current user's unsaved text.
 
 ### oauth2.ts
 

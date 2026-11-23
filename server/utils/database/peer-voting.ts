@@ -23,14 +23,22 @@ export async function getPeerVoteByUser(
 
 export async function upsertPeerVote(
     event: H3Event,
-    vote: { user_id: number; season_id: number; score: string; reasoning: string },
+    vote: {
+        user_id: number;
+        season_id: number;
+        team_id?: number | null;
+        score: string;
+        reasoning: string;
+    },
 ): Promise<void> {
+    const values = { ...vote, team_id: vote.team_id ?? null };
     await event.context.drizzle
         .insert(peerVotingScores)
-        .values(vote)
+        .values(values)
         .onConflictDoUpdate({
             target: [peerVotingScores.user_id, peerVotingScores.season_id],
             set: {
+                team_id: values.team_id,
                 score: vote.score,
                 reasoning: vote.reasoning,
             },

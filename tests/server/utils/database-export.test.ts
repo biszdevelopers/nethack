@@ -13,9 +13,9 @@ const rowsByTable: Record<string, Record<string, unknown>[]> = {
         {
             id: 4,
             name: "Formula test",
-            description: '\n=HYPERLINK("https://example.invalid","open")',
+            project_description: '\n=HYPERLINK("https://example.invalid","open")',
         },
-        { id: 5, name: "Control test", description: "\tplain text" },
+        { id: 5, name: "Control test", project_description: "\tplain text" },
     ],
     team_scores: [
         {
@@ -54,6 +54,34 @@ const rowsByTable: Record<string, Record<string, unknown>[]> = {
             client_id: "export-client",
             client_secret: leakedClientSecret,
             name: "Export test",
+        },
+    ],
+    judge_flags: [
+        {
+            id: 6,
+            judge_user_id: leakedJudgeId,
+            resolved_by: leakedJudgeId,
+            reason: "Conflict",
+        },
+    ],
+    admin_audit_events: [
+        {
+            id: 7,
+            actor_user_id: leakedJudgeId,
+            action: "team.status",
+            before: {
+                judge_user_id: leakedJudgeId,
+                status: "active",
+                tags: [{ judge_user_id: leakedJudgeId, label: "x" }],
+            },
+            after: { resolved_by: leakedJudgeId, status: "withdrawn" },
+        },
+        {
+            id: 8,
+            actor_user_id: leakedJudgeId,
+            action: "score.delete",
+            entity_type: "team_score",
+            entity_id: `3:${leakedJudgeId}`,
         },
     ],
 };
@@ -108,6 +136,12 @@ describe("admin database export judge privacy", () => {
         expect(parsed.tables.sqlite_legacy_data[0]!.payload).not.toHaveProperty("field3");
         expect(parsed.tables.sqlite_legacy_data[1]!.payload).not.toHaveProperty("role");
         expect(parsed.tables.oauth2_applications[0]).not.toHaveProperty("client_secret");
+        expect(parsed.tables.judge_flags[0]).not.toHaveProperty("judge_user_id");
+        expect(parsed.tables.judge_flags[0]).not.toHaveProperty("resolved_by");
+        expect(parsed.tables.admin_audit_events[0]).not.toHaveProperty("actor_user_id");
+        expect(parsed.tables.admin_audit_events[0]!.before).not.toHaveProperty("judge_user_id");
+        expect(parsed.tables.admin_audit_events[0]!.after).not.toHaveProperty("resolved_by");
+        expect(parsed.tables.admin_audit_events[1]).not.toHaveProperty("entity_id");
         expect(queriedTables).not.toContain("judging_drafts");
         expect(output).not.toContain(leakedJudgeId);
         expect(output).not.toContain(leakedRole);
@@ -123,6 +157,31 @@ describe("admin database export judge privacy", () => {
         expect(output).not.toContain(leakedRole);
         expect(output).not.toContain("client_secret");
         expect(output).not.toContain(leakedClientSecret);
+    });
+
+    it("keeps CSV rows aligned when an anonymized row drops a key", async () => {
+        const { output } = await collectExport("csv");
+        const section = output
+            .split("--- admin_audit_events ---\r\n")[1]!
+            .split("\r\n--- ")[0]!
+            .trim();
+        const csvWidth = (line: string) => {
+            let width = 1;
+            let quoted = false;
+            for (let index = 0; index < line.length; index += 1) {
+                const character = line[index];
+                if (character === '"') {
+                    if (quoted && line[index + 1] === '"') index += 1;
+                    else quoted = !quoted;
+                } else if (character === "," && !quoted) {
+                    width += 1;
+                }
+            }
+            return width;
+        };
+        const widths = section.split("\r\n").map(csvWidth);
+
+        expect(new Set(widths).size).toBe(1);
     });
 
     it("neutralizes formulas preceded by line breaks before CSV quoting", async () => {

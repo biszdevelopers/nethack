@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { createMockEvent } from "./helpers";
 import {
     getTeamMembers,
@@ -7,7 +8,12 @@ import {
     addUserPastTeam,
     removeTeamMember,
     addTeamMember,
+    createTeamInvite,
+    getTeamMemberLimit,
+    acceptTeamInvite,
 } from "~~/server/utils/database/members";
+import { teams, teamInvites } from "~~/server/database/schema";
+import { invalidateRequestCaches } from "~~/server/utils/database/query";
 
 describe("members database helpers", () => {
     let event: Awaited<ReturnType<typeof createMockEvent>>;
@@ -159,6 +165,35 @@ describe("members database helpers", () => {
             const teams = await getUserPastTeams(event, 999);
             expect(teams).toHaveLength(0);
         });
+
+        it("includes a current pointer to a team from an ended season", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Past season', 0)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Archived Team', 2)")
+                .run();
+            event.context.drizzle.prepare("UPDATE users SET team_id = 3 WHERE id = 1").run();
+
+            const teams = await getUserPastTeams(event, 1);
+            expect(teams.map((team) => team.id)).toEqual([3]);
+        });
+
+        it("does not duplicate a team that is both current history and a past row", async () => {
+            event.context.drizzle
+                .prepare("INSERT INTO seasons(name, is_active) VALUES('Past season', 0)")
+                .run();
+            event.context.drizzle
+                .prepare("INSERT INTO teams(name, season_id) VALUES('Archived Team', 2)")
+                .run();
+            event.context.drizzle.prepare("UPDATE users SET team_id = 3 WHERE id = 1").run();
+            event.context.drizzle
+                .prepare("INSERT INTO user_past_teams(user_id, team_id) VALUES(1, 3)")
+                .run();
+
+            const teams = await getUserPastTeams(event, 1);
+            expect(teams.map((team) => team.id)).toEqual([3]);
+        });
     });
 
     describe("addUserPastTeam", () => {
@@ -212,6 +247,32 @@ describe("members database helpers", () => {
             const pastTeams = await getUserPastTeams(event, 1);
             expect(pastTeams).toHaveLength(1);
             expect(pastTeams[0]!.id).toBe(1);
+        });
+
+        it("transfers ownership to the earliest remaining member when the owner leaves", async () => {
+            event.context.drizzle.prepare("UPDATE teams SET owner_user_id = 1 WHERE id = 1").run();
+
+            await removeTeamMember(event, 1, 1);
+
+            const team = event.context.drizzle
+                .select({ owner_user_id: teams.owner_user_id })
+                .from(teams)
+                .where(eq(teams.id, 1))
+                .get();
+            expect(team!.owner_user_id).toBe(2);
+        });
+
+        it("keeps the owner pointer when a non-owner leaves", async () => {
+            event.context.drizzle.prepare("UPDATE teams SET owner_user_id = 1 WHERE id = 1").run();
+
+            await removeTeamMember(event, 1, 2);
+
+            const team = event.context.drizzle
+                .select({ owner_user_id: teams.owner_user_id })
+                .from(teams)
+                .where(eq(teams.id, 1))
+                .get();
+            expect(team!.owner_user_id).toBe(1);
         });
 
         it("throws a 404 error when the user is not in the team", async () => {
@@ -319,6 +380,82 @@ describe("members database helpers", () => {
             await expect(addTeamMember(event, 2, 1)).rejects.toThrow(
                 "User not found or already in a team",
             );
+        });
+    });
+
+    describe("team limits and invite TTL", () => {
+        it("refuses an invitation when the accepting user row no longer exists", async () => {
+            const invite = await createTeamInvite(event, 1, "ghost@example.com", 1);
+
+            await expect(
+                acceptTeamInvite(event, invite.id, {
+                    id: 999,
+                    email: "ghost@example.com",
+                } as User),
+            ).rejects.toMatchObject({
+                statusCode: 404,
+                message: "Invitation not found",
+            });
+        });
+
+        it("refuses an invitation when members plus pending invites reach the limit", async () => {
+            event.context.drizzle
+                .prepare("UPDATE seasons SET max_team_members = 2 WHERE id = 1")
+                .run();
+            invalidateRequestCaches(event);
+
+            await expect(createTeamInvite(event, 1, "new@example.com", 1)).rejects.toMatchObject({
+                statusCode: 409,
+                message: "This team is full",
+            });
+        });
+
+        it("falls back to the default cap when no season is active", async () => {
+            event.context.drizzle.prepare("UPDATE seasons SET is_active = 0").run();
+            invalidateRequestCaches(event);
+
+            await expect(
+                createTeamInvite(event, 1, "fallback@example.com", 1),
+            ).resolves.toHaveProperty("token");
+        });
+
+        it("uses the active season's member limit and falls back when no season is active", async () => {
+            event.context.drizzle
+                .prepare("UPDATE seasons SET max_team_members = 4 WHERE id = 1")
+                .run();
+            await expect(getTeamMemberLimit(event)).resolves.toBe(4);
+
+            event.context.drizzle.prepare("UPDATE seasons SET is_active = 0").run();
+            invalidateRequestCaches(event);
+            await expect(getTeamMemberLimit(event)).resolves.toBe(6);
+        });
+
+        it("clamps invalid invite TTL values to the default and floors valid ones", async () => {
+            const readExpiryDays = async (email: string) => {
+                await createTeamInvite(event, 1, email, 1);
+                const invite = event.context.drizzle
+                    .select()
+                    .from(teamInvites)
+                    .where(eq(teamInvites.email, email))
+                    .get() as { expires_at?: string | Date | null };
+                const expires = new Date(invite.expires_at ?? 0).getTime();
+                return Math.round((expires - Date.now()) / (24 * 60 * 60 * 1000));
+            };
+
+            const original = process.env.TEAM_INVITE_TTL_DAYS;
+            try {
+                process.env.TEAM_INVITE_TTL_DAYS = "not-a-number";
+                await expect(readExpiryDays("ttl-invalid@example.com")).resolves.toBe(7);
+                process.env.TEAM_INVITE_TTL_DAYS = "400";
+                await expect(readExpiryDays("ttl-high@example.com")).resolves.toBe(7);
+                process.env.TEAM_INVITE_TTL_DAYS = "3.9";
+                await expect(readExpiryDays("ttl-float@example.com")).resolves.toBe(3);
+                process.env.TEAM_INVITE_TTL_DAYS = "0";
+                await expect(readExpiryDays("ttl-zero@example.com")).resolves.toBe(7);
+            } finally {
+                if (original === undefined) delete process.env.TEAM_INVITE_TTL_DAYS;
+                else process.env.TEAM_INVITE_TTL_DAYS = original;
+            }
         });
     });
 });

@@ -22,7 +22,9 @@ describe("nethack permission helpers", () => {
                 NethackPermissions.Voting.submitOwn,
             ]),
         );
-        expect(hasNethackPermission(undefined, NethackPermissions.Profile.updateSelf)).toBe(true);
+        // Identity-only requests are anonymous for permission checks; call
+        // sites must authenticate before asking for a grant.
+        expect(hasNethackPermission(undefined, NethackPermissions.Profile.updateSelf)).toBe(false);
         expect(hasNethackPermission([], NethackPermissions.Users.delete)).toBe(false);
     });
 
@@ -109,6 +111,34 @@ describe("nethack permission helpers", () => {
                 is_admin: false,
             }),
         ).toContain(NethackPermissions.Profile.updateSelf);
+    });
+
+    it("grants judging permissions to locally promoted judges", () => {
+        const promoted = effectiveNethackPermissions([], {
+            email: "judge@example.test",
+            is_judge: 1,
+        });
+        expect(promoted).toContain(NethackPermissions.Judging.assignmentsRead);
+        expect(promoted).toContain(NethackPermissions.Judging.scoresWriteAssigned);
+
+        const alreadyGranted = effectiveNethackPermissions(
+            [NethackPermissions.Judging.assignmentsRead],
+            { email: "judge@example.test", is_judge: 1 },
+        );
+        expect(
+            alreadyGranted.filter(
+                (permission) =>
+                    permission.toLocaleLowerCase("en-US") ===
+                    NethackPermissions.Judging.assignmentsRead.toLocaleLowerCase("en-US"),
+            ),
+        ).toHaveLength(1);
+
+        const participant = effectiveNethackPermissions([], {
+            email: "participant@example.test",
+            is_judge: 0,
+        });
+        expect(participant).not.toContain(NethackPermissions.Judging.assignmentsRead);
+        expect(participant).not.toContain(NethackPermissions.Judging.scoresWriteAssigned);
     });
 
     it("does not duplicate an administrative grant that is already present", () => {

@@ -21,9 +21,7 @@ const archivedSeasons = computed(() =>
     >
         <div class="mx-auto max-w-7xl">
             <div class="mb-10 max-w-2xl">
-                <p class="font-mono text-xs tracking-[0.28em] text-primary uppercase">
-                    Project archive
-                </p>
+                <p class="font-mono text-xs tracking-wide text-primary">Project archive</p>
                 <h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
                     Every past round, in one place
                 </h2>
@@ -49,7 +47,7 @@ const archivedSeasons = computed(() =>
                     class="group flex min-h-52 min-w-0 flex-col justify-between border border-default bg-elevated/40 p-6 transition hover:border-primary hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
                 >
                     <div class="min-w-0">
-                        <p class="font-mono text-xs tracking-[0.2em] text-primary uppercase">
+                        <p class="font-mono text-xs tracking-wide text-primary">
                             {{ season.status.replaceAll("_", " ") }}
                         </p>
                         <h3 class="mt-3 break-words text-2xl font-semibold tracking-tight">

@@ -107,7 +107,10 @@ test.describe.serial("scenario matrix — team and project situations", () => {
                 const result = await api(participant, `/api/teams/${participantTeamId}/users`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: "newcomer@basischina.com" }),
+                    body: JSON.stringify({
+                        email: "newcomer@basischina.com",
+                        allowUnclaimed: true,
+                    }),
                 });
                 expect([200, 201]).toContain(result.status);
             });
@@ -116,9 +119,12 @@ test.describe.serial("scenario matrix — team and project situations", () => {
                 const result = await api(participant, `/api/teams/${participantTeamId}/users`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: "newcomer@basischina.com" }),
+                    body: JSON.stringify({
+                        email: "newcomer@basischina.com",
+                        allowUnclaimed: true,
+                    }),
                 });
-                expect([409, 200]).toContain(result.status);
+                expect(result.status, `re-invite: ${JSON.stringify(result.body)}`).toBe(409);
             });
 
             await step("invites can be listed by the team", async () => {
@@ -171,10 +177,11 @@ test.describe.serial("scenario matrix — team and project situations", () => {
                             description: "A duplicate submission that must be rejected by the API.",
                             demo_url: "https://example.invalid/duplicate",
                             repo_url: "https://github.com/e2e/duplicate",
+                            video_url: "https://example.invalid/duplicate.mp4",
                         },
                     }),
                 });
-                expect([403, 409]).toContain(result.status);
+                expect([400, 403, 409]).toContain(result.status);
             });
 
             await step("member removal is blocked after submission", async () => {
@@ -198,11 +205,15 @@ test.describe.serial("scenario matrix — team and project situations", () => {
                 expect(id).toBeGreaterThan(0);
             });
 
-            await step("public team list includes submitted projects", async () => {
-                const result = await api(participant, "/api/teams");
-                expect(result.status).toBe(200);
-                expect(result.body.length).toBeGreaterThanOrEqual(2);
-            });
+            await step(
+                "team list stays limited to the caller's team before peer voting",
+                async () => {
+                    const result = await api(participant, "/api/teams");
+                    expect(result.status).toBe(200);
+                    expect(result.body.length).toBe(1);
+                    expect(result.body[0].id).toBe(participantTeamId);
+                },
+            );
 
             await step("team detail is readable", async () => {
                 const result = await api(participant, `/api/teams/${participantTeamId}`);

@@ -18,8 +18,8 @@ function routeFiles(dir: string): string[] {
  * deliberate change to this list.
  */
 const PUBLIC_ROUTES: Record<string, string> = {
-    "_webhooks/lifecycle.post.ts": "webhook secret validation",
-    "_webhooks/update.post.ts": "webhook secret validation",
+    "_webhooks/lifecycle.post.ts": "retired endpoint that only returns 404",
+    "_webhooks/update.post.ts": "retired endpoint that only returns 404",
     "auth/basis/backchannel.post.ts": "signed backchannel token",
     "auth/basis/callback.get.ts": "OIDC state, nonce, and PKCE",
     "auth/logout.post.ts": "clears the session cookie",
@@ -32,6 +32,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "seasons/index.get.ts": "public season list",
     "users/[id]/profile_picture.get.ts": "public profile image",
     "teams/[id]/index.get.ts": "public team read with optional identity",
+    "ballot/results.get.ts": "voting-closed, gallery-public, and results-public gate",
     "users/[id]/index.get.ts": "public profile read with optional identity",
 };
 
@@ -75,6 +76,31 @@ describe("API route guard inventory", () => {
 
         expect(adminRoutes.length).toBeGreaterThan(15);
         expect(broadOrMissing).toEqual([]);
+    });
+
+    it("requires the all-permission grant on user role mutations", () => {
+        const roleRoutes = ["users/[id]/admin.patch.ts", "users/[id]/judge.patch.ts"];
+        const weak = roleRoutes.filter(
+            (file) =>
+                !/requireUser\(\s*event\s*,\s*NethackPermissions\.all\s*\)/.test(
+                    readFileSync(join(apiDir, file), "utf8"),
+                ),
+        );
+
+        expect(weak).toEqual([]);
+    });
+
+    it("documents routes that resolve an optional identity without a guard", () => {
+        const undocumented = files.filter((file) => {
+            if (PUBLIC_ROUTES[file]) return false;
+            const source = readFileSync(join(apiDir, file), "utf8");
+            if (!/\boptionalUser\s*\(/.test(source)) return false;
+            // A conditional guard (for example the judging scope on the public
+            // team list) keeps the route out of the unauthenticated set.
+            return !ROLE_GUARD.test(source);
+        });
+
+        expect(undocumented).toEqual([]);
     });
 
     it("rate limits every route handler except the removed upload stub", () => {

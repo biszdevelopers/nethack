@@ -78,6 +78,32 @@ describe("test metadata stream processor", () => {
         expect(log).toHaveBeenCalledWith("Test meta written: 0 tests, 0 files");
     });
 
+    it("records skipped tests without failing the run", async () => {
+        const log = vi.spyOn(console, "log").mockImplementation(() => {});
+        fsMocks.writeFileSync.mockClear();
+
+        await run([
+            '{"numTotalTests":10,"numPassedTests":7,"numPendingTests":3,"testResults":[{}],"numFailedTests":0}',
+        ]);
+
+        expect(JSON.parse(fsMocks.writeFileSync.mock.calls[0][1])).toMatchObject({
+            total: 7,
+            skipped: 3,
+            failed: 0,
+        });
+        expect(log).toHaveBeenCalledWith("Test meta written: 7 tests, 1 files");
+    });
+
+    it("fails when a test suite fails without reporting failed tests", async () => {
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+
+        await run(['{"numTotalTests":0,"testResults":[],"numFailedTestSuites":1}']);
+
+        expect(error).toHaveBeenCalledWith("Test suites failed: 1");
+        expect(exit).toHaveBeenCalledWith(1);
+    });
+
     it("reports test failures and sets the process exit status", async () => {
         const error = vi.spyOn(console, "error").mockImplementation(() => {});
         const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);

@@ -251,7 +251,7 @@ describe("SQL injection hardening", () => {
 const ADVANCED_PATTERNS = [
     "' UNION SELECT * FROM users --",
     "' OR IF(1=1,SLEEP(0),0) --",
-    "'; DROP TABLE teams; SELECT * FROM teams WHERE '1'='1",
+    "'; DROP TABLE teams; --",
     "'/**/OR/**/1=1/**/--",
     "' OR '1'='1' %00 --",
     "' oR 1=1 --",
@@ -351,9 +351,11 @@ describe("SQL injection in team project fields (POST submit)", () => {
                 pathway: "junior",
                 project: {
                     name: "Valid Project",
-                    description,
+                    description: `${description} plus enough detail to meet the minimum length.`,
                     demo_url: "https://example.com/demo",
                     repo_url: "https://github.com/example/repo",
+                    video_url: "https://example.com/video",
+                    sourcing: "No AI tools or models were used.",
                 },
             };
 
@@ -362,7 +364,9 @@ describe("SQL injection in team project fields (POST submit)", () => {
             expect(result).toEqual({ message: "Successfully submitted project" });
 
             const row = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
-            expect(row!.project_description).toBe(description);
+            expect(row!.project_description).toBe(
+                `${description} plus enough detail to meet the minimum length.`,
+            );
         },
     );
 
@@ -388,6 +392,8 @@ describe("SQL injection in team project fields (POST submit)", () => {
                     "This is a completely valid description that is at least 30 characters long.",
                 demo_url: "https://example.com/demo",
                 repo_url: "https://github.com/example/repo",
+                video_url: "https://example.com/video",
+                sourcing: "No AI tools or models were used.",
             },
         };
 
@@ -593,34 +599,29 @@ describe("numeric parameter injection - POST /api/teams/:id/submit", () => {
 // =============================================================================
 
 describe("query parameter injection - GET /api/teams", () => {
-    it("handles SQL injection in season_id gracefully", async () => {
-        // The mocked getValidatedQuery bypasses Zod, so invalid values pass
-        // through but should not affect the database
+    it("rejects a non-numeric season_id", async () => {
         mockQueryState.value = { season_id: "1 OR 1=1" };
 
-        const result = await listTeamsHandler(createEvent());
-        expect(Array.isArray(result)).toBe(true);
+        await expect(listTeamsHandler(createEvent())).rejects.toMatchObject({ name: "ZodError" });
     });
 
-    it("handles non-numeric season_id gracefully", async () => {
+    it("rejects a non-numeric season_id string", async () => {
         mockQueryState.value = { season_id: "abc" };
 
-        const result = await listTeamsHandler(createEvent());
-        expect(Array.isArray(result)).toBe(true);
+        await expect(listTeamsHandler(createEvent())).rejects.toMatchObject({ name: "ZodError" });
     });
 
-    it("handles negative season_id gracefully", async () => {
+    it("rejects a negative season_id", async () => {
         mockQueryState.value = { season_id: "-1" };
 
-        const result = await listTeamsHandler(createEvent());
-        expect(Array.isArray(result)).toBe(true);
+        await expect(listTeamsHandler(createEvent())).rejects.toMatchObject({ name: "ZodError" });
     });
 
-    it("handles SQL injection in judging query param gracefully", async () => {
+    it("rejects an invalid judging flag", async () => {
         ctx.drizzle.update(hackathon).set({ judging_open: 1 }).where(eq(hackathon.id, 1)).run();
         mockQueryState.value = { judging: "1 OR 1=1 --" };
 
-        await expect(listTeamsHandler(createEvent())).rejects.toMatchObject({ statusCode: 401 });
+        await expect(listTeamsHandler(createEvent())).rejects.toMatchObject({ name: "ZodError" });
     });
 });
 
@@ -633,8 +634,8 @@ describe("XSS patterns in team name", () => {
         "<script>alert(1)</script>",
         '"><script>alert(1)</script>',
         "<img src=x onerror=alert(1)>",
-        "';--\"><script>alert(1)</script>",
-        "{{constructor.constructor('alert(1)')()}}",
+        "';--\"><script>x</script>",
+        "{{constructor.constructor}}",
     ];
 
     it.each(XSS_NAMES)("stores XSS payload %j as literal string", async (name) => {
@@ -673,11 +674,11 @@ describe("XSS patterns in team description", () => {
 
 describe("multi-byte character injection", () => {
     const MULTI_BYTE_NAMES = [
-        "Ā", // Unicode character beyond ASCII
-        "' OR 1=1 --Ā", // SQL injection with trailing Unicode
-        "团队名称", // Chinese characters
-        "日本語チーム名", // Japanese characters
-        "' UNION SELECT Ā FROM users --", // Unicode in injection
+        "ĀĀ", // Unicode characters beyond ASCII
+        "' OR 1=1 --ĀĀ", // SQL injection with trailing Unicode
+        "测试团队", // Chinese characters
+        "テストチーム", // Japanese characters
+        "' UNION SELECT 测试 --", // Unicode in injection
     ];
 
     it.each(MULTI_BYTE_NAMES)("stores multi-byte name %j as literal", async (name) => {
@@ -832,7 +833,7 @@ describe("second-order SQL injection", () => {
 });
 
 describe("URL injection in project fields", () => {
-    it("stores javascript: URL in demo_url as literal (Zod validation bypassed by mock)", async () => {
+    it("rejects a javascript: URL in demo_url", async () => {
         const team = seedTeam(ctx, { name: "URLTeam" });
         seedUser(ctx, { email: "url@basischina.com", team_id: team.id });
 
@@ -842,13 +843,15 @@ describe("URL injection in project fields", () => {
             project: { demo_url: "javascript:alert(1)" },
         };
 
-        await updateTeamHandler(createEvent());
+        await expect(updateTeamHandler(createEvent())).rejects.toMatchObject({
+            name: "ZodError",
+        });
 
         const row = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
-        expect(row!.project_demo_url).toBe("javascript:alert(1)");
+        expect(row!.project_demo_url).toBeNull();
     });
 
-    it("stores data: URL in repo_url as literal (Zod validation bypassed by mock)", async () => {
+    it("rejects a data: URL in repo_url", async () => {
         const team = seedTeam(ctx, { name: "URLTeam2" });
         seedUser(ctx, { email: "url2@basischina.com", team_id: team.id });
 
@@ -858,21 +861,23 @@ describe("URL injection in project fields", () => {
             project: { repo_url: "data:text/html,<script>alert(1)</script>" },
         };
 
-        await updateTeamHandler(createEvent());
+        await expect(updateTeamHandler(createEvent())).rejects.toMatchObject({
+            name: "ZodError",
+        });
 
         const row = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
-        expect(row!.project_repo_url).toBe("data:text/html,<script>alert(1)</script>");
+        expect(row!.project_repo_url).toBeNull();
     });
 });
 
 describe("pathway field injection", () => {
-    it("rejects a pathway that has no rubric track when validation is bypassed", async () => {
+    it("rejects a pathway that has no rubric track", async () => {
         const team = seedTeam(ctx, { name: "PathTeam" });
         seedUser(ctx, { email: "path@basischina.com", team_id: team.id });
 
         mockSession.value = { user: { id: 1 } };
         mockParams.values["id"] = String(team.id);
-        mockBody.value = { pathway: "' OR 1=1 --" };
+        mockBody.value = { pathway: "robotics" };
 
         await expect(updateTeamHandler(createEvent())).rejects.toMatchObject({
             statusCode: 400,

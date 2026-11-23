@@ -5,10 +5,14 @@ import type { Sql } from "postgres";
 const mocks = vi.hoisted(() => ({
     migrate: vi.fn(),
     getPostgresClient: vi.fn(),
+    createMigrationDatabase: vi.fn(),
 }));
 
 vi.mock("drizzle-orm/postgres-js/migrator", () => ({ migrate: mocks.migrate }));
-vi.mock("~~/server/database/index", () => ({ getPostgresClient: mocks.getPostgresClient }));
+vi.mock("~~/server/database/index", () => ({
+    getPostgresClient: mocks.getPostgresClient,
+    createMigrationDatabase: mocks.createMigrationDatabase,
+}));
 
 import { createAndMigrateDatabase, migrateDatabase } from "~~/server/database/migrate";
 
@@ -37,6 +41,7 @@ describe("PostgreSQL migrations", () => {
         mocks.migrate.mockReset();
         mocks.migrate.mockResolvedValue(undefined);
         mocks.getPostgresClient.mockReset();
+        mocks.createMigrationDatabase.mockReset();
     });
 
     it("holds a PostgreSQL advisory transaction lock while Drizzle migrates", async () => {
@@ -50,10 +55,11 @@ describe("PostgreSQL migrations", () => {
         await migrateDatabase(database, migrationsFolder, client);
 
         expect(begin).toHaveBeenCalledTimes(1);
-        expect(connection).toHaveBeenCalledTimes(1);
-        expect(calls[0]?.strings.join("?")).toContain("pg_advisory_xact_lock(?)");
-        expect(calls[0]?.values).toEqual([BigInt("75110114284009")]);
-        expect(events).toEqual(["lock", "migrate"]);
+        expect(connection).toHaveBeenCalledTimes(2);
+        expect(calls[0]?.strings.join("?")).toContain("statement_timeout");
+        expect(calls[1]?.strings.join("?")).toContain("pg_advisory_xact_lock(?)");
+        expect(calls[1]?.values).toEqual([BigInt("75110114284009")]);
+        expect(events).toEqual(["lock", "lock", "migrate"]);
         expect(mocks.migrate).toHaveBeenCalledWith(database, { migrationsFolder });
     });
 
@@ -85,6 +91,7 @@ describe("PostgreSQL migrations", () => {
                 events.push("begin-migration-transaction");
                 return callback(connection);
             }),
+            end: vi.fn(async () => undefined),
         } as unknown as Sql;
         mocks.getPostgresClient.mockReturnValue(client);
         mocks.migrate.mockImplementation(async () => {
@@ -139,11 +146,13 @@ describe("PostgreSQL migrations", () => {
                 return callback(transaction);
             },
         } as unknown as DrizzleDatabase;
+        mocks.createMigrationDatabase.mockResolvedValue({ database, client });
 
         await createAndMigrateDatabase(database);
 
         expect(events).toEqual([
             "begin-migration-transaction",
+            "advisory-lock",
             "advisory-lock",
             "migrations",
             "seed:hackathon",
@@ -151,6 +160,7 @@ describe("PostgreSQL migrations", () => {
             "seed:seeded",
             "seed:r1-season",
         ]);
-        expect(mocks.getPostgresClient).toHaveBeenCalledOnce();
+        expect(mocks.getPostgresClient).not.toHaveBeenCalled();
+        expect(mocks.createMigrationDatabase).toHaveBeenCalledOnce();
     });
 });

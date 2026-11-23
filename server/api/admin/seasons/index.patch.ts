@@ -3,8 +3,13 @@ import { UpdateSeasonRequest } from "~~/shared/schemas";
 import { seasons } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
-import { firstRow, isUniqueViolation } from "~~/server/utils/database/query";
+import {
+    firstRow,
+    invalidateRequestCaches,
+    isUniqueViolation,
+} from "~~/server/utils/database/query";
 import { setActiveSeason } from "~~/server/utils/database/seasons";
+import { writeAuditEvent } from "~~/server/utils/audit";
 
 export default defineEventHandler(
     applyRateLimit(async (event) => {
@@ -36,9 +41,26 @@ export default defineEventHandler(
             await requireUser(event, NethackPermissions.Seasons.activate);
         }
 
+        // Validate a rename before deactivating the live season; otherwise a
+        // duplicate-name 409 leaves the event with no active season. The
+        // activation snapshot must still run before the field update, or it
+        // would overwrite theme/schedule edits made in the same request.
+        if (updateFields.name !== undefined) {
+            const seasonsList = await getSeasons(event);
+            const duplicate = seasonsList.some(
+                (season) =>
+                    season.id !== id &&
+                    season.name.trim().toLowerCase() === updateFields.name!.trim().toLowerCase(),
+            );
+            if (duplicate) {
+                throw createError({
+                    statusCode: 409,
+                    message: "A season with that name already exists",
+                });
+            }
+        }
+
         try {
-            // Activation runs first so a rejected switch cannot leave a
-            // renamed season behind after the caller sees an error.
             if (is_active === 1) {
                 await setActiveSeason(event, id);
             } else if (is_active === 0 && existing.is_active === 1) {
@@ -46,10 +68,24 @@ export default defineEventHandler(
             }
 
             if (Object.keys(updateFields).length > 0) {
-                await event.context.drizzle
-                    .update(seasons)
-                    .set(updateFields)
-                    .where(eq(seasons.id, id));
+                const write = async (tx: typeof event.context.drizzle) => {
+                    await tx.update(seasons).set(updateFields).where(eq(seasons.id, id));
+                    await writeAuditEvent(tx, event, {
+                        action: "season.update",
+                        entity_type: "season",
+                        entity_id: id,
+                        before: {
+                            name: existing.name,
+                            max_team_members: existing.max_team_members,
+                        },
+                        after: updateFields,
+                    });
+                };
+                if (typeof event.context.drizzle.transaction === "function") {
+                    await event.context.drizzle.transaction(write);
+                } else {
+                    await write(event.context.drizzle);
+                }
             }
         } catch (error) {
             if (isUniqueViolation(error)) {
@@ -61,6 +97,7 @@ export default defineEventHandler(
             throw error;
         }
 
+        invalidateRequestCaches(event);
         const allSeasons = await getSeasons(event);
         return { seasons: allSeasons };
     }, DEFAULT_RATE_LIMIT_CONFIG),

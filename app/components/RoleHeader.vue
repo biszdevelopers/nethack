@@ -12,7 +12,17 @@
         <UNavigationMenu :items="navItems" />
 
         <template #right>
+            <UBadge
+                v-if="eventBadge"
+                :color="eventBadge.tone"
+                variant="subtle"
+                size="sm"
+                class="hidden shrink-0 md:inline-flex"
+            >
+                {{ eventBadge.label }}
+            </UBadge>
             <UColorModeButton class="hidden min-h-11 min-w-11 sm:inline-flex" />
+            <NotificationBell />
             <UButton
                 variant="ghost"
                 :class="[profileIconColor, 'min-h-11 min-w-11']"
@@ -22,7 +32,10 @@
                 <template v-if="userRef">
                     <UserAvatar :user="user" size="sm" />
                 </template>
-                <UIcon v-else name="i-material-symbols-account-circle-full" class="text-xl" />
+                <template v-else>
+                    <UIcon name="i-material-symbols-account-circle-full" class="text-xl" />
+                    <span class="ml-2 text-sm font-medium">Sign in</span>
+                </template>
             </UButton>
         </template>
 
@@ -33,7 +46,10 @@
                 class="-mx-2.5"
                 :ui="{ link: 'min-h-11' }"
             />
-            <div class="mt-3 border-t border-default px-2.5 pt-3 sm:hidden">
+            <div class="mt-3 flex items-center gap-3 border-t border-default px-2.5 pt-3 sm:hidden">
+                <UBadge v-if="eventBadge" :color="eventBadge.tone" variant="subtle" size="sm">
+                    {{ eventBadge.label }}
+                </UBadge>
                 <UColorModeButton class="min-h-11 min-w-11" />
             </div>
         </template>
@@ -46,13 +62,56 @@ import { NethackPermissions } from "~~/shared/permissions";
 
 const { user, sessionUser: userRef } = await useApiUser({ lazy: true });
 const { can } = useNethackPermissions();
-const { data: hackathon } = useApiFetch("/api/seasons/active", {
+
+type ActiveSeasonHeader = {
+    status?: string;
+    is_voting_open?: boolean;
+    voting_start_timestamp?: number;
+    is_gallery_public?: number | boolean | null;
+    is_submission_closed?: number | boolean | null;
+    results_published?: number | boolean | null;
+};
+
+const { data: hackathon } = useApiFetch<ActiveSeasonHeader>("/api/seasons/active", {
     lazy: true,
-    $fetch: globalThis.$fetch,
+});
+
+const eventBadge = computed(() => {
+    const status = hackathon.value?.status;
+    if (!status) return null;
+    if (status === "finished") return { label: "Ended", tone: "neutral" as const };
+    if (status === "paused") return { label: "Paused", tone: "warning" as const };
+    if (status === "voting") {
+        if (hackathon.value?.is_voting_open) {
+            return { label: "Voting open", tone: "primary" as const };
+        }
+        const start = Number(hackathon.value?.voting_start_timestamp ?? 0);
+        if (start > 0 && start > Date.now()) {
+            return { label: "Voting soon", tone: "primary" as const };
+        }
+        return { label: "Voting closed", tone: "neutral" as const };
+    }
+    if (status === "in_progress") {
+        return hackathon.value?.is_submission_closed
+            ? { label: "Submissions closed", tone: "warning" as const }
+            : { label: "Live", tone: "primary" as const };
+    }
+    return { label: "Upcoming", tone: "neutral" as const };
 });
 
 const profileIconColor = computed(() => {
     return userRef.value ? "text-primary" : "text-ui-muted";
+});
+
+const galleryPublic = computed(() => Boolean(hackathon.value?.is_gallery_public));
+
+const canVote = computed(() => {
+    if (!hackathon.value?.is_voting_open) return false;
+    if (!can(NethackPermissions.Judging.assignmentsRead)) {
+        const team = user.value?.team;
+        return Boolean(team?.project.submitted && team.status === "active");
+    }
+    return false;
 });
 
 const dashboardContent: NavigationMenuItem[] = [
@@ -100,7 +159,14 @@ const navItems = computed<NavigationMenuItem[]>(() => {
             icon: "i-lucide-spotlight",
         },
     ];
-    if (hackathon.value?.is_voting_open && !can(NethackPermissions.Judging.assignmentsRead)) {
+    if (galleryPublic.value) {
+        links.push({
+            label: "Projects",
+            to: "/projects",
+            icon: "i-lucide-layout-grid",
+        });
+    }
+    if (canVote.value) {
         links.push({
             label: "Voting",
             to: "/voting",

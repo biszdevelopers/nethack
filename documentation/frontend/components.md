@@ -30,10 +30,23 @@ The main navigation header rendered at the top of every page. Uses `UHeader` fro
 | Dashboard (with children: Overview, General, Teams, Results) | Always visible |
 | Showcase | Always visible |
 | Beneath the Surface | Always visible |
-| Voting | Hackathon status is `voting` and user is not a judge or admin |
+| Projects | Always visible in the navigation after peer voting opens; the gallery itself stays empty before that stage |
+| Results | Always visible; publication gates the content |
+| Voting | Voting is open and the user is not a judge or admin |
 | Judging | User is a judge or admin; the page stays reachable outside the voting phase so completed evaluations can be reviewed |
+| Notifications | Signed-in user; shows an unread badge |
 
 Display-only permission checks use `useNethackPermissions()`; server APIs enforce verified JWT permissions.
+
+### NotificationBell
+
+**File:** `app/components/NotificationBell.vue`
+
+Header bell that reads `/api/notifications` for signed-in users. It refreshes at most once per minute on window focus or tab visibility change, shows `9+` above nine unread items, marks one or all notifications read, and renders a notification link only when it is a safe relative path.
+
+```vue
+<NotificationBell />
+```
 
 ```vue
 <RoleHeader />
@@ -95,11 +108,13 @@ Edit and submit project details with auto-save functionality. Used on the dashbo
 - Project description (`project.description`) — textarea with guidance template
 - Demo URL (`project.demo_url`)
 - Repository URL (`project.repo_url`)
-- Pathway (`pathway`) — radio group: Junior / Senior
+- Demonstration video URL (`project.video_url`) — required for submission
+- AI-use disclosure (`project.sourcing`) — required, with a "No AI tools or models were used in this project" shortcut
+- Pathway (`pathway`) — radio group from the active rubric's tracks
 
-**Validation:** Uses `UpdateTeamRequest` for saves and `SubmitTeamRequest` for submissions (both from `~~/shared/schemas`).
+**Validation:** Uses `UpdateTeamRequest` for saves and `SubmitTeamRequest` for submissions (both from `~~/shared/schemas`). Saves send only changed fields (URL fields may be cleared with `null`).
 
-**Submit flow:** Clicking "Submit" sets the intent to `submit` and shows a `ModalConfirm` dialog warning that changes cannot be made after submission. Cancelling the dialog restores normal save behavior, so a later Enter press does not silently reopen the irreversible submission prompt.
+**Submit flow:** The form shows a checklist for the video, repository, README, disclosure, and licensing/showcase requirements. The submit button stays disabled until the acknowledgement is checked. Clicking "Submit" then opens a `ModalConfirm` warning that the project is locked after submission. Cancelling restores normal save behavior, so a later Enter press does not silently reopen the irreversible submission prompt.
 
 ```vue
 <ProjectForm :team="team" :disabled="isSubmitted" @dirty="onDirty" @refresh="refreshData" />
@@ -126,10 +141,13 @@ Team management component for renaming, adding, and removing members.
 
 **Features:**
 
-- **Rename team** — Opens a `UModal` with a form validated by `UpdateTeamRequest`
-- **Add member** — Opens a `UModal` with an email field validated by `AddTeamMemberRequest`
-- **Remove member** — Each member card has a `ModalConfirm` button; self-removal triggers a "leave" message, and removing the last member warns about team deletion
-- Rename, add, and remove actions have descriptive accessible names and 44px minimum touch targets.
+- **Rename team** — Owner-only; opens a `UModal` with a form validated by `UpdateTeamRequest`
+- **Invite member** — Owner-only; opens a `UModal` with an email field validated by `AddTeamMemberRequest`, then shows the one-time invite link with a copy action and the invitation expiry
+- **Cancel invitation** — Removes a pending invitation by ID
+- **Transfer leadership** — Owner selects another current member; the roster controls move to that member
+- **Disband team** — Owner-only confirmation; withdraws the team and detaches its members
+- **Remove member** — Each member card has a `ModalConfirm` button; self-removal triggers a "leave" message, and removing the last member is refused
+- Rename, invite, transfer, disband, and removal actions have descriptive accessible names and 44px minimum touch targets.
 
 `RoleHeader` gives the profile action a clear name for signed-in and signed-out visitors. The season editor associates each checkbox with its visible label, and score-card shimmer animations stop when reduced motion is requested.
 

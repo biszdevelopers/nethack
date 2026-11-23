@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { apiFetch } from "~~/app/composables/useApiFetch";
+import { NethackPermissions } from "~~/shared/permissions";
 import type { TableColumn } from "@nuxt/ui";
 import { upperFirst } from "scule";
 import { getPaginationRowModel } from "@tanstack/table-core";
@@ -17,11 +18,16 @@ const UBadge = resolveComponent("UBadge");
 const UCheckbox = resolveComponent("UCheckbox");
 
 const { user: sessionUser } = useBasisAuthSession();
+const { can } = useNethackPermissions();
+const isAdmin = computed(() => can(NethackPermissions.all));
 const currentUserId = computed(() => sessionUser.value?.id);
 
 const toast = useToast();
 const table = useTemplateRef<any>("table");
 const modalOpen = ref(false);
+const deleting = ref(false);
+const pendingAdminIds = ref<number[]>([]);
+const pendingJudgeIds = ref<number[]>([]);
 
 const columnFilters = ref([
     {
@@ -32,17 +38,35 @@ const columnFilters = ref([
 const columnVisibility = ref();
 const rowSelection = ref<Record<string, boolean>>({});
 
-type AdminUser = Omit<User, "is_admin"> & {
+type AdminUser = Omit<User, "is_admin" | "is_judge"> & {
     past_team_ids: string | null;
     is_admin: boolean;
+    is_judge: boolean;
     is_initial_admin: boolean;
 };
 
 const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/users", {
-    server: false,
     lazy: true,
     default: () => [],
 });
+const { data: adminTeams } = await useApiFetch<APITeam[]>("/api/admin/teams", {
+    lazy: true,
+    default: () => [],
+});
+const { data: publicSeasons } = await useApiFetch<PublicSeason[]>("/api/seasons", {
+    lazy: true,
+    default: () => [],
+});
+const competingTeamIds = computed(() => {
+    const activeSeasonId = publicSeasons.value?.find((season) => season.is_active === 1)?.id;
+    return new Set(
+        (adminTeams.value ?? [])
+            .filter((team) => team.season_id === activeSeasonId)
+            .map((team) => team.id),
+    );
+});
+const isCompeting = (user: AdminUser) =>
+    user.team_id != null && competingTeamIds.value.has(user.team_id);
 
 const selectedRows = computed<any[]>(() => {
     if (!table.value?.tableApi) return [];
@@ -57,8 +81,9 @@ const deletableIds = computed(() =>
 );
 
 async function onDelete() {
-    if (deletableIds.value.length === 0) return;
+    if (deletableIds.value.length === 0 || deleting.value) return;
 
+    deleting.value = true;
     try {
         await apiFetch("/api/users", {
             method: "DELETE",
@@ -75,17 +100,20 @@ async function onDelete() {
         await refresh();
     } catch (e: any) {
         toast.add({
-            title: "Error",
-            description: e?.data?.message || e?.message || "Failed to delete users.",
+            title: "Could not delete users",
+            description: getErrorMessage(e),
             color: "error",
         });
     } finally {
+        deleting.value = false;
         modalOpen.value = false;
     }
 }
 
 async function toggleAdmin(user: AdminUser) {
     if (user.is_initial_admin || user.id === currentUserId.value) return;
+    if (pendingAdminIds.value.includes(user.id)) return;
+    pendingAdminIds.value = [...pendingAdminIds.value, user.id];
     try {
         await apiFetch(`/api/users/${user.id}/admin`, {
             method: "PATCH",
@@ -100,9 +128,36 @@ async function toggleAdmin(user: AdminUser) {
     } catch (e: any) {
         toast.add({
             title: "Failed to update administrator",
-            description: e?.data?.message || e?.message || "Try again.",
+            description: getErrorMessage(e),
             color: "error",
         });
+    } finally {
+        pendingAdminIds.value = pendingAdminIds.value.filter((id) => id !== user.id);
+    }
+}
+
+async function toggleJudge(user: AdminUser) {
+    if (pendingJudgeIds.value.includes(user.id) || isCompeting(user)) return;
+    pendingJudgeIds.value = [...pendingJudgeIds.value, user.id];
+    try {
+        await apiFetch(`/api/users/${user.id}/judge`, {
+            method: "PATCH",
+            body: { is_judge: !user.is_judge },
+        });
+        toast.add({
+            title: user.is_judge ? "Judge role removed" : "Judge role added",
+            description: user.email,
+            color: "success",
+        });
+        await refresh();
+    } catch (e: any) {
+        toast.add({
+            title: "Failed to update the judge role",
+            description: getErrorMessage(e),
+            color: "error",
+        });
+    } finally {
+        pendingJudgeIds.value = pendingJudgeIds.value.filter((id) => id !== user.id);
     }
 }
 
@@ -188,8 +243,27 @@ const columns: TableColumn<AdminUser>[] = [
                     : row.original.is_admin
                       ? "Demote"
                       : "Promote",
-                disabled: row.original.is_initial_admin || row.original.id === currentUserId.value,
+                loading: pendingAdminIds.value.includes(row.original.id),
+                disabled:
+                    row.original.is_initial_admin ||
+                    row.original.id === currentUserId.value ||
+                    pendingAdminIds.value.includes(row.original.id),
                 onClick: () => toggleAdmin(row.original),
+            }),
+    },
+    {
+        id: "is_judge",
+        header: "Judge",
+        cell: ({ row }) =>
+            h(UButton, {
+                size: "xs",
+                variant: "soft",
+                color: row.original.is_judge ? "warning" : "primary",
+                label: row.original.is_judge ? "Demote" : "Promote",
+                loading: pendingJudgeIds.value.includes(row.original.id),
+                disabled:
+                    pendingJudgeIds.value.includes(row.original.id) || isCompeting(row.original),
+                onClick: () => toggleJudge(row.original),
             }),
     },
     {
@@ -285,80 +359,91 @@ const paginationOptions = {
         </template>
 
         <template #body>
-            <div class="flex flex-wrap items-center justify-between gap-1.5">
-                <UInput
-                    v-model="email"
-                    class="max-w-sm"
-                    icon="i-lucide-search"
-                    placeholder="Filter emails..."
+            <UAlert
+                v-if="!isAdmin"
+                color="error"
+                variant="subtle"
+                icon="i-lucide-shield-x"
+                title="Access denied"
+                description="Administrator access is required to manage users."
+            />
+
+            <template v-else>
+                <div class="flex flex-wrap items-center justify-between gap-1.5">
+                    <UInput
+                        v-model="email"
+                        class="max-w-sm"
+                        icon="i-lucide-search"
+                        placeholder="Filter emails..."
+                    />
+
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <UButton
+                            v-if="deletableIds.length"
+                            label="Delete selected"
+                            color="error"
+                            variant="subtle"
+                            icon="i-lucide-trash"
+                            @click="modalOpen = true"
+                        />
+
+                        <UDropdownMenu :items="displayColumnItems" :content="{ align: 'end' }">
+                            <UButton
+                                label="Display"
+                                color="neutral"
+                                variant="outline"
+                                trailing-icon="i-lucide-settings-2"
+                            />
+                        </UDropdownMenu>
+                    </div>
+                </div>
+
+                <UAlert
+                    v-if="error"
+                    color="error"
+                    variant="soft"
+                    class="mb-4"
+                    title="Could not load users"
+                    :description="getErrorMessage(error)"
                 />
 
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <UButton
-                        v-if="deletableIds.length"
-                        label="Delete selected"
-                        color="error"
-                        variant="subtle"
-                        icon="i-lucide-trash"
-                        @click="modalOpen = true"
-                    />
+                <UTable
+                    ref="table"
+                    v-model:column-filters="columnFilters"
+                    v-model:column-visibility="columnVisibility"
+                    v-model:row-selection="rowSelection"
+                    v-model:pagination="pagination"
+                    :pagination-options="paginationOptions"
+                    class="shrink-0"
+                    :data="data ?? []"
+                    :columns="columns"
+                    :loading="status === 'pending'"
+                    :ui="{
+                        base: 'table-fixed border-separate border-spacing-0',
+                        thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
+                        tbody: '[&>tr]:last:[&>td]:border-b-0',
+                        th: 'py-2 first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
+                        td: 'border-b border-default',
+                        separator: 'h-0',
+                    }"
+                />
 
-                    <UDropdownMenu :items="displayColumnItems" :content="{ align: 'end' }">
-                        <UButton
-                            label="Display"
-                            color="neutral"
-                            variant="outline"
-                            trailing-icon="i-lucide-settings-2"
+                <div
+                    class="flex items-center justify-between gap-3 border-t border-default pt-4 mt-auto"
+                >
+                    <div class="text-sm text-muted">
+                        {{ selectedRows.length || 0 }} of {{ filteredRowCount }} row(s) selected.
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <UPagination
+                            v-model:page="pageModel"
+                            :items-per-page="currentPageSize"
+                            :total="filteredRowCount"
                         />
-                    </UDropdownMenu>
+                    </div>
                 </div>
-            </div>
-
-            <UAlert
-                v-if="error"
-                color="error"
-                variant="soft"
-                class="mb-4"
-                title="Could not load users"
-                :description="getErrorMessage(error)"
-            />
-
-            <UTable
-                ref="table"
-                v-model:column-filters="columnFilters"
-                v-model:column-visibility="columnVisibility"
-                v-model:row-selection="rowSelection"
-                v-model:pagination="pagination"
-                :pagination-options="paginationOptions"
-                class="shrink-0"
-                :data="data ?? []"
-                :columns="columns"
-                :loading="status === 'pending'"
-                :ui="{
-                    base: 'table-fixed border-separate border-spacing-0',
-                    thead: '[&>tr]:bg-elevated/50 [&>tr]:after:content-none',
-                    tbody: '[&>tr]:last:[&>td]:border-b-0',
-                    th: 'py-2 first:rounded-l-lg last:rounded-r-lg border-y border-default first:border-l last:border-r',
-                    td: 'border-b border-default',
-                    separator: 'h-0',
-                }"
-            />
-
-            <div
-                class="flex items-center justify-between gap-3 border-t border-default pt-4 mt-auto"
-            >
-                <div class="text-sm text-muted">
-                    {{ selectedRows.length || 0 }} of {{ filteredRowCount }} row(s) selected.
-                </div>
-
-                <div class="flex items-center gap-1.5">
-                    <UPagination
-                        v-model:page="pageModel"
-                        :items-per-page="currentPageSize"
-                        :total="filteredRowCount"
-                    />
-                </div>
-            </div>
+            </template>
         </template>
     </UDashboardPanel>
 
@@ -383,7 +468,14 @@ const paginationOptions = {
                         <UButton color="neutral" variant="outline" @click="modalOpen = false">
                             Cancel
                         </UButton>
-                        <UButton color="error" @click="onDelete">Delete</UButton>
+                        <UButton
+                            color="error"
+                            :loading="deleting"
+                            :disabled="deleting"
+                            @click="onDelete"
+                        >
+                            Delete
+                        </UButton>
                     </div>
                 </template>
             </UCard>

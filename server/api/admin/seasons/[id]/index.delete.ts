@@ -3,6 +3,7 @@ import { z } from "zod";
 import { NethackPermissions } from "~~/shared/permissions";
 import { PositiveIntParam } from "~~/shared/schemas";
 import {
+    judgeAssignments,
     judgingDrafts,
     peerVotingScores,
     rubricVersions,
@@ -13,6 +14,7 @@ import {
 import { applyRateLimit, DEFAULT_RATE_LIMIT_CONFIG } from "~~/server/utils/rateLimit";
 import { firstRow } from "~~/server/utils/database/query";
 import { acquireActivationLock } from "~~/server/utils/database/seasons";
+import { writeAuditEvent } from "~~/server/utils/audit";
 
 const SeasonIdParams = z.object({ id: PositiveIntParam });
 
@@ -37,6 +39,17 @@ export default defineEventHandler(
                 tx.select({ id: teams.id }).from(teams).where(eq(teams.season_id, id)).limit(1),
             );
             if (existingTeam) return "hasTeams" as const;
+
+            // Assignment rows cascade on season deletion; keep configured
+            // judging history instead of silently discarding it.
+            const assignment = await firstRow(
+                tx
+                    .select({ id: judgeAssignments.id })
+                    .from(judgeAssignments)
+                    .where(eq(judgeAssignments.season_id, id))
+                    .limit(1),
+            );
+            if (assignment) return "hasHistory" as const;
 
             // Every guard runs before the first destructive statement. A
             // returned outcome commits the transaction, so checking after a
@@ -84,6 +97,16 @@ export default defineEventHandler(
             }
 
             await tx.delete(seasons).where(eq(seasons.id, id));
+            await writeAuditEvent(tx, event, {
+                action: "season.delete",
+                entity_type: "season",
+                entity_id: id,
+                before: {
+                    name: existing.name,
+                    status: existing.status,
+                    results_published: existing.results_published,
+                },
+            });
             return "deleted" as const;
         });
 

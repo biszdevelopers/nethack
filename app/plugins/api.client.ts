@@ -1,5 +1,6 @@
 import { APIError } from "@basis/schema/api";
 import { z } from "zod";
+import { persistSessionDraft } from "~~/app/utils/session-draft";
 
 const responseSchema = z.object({
     status: z.number().int().min(100).max(599),
@@ -38,6 +39,7 @@ export default defineNuxtPlugin(() => {
             );
             const isAuthEndpoint = path.startsWith("/api/auth/") || path.startsWith("/api/login");
             if (error.status === 401 && isApi && !isAuthEndpoint) {
+                persistSessionDraft(window.location.pathname);
                 useBasisAuthSession().reset();
                 const redirect = `${window.location.pathname}${window.location.search}`;
                 window.location.assign(`/api/login?redirect=${encodeURIComponent(redirect)}`);

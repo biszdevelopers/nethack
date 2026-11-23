@@ -154,9 +154,11 @@ function validationIssues(value: RubricDefinition): string[] {
 }
 
 const issues = computed(() => validationIssues(definition.value));
-const canSave = computed(() => !loading.value && !savingVersion.value && issues.value.length === 0);
+const canSave = computed(
+    () => !loading.value && !savingVersion.value && !loadError.value && issues.value.length === 0,
+);
 
-async function loadRubric() {
+async function loadRubric(preserveTemplateFields = false) {
     loading.value = true;
     loadError.value = "";
     try {
@@ -165,8 +167,10 @@ async function loadRubric() {
         definition.value = copyDefinition(response.active?.definition ?? DEFAULT_RUBRIC_DEFINITION);
         versionName.value = response.active?.name ?? "Season rubric";
         selectedTemplateId.value = null;
-        templateName.value = "";
-        templateDescription.value = "";
+        if (!preserveTemplateFields) {
+            templateName.value = "";
+            templateDescription.value = "";
+        }
         copySeasonId.value = sourceSeasons.value[0]?.id ?? null;
     } catch (error) {
         loadError.value = getErrorMessage(error);
@@ -175,24 +179,26 @@ async function loadRubric() {
     }
 }
 
-watch(() => props.seasonId, loadRubric, { immediate: true });
+watch(
+    () => props.seasonId,
+    () => {
+        void loadRubric();
+    },
+    { immediate: true },
+);
 
 async function refreshRubric(keepEditor = false) {
     const previousDefinition = keepEditor ? copyDefinition(definition.value) : null;
     const previousTemplateId = keepEditor ? selectedTemplateId.value : null;
-    const previousTemplateName = keepEditor ? templateName.value : "";
-    const previousTemplateDescription = keepEditor ? templateDescription.value : "";
-    await loadRubric();
+    await loadRubric(keepEditor);
     if (previousDefinition) {
         definition.value = previousDefinition;
         selectedTemplateId.value = previousTemplateId;
-        templateName.value = previousTemplateName;
-        templateDescription.value = previousTemplateDescription;
     }
 }
 
 async function saveVersion() {
-    if (yamlManaged.value) return;
+    if (yamlManaged.value || loadError.value) return;
     if (!canSave.value || !versionName.value.trim()) {
         if (!versionName.value.trim()) {
             toast.add({ title: "Enter a name for this rubric version.", color: "warning" });
@@ -271,7 +277,7 @@ async function createVersion(
     source: { sourceTemplateId: number } | { copyFromSeasonId: number },
     name: string,
 ) {
-    if (yamlManaged.value) return;
+    if (yamlManaged.value || loadError.value) return;
     savingVersion.value = true;
     try {
         await api(`/api/admin/seasons/${props.seasonId}/rubric`, {
@@ -309,6 +315,7 @@ async function createFromTemplate(template: RubricTemplateSummary) {
 }
 
 async function saveTemplate(updateExisting = false) {
+    if (loadError.value) return;
     if (issues.value.length > 0 || !templateName.value.trim()) {
         if (!templateName.value.trim()) {
             toast.add({ title: "Enter a name for the reusable template.", color: "warning" });
@@ -400,7 +407,7 @@ async function removeTemplate(template: RubricTemplateSummary) {
             variant="subtle"
             title="Rubric could not be loaded"
             :description="loadError"
-            :actions="[{ label: 'Try again', onClick: loadRubric }]"
+            :actions="[{ label: 'Try again', onClick: () => void loadRubric() }]"
         />
 
         <div
@@ -410,6 +417,13 @@ async function removeTemplate(template: RubricTemplateSummary) {
         >
             Loading rubric settings…
         </div>
+
+        <p
+            v-else-if="loadError"
+            class="rounded-xl border border-ui-border p-4 text-sm text-ui-text-muted"
+        >
+            Reload the rubric before editing. Nothing can be saved until it loads.
+        </p>
 
         <template v-else>
             <UAlert

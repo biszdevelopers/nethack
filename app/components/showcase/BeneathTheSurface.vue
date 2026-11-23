@@ -378,11 +378,11 @@ onUnmounted(() => {
                             <i v-for="building in 8" :key="building" />
                         </div>
                         <div class="dialogue surface-dialogue" data-art data-drift>
-                            <span>SURFACE / 23:48</span>
+                            <span>Surface / 23:48</span>
                             <strong>“Everything is fine.”</strong>
                         </div>
                         <div class="dialogue thought-dialogue" data-art data-drift>
-                            <span>INTERNAL / UNSENT</span>
+                            <span>Internal / unsent</span>
                             <strong>I cannot breathe here.</strong>
                         </div>
                     </template>
@@ -399,7 +399,7 @@ onUnmounted(() => {
                             <div class="pixel-crate crate-one" />
                             <div class="pixel-crate crate-two" />
                             <div class="detector"><i /></div>
-                            <div class="shaft-door">LEVEL −04</div>
+                            <div class="shaft-door">Level −04</div>
                         </div>
                     </template>
 
@@ -413,9 +413,9 @@ onUnmounted(() => {
                             <i v-for="tree in 7" :key="tree" />
                         </div>
                         <div class="forest-warning" data-art data-drift>
-                            <span>NIGHT 04</span>
-                            <strong>THE WOODS ARE AWAKE</strong>
-                            <i>RUN → WATER</i>
+                            <span>Night 04</span>
+                            <strong>The woods are awake</strong>
+                            <i>Run → water</i>
                         </div>
                     </template>
 
@@ -428,20 +428,20 @@ onUnmounted(() => {
                                 <span>IMG_2048.JPG — EXIF</span>
                             </div>
                             <div class="metadata-row">
-                                <span>GPS LATITUDE</span>
+                                <span>GPS latitude</span>
                                 <strong>22.3193° N</strong>
                             </div>
                             <div class="metadata-row">
-                                <span>GPS LONGITUDE</span>
+                                <span>GPS longitude</span>
                                 <strong>114.1694° E</strong>
                             </div>
                             <div class="metadata-row">
-                                <span>DEVICE</span>
-                                <strong>VISIBLE TO ANYONE</strong>
+                                <span>Device</span>
+                                <strong>Visible to anyone</strong>
                             </div>
                             <div class="metadata-row metadata-removed">
-                                <span>OWNER</span>
-                                <strong>REMOVED</strong>
+                                <span>Owner</span>
+                                <strong>Removed</strong>
                             </div>
                             <div class="clean-command">$ metadata-tool --strip ./IMG_2048.JPG</div>
                         </div>
@@ -452,7 +452,7 @@ onUnmounted(() => {
                         <div class="memory-room" data-art>
                             <div class="room-door"><span>?</span></div>
                             <div class="room-clock">18:00:00</div>
-                            <div class="memory-fragment fragment-one" data-drift>WHO</div>
+                            <div class="memory-fragment fragment-one" data-drift>Who</div>
                             <div class="memory-fragment fragment-two" data-drift>AM</div>
                             <div class="memory-fragment fragment-three" data-drift>I</div>
                             <div class="room-floor" />
@@ -463,7 +463,7 @@ onUnmounted(() => {
                     <template v-else>
                         <div class="trace-panel" data-art>
                             <div class="trace-header">
-                                <span>TRACE / ACTIVE</span>
+                                <span>Trace / active</span>
                                 <i>12 external domains</i>
                             </div>
                             <svg viewBox="0 0 620 430" role="presentation">
@@ -556,7 +556,6 @@ onUnmounted(() => {
     color: #95b9b3;
     font-size: 0.58rem;
     letter-spacing: 0.2em;
-    text-transform: uppercase;
     writing-mode: vertical-rl;
 }
 
@@ -675,7 +674,6 @@ onUnmounted(() => {
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.18em;
-    text-transform: uppercase;
 }
 
 .hero-kicker {
@@ -731,7 +729,6 @@ onUnmounted(() => {
     color: #789b96;
     font-size: 0.72rem;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
 .hero-chart {
@@ -1036,7 +1033,7 @@ onUnmounted(() => {
     --display-font: "Orbitron", "Monaspace Neon", monospace;
     --display-weight: 700;
     --display-spacing: -0.01em;
-    --display-transform: uppercase;
+    --display-transform: none;
 }
 
 .tokyo-sun {
@@ -1737,7 +1734,6 @@ onUnmounted(() => {
     color: #7bb8a8;
     font-size: 0.55rem;
     letter-spacing: 0.1em;
-    text-transform: uppercase;
 }
 
 .domain-one {

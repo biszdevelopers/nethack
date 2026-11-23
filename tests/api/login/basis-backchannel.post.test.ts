@@ -15,6 +15,7 @@ vi.mock("~~/server/utils/basis-auth-backchannel", () => ({
 
 vi.mock("~~/server/utils/rateLimit", () => ({
     applyRateLimit: (handler: any) => handler,
+    BACKCHANNEL_RATE_LIMIT_CONFIG: {},
 }));
 
 let handler: any;

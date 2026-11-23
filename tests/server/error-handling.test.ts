@@ -188,7 +188,7 @@ describe("Failed request error responses", () => {
             "utf-8",
         );
         const throwCount = (source.match(/throw createError/g) || []).length;
-        expect(throwCount).toBe(3);
+        expect(throwCount).toBe(4);
         expect(source).not.toMatch(/return createError/);
     });
 
@@ -199,56 +199,6 @@ describe("Failed request error responses", () => {
         );
         expect(source).toContain("statusCode: 410");
         expect(source).not.toMatch(/return createError/);
-    });
-});
-
-describe("_webhooks error patterns", () => {
-    it("lifecycle.post.ts does NOT return createError", () => {
-        const source = readFileSync(
-            resolve(
-                import.meta.dirname,
-                "..",
-                "..",
-                "server",
-                "api",
-                "_webhooks",
-                "lifecycle.post.ts",
-            ),
-            "utf-8",
-        );
-        expect(source).not.toMatch(/return createError\(/);
-    });
-
-    it("lifecycle.post.ts uses throw createError for invalid lifecycle", () => {
-        const source = readFileSync(
-            resolve(
-                import.meta.dirname,
-                "..",
-                "..",
-                "server",
-                "api",
-                "_webhooks",
-                "lifecycle.post.ts",
-            ),
-            "utf-8",
-        );
-        expect(source).toMatch(/throw createError/);
-    });
-
-    it("lifecycle.post.ts validates clientState before processing", () => {
-        const source = readFileSync(
-            resolve(
-                import.meta.dirname,
-                "..",
-                "..",
-                "server",
-                "api",
-                "_webhooks",
-                "lifecycle.post.ts",
-            ),
-            "utf-8",
-        );
-        expect(source).toContain("getMicrosoftWebhookState");
     });
 });
 

@@ -56,6 +56,7 @@ const migrationSQL = `
   ALTER TABLE users ADD COLUMN auth_issuer TEXT;
   ALTER TABLE users ADD COLUMN auth_subject TEXT;
   ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN is_judge INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE users ADD COLUMN tokens_valid_after INTEGER;
   CREATE UNIQUE INDEX idx_users_auth_identity ON users(auth_issuer, auth_subject);
 
@@ -75,6 +76,7 @@ const migrationSQL = `
   CREATE TABLE IF NOT EXISTS peer_voting_scores (
     user_id INTEGER NOT NULL,
     season_id INTEGER NOT NULL,
+    team_id INTEGER,
     score TEXT NOT NULL,
     reasoning TEXT,
     PRIMARY KEY(user_id, season_id),
@@ -82,6 +84,7 @@ const migrationSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS peer_voting_scores_user_season_unique
     ON peer_voting_scores(user_id, season_id);
+  CREATE INDEX IF NOT EXISTS peer_voting_scores_team ON peer_voting_scores (team_id);
 
   CREATE TABLE IF NOT EXISTS team_invites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +157,86 @@ const migrationSQL = `
   ALTER TABLE hackathon ADD COLUMN schedule_end TEXT;
   ALTER TABLE hackathon ADD COLUMN live_overrides TEXT NOT NULL DEFAULT '{}';
 
+  ALTER TABLE teams ADD COLUMN submitted_at TEXT;
+  ALTER TABLE teams ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+  ALTER TABLE teams ADD COLUMN score_exact REAL;
+  ALTER TABLE teams ADD COLUMN owner_user_id INTEGER;
+
+  ALTER TABLE team_scores ADD COLUMN created_at TEXT;
+
+  ALTER TABLE seasons ADD COLUMN results_published_at TEXT;
+  ALTER TABLE seasons ADD COLUMN results_snapshot TEXT;
+  ALTER TABLE seasons ADD COLUMN max_team_members INTEGER NOT NULL DEFAULT 6;
+
+  ALTER TABLE teams ADD COLUMN project_video_url TEXT;
+
+  ALTER TABLE team_invites ADD COLUMN token TEXT;
+  ALTER TABLE team_invites ADD COLUMN expires_at TEXT;
+  CREATE UNIQUE INDEX IF NOT EXISTS team_invites_token_unique ON team_invites(token);
+
+  CREATE TABLE IF NOT EXISTS judge_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    judge_user_id INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS judge_flags_season_judge_team
+    ON judge_flags(season_id, judge_user_id, team_id);
+  CREATE INDEX IF NOT EXISTS judge_flags_season_resolved
+    ON judge_flags(season_id, resolved_at);
+
+  CREATE INDEX IF NOT EXISTS user_past_teams_team ON user_past_teams (team_id);
+  CREATE INDEX IF NOT EXISTS peer_voting_scores_season ON peer_voting_scores (season_id);
+  CREATE INDEX IF NOT EXISTS team_scores_judge_season ON team_scores (judge_user_id, season_id);
+  CREATE INDEX IF NOT EXISTS team_scores_rubric_version ON team_scores (rubric_version_id);
+  CREATE INDEX IF NOT EXISTS teams_owner_user ON teams (owner_user_id);
+
+  CREATE TABLE IF NOT EXISTS admin_audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_user_id INTEGER,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    before TEXT,
+    after TEXT,
+    reason TEXT,
+    request_id TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    link TEXT,
+    read_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS judge_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id INTEGER NOT NULL,
+    judge_user_id INTEGER NOT NULL,
+    pathway TEXT,
+    team_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS judge_recusals (
+    season_id INTEGER NOT NULL,
+    judge_user_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    reason TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (season_id, judge_user_id, team_id)
+  );
+
 `;
 
 async function createRawDatabase(): Promise<any> {
@@ -182,6 +265,9 @@ export interface TestContext {
 export async function createTestContext(): Promise<TestContext> {
     const sqlite = await createRawDatabase();
     sqlite.exec("PRAGMA foreign_keys = ON");
+    if (typeof sqlite.function === "function") {
+        sqlite.function("now", () => new Date().toISOString());
+    }
     sqlite.exec(initSQL);
     sqlite.exec(migrationSQL);
     const drizzleDb = await createDrizzle(sqlite);
@@ -212,6 +298,11 @@ export async function createTestContext(): Promise<TestContext> {
 export function resetTestContext(ctx: TestContext): void {
     ctx.sqlite.exec(`
     DELETE FROM judging_drafts;
+    DELETE FROM judge_flags;
+    DELETE FROM judge_assignments;
+    DELETE FROM judge_recusals;
+    DELETE FROM admin_audit_events;
+    DELETE FROM notifications;
     DELETE FROM sc_votes;
     DELETE FROM ballot_scores;
     DELETE FROM ballots;
@@ -246,7 +337,7 @@ export function seedHackathon(ctx: TestContext, overrides: Record<string, unknow
             judging_open: 0,
             start_timestamp: now,
             end_timestamp: now + 86400000,
-            voting_start_timestamp: now + 86400000,
+            voting_start_timestamp: now - 86400000,
             voting_end_timestamp: now + 172800000,
             results_open_timestamp: now + 259200000,
             theme_name: "Test Theme",
@@ -289,16 +380,17 @@ export function seedUser(
         name?: string | null;
         team_id?: number | null;
         is_admin?: number;
+        is_judge?: number;
     } = {},
 ) {
     return ctx.drizzle
         .insert(schema.users)
         .values({
             email: overrides.email ?? "user@basischina.com",
-            role: overrides.role ?? "participant",
-            name: overrides.name ?? "Test User",
+            name: overrides.name === undefined ? "Test User" : overrides.name,
             team_id: overrides.team_id ?? null,
             is_admin: overrides.is_admin ?? 0,
+            is_judge: overrides.is_judge ?? (overrides.role === "judge" ? 1 : 0),
         } as any)
         .returning()
         .get();
@@ -315,21 +407,32 @@ export function seedTeam(
         project_description?: string;
         project_demo_url?: string | null;
         project_repo_url?: string | null;
+        project_video_url?: string | null;
         sourcing?: string;
+        owner_user_id?: number | null;
+        status?: string;
     } = {},
 ) {
+    const activeSeason = ctx.drizzle
+        .select({ id: schema.seasons.id })
+        .from(schema.seasons)
+        .where(eq(schema.seasons.is_active, 1))
+        .get();
     return ctx.drizzle
         .insert(schema.teams)
         .values({
             name: overrides.name ?? "Test Team",
             pathway: overrides.pathway ?? null,
-            season_id: overrides.season_id ?? 1,
+            season_id: overrides.season_id ?? activeSeason?.id ?? 1,
             project_submitted: overrides.project_submitted ?? 0,
             project_name: overrides.project_name ?? "",
             project_description: overrides.project_description ?? "",
             project_demo_url: overrides.project_demo_url ?? null,
             project_repo_url: overrides.project_repo_url ?? null,
+            project_video_url: overrides.project_video_url ?? null,
             sourcing: overrides.sourcing ?? "",
+            owner_user_id: overrides.owner_user_id ?? null,
+            status: overrides.status ?? "active",
         } as any)
         .returning()
         .get();
@@ -382,16 +485,18 @@ export const mockConfig = { value: {} as Record<string, unknown> };
 // Nitro auto-import mocks
 // ---------------------------------------------------------------------------
 
-async function readBodyMock(_event: any, _schema: any) {
-    return mockBody.value;
+async function readBodyMock(_event: any, schema: any) {
+    const validate = typeof schema === "function" ? schema : schema?.parse;
+    return validate ? validate(mockBody.value) : mockBody.value;
 }
 
 function readRawBodyMock(_event: any) {
     return Promise.resolve(mockBody.value);
 }
 
-async function readQueryMock(_event: any, _schema: any) {
-    return mockQueryState.value;
+async function readQueryMock(_event: any, schema: any) {
+    const validate = typeof schema === "function" ? schema : schema?.parse;
+    return validate ? validate(mockQueryState.value) : mockQueryState.value;
 }
 
 function cookieMock(_event: any, name: string) {

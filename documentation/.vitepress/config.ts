@@ -129,6 +129,13 @@ export default defineConfig({
             text: "Edit this page",
         },
     },
+    vite: {
+        build: {
+            // VitePress ships a large client bundle for local search and the
+            // theme; keep the advisory threshold above that known baseline.
+            chunkSizeWarningLimit: 1200,
+        },
+    },
     markdown: {
         lineNumbers: true,
         // github-dark alone renders comments at 3.4:1, below WCAG AA.

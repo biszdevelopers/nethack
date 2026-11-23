@@ -43,9 +43,9 @@ describe("nuxt production performance defaults", () => {
         expect(config.vite?.build?.target).toBe("es2020");
     });
 
-    it("configures @nuxt/fonts with preload and CSS variables", () => {
+    it("configures @nuxt/fonts with preload and explicit local families", () => {
         expect(config.fonts?.defaults?.preload).toBe(true);
-        expect(config.fonts?.processCSSVariables).toBe(true);
+        expect(config.fonts?.processCSSVariables).toBe(false);
     });
 
     it("uses the supported Comark Nuxt module", () => {

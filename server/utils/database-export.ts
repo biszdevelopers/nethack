@@ -3,6 +3,7 @@ import type { DrizzleDatabase } from "~~/server/database";
 import { asc, sql } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import type { LiveOverrides } from "~~/shared/schemas";
+import { csvCell } from "./csv";
 import { hackathonUsesYaml, readHackathonConfig } from "./hackathon-config";
 
 const PAGE_SIZE = 250;
@@ -24,17 +25,54 @@ const exportTables = [
     ["user_past_teams", schema.userPastTeams],
     ["rubric_templates", schema.rubricTemplates],
     ["rubric_versions", schema.rubricVersions],
+    ["admin_audit_events", schema.adminAuditEvents],
+    ["notifications", schema.notifications],
+    ["judge_assignments", schema.judgeAssignments],
+    ["judge_recusals", schema.judgeRecusals],
+    ["judge_flags", schema.judgeFlags],
+    ["team_invites", schema.teamInvites],
     ["sc_votes", schema.scVotes],
     ["sqlite_legacy_data", schema.sqliteLegacyData],
 ] as const;
 
-function csvCell(value: unknown): string {
-    if (value === null || value === undefined) return "";
-    const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
-    const hasFormulaPrefix = /^[\s\p{Cc}]*[=+\-@]/u.test(raw);
-    const startsWithSpreadsheetControl = /^[\t\r]/.test(raw);
-    const safe = hasFormulaPrefix || startsWithSpreadsheetControl ? `'${raw}` : raw;
-    return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
+const STAFF_REFERENCE_KEYS = new Set(["actor_user_id", "resolved_by", "judge_user_id"]);
+
+/**
+ * Columns whose value is withheld for every row of a table. Removing them from
+ * the CSV header keeps later rows aligned even though anonymization deletes
+ * the key only from some rows (for example `admin_audit_events.entity_id`).
+ */
+const REDACTED_EXPORT_COLUMNS: Record<string, Set<string>> = {
+    oauth2_applications: new Set(["client_secret"]),
+    team_scores: new Set(["judge_user_id"]),
+    judge_assignments: new Set(["judge_user_id"]),
+    judge_recusals: new Set(["judge_user_id"]),
+    judge_flags: new Set(["judge_user_id", "resolved_by"]),
+    admin_audit_events: new Set(["actor_user_id", "entity_id"]),
+    team_invites: new Set(["token"]),
+};
+
+function csvColumns(name: string, rawRows: Record<string, unknown>[]): string[] {
+    const redacted = REDACTED_EXPORT_COLUMNS[name];
+    const columns = new Set<string>();
+    for (const row of rawRows) {
+        for (const key of Object.keys(row)) {
+            if (!redacted?.has(key)) columns.add(key);
+        }
+    }
+    return [...columns];
+}
+
+/** Remove staff account references from nested audit payloads. */
+function stripStaffReferences(value: unknown, depth = 0): unknown {
+    if (depth > 5 || value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map((item) => stripStaffReferences(item, depth + 1));
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+        if (STAFF_REFERENCE_KEYS.has(key)) continue;
+        result[key] = stripStaffReferences(item, depth + 1);
+    }
+    return result;
 }
 
 function anonymizeExportRow(name: string, row: Record<string, unknown>) {
@@ -48,6 +86,46 @@ function anonymizeExportRow(name: string, row: Record<string, unknown>) {
         const anonymousScore = { ...row };
         delete anonymousScore.judge_user_id;
         return anonymousScore;
+    }
+
+    // Staff identity links are withheld from exports; the operational record
+    // (track assignment, recusal, flag, resolution) remains exportable.
+    if (name === "judge_assignments" || name === "judge_recusals") {
+        const anonymousRow = { ...row };
+        delete anonymousRow.judge_user_id;
+        return anonymousRow;
+    }
+
+    if (name === "judge_flags") {
+        const anonymousRow = { ...row };
+        delete anonymousRow.judge_user_id;
+        delete anonymousRow.resolved_by;
+        return anonymousRow;
+    }
+
+    if (name === "admin_audit_events") {
+        const anonymousRow = { ...row };
+        delete anonymousRow.actor_user_id;
+        // A voided evaluation's entity id embeds the judge account id.
+        if (anonymousRow.entity_type === "team_score") delete anonymousRow.entity_id;
+        // Judge-role changes name the staff account in entity_id.
+        if (anonymousRow.entity_type === "user" && String(anonymousRow.action).includes("judge")) {
+            delete anonymousRow.entity_id;
+        }
+        if (anonymousRow.before) {
+            anonymousRow.before = stripStaffReferences(anonymousRow.before);
+        }
+        if (anonymousRow.after) {
+            anonymousRow.after = stripStaffReferences(anonymousRow.after);
+        }
+        return anonymousRow;
+    }
+
+    // Invitation bearer secrets must never leave the database.
+    if (name === "team_invites") {
+        const safeInvite = { ...row };
+        delete safeInvite.token;
+        return safeInvite;
     }
 
     if (name === "sqlite_legacy_data") {
@@ -100,21 +178,25 @@ export async function* snapshotDatabaseExport(
         let offset = 0;
         let firstRow = true;
         let headerWritten = false;
+        let headerColumns: string[] = [];
         while (true) {
-            const rawRows =
-                name === "hackathon" && hackathonUsesYaml()
-                    ? [{ ...(await readHackathonConfig()), ...liveOverrides }]
-                    : ((await db
-                          .select()
-                          .from(table as any)
-                          .orderBy(...exportOrder(table))
-                          .limit(PAGE_SIZE)
-                          .offset(offset)) as Record<string, unknown>[]);
+            const liveHackathon = name === "hackathon" && hackathonUsesYaml();
+            const rawRows = liveHackathon
+                ? [{ ...(await readHackathonConfig()), ...liveOverrides }]
+                : ((await db
+                      .select()
+                      .from(table as any)
+                      .orderBy(...exportOrder(table))
+                      .limit(PAGE_SIZE)
+                      .offset(offset)) as Record<string, unknown>[]);
             if (rawRows.length === 0) break;
 
             const rows = rawRows.map((row) => anonymizeExportRow(name, row));
             if (format === "csv" && !headerWritten) {
-                yield `${Object.keys(rows[0]!).map(csvCell).join(",")}\r\n`;
+                // Build the header from the unredacted row keys, then drop the
+                // columns withheld for this table so every row maps by name.
+                headerColumns = csvColumns(name, rawRows);
+                yield `${headerColumns.map(csvCell).join(",")}\r\n`;
                 headerWritten = true;
             }
 
@@ -122,7 +204,7 @@ export async function* snapshotDatabaseExport(
                 if (format === "json") {
                     yield `${firstRow ? "" : ","}${JSON.stringify(row)}`;
                 } else {
-                    yield `${Object.values(row).map(csvCell).join(",")}\r\n`;
+                    yield `${headerColumns.map((column) => csvCell(row[column])).join(",")}\r\n`;
                 }
                 firstRow = false;
             }

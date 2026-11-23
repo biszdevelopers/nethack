@@ -40,6 +40,7 @@ export interface BasisAuthIdentity {
     email: string;
     name?: string;
     picture?: string;
+    emailVerified?: boolean;
 }
 
 /**
@@ -52,7 +53,10 @@ export async function findOrLinkBasisAuthUser(
 ): Promise<User> {
     const normalizedEmail = identity.email.trim().toLowerCase();
     const trimmedName = identity.name?.trim() || null;
-    const initialAdmin = isInitialAdminEmail(normalizedEmail) ? 1 : 0;
+    // Admin elevation and email-based account linking both need a verified
+    // address; an omitted claim is not proof of ownership.
+    const verifiedEmail = identity.emailVerified === true;
+    const initialAdmin = verifiedEmail && isInitialAdminEmail(normalizedEmail) ? 1 : 0;
     const profileUpdates = {
         ...(trimmedName ? { name: trimmedName } : {}),
         ...(identity.picture ? { profile_picture: identity.picture } : {}),
@@ -114,6 +118,12 @@ export async function findOrLinkBasisAuthUser(
             }
 
             if (emailMatch) {
+                if (!verifiedEmail) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "Verify your email address before linking this account",
+                    });
+                }
                 return (await firstRow(
                     tx
                         .update(users)

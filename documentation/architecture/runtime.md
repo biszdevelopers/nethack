@@ -42,7 +42,9 @@ bun run build
 
 Nitro leaves runtime dependencies external so its generated bundles resolve them from the deployed `node_modules` directory. Deploy with production dependencies and configure `DATABASE_URL`. Runtime uploads are stored under the project-root `/assets` directory, which is gitignored and must be writable by the service account. In-place pull/build/start updates preserve this directory; a re-clone or fresh checkout must preserve or restore it before serving. Back up uploads separately. `public/assets` contains committed showcase files and is separate from runtime storage. The same build runs with `bun run start` or, on Linux, `npm run start`, selecting Bun 1.3 or newer when present and Node.js 24 or newer otherwise. Run `node start-fix.mjs` to explicitly select Node.js.
 
-::: warning The in-memory rate limiter is per-process. Under high concurrency or with multiple server instances, consider using a shared store (e.g., Redis) for consistent rate limiting. :::
+::: warning The in-memory rate limiter is per-process and uses fixed-window counters. Under high concurrency or with multiple server instances, use a shared store (e.g., Redis) for consistent rate limiting. :::
+
+Startup is fail-fast: the environment plugin exits on missing production configuration, and database initialization must finish before Nitro accepts requests. `GET /api/health/live` reports process liveness and `GET /api/health/ready` reports database readiness with `503` when the check fails. The supplied systemd units set `OnFailure=basishacks-failure@%n.service`, a bounded restart burst, and a separate backup timer.
 
 ## Drizzle ORM
 
@@ -69,18 +71,11 @@ Attaches the initialized process-wide Drizzle instance to `event.context.drizzle
 
 ### `validate-environment.ts`
 
-**Purpose**: Validates the encrypted-session password and the four required basis-auth client variables. Missing basis-auth configuration is fatal in production and produces a warning in development.
+**Purpose**: Validates the encrypted-session password, the four required basis-auth client variables, the backchannel pair, the public origin, and the trusted-proxy hop count. Missing or malformed values are fatal in production (except a loopback-origin local instance and the documented warnings) and produce warnings in development. It also warns when `REQUIRE_VERIFIED_EMAIL` is disabled in production or when `TRUSTED_PROXY_HOPS` is 0 behind a proxy.
 
-### `microsoft.ts`
+### `api-envelope.ts`
 
-**Purpose**: Initializes and manages Microsoft Graph API access tokens.
-
-1. On startup, fetches an app-level access token using client credentials flow
-2. Provides `requestMicrosoft()` and `requestUserMicrosoft()` wrappers for Graph API calls
-3. Exports higher-level functions such as `createMicrosoftMeeting()` and `createOrGetExistingDirectChat()`
-4. Caches direct chat IDs in-memory to avoid repeated Graph API lookups
-
-::: warning All Microsoft Graph API calls **must** be made through functions exported from this plugin. This is a security policy to ensure auditability of all external API calls. :::
+Wraps route responses in the canonical `{ status, code, data }` envelope and preserves native responses such as streams, redirects, files, and webhook challenges.
 
 ## Event Context Augmentations
 
@@ -114,7 +109,9 @@ declare module "h3" {
 | Key | Type | Always present? | Set by |
 | --- | --- | --- | --- |
 | `event.context.drizzle` | `DrizzleDatabase` | Yes | `02.database.ts` request middleware |
-| `event.context.oauth2` | `OAuth2JWTContext` | Only in basis-auth-protected endpoints | `requireUser()` | basis-auth JWT payload, permissions, local user |
+| `event.context.oauth2` | `OAuth2JWTContext` | Only after `requireUser()` | basis-auth JWT payload, permissions, local user |
+| `event.context.requestId` | `string` | Yes | `00.request-id.ts` |
+| `event.context.cspNonce` | `string` | Yes | security headers |
 
 ## Request Lifecycle
 
@@ -122,11 +119,15 @@ declare module "h3" {
 1. Incoming HTTP request
      │
 2. Ordered server middleware
-     ├── Enforces same-origin mutation and request-size limits
+     ├── Assigns/echoes the request ID and starts the request log
+     ├── Applies the pre-body per-IP rate gate
+     ├── Enforces same-origin mutation, debug lockdown, and request-size limits
+     ├── Applies security headers
      └── Attaches the shared Drizzle instance to the request context
      │
 3. API route handler
      │  ├── readValidatedBody() / getValidatedQuery() with Zod
+     │  ├── getEventState() for submission/voting/judging/gallery/results gates
      │  ├── requireUser() JWT permission enforcement
      │  └── event.context.drizzle.select()/insert()/update()/delete()
      │

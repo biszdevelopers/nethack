@@ -13,7 +13,7 @@ import {
     seedTeam,
     type TestContext,
 } from "../../helpers";
-import { teams } from "~~/server/database/schema";
+import { teams, users } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("~~/server/utils/auth", () => ({
@@ -144,14 +144,16 @@ describe("PATCH /api/teams/:id", () => {
     });
 
     it("preserves fields that were not supplied by the editor", async () => {
+        const user = seedUser(ctx, { email: "user@basischina.com" });
         const team = seedTeam(ctx, {
             name: "Partial Team",
             project_description: "A description saved by a teammate",
             project_name: "Kept project",
+            owner_user_id: user.id,
         });
-        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, user.id)).run();
 
-        mockSession.value = { user: { id: 1 } };
+        mockSession.value = { user: { id: user.id } };
         mockParams.values["id"] = String(team.id);
         mockBody.value = { name: "Renamed Partial Team" };
 
@@ -164,11 +166,12 @@ describe("PATCH /api/teams/:id", () => {
     });
 
     it("rejects a rename that duplicates another team in the season", async () => {
-        const team = seedTeam(ctx, { name: "Original Name" });
+        const user = seedUser(ctx, { email: "user@basischina.com" });
+        const team = seedTeam(ctx, { name: "Original Name", owner_user_id: user.id });
         seedTeam(ctx, { name: "Taken Name" });
-        seedUser(ctx, { email: "user@basischina.com", team_id: team.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, user.id)).run();
 
-        mockSession.value = { user: { id: 1 } };
+        mockSession.value = { user: { id: user.id } };
         mockParams.values["id"] = String(team.id);
         mockBody.value = { name: "Taken Name" };
 
@@ -176,6 +179,66 @@ describe("PATCH /api/teams/:id", () => {
             statusCode: 409,
             message: "A team with that name already exists in this season",
         });
+    });
+
+    it("lets a non-owner member edit the project but not rename the team", async () => {
+        const owner = seedUser(ctx, { email: "owner@basischina.com" });
+        const team = seedTeam(ctx, { name: "Owned Team", owner_user_id: owner.id });
+        const member = seedUser(ctx, { email: "member@basischina.com", team_id: team.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, owner.id)).run();
+
+        mockSession.value = { user: { id: member.id } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { name: "Member Rename" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 403,
+            message: "Only the team owner can rename the team",
+        });
+
+        mockBody.value = { project: { name: "Member Project" } };
+        await expect(handler(createEvent())).resolves.toEqual({
+            message: "Updated your team & project",
+        });
+        const updated = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+        expect(updated!.project_name).toBe("Member Project");
+        expect(updated!.name).toBe("Owned Team");
+    });
+
+    it("persists the demonstration video URL", async () => {
+        const user = seedUser(ctx, { email: "user@basischina.com" });
+        const team = seedTeam(ctx, { name: "Video Team", owner_user_id: user.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, user.id)).run();
+
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = {
+            project: { video_url: "https://www.youtube.com/watch?v=example" },
+        };
+
+        await handler(createEvent());
+
+        const updated = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
+        expect(updated!.project_video_url).toBe("https://www.youtube.com/watch?v=example");
+    });
+
+    it("rejects a video URL with credentials", async () => {
+        const user = seedUser(ctx, { email: "user@basischina.com" });
+        const team = seedTeam(ctx, { name: "Bad Video Team", owner_user_id: user.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, user.id)).run();
+
+        const originalReadValidatedBody = globalThis.readValidatedBody;
+        vi.stubGlobal("readValidatedBody", async (_event: any, schema: any) => {
+            const validate = typeof schema === "function" ? schema : schema.parse;
+            return validate(mockBody.value);
+        });
+
+        mockSession.value = { user: { id: user.id } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { project: { video_url: "https://user:pass@example.com/video" } };
+
+        await expect(handler(createEvent())).rejects.toThrow();
+        vi.stubGlobal("readValidatedBody", originalReadValidatedBody);
     });
 
     it("rejects editing a team that belongs to a previous season", async () => {

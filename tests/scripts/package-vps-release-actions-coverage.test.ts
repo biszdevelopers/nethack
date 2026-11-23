@@ -134,7 +134,7 @@ describe("VPS release package builder", () => {
         state.optionalDirectoriesExist = false;
         await run();
 
-        expect(state.cp).toHaveBeenCalledTimes(9);
+        expect(state.cp).toHaveBeenCalledTimes(10);
         expect(state.cp).toHaveBeenCalledWith(
             resolve(projectRoot, "documentation/.vitepress/dist"),
             resolve(projectRoot, "release-package/docs"),

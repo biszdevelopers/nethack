@@ -14,8 +14,8 @@ export default defineEventHandler(
             if (session?.tokens.refreshToken) {
                 await revokeBasisAuthToken(session.tokens.refreshToken);
             }
-        } catch (error) {
-            console.warn("basis-auth token revocation failed", error);
+        } catch {
+            console.warn("basis-auth token revocation failed");
         } finally {
             clearBasisAuthUserSession(event);
         }

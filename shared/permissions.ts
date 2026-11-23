@@ -133,5 +133,8 @@ export function hasNethackPermission(
     permissions: Iterable<string> | undefined,
     requirement: PermissionRequirement,
 ): boolean {
+    // An anonymous or tokenless request never satisfies a required permission.
+    // Optional-user call sites pass no requirement to check identity instead.
+    if (!permissions) return false;
     return satisfiesNethackRequirement(expandLegacyNethackPermissions(permissions), requirement);
 }

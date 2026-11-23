@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("~~/server/utils/database/query", () => ({
     firstRow: mocks.firstRow,
+    invalidateRequestCaches: vi.fn(),
     isUniqueViolation: (error: unknown) =>
         (error as { code?: string })?.code === "23505" ||
         (error as { cause?: { code?: string } })?.cause?.code === "23505",
@@ -80,6 +81,16 @@ describe("PATCH /api/admin/seasons action edges", () => {
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
     });
 
+    it("rejects a duplicate rename before writing", async () => {
+        mocks.getSeasons.mockResolvedValueOnce([
+            { id: 1, name: "Renamed" },
+            { id: 2, name: "renamed" },
+        ]);
+
+        await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 409 });
+        expect(mocks.updateSet).not.toHaveBeenCalled();
+    });
+
     it("activates a season through the activation flow", async () => {
         mockBody.value = { id: 1, is_active: 1 };
 
@@ -106,6 +117,21 @@ describe("PATCH /api/admin/seasons action edges", () => {
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
     });
 
+    it("updates fields after activation so the live snapshot cannot overwrite them", async () => {
+        mockBody.value = { id: 1, is_active: 0, name: "Renamed" };
+        const order: string[] = [];
+        mocks.setActiveSeason.mockImplementation(async () => {
+            order.push("activate");
+        });
+        mocks.updateWhere.mockImplementation(async () => {
+            order.push("update");
+        });
+
+        await patchHandler(event);
+
+        expect(order).toEqual(["activate", "update"]);
+    });
+
     it("rejects an empty update and an unknown season", async () => {
         mockBody.value = { id: 1 };
         await expect(patchHandler(event)).rejects.toMatchObject({ statusCode: 400 });
@@ -127,15 +153,27 @@ describe("PATCH /api/admin/seasons action edges", () => {
 });
 
 describe("POST /api/admin/seasons action edges", () => {
+    const forcedFields = {
+        status: "not_started",
+        voting_enabled: 0,
+        results_published: 0,
+        results_published_at: null,
+        results_snapshot: null,
+        show_scores: 0,
+        show_ranking: 0,
+        judging_open: 0,
+        max_votes_per_user: 0,
+        announcement: null,
+        score_curve_preset: "original",
+    };
+
     it("creates an inactive season as a copy of the live settings", async () => {
         mockBody.value = { name: "New season" };
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.setActiveSeason).not.toHaveBeenCalled();
         expect(mocks.insertValues).toHaveBeenCalledWith({
-            status: "voting",
-            theme_name: "Live theme",
-            score_curve_preset: "gentle",
+            ...forcedFields,
             name: "New season",
             is_active: 0,
             is_blank_start: 0,
@@ -149,6 +187,7 @@ describe("POST /api/admin/seasons action edges", () => {
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.insertValues).toHaveBeenCalledWith({
+            ...forcedFields,
             name: "Offline season",
             is_active: 0,
             is_blank_start: 0,
@@ -161,9 +200,7 @@ describe("POST /api/admin/seasons action edges", () => {
         await postHandler(event);
 
         expect(mocks.insertValues).toHaveBeenCalledWith({
-            status: "voting",
-            theme_name: "Live theme",
-            score_curve_preset: "gentle",
+            ...forcedFields,
             name: "New season",
             is_active: 0,
             is_blank_start: 0,
@@ -177,9 +214,13 @@ describe("POST /api/admin/seasons action edges", () => {
         mocks.setActiveSeason.mockRejectedValueOnce(new Error("not ready"));
         const deleteWhere = vi.fn().mockResolvedValue(undefined);
         event.context.drizzle.delete = vi.fn(() => ({ where: deleteWhere }));
+        event.context.drizzle.transaction = vi.fn(async (callback: any) =>
+            callback(event.context.drizzle),
+        );
 
         await expect(postHandler(event)).rejects.toThrow("not ready");
-        expect(deleteWhere).toHaveBeenCalledOnce();
+        expect(mocks.updateSet).toHaveBeenCalledWith({ rubric_version_id: null });
+        expect(deleteWhere).toHaveBeenCalledTimes(2);
     });
 
     it("preserves the activation error when cleanup also fails", async () => {
@@ -204,6 +245,7 @@ describe("POST /api/admin/seasons action edges", () => {
 
         await expect(postHandler(event)).resolves.toHaveProperty("seasons");
         expect(mocks.insertValues).toHaveBeenCalledWith({
+            ...forcedFields,
             name: "Blank shell",
             is_active: 0,
             is_blank_start: 1,

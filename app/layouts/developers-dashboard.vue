@@ -27,6 +27,8 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
             items: [
                 { label: "Users", icon: "i-lucide-user", to: "/developers/users" },
                 { label: "Teams", icon: "i-lucide-users", to: "/developers/teams" },
+                { label: "Judging", icon: "i-lucide-gavel", to: "/developers/judging" },
+                { label: "Awards", icon: "i-lucide-award", to: "/developers/awards" },
             ],
         },
         {
@@ -38,12 +40,21 @@ const sidebarGroups = computed<Array<{ id: string; label: string; items: Navigat
                     icon: "i-lucide-book-open",
                     to: "/developers/docs",
                 },
-                { label: "Files", icon: "i-lucide-files", to: "/developers/debug" },
-                {
-                    label: "DeepSeek",
-                    icon: "i-lucide-message-square",
-                    to: "/developers/deepseek",
-                },
+                { label: "Audit log", icon: "i-lucide-scroll-text", to: "/developers/audit" },
+                ...(import.meta.dev
+                    ? [
+                          {
+                              label: "Files",
+                              icon: "i-lucide-files",
+                              to: "/developers/debug",
+                          },
+                          {
+                              label: "DeepSeek",
+                              icon: "i-lucide-message-square",
+                              to: "/developers/deepseek",
+                          },
+                      ]
+                    : []),
             ],
         },
     ],
@@ -95,7 +106,7 @@ const name = computed(() => user.value?.name || "Log In");
                     <div v-for="group in sidebarGroups" :key="group.id" class="space-y-1">
                         <p
                             v-if="!collapsed"
-                            class="px-2 text-xs font-semibold uppercase tracking-wide text-ui-text-muted"
+                            class="px-2 text-xs font-semibold tracking-wide text-ui-text-muted"
                         >
                             {{ group.label }}
                         </p>
@@ -125,6 +136,10 @@ const name = computed(() => user.value?.name || "Log In");
             </template>
         </UDashboardSidebar>
 
-        <slot />
+        <main class="min-w-0 flex-1 overflow-y-auto">
+            <div class="w-full p-4 sm:p-6 lg:p-8">
+                <slot />
+            </div>
+        </main>
     </UDashboardGroup>
 </template>

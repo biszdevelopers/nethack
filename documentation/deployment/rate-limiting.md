@@ -1,51 +1,46 @@
 ---
 title: Rate Limiting
-description: In-memory rate limiting for API endpoint protection
+description: Fixed-window, in-memory rate limiting for API endpoint protection
 ---
 
 # Rate Limiting
 
-All API endpoints are protected by an in-memory rate limiter that prevents abuse by limiting the number of requests a client can make within a time window.
+All API endpoints are protected by an in-memory fixed-window rate limiter that bounds how many requests a client can make in a window.
 
-::: info Source `server/utils/rateLimit.ts` :::
+::: info Source `server/utils/rateLimit.ts`, `server/middleware/00.request-rate-gate.ts` :::
 
-## Default Configuration
-
-The rate limiter defines **5 independent tiers**, each with its own request counter per client:
+## Tiers
 
 | Tier | Env Variable | Default Limit | Routes Protected |
 | --- | --- | :-: | --- |
+| **Request gate** | `RATE_LIMIT_REQUEST_GATE_MAX` | 6000/min per IP | Every `/api/*` request, before any body is buffered |
 | **General** | `RATE_LIMIT_GENERAL_MAX` | 1200/min | All non-sensitive API routes |
+| **Judging drafts** | `RATE_LIMIT_GENERAL_MAX` | 1200/min per judge | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId` |
 | **Authentication** | `RATE_LIMIT_AUTH_MAX` | 200/min | `/api/login`, `/api/auth/basis/callback` |
-| **Vote / Score** | `RATE_LIMIT_VOTE_MAX` | 300/min | `/api/ballot`, `/api/teams/:id/scores` |
-| **Judging drafts** | `RATE_LIMIT_GENERAL_MAX` | 1200/min | `GET`, `PUT`, and `DELETE /api/judging/drafts/:teamId` |
-| **File Upload** | `RATE_LIMIT_UPLOAD_MAX` | 100/min | Upload routes |
+| **Vote / score** | `RATE_LIMIT_VOTE_MAX` | 300/min | `/api/ballot`, `/api/teams/:id/scores` |
+| **File upload** | `RATE_LIMIT_UPLOAD_MAX` | 100/min | Upload routes |
+| **Backchannel** | `RATE_LIMIT_BACKCHANNEL_MAX` | 600/min | `POST /api/auth/basis/backchannel` |
 
-All tiers share the same window duration, configurable via `RATE_LIMIT_WINDOW_MS` (default: `60000` ms / 1 minute). Judging draft routes use the general limit with a dedicated per-user bucket, leaving room for the judge editor's 650 ms autosave debounce without sharing capacity with other general API requests.
+All tiers share `RATE_LIMIT_WINDOW_MS` (default `60000`). The request gate skips `/api/health*` and the backchannel receiver, so health probes and revocation storms are never dropped by the general gate. Route-level limits stay in place; the gate only sheds floods before the server buffers a body.
 
-```ts
-export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
-    maxRequests: 1200, // overridden by RATE_LIMIT_GENERAL_MAX
-    windowMs: 60 * 1000, // overridden by RATE_LIMIT_WINDOW_MS
-};
-```
+Judging draft routes use the general limit with a dedicated bucket, leaving room for the judge editor's 650 ms autosave debounce.
 
 ## Environment Variables
 
-The following environment variables override the default limits:
+| Variable                      | Default | Purpose                                    |
+| ----------------------------- | ------- | ------------------------------------------ |
+| `RATE_LIMIT_GENERAL_MAX`      | `1200`  | General API requests per window            |
+| `RATE_LIMIT_AUTH_MAX`         | `200`   | Authentication attempts per window         |
+| `RATE_LIMIT_VOTE_MAX`         | `300`   | Voting/scoring submissions per window      |
+| `RATE_LIMIT_UPLOAD_MAX`       | `100`   | Uploads per window                         |
+| `RATE_LIMIT_REQUEST_GATE_MAX` | `6000`  | Pre-body per-IP requests per window        |
+| `RATE_LIMIT_BACKCHANNEL_MAX`  | `600`   | basis-auth backchannel requests per window |
+| `RATE_LIMIT_WINDOW_MS`        | `60000` | Window length in milliseconds              |
+| `TRUSTED_PROXY_HOPS`          | `0`     | Exact trusted proxy count (0–10)           |
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `RATE_LIMIT_GENERAL_MAX` | `1200` | General API rate limit, requests per window |
-| `RATE_LIMIT_AUTH_MAX` | `200` | Authentication endpoint rate limit, attempts per window |
-| `RATE_LIMIT_VOTE_MAX` | `300` | Voting/scoring endpoint rate limit, submissions per window |
-| `RATE_LIMIT_UPLOAD_MAX` | `100` | File upload endpoint rate limit, uploads per window |
-| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window in milliseconds |
-| `TRUSTED_PROXY_HOPS` | `0` | Exact trusted proxy count (0–10); requires proxies to append the actual peer to `X-Forwarded-For` |
+The values are read when the module loads. A missing or non-numeric value falls back to the default.
 
-These values are read at process startup via `parseEnvInt()` in `server/utils/rateLimit.ts`. If an environment variable is unset or contains a non-numeric value, the default is used instead.
-
-::: tip Keep `TRUSTED_PROXY_HOPS=0` when users connect directly. Behind a proxy, set the exact number of trusted hops only after configuring every proxy to append the actual peer address to `X-Forwarded-For`. Invalid or incomplete chains fall back to the socket peer. :::
+::: tip Keep `TRUSTED_PROXY_HOPS=0` when clients connect directly. Behind a proxy, set the exact number of trusted hops only after configuring every proxy to append the actual peer to `X-Forwarded-For`. Invalid or incomplete chains fall back to the socket peer. :::
 
 ## Configuration Interface
 
@@ -58,182 +53,86 @@ interface RateLimitConfig {
 }
 ```
 
-- `maxRequests`: Maximum number of requests allowed within the window
-- `windowMs`: Time window in milliseconds
-- `keyPrefix`: Optional prefix added to the generated client identifier
-- `keyGenerator`: Optional custom function that returns a client identifier; if it returns `null`, the default identifier is used
+- `maxRequests`: requests allowed in the window
+- `windowMs`: window length in milliseconds
+- `keyPrefix`: added to the generated client identifier
+- `keyGenerator`: optional custom identifier; returning `null` uses the default
 
 ## Usage
 
 ### `applyRateLimit(handler, config?)`
 
-Wraps an API handler with rate limiting:
-
 ```ts
-import { applyRateLimit } from "~/server/utils/rateLimit";
+import { applyRateLimit } from "~~/server/utils/rateLimit";
 
 export default applyRateLimit(
     async (event) => {
-        // Your handler logic
+        // handler
     },
     {
-        maxRequests: 30, // Optional: override default
-        windowMs: 60 * 1000, // Optional: override default
+        maxRequests: 30,
+        windowMs: 60 * 1000,
     },
 );
 ```
 
-If `config` is omitted, the default configuration (1200 req/min) is used.
+If `config` is omitted, the general configuration (1200 req/min) is used.
+
+### `consumeRateLimit(identifier, config, now?)`
+
+Consumes one request without touching an H3 event. It returns `{ allowed, retryAfter, resetTime }`. The pre-body gate uses this directly.
 
 ## Client Identification
 
-The rate limiter identifies clients using a two-tier strategy:
+The wrapper resolves the caller in this order:
 
-### 1. Authenticated Users
+1. **Session user** — `user:{id}` when the session is already resolved or can be read.
+2. **IP address** — `ip:{ip}` for every other request.
 
-If the request has a valid session, the user ID is used:
+An explicit `Authorization: Bearer` header is not a limiter key. The token is unverified until a route checks it, so rotating arbitrary values would otherwise reset the bucket. API clients share their IP bucket until the token or cookie session is validated.
 
-```
-user:{id}
-```
+An optional `keyPrefix` is prepended, so each tier keeps separate counters for the same caller.
 
-This means each authenticated user has their own rate limit bucket, regardless of IP address.
+### Address resolution
 
-### 2. Unauthenticated Requests
+`getClientIp(event)` starts from `event.node.req.socket.remoteAddress`. When `TRUSTED_PROXY_HOPS` is greater than zero, it reads `X-Forwarded-For`, requires every entry to be a valid IP, and selects the entry that many positions from the right. Anything malformed falls back to the socket peer. `X-Real-IP` is never trusted.
 
-If no session is found, the request is identified by IP address:
+#### Rate limit response
 
-```
-ip:{ip}
-```
-
-The IP address is resolved from the direct socket peer unless an exact proxy hop count is configured. When enabled, the limiter selects the first untrusted address walking back from the app through the proxy chain and accepts it only if it is a valid IP address.
-
-| Priority | Source | Notes |
-| :-: | --- | --- |
-| 1 | Configured `X-Forwarded-For` chain | Used only when the socket peer exists, the chain includes the configured number of hops, and the selected item is a valid IP |
-| 2 | Direct socket peer address | Fallback when proxy trust is disabled or the forwarded chain is invalid |
-| 3 | `unknown` | Fallback when no socket address is available |
-
-```ts
-const socketAddress = event.node.req.socket?.remoteAddress;
-const trustedHops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
-const forwarded = getHeader(event, "x-forwarded-for")
-    ?.split(",")
-    .map((part) => part.trim());
-const selected = forwarded?.[forwarded.length - trustedHops];
-const ip = trustedHops > 0 && isIP(selected) ? selected : socketAddress || "unknown";
-
-return `ip:${ip}`;
-```
-
-::: tip The proxy chain is part of the rate-limit security boundary. Never trust forwarded headers from untrusted proxy hops. :::
-
-## Rate Limit Response
-
-When the rate limit is exceeded, the handler throws a **429 Too Many Requests** error:
+Exceeding a limit returns **429 Too Many Requests**:
 
 ```json
 {
-    "statusCode": 429,
-    "statusMessage": "Too Many Requests",
-    "data": {
-        "message": "Rate limit exceeded. Max 1200 requests per 60s.",
-        "retryAfter": 42,
-        "resetTime": "2026-06-03T14:30:00.000Z"
-    }
+    "status": 429,
+    "code": "rate_limited",
+    "error": "rate_limited",
+    "error_description": "Rate limit exceeded. Max 1200 requests per 60s."
 }
 ```
 
-### Response Headers
+The response also sets `Retry-After` in seconds.
 
-| Header | Value | Description |
-| --- | --- | --- |
-| `Retry-After` | Seconds until the rate limit resets | Standard HTTP header indicating when the client can retry |
+## Memory Model
 
-The `Retry-After` value is calculated as:
+Counters use a `Map<string, { count, resetAt }>`:
 
-```ts
-const retryAfter = Math.ceil((oldestRequest + finalConfig.windowMs - now) / 1000);
-```
+- A request reads and increments one bucket: O(1) time.
+- When the window has elapsed, the bucket restarts at the current time. There is no per-request timestamp array and no periodic sweep.
+- Map insertion order doubles as an LRU list: touching a key deletes and re-inserts it, so the coldest key is at the head.
+- The map is capped at **10,000 keys**. When exceeded, the oldest keys are evicted until 9,000 remain.
 
-## Memory Management
-
-### Request History Storage
-
-Request timestamps are stored in an in-memory `Map`:
-
-```ts
-const requestHistory = new Map<string, number[]>();
-```
-
-Each key (client identifier) maps to an array of request timestamps within the current window.
-
-### Window Cleanup
-
-On every request, timestamps outside the current window are filtered out:
-
-```ts
-history = history.filter((timestamp) => now - timestamp < finalConfig.windowMs);
-```
-
-### Periodic Full Cleanup
-
-To prevent memory leaks from inactive clients, a full cleanup runs at most once every 5 minutes:
-
-```ts
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-// ...
-function cleanupStaleEntries(now: number) {
-    if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
-    lastCleanup = now;
-    const oneHourAgo = now - 60 * 60 * 1000;
-    for (const [key, times] of requestHistory.entries()) {
-        const recentTimes = times.filter((t) => t > oneHourAgo);
-        if (recentTimes.length === 0) {
-            requestHistory.delete(key);
-        } else {
-            requestHistory.set(key, recentTimes);
-        }
-    }
-}
-```
-
-This removes entries with no requests in the last hour.
-
-### Map Size Cap
-
-To prevent unbounded growth under high traffic or attack, the `Map` is capped at **10,000 keys**. When the cap is exceeded, the oldest entry is evicted:
-
-```ts
-const MAX_TRACKED_KEYS = 10000;
-// ...
-if (requestHistory.size > MAX_TRACKED_KEYS) {
-    const firstKey = requestHistory.keys().next().value;
-    if (firstKey !== undefined) {
-        requestHistory.delete(firstKey);
-    }
-}
-```
+`clearRateLimitHistory()` and `getTrackedRateLimitKeys()` are exported for tests.
 
 ## Limitations
 
-### Per-Instance Isolation
+### Per-instance isolation
 
-::: warning Single Process Rate limiting is **in-memory and per-process**. Each server process maintains its own `requestHistory` Map. This means:
+::: warning Per process The limiter is in-memory and per-process. A client can spend the full limit against each server process in the same window. The effective limit is per process, not global. For global limits, use a shared store such as Redis. :::
 
-- A client making 1200 requests to process A and 1200 requests to process B within the same minute could exceed a shared per-process limit
-- The effective rate limit is per-process, not globally distributed
-- For global rate limiting, consider using a distributed store (e.g., Redis) :::
+### No persistent state
 
-### No Persistent State
+Counters reset on restart and are not shared across deployments or instances.
 
-Since the rate limit state is in-memory:
+### Proxy trust
 
-- It resets when the server restarts
-- It does not persist across deployments
-- Multiple server instances do not share state
-
-### IP Spoofing
-
-The rate limiter uses the direct socket peer by default. Behind a reverse proxy, set `TRUSTED_PROXY_HOPS` to the exact number of trusted proxies and configure each proxy to append the actual peer address to `X-Forwarded-For`. The limiter selects the first untrusted address from the right side of the chain and falls back to the socket peer when the chain is incomplete or malformed. It never trusts `X-Real-IP`.
+Forwarded client addresses are part of the security boundary. Configure exactly the number of proxies you operate, and do not accept forwarded headers from untrusted hops.

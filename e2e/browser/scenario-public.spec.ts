@@ -122,7 +122,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
             const n4 = String(index).padStart(2, "0");
             await test.step(`P${n4} — public docs route requires authentication`, async () => {
                 const response = await page.goto("/docs/");
-                expect(response?.status()).toBeGreaterThanOrEqual(400);
+                expect([401, 403, 404]).toContain(response?.status());
             });
             index += 1;
 
@@ -137,7 +137,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
             const n6 = String(index).padStart(2, "0");
             await test.step(`P${n6} — unknown routes render an error page`, async () => {
                 const response = await page.goto("/this-route-does-not-exist");
-                expect(response?.status()).toBeGreaterThanOrEqual(400);
+                expect(response?.status()).toBe(404);
             });
             index += 1;
 
@@ -171,8 +171,8 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
 
             const n10 = String(index).padStart(2, "0");
             await test.step(`P${n10} — protected admin API rejects guests`, async () => {
-                expect([401, 403, 404]).toContain((await api(page, "/api/admin/hackathon")).status);
-                expect([401, 403, 404]).toContain((await api(page, "/api/admin/seasons")).status);
+                expect([401, 403]).toContain((await api(page, "/api/admin/hackathon")).status);
+                expect([401, 403]).toContain((await api(page, "/api/admin/teams")).status);
             });
             index += 1;
 
@@ -180,9 +180,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
             await test.step(`P${n11} — voice-over theme toggle is reachable`, async () => {
                 await page.goto("/");
                 const toggle = page.locator('button[aria-label*="Switch to"]').first();
-                if (await toggle.isVisible().catch(() => false)) {
-                    await expect(toggle).toBeVisible();
-                }
+                await expect(toggle).toBeVisible();
             });
             index += 1;
 
@@ -227,7 +225,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
                         const res = await page.request.get(
                             new URL("/docs/site.webmanifest", baseURL).href,
                         );
-                        expect(res.status()).toBeGreaterThanOrEqual(400);
+                        expect([401, 403, 404]).toContain(res.status());
                     },
                 ],
                 [
@@ -252,7 +250,8 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
                     async () => {
                         await page.goto("/");
                         const skip = page.getByRole("link", { name: /skip to main content/i });
-                        if (await skip.count()) await expect(skip.first()).toBeAttached();
+                        await expect(skip).toHaveCount(1);
+                        await expect(skip).toBeAttached();
                     },
                 ],
                 [
@@ -294,7 +293,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
                     "public schedule renders without error",
                     async () => {
                         await page.goto("/");
-                        await expect(page.locator("body")).toBeVisible();
+                        await expect(page.getByRole("heading", { name: "Schedule" })).toBeVisible();
                     },
                 ],
                 [
@@ -318,7 +317,7 @@ test.describe.serial("scenario matrix — public and guest situations", () => {
                         const errors: string[] = [];
                         page.on("pageerror", (error) => errors.push(error.message));
                         await page.goto("/showcase/beneath-the-surface");
-                        await page.waitForTimeout(200);
+                        await page.waitForLoadState("networkidle");
                         expect(errors).toEqual([]);
                     },
                 ],

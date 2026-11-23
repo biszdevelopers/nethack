@@ -3,7 +3,8 @@ import type { H3Event } from "h3";
 import { isDeepStrictEqual } from "node:util";
 import { withDefaultRubricCommentGuidance, type RubricDefinition } from "~~/shared/rubric";
 import { rubricTemplates, rubricVersions, seasons, teams } from "~~/server/database/schema";
-import { firstRow } from "./query";
+import { firstRow, lockForUpdateIfSupported } from "./query";
+import { writeAuditEvent } from "../audit";
 import { hackathonUsesYaml, readHackathonConfig } from "../hackathon-config";
 
 type RubricSeason = Pick<Season, "id" | "is_active" | "rubric_version_id">;
@@ -31,11 +32,9 @@ export async function resolveLiveRubricVersionId(event: H3Event, season: RubricS
     if (matches(current)) return current!.id;
 
     return db.transaction(async (tx) => {
-        const [locked] = await tx
-            .select()
-            .from(seasons)
-            .where(eq(seasons.id, season.id))
-            .for("update");
+        const [locked] = await lockForUpdateIfSupported(
+            tx.select().from(seasons).where(eq(seasons.id, season.id)).limit(1),
+        );
         if (!locked || locked.is_active !== 1) return locked?.rubric_version_id ?? null;
         const versions = await tx
             .select()
@@ -127,11 +126,7 @@ export async function createRubricVersion(
     const yamlRubric = hackathonUsesYaml() && (await readHackathonConfig()).rubric;
     return event.context.drizzle.transaction(async (tx) => {
         const seasonQuery = tx.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
-        const season = await firstRow(
-            typeof (seasonQuery as any).for === "function"
-                ? (seasonQuery as any).for("update")
-                : seasonQuery,
-        );
+        const season = await firstRow(lockForUpdateIfSupported(seasonQuery));
 
         if (!season) return null;
         if (yamlRubric && (season as { is_active?: number }).is_active === 1) {
@@ -220,6 +215,13 @@ export async function createRubricVersion(
             .update(seasons)
             .set({ rubric_version_id: version.id })
             .where(eq(seasons.id, seasonId));
+        await writeAuditEvent(tx, event, {
+            action: "season.rubric_create",
+            entity_type: "season",
+            entity_id: seasonId,
+            before: { rubric_version_id: season.rubric_version_id },
+            after: { rubric_version_id: version.id, name: version.name },
+        });
         return version;
     });
 }
@@ -232,19 +234,28 @@ export async function createRubricTemplate(
     event: H3Event,
     input: { name: string; description?: string; definition: RubricDefinition; createdBy: number },
 ) {
-    return firstRow(
-        event.context.drizzle
-            .insert(rubricTemplates)
-            .values({
-                name: input.name,
-                description: input.description ?? null,
-                definition: input.definition,
-                created_by: input.createdBy,
-                created_at: new Date(),
-                updated_at: new Date(),
-            })
-            .returning(),
-    );
+    return event.context.drizzle.transaction(async (tx) => {
+        const row = await firstRow(
+            tx
+                .insert(rubricTemplates)
+                .values({
+                    name: input.name,
+                    description: input.description ?? null,
+                    definition: input.definition,
+                    created_by: input.createdBy,
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                })
+                .returning(),
+        );
+        await writeAuditEvent(tx, event, {
+            action: "rubric_template.create",
+            entity_type: "rubric_template",
+            entity_id: row!.id,
+            after: { name: row!.name },
+        });
+        return row;
+    });
 }
 
 export async function updateRubricTemplate(
@@ -252,25 +263,54 @@ export async function updateRubricTemplate(
     templateId: number,
     input: { name: string; description?: string; definition: RubricDefinition },
 ) {
-    return firstRow(
-        event.context.drizzle
-            .update(rubricTemplates)
-            .set({
-                name: input.name,
-                description: input.description ?? null,
-                definition: input.definition,
-                updated_at: new Date(),
-            })
-            .where(eq(rubricTemplates.id, templateId))
-            .returning(),
-    );
+    return event.context.drizzle.transaction(async (tx) => {
+        const row = await firstRow(
+            tx
+                .update(rubricTemplates)
+                .set({
+                    name: input.name,
+                    description: input.description ?? null,
+                    definition: input.definition,
+                    updated_at: new Date(),
+                })
+                .where(eq(rubricTemplates.id, templateId))
+                .returning(),
+        );
+        if (row) {
+            await writeAuditEvent(tx, event, {
+                action: "rubric_template.update",
+                entity_type: "rubric_template",
+                entity_id: templateId,
+                after: { name: row.name },
+            });
+        }
+        return row;
+    });
 }
 
 export async function deleteRubricTemplate(event: H3Event, templateId: number) {
-    return firstRow(
-        event.context.drizzle
-            .delete(rubricTemplates)
-            .where(eq(rubricTemplates.id, templateId))
-            .returning({ id: rubricTemplates.id }),
-    );
+    return event.context.drizzle.transaction(async (tx) => {
+        const existing = await firstRow(
+            tx
+                .select({ id: rubricTemplates.id, name: rubricTemplates.name })
+                .from(rubricTemplates)
+                .where(eq(rubricTemplates.id, templateId))
+                .limit(1),
+        );
+        const row = await firstRow(
+            tx
+                .delete(rubricTemplates)
+                .where(eq(rubricTemplates.id, templateId))
+                .returning({ id: rubricTemplates.id }),
+        );
+        if (row) {
+            await writeAuditEvent(tx, event, {
+                action: "rubric_template.delete",
+                entity_type: "rubric_template",
+                entity_id: templateId,
+                before: { name: existing!.name },
+            });
+        }
+        return row;
+    });
 }

@@ -17,6 +17,7 @@ export default defineEventHandler(
                     profile_theme: users.profile_theme,
                     profile_picture: users.profile_picture,
                     is_admin: users.is_admin,
+                    is_judge: users.is_judge,
                 })
                 .from(users)
                 .orderBy(users.id),
@@ -32,7 +33,8 @@ export default defineEventHandler(
 
         return results.map((user) => ({
             ...convertUserToPublic(user as User),
-            is_admin: Boolean(user.is_admin || isInitialAdminEmail(user.email)),
+            is_admin: Boolean(user.is_admin),
+            is_judge: Boolean(user.is_judge),
             is_initial_admin: isInitialAdminEmail(user.email),
             past_team_ids: pastTeamIdsByUser.get(user.id)?.join(",") ?? null,
         }));

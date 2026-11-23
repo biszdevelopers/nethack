@@ -8,6 +8,12 @@ import {
     JUDGING_DRAFT_RATE_LIMIT_CONFIG,
     VOTE_RATE_LIMIT_CONFIG,
     UPLOAD_RATE_LIMIT_CONFIG,
+    BACKCHANNEL_RATE_LIMIT_CONFIG,
+    REQUEST_GATE_RATE_LIMIT_CONFIG,
+    consumeRateLimit,
+    getTrackedRateLimitKeys,
+    getClientIp,
+    getCachedSessionUserId,
 } from "~~/server/utils/rateLimit";
 
 const readBasisAuthUserSessionMock = vi.hoisted(() => vi.fn());
@@ -80,7 +86,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
     });
 
     it('returns "ip:unknown" when no IP source is present', async () => {
@@ -92,7 +98,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
     });
 
     it("returns the unknown client bucket when a synthetic event has no Node request", async () => {
@@ -116,7 +122,7 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
     });
 
     it("uses the rightmost forwarded address for one configured proxy hop", async () => {
@@ -226,7 +232,18 @@ describe("getClientIdentifier", () => {
         });
         const id = await getClientIdentifier(event);
 
-        expect(id).toBe("ip:unknown");
+        expect(id).toMatch(/^ip:socket:\d+$/);
+    });
+
+    it("keys an unknown peer by connection instead of one global bucket", () => {
+        const socket = { remoteAddress: undefined };
+        const event = makeMockEvent({ node: { req: { socket } } });
+
+        const first = getClientIp(event);
+        const second = getClientIp(event);
+
+        expect(first).toMatch(/^socket:\d+$/);
+        expect(second).toBe(first);
     });
 
     it("uses the configured forwarded hop while retaining the socket as fallback", async () => {
@@ -942,5 +959,178 @@ describe("applyRateLimit", () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Fixed-window counters and caller identity
+// ---------------------------------------------------------------------------
+
+describe("fixed-window rate limiter", () => {
+    beforeEach(() => {
+        clearRateLimitHistory();
+    });
+
+    it("tracks an unbounded stream of identifiers in a bounded map", () => {
+        for (let index = 0; index < 25_000; index += 1) {
+            consumeRateLimit(`flood:${index}`, { maxRequests: 5, windowMs: 60_000 });
+        }
+
+        expect(getTrackedRateLimitKeys()).toBeLessThanOrEqual(10_000);
+        expect(getTrackedRateLimitKeys()).toBeGreaterThan(8_000);
+    });
+
+    it("evicts the least-recently-used identifier, not an active one", () => {
+        consumeRateLimit("hot", { maxRequests: 1_000_000, windowMs: 60_000 });
+        for (let index = 0; index < 10_001; index += 1) {
+            consumeRateLimit(`cold:${index}`, { maxRequests: 5, windowMs: 60_000 });
+            // Keep touching the hot key so it survives eviction.
+            consumeRateLimit("hot", { maxRequests: 1_000_000, windowMs: 60_000 });
+        }
+
+        const decision = consumeRateLimit("hot", { maxRequests: 1_000_000, windowMs: 60_000 });
+        expect(decision.allowed).toBe(true);
+    });
+
+    it("stays O(1) per request for a single key under a long run", () => {
+        const started = performance.now();
+        for (let index = 0; index < 100_000; index += 1) {
+            consumeRateLimit("steady", { maxRequests: 1_000_000, windowMs: 60_000 });
+        }
+        expect(performance.now() - started).toBeLessThan(2_000);
+        expect(getTrackedRateLimitKeys()).toBe(1);
+    });
+
+    it("stops eviction when the key iterator is already exhausted", () => {
+        // Exercise the defensive iterator guard without emptying a live map.
+        for (let index = 0; index < 10_000; index += 1) {
+            consumeRateLimit(`full:${index}`, { maxRequests: 5, windowMs: 60_000 });
+        }
+        const originalKeys = Map.prototype.keys;
+        Map.prototype.keys = function keys() {
+            return { next: () => ({ done: true, value: undefined }) } as unknown as MapIterator<
+                string,
+                unknown
+            >;
+        };
+        try {
+            consumeRateLimit("overflow", { maxRequests: 5, windowMs: 60_000 });
+        } finally {
+            Map.prototype.keys = originalKeys;
+        }
+
+        expect(getTrackedRateLimitKeys()).toBe(10_001);
+    });
+
+    it("reads a cached session user without re-resolving it", () => {
+        expect(getCachedSessionUserId(makeMockEvent())).toBeUndefined();
+        expect(getCachedSessionUserId(makeMockEvent({ context: { authUserId: 42 } }))).toBe(42);
+        expect(getCachedSessionUserId(makeMockEvent({ context: { authUserId: null } }))).toBe(
+            undefined,
+        );
+    });
+
+    it("keys cookie users by verified id and never by an unverified bearer value", async () => {
+        readBasisAuthUserSessionMock.mockReturnValueOnce({ userId: 9001 });
+        expect(await getClientIdentifier(makeMockEvent())).toBe("user:9001");
+
+        readBasisAuthUserSessionMock.mockReturnValue(undefined);
+        const makeBearerEvent = (token: string) =>
+            makeMockEvent({
+                headers: { authorization: `Bearer ${token}` },
+            });
+        (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
+            if (name === "authorization") return "Bearer token-alpha";
+            return undefined;
+        });
+        const firstId = await getClientIdentifier(makeBearerEvent("token-alpha"));
+        expect(firstId).toBe("ip:10.0.0.1");
+
+        (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
+            if (name === "authorization") return "Bearer token-beta";
+            return undefined;
+        });
+        expect(await getClientIdentifier(makeBearerEvent("token-beta"))).toBe(firstId);
+
+        (globalThis as any).getHeader = vi.fn(() => undefined);
+        expect(await getClientIdentifier(makeMockEvent())).toBe("ip:10.0.0.1");
+    });
+
+    it("falls back to IP when the session reader throws and caches the absence", async () => {
+        readBasisAuthUserSessionMock.mockImplementation(() => {
+            throw new Error("unreadable cookie");
+        });
+        const event = makeMockEvent();
+
+        expect(await getClientIdentifier(event)).toBe("ip:10.0.0.1");
+        expect(await getClientIdentifier(event)).toBe("ip:10.0.0.1");
+        expect(readBasisAuthUserSessionMock).toHaveBeenCalledOnce();
+        expect(event.context.authUserId).toBeNull();
+    });
+
+    it("handles an event without context or a header helper", async () => {
+        readBasisAuthUserSessionMock.mockReturnValue(undefined);
+        delete (globalThis as any).getHeader;
+        const event = makeMockEvent({ context: undefined });
+
+        expect(await getClientIdentifier(event)).toBe("ip:10.0.0.1");
+    });
+
+    it("falls back to the socket peer when the header helper is unavailable", () => {
+        process.env.TRUSTED_PROXY_HOPS = "1";
+        delete (globalThis as any).getHeader;
+
+        try {
+            expect(getClientIp(makeMockEvent())).toBe("10.0.0.1");
+        } finally {
+            delete process.env.TRUSTED_PROXY_HOPS;
+        }
+    });
+
+    it("does not let a rotated bearer token reset the bucket", async () => {
+        readBasisAuthUserSessionMock.mockReturnValue(undefined);
+        let token = "first";
+        (globalThis as any).getHeader = vi.fn((_event: any, name: string) => {
+            if (name === "authorization") return `Bearer ${token}`;
+            return undefined;
+        });
+        (globalThis as any).createError = (input: any) =>
+            Object.assign(new Error(input.statusMessage), input);
+        (globalThis as any).setHeader = vi.fn();
+
+        const handler = vi.fn().mockResolvedValue({ ok: true });
+        const wrapped = applyRateLimit(handler, { maxRequests: 1, windowMs: 60_000 });
+        const event = makeMockEvent();
+
+        await wrapped(event);
+        await expect(wrapped(event)).rejects.toMatchObject({ status: 429 });
+        token = "second";
+        await expect(wrapped(event)).rejects.toMatchObject({ status: 429 });
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("resolves the client IP through the configured trusted hops", () => {
+        process.env.TRUSTED_PROXY_HOPS = "1";
+        (globalThis as any).getHeader = vi.fn((_event: any, name: string) =>
+            name === "x-forwarded-for" ? "203.0.113.9, 10.0.0.2" : undefined,
+        );
+        expect(getClientIp(makeMockEvent())).toBe("10.0.0.2");
+    });
+
+    it("ignores an out-of-range hop setting", () => {
+        process.env.TRUSTED_PROXY_HOPS = "99";
+        (globalThis as any).getHeader = vi.fn((_event: any, name: string) =>
+            name === "x-forwarded-for" ? "203.0.113.9" : undefined,
+        );
+        expect(getClientIp(makeMockEvent())).toBe("10.0.0.1");
+        delete process.env.TRUSTED_PROXY_HOPS;
+    });
+});
+
+describe("backchannel and request gate defaults", () => {
+    it("keeps the backchannel on a dedicated high limit", () => {
+        expect(BACKCHANNEL_RATE_LIMIT_CONFIG.maxRequests).toBe(600);
+        expect(BACKCHANNEL_RATE_LIMIT_CONFIG.keyPrefix).toBe("backchannel");
+        expect(REQUEST_GATE_RATE_LIMIT_CONFIG.maxRequests).toBe(6000);
     });
 });

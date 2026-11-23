@@ -25,7 +25,7 @@ const orderedProjects = computed(() =>
     <section class="mx-auto w-full max-w-7xl px-6 pb-20 sm:px-10 lg:px-16">
         <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
-                <p class="font-mono text-xs tracking-[0.24em] text-primary uppercase">
+                <p class="font-mono text-xs tracking-wide text-primary">
                     {{ seasonName }}
                 </p>
                 <h2 class="mt-2 text-2xl font-bold sm:text-3xl">Submitted projects</h2>
@@ -69,7 +69,7 @@ const orderedProjects = computed(() =>
                 </SafeComark>
 
                 <div class="mt-4 border-t border-default pt-3">
-                    <p class="font-mono text-[0.7rem] tracking-[0.18em] text-muted uppercase">
+                    <p class="font-mono text-[0.7rem] tracking-wide text-muted">
                         AI-use disclosure
                     </p>
                     <SafeComark

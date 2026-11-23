@@ -41,7 +41,15 @@ selectQuery.from.mockReturnValue(selectQuery);
 selectQuery.where.mockReturnValue(selectQuery);
 selectQuery.limit.mockReturnValue(selectQuery);
 
-const event = { context: { drizzle: { update: mocks.update, select: mocks.select } } };
+const event = {
+    context: {
+        drizzle: {
+            update: mocks.update,
+            select: mocks.select,
+            insert: () => ({ values: async () => undefined }),
+        },
+    },
+};
 let patchCurve: (event: any) => Promise<unknown>;
 let getSeasonRubric: (event: any) => Promise<unknown>;
 
@@ -108,6 +116,62 @@ describe("admin score curve update actions", () => {
             expect(mocks.update).not.toHaveBeenCalled();
         },
     );
+
+    it("refuses to change the curve of a published season", async () => {
+        mockParams.values.id = "5";
+        mockBody.value = { preset: "moderate" };
+        mocks.firstRow.mockResolvedValue({
+            id: 5,
+            results_published: 1,
+            score_curve_preset: "original",
+        });
+
+        await expect(patchCurve(event)).rejects.toMatchObject({
+            statusCode: 409,
+            message: "The score curve cannot change after results are published.",
+        });
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+
+    it("uses a transaction when the driver supports one", async () => {
+        const drizzle = event.context.drizzle as any;
+        drizzle.transaction = async (callback: (tx: unknown) => unknown) =>
+            callback(event.context.drizzle);
+        try {
+            mockParams.values.id = "5";
+            mockBody.value = { preset: "moderate" };
+            mocks.firstRow.mockResolvedValue({
+                id: 5,
+                results_published: 0,
+                score_curve_preset: "moderate",
+            });
+
+            await expect(patchCurve(event)).resolves.toMatchObject({ season_id: 5 });
+        } finally {
+            delete drizzle.transaction;
+        }
+    });
+
+    it("returns a conflict when publication commits before the curve update", async () => {
+        mockParams.values.id = "5";
+        mockBody.value = { preset: "moderate" };
+        mocks.firstRow
+            .mockResolvedValueOnce({ id: 5, results_published: 0, score_curve_preset: "original" })
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce({ id: 5, results_published: 1 });
+
+        await expect(patchCurve(event)).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it("returns not found if a concurrent deletion removes the season before the write", async () => {
+        mockParams.values.id = "5";
+        mockBody.value = { preset: "moderate" };
+        mocks.firstRow
+            .mockResolvedValueOnce({ id: 5, results_published: 0, score_curve_preset: "original" })
+            .mockResolvedValueOnce(undefined);
+
+        await expect(patchCurve(event)).rejects.toMatchObject({ statusCode: 404 });
+    });
 
     it("returns not found if the season update matched no row", async () => {
         mockParams.values.id = "5";

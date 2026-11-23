@@ -22,6 +22,7 @@ const event = {
             update: () => ({
                 set: mocks.updateSet,
             }),
+            insert: () => ({ values: async () => undefined }),
         },
     },
 };
@@ -91,9 +92,9 @@ describe("PATCH /api/admin/seasons/:id/approval", () => {
     });
 
     it("revokes board approval on a blank season that is not active", async () => {
-        mocks.updateReturning.mockResolvedValueOnce([
-            { id: 5, board_approved_at: null, board_approved_by: null },
-        ]);
+        mocks.firstRow
+            .mockResolvedValueOnce({ id: 5, is_blank_start: 1, is_active: 0 })
+            .mockResolvedValueOnce({ id: 5, board_approved_at: null, board_approved_by: null });
         mockBody.value = { approved: false };
 
         await expect(approvalHandler(event)).resolves.toMatchObject({
@@ -106,8 +107,34 @@ describe("PATCH /api/admin/seasons/:id/approval", () => {
         });
     });
 
+    it("uses a transaction when the driver supports one", async () => {
+        const drizzle = event.context.drizzle as any;
+        drizzle.transaction = async (callback: (tx: unknown) => unknown) =>
+            callback(event.context.drizzle);
+        try {
+            await expect(approvalHandler(event)).resolves.toMatchObject({ id: 5 });
+        } finally {
+            delete drizzle.transaction;
+        }
+    });
+
+    it("refuses a revoke that raced an activation", async () => {
+        mocks.updateReturning.mockResolvedValueOnce([]);
+        mocks.firstRow
+            .mockResolvedValueOnce({ id: 5, is_blank_start: 1, is_active: 0 })
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce({ id: 5, is_blank_start: 1, is_active: 1 });
+        mockBody.value = { approved: false };
+
+        await expect(approvalHandler(event)).rejects.toMatchObject({ statusCode: 409 });
+    });
+
     it("returns 404 when the update matches no row", async () => {
         mocks.updateReturning.mockResolvedValueOnce([]);
+        mocks.firstRow
+            .mockResolvedValueOnce({ id: 5, is_blank_start: 1, is_active: 0 })
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined);
 
         await expect(approvalHandler(event)).rejects.toMatchObject({ statusCode: 404 });
     });

@@ -15,6 +15,13 @@ beforeAll(async () => {
 });
 
 describe("API response envelope fallback boundaries", () => {
+    it("leaves health probe bodies unwrapped", () => {
+        const response = { body: { status: "ok" } };
+        beforeResponse!({ path: "/api/health/live", node: { res: {} } }, response);
+
+        expect(response.body).toEqual({ status: "ok" });
+    });
+
     it("uses HTTP 200 when the response status code is zero", () => {
         const response = { body: { result: "created" } };
         beforeResponse!({ path: "/api/teams", node: { res: { statusCode: 0 } } }, response);

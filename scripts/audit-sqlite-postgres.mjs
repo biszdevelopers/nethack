@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { open, mkdir, rename, unlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
@@ -50,7 +50,7 @@ function stable(value) {
     );
 }
 
-function comparable(value, dataType) {
+export function comparable(value, dataType) {
     if (value === null || value === undefined) return null;
     if ((dataType === "json" || dataType === "jsonb") && typeof value === "string") {
         try {
@@ -60,6 +60,8 @@ function comparable(value, dataType) {
         }
     }
     if (typeof value === "bigint") return value.toString();
+    // postgres.js returns int8 as text while SQLite returns a number.
+    if (dataType === "bigint") return String(value);
     return stable(value);
 }
 
@@ -403,7 +405,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     );
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+let isDirectExecution = false;
+if (process.argv[1]) {
+    try {
+        isDirectExecution =
+            realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url);
+    } catch {
+        isDirectExecution = resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+    }
+}
+
+if (isDirectExecution) {
     main().catch((error) => {
         console.error(
             `[SQLite/PostgreSQL audit] ${error instanceof Error ? error.message : String(error)}`,
