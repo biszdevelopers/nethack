@@ -129,16 +129,22 @@ export default defineEventHandler(
                 // Do not leave a stray season behind when activation fails. Its
                 // copied rubric versions reference it with ON DELETE RESTRICT,
                 // and the season's rubric pointer must be cleared before the
-                // versions can be removed.
-                try {
-                    await event.context.drizzle
+                // versions can be removed. One transaction keeps the cleanup
+                // all-or-nothing.
+                const cleanup = async (tx: typeof event.context.drizzle) => {
+                    await tx
                         .update(seasons)
                         .set({ rubric_version_id: null })
                         .where(eq(seasons.id, created.id));
-                    await event.context.drizzle
-                        .delete(rubricVersions)
-                        .where(eq(rubricVersions.season_id, created.id));
-                    await event.context.drizzle.delete(seasons).where(eq(seasons.id, created.id));
+                    await tx.delete(rubricVersions).where(eq(rubricVersions.season_id, created.id));
+                    await tx.delete(seasons).where(eq(seasons.id, created.id));
+                };
+                try {
+                    if (typeof event.context.drizzle.transaction === "function") {
+                        await event.context.drizzle.transaction(cleanup);
+                    } else {
+                        await cleanup(event.context.drizzle);
+                    }
                 } catch {
                     // Preserve the original activation failure.
                 }

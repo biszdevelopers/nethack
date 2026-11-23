@@ -78,6 +78,18 @@ describe("API route guard inventory", () => {
         expect(broadOrMissing).toEqual([]);
     });
 
+    it("requires the all-permission grant on user role mutations", () => {
+        const roleRoutes = ["users/[id]/admin.patch.ts", "users/[id]/judge.patch.ts"];
+        const weak = roleRoutes.filter(
+            (file) =>
+                !/requireUser\(\s*event\s*,\s*NethackPermissions\.all\s*\)/.test(
+                    readFileSync(join(apiDir, file), "utf8"),
+                ),
+        );
+
+        expect(weak).toEqual([]);
+    });
+
     it("documents routes that resolve an optional identity without a guard", () => {
         const undocumented = files.filter((file) => {
             if (PUBLIC_ROUTES[file]) return false;

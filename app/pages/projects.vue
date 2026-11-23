@@ -34,20 +34,14 @@ const route = useRoute();
 const router = useRouter();
 const search = ref("");
 const pathway = ref("all");
-
-const pathwayLabel = (value: string) =>
-    value
-        .split(/[-_]/)
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
-        .join(" ");
+const trackLabel = useTrackLabel();
 
 const pathwayOptions = computed(() => {
     const values = [...new Set((teams.value ?? []).map((team) => team.pathway).filter(Boolean))];
     return [
         { label: "All pathways", value: "all" },
         ...values.map((value) => ({
-            label: pathwayLabel(value as string),
+            label: trackLabel(value as string),
             value: value as string,
         })),
     ];
@@ -175,7 +169,7 @@ useHead(
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <UBadge v-if="team.pathway" variant="subtle" color="primary">
-                                    {{ pathwayLabel(team.pathway) }}
+                                    {{ trackLabel(team.pathway) }}
                                 </UBadge>
                                 <UBadge v-if="team.rank" variant="subtle" color="warning">
                                     Rank #{{ team.rank }}

@@ -10,6 +10,7 @@ import {
     type TestContext,
 } from "../../helpers";
 import { users, adminAuditEvents } from "~~/server/database/schema";
+import { NethackPermissions } from "~~/shared/permissions";
 
 const mocks = vi.hoisted(() => ({ requireUser: vi.fn() }));
 
@@ -56,6 +57,7 @@ describe("PATCH /api/users/:id/admin", () => {
 
         mockBody.value = { is_admin: true };
         await expect(handler(event())).resolves.toEqual({ id: target.id, is_admin: true });
+        expect(mocks.requireUser).toHaveBeenCalledWith(expect.anything(), NethackPermissions.all);
         expect(
             ctx.drizzle.select().from(users).where(eq(users.id, target.id)).get()!.is_admin,
         ).toBe(1);

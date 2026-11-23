@@ -50,4 +50,16 @@ describe("team deletion boundaries", () => {
             updateTeamPartial(event, 999, 1, { project_description: "Missing" }),
         ).rejects.toMatchObject({ statusCode: 404 });
     });
+
+    it("reports a conflict for a guarded update of a withdrawn team", async () => {
+        event.context.drizzle.prepare("UPDATE teams SET status = 'withdrawn' WHERE id = 1").run();
+        const { updateTeamPartial } = await import("~~/server/utils/database/teams");
+
+        await expect(
+            updateTeamPartial(event, 1, 1, { name: "Renamed" }, { requireActive: true }),
+        ).rejects.toMatchObject({
+            statusCode: 409,
+            message: "This team is no longer competing",
+        });
+    });
 });

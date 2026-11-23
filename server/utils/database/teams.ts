@@ -272,6 +272,23 @@ export async function createTeam(
 }
 
 /**
+ * Explain a guarded team update that matched no row. A repeated submission or
+ * a concurrent withdrawal is a conflict, not a missing team.
+ */
+async function teamUpdateFailure(
+    db: Pick<DrizzleDatabase, "select">,
+    teamID: number,
+    options: { requireUnsubmitted?: boolean; requireActive?: boolean },
+) {
+    const current = await firstRow(db.select().from(teams).where(eq(teams.id, teamID)).limit(1));
+    if (!current) return createError({ statusCode: 404, message: "Team not found" });
+    if (options.requireUnsubmitted && current.project_submitted) {
+        return createError({ statusCode: 409, message: "Project is already submitted" });
+    }
+    return createError({ statusCode: 409, message: "This team is no longer competing" });
+}
+
+/**
  * Update only the supplied columns so two members editing different fields do
  * not clobber each other. Renames still enforce the per-season name rule.
  */
@@ -301,7 +318,7 @@ export async function updateTeamPartial(
                 .returning({ id: teams.id }),
         );
         if (changed === 0) {
-            throw createError({ statusCode: 404, message: "Team not found" });
+            throw await teamUpdateFailure(event.context.drizzle, teamID, options);
         }
         return;
     }
@@ -338,10 +355,7 @@ export async function updateTeamPartial(
         );
 
         if (changed === 0) {
-            throw createError({
-                statusCode: 404,
-                message: "Team not found",
-            });
+            throw await teamUpdateFailure(tx, teamID, options);
         }
     });
 }

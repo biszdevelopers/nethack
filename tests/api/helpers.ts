@@ -387,11 +387,10 @@ export function seedUser(
         .insert(schema.users)
         .values({
             email: overrides.email ?? "user@basischina.com",
-            role: overrides.role ?? "participant",
-            name: overrides.name ?? "Test User",
+            name: overrides.name === undefined ? "Test User" : overrides.name,
             team_id: overrides.team_id ?? null,
             is_admin: overrides.is_admin ?? 0,
-            is_judge: overrides.is_judge ?? 0,
+            is_judge: overrides.is_judge ?? (overrides.role === "judge" ? 1 : 0),
         } as any)
         .returning()
         .get();

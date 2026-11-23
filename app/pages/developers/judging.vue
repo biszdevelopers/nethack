@@ -24,6 +24,7 @@ type AdminUserRow = {
     email?: string;
     name: string | null;
     is_admin?: boolean;
+    team_id?: number | null;
 };
 
 type JudgingFlag = {
@@ -89,10 +90,9 @@ const {
     server: false,
     lazy: true,
 });
-const { data: activeRubric } = await useApiFetch<{ tracks: Record<string, unknown> }>(
-    "/api/judging/rubric",
-    { server: false, lazy: true },
-);
+const { data: activeRubric } = await useApiFetch<{
+    tracks: Record<string, { name?: string }>;
+}>("/api/judging/rubric", { server: false, lazy: true });
 
 const assignments = computed(() => {
     const payload = assignmentData.value as unknown;
@@ -114,17 +114,20 @@ const assignmentsLoading = computed(
     () => assignmentStatus.value === "idle" || assignmentStatus.value === "pending",
 );
 
-const judgeItems = computed(() =>
-    (users.value ?? []).map((user) => ({
-        label: user.name || user.email || `User #${user.id}`,
-        value: user.id,
-    })),
-);
 const seasonTeams = computed(() => {
     const seasonId = activeSeason.value?.id;
     if (seasonId === undefined) return teams.value ?? [];
     return (teams.value ?? []).filter((team) => team.season_id === seasonId);
 });
+const competingTeamIds = computed(() => new Set(seasonTeams.value.map((team) => team.id)));
+const judgeItems = computed(() =>
+    (users.value ?? [])
+        .filter((user) => !user.team_id || !competingTeamIds.value.has(user.team_id))
+        .map((user) => ({
+            label: user.name || user.email || `User #${user.id}`,
+            value: user.id,
+        })),
+);
 const trackItems = computed(() => {
     const tracks = new Set<string>(Object.keys(activeRubric.value?.tracks ?? {}));
     if (tracks.size === 0) {
@@ -132,7 +135,10 @@ const trackItems = computed(() => {
             if (team.pathway) tracks.add(team.pathway);
         }
     }
-    return [...tracks].sort().map((track) => ({ label: track, value: track }));
+    return [...tracks].sort().map((track) => ({
+        label: activeRubric.value?.tracks[track]?.name ?? track,
+        value: track,
+    }));
 });
 const teamItems = computed(() =>
     [...seasonTeams.value]
@@ -199,7 +205,9 @@ function coverageCount(row: GetJudgeAssignmentsResponse["assignments"][number]):
 
 function coverageLabel(row: GetJudgeAssignmentsResponse["assignments"][number]): string {
     if (row.team_id) return `Only ${teamLabel(row.team_id)}`;
-    if (row.pathway) return `Track: ${row.pathway}`;
+    if (row.pathway) {
+        return `Track: ${activeRubric.value?.tracks[row.pathway]?.name ?? row.pathway}`;
+    }
     return "Every submitted project";
 }
 

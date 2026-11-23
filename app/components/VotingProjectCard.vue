@@ -17,9 +17,7 @@ const safeVideoUrl = computed(() =>
     safeUrl((team.project as APITeam["project"] & { video_url?: string | null }).video_url),
 );
 
-function formatTrack(track: string): string {
-    return track.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
+const trackLabel = useTrackLabel();
 </script>
 
 <template>
@@ -32,7 +30,7 @@ function formatTrack(track: string): string {
                 variant="outline"
                 :color="team.pathway == 'junior' ? 'primary' : 'warning'"
             >
-                {{ formatTrack(team.pathway) }}
+                {{ trackLabel(team.pathway) }}
             </UBadge>
         </div>
         <SafeComark class="my-4 mx-[2ch] text-wrap">{{ team.project.description }}</SafeComark>

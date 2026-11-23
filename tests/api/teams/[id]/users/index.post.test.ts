@@ -14,7 +14,7 @@ import {
     type TestContext,
 } from "../../../helpers";
 import { eq } from "drizzle-orm";
-import { teamInvites, users } from "~~/server/database/schema";
+import { teamInvites, teams, users } from "~~/server/database/schema";
 
 vi.mock("~~/server/utils/auth", () => ({
     requireUser: vi.fn((...args: any[]) => (globalThis as any).requireUser(...args)),
@@ -106,6 +106,52 @@ describe("POST /api/teams/:id/users", () => {
         expect(
             ctx.drizzle.select().from(users).where(eq(users.id, invitee.id)).get()!.team_id,
         ).toBeNull();
+    });
+
+    it("allows inviting a user whose team is from a previous season", async () => {
+        const pastSeason = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const pastTeam = seedTeam(ctx, { name: "Past team", season_id: pastSeason.id });
+        const owner = seedUser(ctx, { email: "owner@basischina.com", name: "Owner" });
+        const team = seedTeam(ctx, { name: "Current", owner_user_id: owner.id });
+        ctx.drizzle.update(users).set({ team_id: team.id }).where(eq(users.id, owner.id)).run();
+        seedUser(ctx, {
+            email: "returning@basischina.com",
+            name: "Returning",
+            team_id: pastTeam.id,
+        });
+
+        mockSession.value = { user: { id: owner.id } };
+        mockParams.values["id"] = String(team.id);
+        mockBody.value = { email: "returning@basischina.com" };
+
+        await expect(handler(createEvent())).resolves.toMatchObject({
+            message: "Invitation sent",
+        });
+        expect(ctx.drizzle.select().from(teamInvites).all()).toHaveLength(1);
+    });
+
+    it("rejects invitations for a past-season team", async () => {
+        const pastSeason = seedSeason(ctx, { name: "Past", is_active: 0 });
+        const pastTeam = seedTeam(ctx, { name: "Past team", season_id: pastSeason.id });
+        const owner = seedUser(ctx, {
+            email: "owner@basischina.com",
+            name: "Owner",
+            team_id: pastTeam.id,
+        });
+        ctx.drizzle
+            .update(teams)
+            .set({ owner_user_id: owner.id })
+            .where(eq(teams.id, pastTeam.id))
+            .run();
+
+        mockSession.value = { user: { id: owner.id } };
+        mockParams.values["id"] = String(pastTeam.id);
+        mockBody.value = { email: "newbie@basischina.com" };
+
+        await expect(handler(createEvent())).rejects.toMatchObject({
+            statusCode: 404,
+            message: "Team not found",
+        });
     });
 
     it("rejects invitations from a team that is no longer active", async () => {

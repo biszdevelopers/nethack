@@ -72,11 +72,14 @@ export default defineEventHandler(
                     message: "Staff accounts cannot join a participant team",
                 });
             }
-            if (target.team_id && (await getTeam(event, target.team_id))) {
-                throw createError({
-                    status: 409,
-                    message: "That user is already in a team",
-                });
+            if (target.team_id) {
+                const targetTeam = await getTeam(event, target.team_id);
+                if (targetTeam?.season_id === state.season?.id) {
+                    throw createError({
+                        statusCode: 409,
+                        message: "That user is already in a team",
+                    });
+                }
             }
         } else if (allowUnclaimed !== true) {
             throw createError({

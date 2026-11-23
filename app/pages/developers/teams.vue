@@ -21,6 +21,7 @@ const toast = useToast();
 const { can } = useNethackPermissions();
 const isAdmin = computed(() => can(NethackPermissions.all));
 const table = useTemplateRef<any>("table");
+const trackLabel = useTrackLabel();
 const modalOpen = ref(false);
 const deleting = ref(false);
 const feedbackModalOpen = ref(false);
@@ -161,7 +162,7 @@ const columns: TableColumn<AdminTeam>[] = [
             const pathway = row.original.pathway;
             if (!pathway) return "-";
             const color = pathway === "senior" ? "warning" : "primary";
-            return h(UBadge, { class: "capitalize", variant: "subtle", color }, () => pathway);
+            return h(UBadge, { variant: "subtle", color }, () => trackLabel(pathway));
         },
     },
     {

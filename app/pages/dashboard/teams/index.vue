@@ -39,6 +39,7 @@ const inviteToken = computed(() => {
 const inviteDismissed = ref(false);
 const inviteState = ref<"idle" | "accepting" | "success" | "error">("idle");
 const inviteError = ref<string | null>(null);
+const canJoinTeam = computed(() => can(NethackPermissions.Teams.membersAddOwn));
 
 async function handleInvite() {
     const token = inviteToken.value;
@@ -126,7 +127,7 @@ async function onSubmit(event: FormSubmitEvent<CreateTeamRequest>) {
 
 <template>
     <UCard
-        v-if="inviteToken && !inviteDismissed && data?.team == null"
+        v-if="inviteToken && !inviteDismissed && data?.team == null && canJoinTeam"
         variant="subtle"
         class="mb-6"
     >

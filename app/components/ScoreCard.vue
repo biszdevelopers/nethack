@@ -173,13 +173,8 @@ const seasonMeta = computed(() => {
 
 const seasonDate = computed(() => seasonMeta.value.date);
 const seasonName = computed(() => seasonMeta.value.name);
-const pathwayLabel = computed(() =>
-    (props.team.pathway ?? "")
-        .split(/[-_]/)
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
-        .join(" "),
-);
+const trackLabel = useTrackLabel();
+const pathwayLabel = computed(() => trackLabel(props.team.pathway));
 
 const loaded = ref(false);
 onMounted(() => {

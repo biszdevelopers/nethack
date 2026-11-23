@@ -406,16 +406,21 @@ test.describe.serial("scenario matrix — ordered end-to-end event groups", () =
             });
 
             await test.step("G26 — duplicate judge scores are rejected", async () => {
+                const rubric = await api(judge, "/api/judging/rubric");
+                const scores: Record<string, number> = {};
+                for (const criterion of rubric.body.tracks.junior.criteria) {
+                    scores[criterion.id] = Math.min(3, criterion.maxScore);
+                }
                 const duplicate = await api(judge, `/api/teams/${adminTeamId}/scores`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         reasoning: "A duplicate evaluation attempt that must be rejected entirely.",
-                        scores: {},
+                        scores,
                         rubric_version_id: rubricVersionId,
                     }),
                 });
-                expect([400, 409]).toContain(duplicate.status);
+                expect(duplicate.status, `duplicate: ${JSON.stringify(duplicate.body)}`).toBe(409);
             });
 
             await test.step("G27 — second judge reaches the anonymity threshold", async () => {

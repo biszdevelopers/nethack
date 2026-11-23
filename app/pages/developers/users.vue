@@ -49,6 +49,24 @@ const { data, status, error, refresh } = await useApiFetch<AdminUser[]>("/api/us
     lazy: true,
     default: () => [],
 });
+const { data: adminTeams } = await useApiFetch<APITeam[]>("/api/admin/teams", {
+    lazy: true,
+    default: () => [],
+});
+const { data: publicSeasons } = await useApiFetch<PublicSeason[]>("/api/seasons", {
+    lazy: true,
+    default: () => [],
+});
+const competingTeamIds = computed(() => {
+    const activeSeasonId = publicSeasons.value?.find((season) => season.is_active === 1)?.id;
+    return new Set(
+        (adminTeams.value ?? [])
+            .filter((team) => team.season_id === activeSeasonId)
+            .map((team) => team.id),
+    );
+});
+const isCompeting = (user: AdminUser) =>
+    user.team_id != null && competingTeamIds.value.has(user.team_id);
 
 const selectedRows = computed<any[]>(() => {
     if (!table.value?.tableApi) return [];
@@ -119,7 +137,7 @@ async function toggleAdmin(user: AdminUser) {
 }
 
 async function toggleJudge(user: AdminUser) {
-    if (pendingJudgeIds.value.includes(user.id)) return;
+    if (pendingJudgeIds.value.includes(user.id) || isCompeting(user)) return;
     pendingJudgeIds.value = [...pendingJudgeIds.value, user.id];
     try {
         await apiFetch(`/api/users/${user.id}/judge`, {
@@ -243,7 +261,8 @@ const columns: TableColumn<AdminUser>[] = [
                 color: row.original.is_judge ? "warning" : "primary",
                 label: row.original.is_judge ? "Demote" : "Promote",
                 loading: pendingJudgeIds.value.includes(row.original.id),
-                disabled: pendingJudgeIds.value.includes(row.original.id),
+                disabled:
+                    pendingJudgeIds.value.includes(row.original.id) || isCompeting(row.original),
                 onClick: () => toggleJudge(row.original),
             }),
     },

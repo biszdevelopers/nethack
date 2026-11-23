@@ -214,6 +214,9 @@ describe("POST /api/admin/seasons action edges", () => {
         mocks.setActiveSeason.mockRejectedValueOnce(new Error("not ready"));
         const deleteWhere = vi.fn().mockResolvedValue(undefined);
         event.context.drizzle.delete = vi.fn(() => ({ where: deleteWhere }));
+        event.context.drizzle.transaction = vi.fn(async (callback: any) =>
+            callback(event.context.drizzle),
+        );
 
         await expect(postHandler(event)).rejects.toThrow("not ready");
         expect(mocks.updateSet).toHaveBeenCalledWith({ rubric_version_id: null });

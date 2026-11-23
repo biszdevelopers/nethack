@@ -44,7 +44,7 @@ The page does not render a separate marketing hero or a facts grid; the event-st
 
 **File:** `app/pages/projects.vue`
 
-Public project gallery. It fetches `/api/seasons/active` and requests `/api/teams` only when `is_gallery_public` is true. The server exposes that flag only after the event enters peer voting, so an in-progress season whose deadline has passed still keeps its catalog hidden. Before that point the server returns only the caller's own team, so non-members see an empty gallery rather than a hidden-project leak. The page supports search, pathway filters, and a selected-project query parameter.
+Public project gallery. It fetches `/api/seasons/active` and requests `/api/teams` only when `is_gallery_public` is true. The server exposes that flag only after the event enters peer voting, so an in-progress season whose deadline has passed still keeps its catalog hidden. Before that point the server returns only the caller's own team, so non-members see an empty gallery rather than a hidden-project leak. The page supports search, pathway filters, and a selected-project query parameter; pathway labels use the organizer-defined track names from the active rubric, falling back to the formatted key.
 
 **Layout:** `default`
 

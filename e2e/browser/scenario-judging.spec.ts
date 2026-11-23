@@ -300,30 +300,6 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                 expect(result.status).toBe(200);
             });
 
-            await step("judge cannot score their own team", async () => {
-                const rubric = await api(judgeTwo, "/api/judging/rubric");
-                const judgeTwoTeam = (
-                    await api(
-                        judgeTwo,
-                        `/api/users/${rubric && (await api(judgeTwo, "/api/auth/session")).body.user.id}`,
-                    )
-                ).body.team;
-                if (!judgeTwoTeam) return;
-                const scores: Record<string, number> = {};
-                for (const criterion of rubric.body.tracks.junior.criteria)
-                    scores[criterion.id] = 3;
-                const result = await api(judgeTwo, `/api/teams/${judgeTwoTeam.id}/scores`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        reasoning: "An evaluation of my own team that must be rejected.",
-                        scores,
-                        rubric_version_id: versionId,
-                    }),
-                });
-                expect([403, 404, 409]).toContain(result.status);
-            });
-
             await step("score rubric is season-specific", async () => {
                 const result = await api(judge, "/api/judging/rubric");
                 expect(result.body.version_id).toBe(versionId);
@@ -357,7 +333,7 @@ test.describe.serial("scenario matrix — voting, judging, and results situation
                         rubric_version_id: 999999,
                     }),
                 });
-                expect([400, 403, 409]).toContain(result.status);
+                expect(result.status, `wrong rubric: ${JSON.stringify(result.body)}`).toBe(409);
             });
 
             await step("final state is restored for the shared harness", async () => {

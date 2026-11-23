@@ -12,6 +12,7 @@ import {
     type TestContext,
 } from "../helpers";
 import { adminAuditEvents, users } from "~~/server/database/schema";
+import { NethackPermissions } from "~~/shared/permissions";
 import { eq } from "drizzle-orm";
 
 const auth = vi.hoisted(() => ({ requireUser: vi.fn() }));
@@ -57,6 +58,7 @@ describe("PATCH /api/users/:id/judge", () => {
             id: participant.id,
             is_judge: true,
         });
+        expect(auth.requireUser).toHaveBeenCalledWith(expect.anything(), NethackPermissions.all);
         expect(
             ctx.drizzle.select().from(users).where(eq(users.id, participant.id)).get()?.is_judge,
         ).toBe(1);

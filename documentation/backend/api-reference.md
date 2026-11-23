@@ -283,7 +283,7 @@ Invite a person to a team by email. The invitation is stored in `team_invites`; 
 | --- | --- |
 | **Auth** | Team owner |
 | **Validation** | `AddTeamMemberRequest` — `{ email: string, allowUnclaimed?: boolean }` (must be a `@basischina.com` address) |
-| **Constraint** | Submissions must be open; the team must be `active`; project must not already be submitted; the team must have fewer than the season's `max_team_members` members plus pending invitations; the target cannot be yourself, a staff administrator, or someone already in a team. A missing account requires `allowUnclaimed: true` |
+| **Constraint** | Submissions must be open; the team must be `active`; project must not already be submitted; the team must have fewer than the season's `max_team_members` members plus pending invitations; the target cannot be yourself, a staff administrator, or someone already in a team for the active season (a previous-season membership is allowed). A missing account requires `allowUnclaimed: true` |
 | **Response** | `{ id, email, token, expires_at, invite_url, message }` — the raw token and link are returned once. Only its SHA-256 digest is stored |
 | **Lifetime** | `TEAM_INVITE_TTL_DAYS` days (default 7, maximum 365) |
 

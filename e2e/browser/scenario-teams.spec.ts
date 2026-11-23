@@ -124,7 +124,7 @@ test.describe.serial("scenario matrix — team and project situations", () => {
                         allowUnclaimed: true,
                     }),
                 });
-                expect([409, 200]).toContain(result.status);
+                expect(result.status, `re-invite: ${JSON.stringify(result.body)}`).toBe(409);
             });
 
             await step("invites can be listed by the team", async () => {

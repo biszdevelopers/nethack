@@ -165,19 +165,22 @@ export async function resetScenarioState(browser: Browser): Promise<void> {
             announcement: null,
         });
         const teams = await api(page, "/api/admin/teams");
-        if (teams.status === 200 && Array.isArray(teams.body) && teams.body.length > 0) {
+        expect(teams.status, `admin teams: ${JSON.stringify(teams.body)}`).toBe(200);
+        if (Array.isArray(teams.body) && teams.body.length > 0) {
             const ids = teams.body.map((team: any) => team.id).slice(0, 100);
-            await api(page, "/api/admin/teams", {
+            const deleted = await api(page, "/api/admin/teams", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ids }),
             });
+            expect(deleted.status, `delete teams: ${JSON.stringify(deleted.body)}`).toBe(200);
         }
-        await api(page, "/api/admin/seasons", {
+        const activated = await api(page, "/api/admin/seasons", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: 1, is_active: 1 }),
         });
+        expect(activated.status, `activate season: ${JSON.stringify(activated.body)}`).toBe(200);
     } finally {
         await context.close();
     }
@@ -192,9 +195,10 @@ export async function restoreState(page: Page): Promise<void> {
         show_scores: 0,
         show_ranking: 0,
     });
-    await api(page, "/api/admin/seasons", {
+    const restored = await api(page, "/api/admin/seasons", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: 1, is_active: 1 }),
     });
+    expect(restored.status, `restore season: ${JSON.stringify(restored.body)}`).toBe(200);
 }

@@ -40,12 +40,7 @@ const peopleChoice = computed(() => {
     return team ? { team, stars: top.average_stars } : null;
 });
 
-const pathwayLabel = (value: string) =>
-    value
-        .split(/[-_]/)
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
-        .join(" ");
+const trackLabel = useTrackLabel();
 
 const rankedTeams = computed(() =>
     [...(teams.value ?? [])].sort((a, b) => {
@@ -67,7 +62,7 @@ const tracks = computed(() => {
     return [...groups.entries()]
         .map(([key, list]) => ({
             key,
-            label: key === "overall" ? "Overall" : pathwayLabel(key),
+            label: key === "overall" ? "Overall" : trackLabel(key),
             podium: list.filter((team) => team.rank).slice(0, 3),
             rest: list.filter((team) => !team.rank || Number(team.rank) > 3),
         }))

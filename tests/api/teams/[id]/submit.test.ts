@@ -320,7 +320,10 @@ describe("POST /api/teams/:id/submit", () => {
         mockBody.value = validPayload();
 
         try {
-            await expect(handler(createEvent())).rejects.toMatchObject({ statusCode: 404 });
+            await expect(handler(createEvent())).rejects.toMatchObject({
+                statusCode: 409,
+                message: "Project is already submitted",
+            });
             const after = ctx.drizzle.select().from(teams).where(eq(teams.id, team.id)).get();
             expect(after!.project_name).toBe("Locked");
         } finally {
